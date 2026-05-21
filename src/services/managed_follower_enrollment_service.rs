@@ -48,9 +48,9 @@ pub async fn create_enrollment_command<S: PrimaryRuntimeState>(
     state: &S,
     remote_node_id: i64,
 ) -> Result<RemoteEnrollmentCommandInfo> {
-    let remote_node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
+    let remote_node = managed_follower_repo::find_by_id(state.writer_db(), remote_node_id).await?;
     if follower_enrollment_session_repo::has_completed_for_managed_follower(
-        state.db(),
+        state.writer_db(),
         remote_node_id,
     )
     .await?
@@ -72,7 +72,7 @@ pub async fn create_enrollment_command<S: PrimaryRuntimeState>(
     let expires_at = Utc::now() + Duration::minutes(DEFAULT_ENROLLMENT_TTL_MINUTES);
     let created_at = Utc::now();
 
-    crate::db::transaction::with_transaction(state.db(), async |txn| {
+    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
         follower_enrollment_session_repo::invalidate_pending_for_managed_follower(
             txn,
             remote_node_id,
@@ -117,7 +117,7 @@ pub async fn redeem_enrollment_token<S: PrimaryRuntimeState>(
     }
 
     let token_hash = crate::utils::hash::sha256_hex(trimmed.as_bytes());
-    crate::db::transaction::with_transaction(state.db(), async |txn| {
+    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
         let enrollment = follower_enrollment_session_repo::find_by_token_hash(txn, &token_hash)
             .await?
             .ok_or_else(|| AsterError::validation_error("invalid enrollment token"))?;
@@ -169,7 +169,7 @@ pub async fn ack_enrollment_token<S: PrimaryRuntimeState>(
     }
 
     let ack_token_hash = normalize_ack_token_hash(trimmed);
-    crate::db::transaction::with_transaction(state.db(), async |txn| {
+    crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
         let enrollment =
             follower_enrollment_session_repo::find_by_ack_token_hash(txn, &ack_token_hash)
                 .await?

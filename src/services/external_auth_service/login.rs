@@ -30,15 +30,18 @@ pub async fn start_login(
     return_path: Option<&str>,
 ) -> Result<ExternalAuthStartLoginResponse> {
     let provider_key = normalize_key(provider_key)?;
-    let provider =
-        external_auth_provider_repo::find_by_kind_key(&state.db, provider_kind, &provider_key)
-            .await?
-            .ok_or_else(|| {
-                AsterError::record_not_found(format!(
-                    "external auth provider '{}:{provider_key}'",
-                    provider_kind.as_str()
-                ))
-            })?;
+    let provider = external_auth_provider_repo::find_by_kind_key(
+        state.writer_db(),
+        provider_kind,
+        &provider_key,
+    )
+    .await?
+    .ok_or_else(|| {
+        AsterError::record_not_found(format!(
+            "external auth provider '{}:{provider_key}'",
+            provider_kind.as_str()
+        ))
+    })?;
     if !provider.enabled {
         return Err(AsterError::auth_forbidden(
             "external auth provider is disabled",
@@ -65,7 +68,7 @@ pub async fn start_login(
         consumed_at: Set(None),
         ..Default::default()
     };
-    external_auth_login_flow_repo::create(&state.db, flow).await?;
+    external_auth_login_flow_repo::create(state.writer_db(), flow).await?;
 
     Ok(ExternalAuthStartLoginResponse {
         authorization_url: auth_start.authorization_url,
@@ -98,7 +101,7 @@ pub async fn finish_callback(
     })?;
 
     let flow = external_auth_login_flow_repo::consume_by_state_hash(
-        &state.db,
+        state.writer_db(),
         &state_hash(state_value),
         Utc::now(),
     )
@@ -106,7 +109,8 @@ pub async fn finish_callback(
     .ok_or_else(|| {
         AsterError::auth_invalid_credentials("external auth state is invalid or expired")
     })?;
-    let provider = external_auth_provider_repo::find_by_id(&state.db, flow.provider_id).await?;
+    let provider =
+        external_auth_provider_repo::find_by_id(state.writer_db(), flow.provider_id).await?;
     if provider.provider_kind != provider_kind {
         return Err(AsterError::auth_invalid_credentials(
             "external auth callback provider kind does not match login flow",
@@ -139,7 +143,8 @@ pub async fn finish_callback(
 
     if external_auth_claims_missing_email(&user_claims) {
         if let Some(resolved) =
-            resolve_existing_external_auth_identity(&state.db, &user_claims, Utc::now()).await?
+            resolve_existing_external_auth_identity(state.writer_db(), &user_claims, Utc::now())
+                .await?
         {
             let (access_token, refresh_token) =
                 auth_service::issue_tokens_for_user(state, &resolved.user, ip_address, user_agent)

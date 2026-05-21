@@ -13,11 +13,11 @@ pub(crate) async fn load_storage_limits(
 ) -> Result<(i64, i64)> {
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            let user = user_repo::find_by_id(&state.db, user_id).await?;
+            let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
             Ok((user.storage_used, user.storage_quota))
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            let team = team_repo::find_active_by_id(&state.db, team_id).await?;
+            let team = team_repo::find_active_by_id(state.writer_db(), team_id).await?;
             Ok((team.storage_used, team.storage_quota))
         }
     }

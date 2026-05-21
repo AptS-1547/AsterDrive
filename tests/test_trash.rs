@@ -233,7 +233,7 @@ async fn test_trash_purge_all() {
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2);
-    let owner_before = user_repo::find_by_username(&state.db, "testuser")
+    let owner_before = user_repo::find_by_username(state.writer_db(), "testuser")
         .await
         .unwrap()
         .unwrap();
@@ -338,7 +338,7 @@ async fn test_trash_purge_all() {
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
-    let owner_after = user_repo::find_by_username(&state.db, "testuser")
+    let owner_after = user_repo::find_by_username(state.writer_db(), "testuser")
         .await
         .unwrap()
         .unwrap();
@@ -667,7 +667,7 @@ async fn test_restore_file_moves_to_root_when_original_folder_is_deleted() {
     use aster_drive::db::repository::file_repo;
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -717,7 +717,7 @@ async fn test_restore_folder_moves_to_root_when_parent_is_deleted() {
     use aster_drive::db::repository::{file_repo, folder_repo};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -831,49 +831,58 @@ async fn test_cleanup_expired_falls_back_to_default_retention_for_invalid_config
         .await
         .unwrap();
 
-    config_repo::upsert(&state.db, "trash_retention_days", "not-a-number", user.id)
-        .await
-        .unwrap();
+    config_repo::upsert(
+        state.writer_db(),
+        "trash_retention_days",
+        "not-a-number",
+        user.id,
+    )
+    .await
+    .unwrap();
 
     let expired_at = Utc::now() - Duration::days(8);
 
     let mut deleted_root: aster_drive::entities::file::ActiveModel =
-        file_repo::find_by_id(&state.db, root_file.id)
+        file_repo::find_by_id(state.writer_db(), root_file.id)
             .await
             .unwrap()
             .into();
     deleted_root.deleted_at = Set(Some(expired_at));
-    deleted_root.update(&state.db).await.unwrap();
+    deleted_root.update(state.writer_db()).await.unwrap();
 
     let mut deleted_nested: aster_drive::entities::file::ActiveModel =
-        file_repo::find_by_id(&state.db, nested_file.id)
+        file_repo::find_by_id(state.writer_db(), nested_file.id)
             .await
             .unwrap()
             .into();
     deleted_nested.deleted_at = Set(Some(expired_at));
-    deleted_nested.update(&state.db).await.unwrap();
+    deleted_nested.update(state.writer_db()).await.unwrap();
 
     let mut deleted_folder: aster_drive::entities::folder::ActiveModel =
-        folder_repo::find_by_id(&state.db, folder.id)
+        folder_repo::find_by_id(state.writer_db(), folder.id)
             .await
             .unwrap()
             .into();
     deleted_folder.deleted_at = Set(Some(expired_at));
-    deleted_folder.update(&state.db).await.unwrap();
+    deleted_folder.update(state.writer_db()).await.unwrap();
 
     let purged = trash_service::cleanup_expired(&state).await.unwrap();
     assert_eq!(purged, 3);
     assert!(
-        file_repo::find_by_id(&state.db, root_file.id)
+        file_repo::find_by_id(state.writer_db(), root_file.id)
             .await
             .is_err()
     );
     assert!(
-        file_repo::find_by_id(&state.db, nested_file.id)
+        file_repo::find_by_id(state.writer_db(), nested_file.id)
             .await
             .is_err()
     );
-    assert!(folder_repo::find_by_id(&state.db, folder.id).await.is_err());
+    assert!(
+        folder_repo::find_by_id(state.writer_db(), folder.id)
+            .await
+            .is_err()
+    );
 }
 
 #[actix_web::test]
@@ -902,12 +911,12 @@ async fn test_cleanup_expired_only_counts_top_level_deleted_folders() {
     let expired_at = Utc::now() - Duration::days(8);
     for folder_id in [parent.id, child.id] {
         let mut folder: aster_drive::entities::folder::ActiveModel =
-            folder_repo::find_by_id(&state.db, folder_id)
+            folder_repo::find_by_id(state.writer_db(), folder_id)
                 .await
                 .unwrap()
                 .into();
         folder.deleted_at = Set(Some(expired_at));
-        folder.update(&state.db).await.unwrap();
+        folder.update(state.writer_db()).await.unwrap();
     }
 
     let purged = trash_service::cleanup_expired(&state).await.unwrap();
@@ -915,8 +924,16 @@ async fn test_cleanup_expired_only_counts_top_level_deleted_folders() {
         purged, 1,
         "only the top-level expired folder should be counted"
     );
-    assert!(folder_repo::find_by_id(&state.db, parent.id).await.is_err());
-    assert!(folder_repo::find_by_id(&state.db, child.id).await.is_err());
+    assert!(
+        folder_repo::find_by_id(state.writer_db(), parent.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        folder_repo::find_by_id(state.writer_db(), child.id)
+            .await
+            .is_err()
+    );
 }
 
 #[actix_web::test]
@@ -950,7 +967,9 @@ async fn test_cleanup_expired_keeps_recently_deleted_items() {
     let purged = trash_service::cleanup_expired(&state).await.unwrap();
     assert_eq!(purged, 0);
 
-    let trashed = file_repo::find_by_id(&state.db, file.id).await.unwrap();
+    let trashed = file_repo::find_by_id(state.writer_db(), file.id)
+        .await
+        .unwrap();
     assert!(trashed.deleted_at.is_some());
 }
 

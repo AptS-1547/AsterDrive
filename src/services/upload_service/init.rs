@@ -98,7 +98,7 @@ async fn init_chunked_upload_session(
 
     let upload_id = with_unique_upload_id(|upload_id| async {
         let inserted = try_persist_upload_session(
-            &state.db,
+            state.writer_db(),
             UploadSessionRecordParams {
                 upload_id: &upload_id,
                 scope: ctx.scope,
@@ -124,7 +124,7 @@ async fn init_chunked_upload_session(
 
     if let Err(error) = prepare_chunked_upload_temp_dir(state, &upload_id).await {
         delete_upload_session_record_after_init_error(
-            &state.db,
+            state.writer_db(),
             &upload_id,
             "chunked temp dir initialization error",
         )

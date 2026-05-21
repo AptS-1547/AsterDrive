@@ -26,7 +26,7 @@ pub async fn create_user_by_admin(
     password: &str,
 ) -> Result<AuthUserInfo> {
     let user = create_user_with_role(
-        &state.db,
+        state.writer_db(),
         state,
         CreateUserWithRoleInput {
             username,
@@ -65,7 +65,7 @@ pub async fn register(
         ));
     }
 
-    if user_repo::count_all(&state.db).await? == 0 {
+    if user_repo::count_all(state.writer_db()).await? == 0 {
         return create_first_admin(state, username, email, password)
             .await
             .map(AuthUserInfo::from);
@@ -73,7 +73,7 @@ pub async fn register(
 
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
     let site_name = branding::title_or_default(&state.runtime_config);
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let email_verified_at = (!auth_policy.register_activation_enabled).then_some(Utc::now());
     let user = create_user_with_role(
         &txn,
@@ -125,7 +125,7 @@ pub async fn resend_register_activation(
     state: &PrimaryAppState,
     identifier: &str,
 ) -> Result<Option<UserAuditInfo>> {
-    let Some(user) = find_user_by_identifier(&state.db, identifier).await? else {
+    let Some(user) = find_user_by_identifier(state.writer_db(), identifier).await? else {
         return Ok(None);
     };
 
@@ -135,7 +135,7 @@ pub async fn resend_register_activation(
 
     if !resend_allowed(
         state,
-        &state.db,
+        state.writer_db(),
         user.id,
         VerificationPurpose::RegisterActivation,
     )
@@ -150,7 +150,7 @@ pub async fn resend_register_activation(
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
     let site_name = branding::title_or_default(&state.runtime_config);
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let token = match issue_contact_verification_token(
         &txn,
         user.id,
@@ -177,7 +177,7 @@ pub async fn resend_register_activation(
 }
 
 pub async fn check_auth_state(state: &PrimaryAppState) -> Result<bool> {
-    Ok(user_repo::count_all(&state.db).await? > 0)
+    Ok(user_repo::count_all(state.writer_db()).await? > 0)
 }
 
 pub async fn setup(
@@ -187,7 +187,7 @@ pub async fn setup(
     password: &str,
 ) -> Result<AuthUserInfo> {
     tracing::debug!("running initial setup");
-    if user_repo::count_all(&state.db).await? > 0 {
+    if user_repo::count_all(state.writer_db()).await? > 0 {
         return Err(validation_error_with_subcode(
             ApiSubcode::ValidationSystemAlreadyInitialized,
             "system already initialized",

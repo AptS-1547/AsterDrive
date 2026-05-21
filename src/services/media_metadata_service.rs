@@ -218,7 +218,7 @@ pub async fn persist_extracted(
     };
 
     media_metadata_repo::upsert_record(
-        &state.db,
+        state.writer_db(),
         media_metadata_repo::MediaMetadataRecordInput {
             blob_id: blob.id,
             blob_hash: &blob.hash,

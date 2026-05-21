@@ -123,7 +123,8 @@ pub(super) async fn process_archive_compress_task(
     let total_bytes = collected.total_source_bytes();
     let estimated_output_bytes = collected.estimated_output_bytes();
     if estimated_output_bytes > 0 {
-        workspace_storage_service::check_quota(&state.db, scope, estimated_output_bytes).await?;
+        workspace_storage_service::check_quota(state.writer_db(), scope, estimated_output_bytes)
+            .await?;
     }
     let entries = collected.into_entries();
     let progress_total = total_bytes.max(0);
@@ -154,7 +155,7 @@ pub(super) async fn process_archive_compress_task(
     let archive_temp_path_string = archive_temp_path.to_string_lossy().into_owned();
     let archive_temp_path_for_worker = archive_temp_path.clone();
     let handle = tokio::runtime::Handle::current();
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let driver_registry = state.driver_registry.clone();
     let policy_snapshot = state.policy_snapshot.clone();
     let lease_guard_for_worker = lease_guard.clone();
@@ -262,7 +263,8 @@ pub(super) async fn process_archive_compress_task(
         target_file_id: stored.id,
         target_file_name: stored.name.clone(),
         target_folder_id: stored.folder_id,
-        target_path: build_file_display_path(&state.db, stored.folder_id, &stored.name).await?,
+        target_path: build_file_display_path(state.writer_db(), stored.folder_id, &stored.name)
+            .await?,
     };
     let result_json = serialize_task_result(&result)?;
     mark_task_succeeded(

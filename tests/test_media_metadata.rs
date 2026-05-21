@@ -53,21 +53,21 @@ fn tiny_jpeg_with_exif() -> Vec<u8> {
         .unwrap();
 
     let mut entries = vec![
-        (0x010f, TiffValue::Ascii("SONY")),
-        (0x0110, TiffValue::Ascii("ILCE-7CM2")),
-        (0x0112, TiffValue::Short(1)),
-        (0x0131, TiffValue::Ascii("ILCE-7CM2 v1.01")),
-        (0x013b, TiffValue::Ascii("Aaron Liu")),
-        (0x829a, TiffValue::Rational(1, 200)),
-        (0x829d, TiffValue::Rational(28, 10)),
-        (0x8827, TiffValue::Short(100)),
-        (0x9003, TiffValue::Ascii("2024:04:01 05:44:11")),
+        (0x010f, TiffValue::Ascii("NIKON CORPORATION")),
+        (0x0110, TiffValue::Ascii("NIKON D3400")),
+        (0x0112, TiffValue::Short(8)),
+        (0x0131, TiffValue::Ascii("Ver.1.12")),
+        (0x013b, TiffValue::Ascii("Aster Tester")),
+        (0x829a, TiffValue::Rational(1, 320)),
+        (0x829d, TiffValue::Rational(56, 10)),
+        (0x8827, TiffValue::Short(400)),
+        (0x9003, TiffValue::Ascii("2026:03:05 17:19:01")),
         (0x9204, TiffValue::SRational(0, 10)),
-        (0x9209, TiffValue::Short(0)),
-        (0x920a, TiffValue::Rational(28, 1)),
-        (0xa405, TiffValue::Short(28)),
-        (0xa433, TiffValue::Ascii("TAMRON")),
-        (0xa434, TiffValue::Ascii("E 28-200mm F2.8-5.6 A071")),
+        (0x9209, TiffValue::Short(16)),
+        (0x920a, TiffValue::Rational(135, 1)),
+        (0xa405, TiffValue::Short(202)),
+        (0xa433, TiffValue::Ascii("NIKON")),
+        (0xa434, TiffValue::Ascii("55-200mm f/4-5.6")),
     ];
     entries.sort_by_key(|(tag, _)| *tag);
 
@@ -215,11 +215,11 @@ async fn duplicate_file_for_same_blob(
     source_file_id: i64,
     name: &str,
 ) -> i64 {
-    let source = file_repo::find_by_id(&state.db, source_file_id)
+    let source = file_repo::find_by_id(state.writer_db(), source_file_id)
         .await
         .unwrap();
     let now = chrono::Utc::now();
-    file_repo::increment_blob_ref_count(&state.db, source.blob_id)
+    file_repo::increment_blob_ref_count(state.writer_db(), source.blob_id)
         .await
         .unwrap();
     file::ActiveModel {
@@ -241,15 +241,17 @@ async fn duplicate_file_for_same_blob(
         is_locked: Set(false),
         ..Default::default()
     }
-    .insert(&state.db)
+    .insert(state.writer_db())
     .await
     .unwrap()
     .id
 }
 
 async fn set_system_config(state: &aster_drive::runtime::PrimaryAppState, key: &str, value: &str) {
-    config_repo::upsert(&state.db, key, value, 1).await.unwrap();
-    let mut model = config_repo::find_by_key(&state.db, key)
+    config_repo::upsert(state.writer_db(), key, value, 1)
+        .await
+        .unwrap();
+    let mut model = config_repo::find_by_key(state.writer_db(), key)
         .await
         .unwrap()
         .unwrap();
@@ -281,7 +283,7 @@ async fn insert_synthetic_media_file(
     category: FileCategory,
     bytes: &[u8],
 ) -> i64 {
-    let policy = aster_drive::db::repository::policy_repo::find_default(&state.db)
+    let policy = aster_drive::db::repository::policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
@@ -300,7 +302,7 @@ async fn insert_synthetic_media_file(
         updated_at: Set(now),
         ..Default::default()
     }
-    .insert(&state.db)
+    .insert(state.writer_db())
     .await
     .unwrap();
     file::ActiveModel {
@@ -322,7 +324,7 @@ async fn insert_synthetic_media_file(
         is_locked: Set(false),
         ..Default::default()
     }
-    .insert(&state.db)
+    .insert(state.writer_db())
     .await
     .unwrap()
     .id
@@ -344,7 +346,7 @@ async fn file_media_metadata_extracts_image_and_reuses_blob_cache() {
         Some("2")
     );
 
-    let task = background_task_repo::list_recent(&state.db, 16)
+    let task = background_task_repo::list_recent(state.writer_db(), 16)
         .await
         .unwrap()
         .into_iter()
@@ -370,7 +372,7 @@ async fn file_media_metadata_extracts_image_and_reuses_blob_cache() {
     assert_eq!(body["data"]["metadata"]["height"], 1);
 
     assert_eq!(
-        background_task_repo::list_recent(&state.db, 16)
+        background_task_repo::list_recent(state.writer_db(), 16)
             .await
             .unwrap()
             .into_iter()
@@ -387,7 +389,7 @@ async fn file_media_metadata_extracts_image_and_reuses_blob_cache() {
     assert_eq!(body["data"]["status"], "ready");
     assert_eq!(body["data"]["metadata"]["kind"], "image");
 
-    let tasks = background_task_repo::list_recent(&state.db, 16)
+    let tasks = background_task_repo::list_recent(state.writer_db(), 16)
         .await
         .unwrap();
     assert_eq!(
@@ -449,22 +451,22 @@ async fn file_media_metadata_extracts_image_exif_fields() {
     assert_eq!(metadata["kind"], "image");
     assert_eq!(metadata["width"], 1);
     assert_eq!(metadata["height"], 1);
-    assert_eq!(metadata["camera_make"], "SONY");
-    assert_eq!(metadata["camera_model"], "ILCE-7CM2");
-    assert_eq!(metadata["lens_make"], "TAMRON");
-    assert_eq!(metadata["lens_model"], "E 28-200mm F2.8-5.6 A071");
-    assert_eq!(metadata["f_number"], 2.8);
-    assert_eq!(metadata["exposure_time_seconds"], 0.005);
-    assert_eq!(metadata["iso"], 100);
+    assert_eq!(metadata["camera_make"], "NIKON CORPORATION");
+    assert_eq!(metadata["camera_model"], "NIKON D3400");
+    assert_eq!(metadata["lens_make"], "NIKON");
+    assert_eq!(metadata["lens_model"], "55-200mm f/4-5.6");
+    assert_eq!(metadata["f_number"], 5.6);
+    assert_eq!(metadata["exposure_time_seconds"], 0.003125);
+    assert_eq!(metadata["iso"], 400);
     assert_eq!(metadata["exposure_bias_ev"], 0.0);
     assert_eq!(metadata["flash_fired"], false);
-    assert_eq!(metadata["flash_mode"], 0);
-    assert_eq!(metadata["focal_length_mm"], 28.0);
-    assert_eq!(metadata["focal_length_35mm"], 28);
-    assert_eq!(metadata["taken_at"], "2024-04-01T05:44:11");
-    assert_eq!(metadata["orientation"], 1);
-    assert_eq!(metadata["artist"], "Aaron Liu");
-    assert_eq!(metadata["software"], "ILCE-7CM2 v1.01");
+    assert_eq!(metadata["flash_mode"], 16);
+    assert_eq!(metadata["focal_length_mm"], 135.0);
+    assert_eq!(metadata["focal_length_35mm"], 202);
+    assert_eq!(metadata["taken_at"], "2026-03-05T17:19:01");
+    assert_eq!(metadata["orientation"], 8);
+    assert_eq!(metadata["artist"], "Aster Tester");
+    assert_eq!(metadata["software"], "Ver.1.12");
 }
 
 #[actix_web::test]
@@ -494,13 +496,15 @@ async fn file_media_metadata_returns_unsupported_for_video_when_ffprobe_processo
     assert_eq!(body["data"]["parser"], "unsupported");
     assert!(body["data"]["metadata"].is_null());
 
-    let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
-    let record = media_metadata_repo::find_by_blob_id(&state.db, file.blob_id)
+    let file = file_repo::find_by_id(state.writer_db(), file_id)
+        .await
+        .unwrap();
+    let record = media_metadata_repo::find_by_blob_id(state.writer_db(), file.blob_id)
         .await
         .unwrap();
     assert!(record.is_none());
     assert_eq!(
-        background_task_repo::list_recent(&state.db, 16)
+        background_task_repo::list_recent(state.writer_db(), 16)
             .await
             .unwrap()
             .into_iter()
@@ -574,7 +578,7 @@ async fn media_metadata_disabled_returns_unsupported_without_task() {
     assert_eq!(body["data"]["parser"], "disabled");
 
     assert_eq!(
-        background_task_repo::list_recent(&state.db, 16)
+        background_task_repo::list_recent(state.writer_db(), 16)
             .await
             .unwrap()
             .into_iter()
@@ -624,7 +628,7 @@ async fn media_metadata_processor_disabled_returns_unsupported_without_task() {
     assert_eq!(body["data"]["parser"], "unsupported");
 
     assert_eq!(
-        background_task_repo::list_recent(&state.db, 16)
+        background_task_repo::list_recent(state.writer_db(), 16)
             .await
             .unwrap()
             .into_iter()

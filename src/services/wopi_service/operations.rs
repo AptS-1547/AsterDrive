@@ -47,7 +47,7 @@ pub async fn check_file_info(
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiCheckFileInfo> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
-    let blob = file_repo::find_blob_by_id(&state.db, resolved.file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.writer_db(), resolved.file.blob_id).await?;
     let user_info =
         profile_service::get_wopi_user_info(state, resolved.payload.actor_user_id).await?;
 
@@ -89,7 +89,7 @@ pub async fn get_file_contents(
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiGetFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
-    let blob = file_repo::find_blob_by_id(&state.db, resolved.file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.writer_db(), resolved.file.blob_id).await?;
     let max_expected_size = parse_wopi_max_expected_size(max_expected_size)?;
     if let Some(max_expected_size) = max_expected_size
         && resolved.file.size > max_expected_size
@@ -223,9 +223,13 @@ pub async fn put_relative_file(
         } => {
             // RelativeTarget 先找目标名是否已存在，再根据 overwrite / 锁状态决定
             // 冲突、覆盖还是新建。
-            let existing =
-                find_file_by_name_in_scope(&state.db, scope, resolved.file.folder_id, &target_name)
-                    .await?;
+            let existing = find_file_by_name_in_scope(
+                state.writer_db(),
+                scope,
+                resolved.file.folder_id,
+                &target_name,
+            )
+            .await?;
 
             match existing {
                 None => {

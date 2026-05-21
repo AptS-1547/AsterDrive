@@ -229,9 +229,11 @@ fn classify_refresh_reuse_session(input: RefreshReuseClassification<'_>) -> Refr
 
     // Without same-process contention, require a same-client fingerprint. This
     // keeps sequential no-evidence replay in the compromise path.
-    if reused_auth_session.is_some_and(|session| {
-        is_stale_refresh_from_same_client(session, user_id, now, ip_address, user_agent)
-    }) {
+    if !matches!(evidence, RefreshReuseEvidence::SameProcessContention)
+        && reused_auth_session.is_some_and(|session| {
+            is_stale_refresh_from_same_client(session, user_id, now, ip_address, user_agent)
+        })
+    {
         return RefreshRejection::StaleRefresh {
             user_id,
             reused_jti: refresh_jti.to_string(),
@@ -591,7 +593,7 @@ async fn finish_refresh_outcome(
             user_agent,
         } => {
             let conflict_outcome =
-                crate::db::transaction::with_transaction(&state.db, async |txn| {
+                crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
                     let outcome = classify_failed_refresh_rotation(
                         txn,
                         claims,
@@ -643,7 +645,7 @@ pub async fn refresh_tokens(
     } else {
         RefreshReuseEvidence::ClientFingerprint
     };
-    let outcome = crate::db::transaction::with_transaction(&state.db, async |txn| {
+    let outcome = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
         rotate_refresh_in_transaction(
             txn,
             state,

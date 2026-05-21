@@ -143,7 +143,7 @@ async fn purge_archived_team_files(state: &PrimaryAppState, team: &team::Model) 
 
     loop {
         let files = file_repo::find_all_by_team_paginated(
-            &state.db,
+            state.writer_db(),
             team.id,
             after_file_id,
             TEAM_ARCHIVE_BATCH_SIZE,
@@ -192,12 +192,12 @@ async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) 
         team_name = %team_name,
         "force deleting archived team"
     );
-    let upload_sessions = upload_session_repo::find_by_team(&state.db, team_id).await?;
+    let upload_sessions = upload_session_repo::find_by_team(state.writer_db(), team_id).await?;
     cleanup_team_upload_sessions(state, &upload_sessions).await?;
 
     purge_archived_team_files(state, &team).await?;
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     team_repo::lock_archived_by_id(&txn, team_id).await?;
     upload_session_repo::delete_all_by_team(&txn, team_id).await?;
     clear_team_locks(&txn, team_id).await?;
@@ -232,7 +232,7 @@ async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) 
 pub async fn cleanup_expired_archived_teams(state: &PrimaryAppState) -> Result<u64> {
     let retention_days = load_team_archive_retention_days(state);
     let cutoff = Utc::now() - chrono::Duration::days(retention_days);
-    let expired = team_repo::find_archived_before(&state.db, cutoff).await?;
+    let expired = team_repo::find_archived_before(state.writer_db(), cutoff).await?;
 
     let mut deleted = 0u64;
     let ctx = audit_service::AuditContext::system();

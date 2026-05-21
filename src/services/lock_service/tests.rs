@@ -150,7 +150,6 @@ async fn build_lock_test_state() -> (PrimaryAppState, user::Model, file::Model) 
         );
 
     let state = PrimaryAppState {
-        db: db.clone(),
         db_handles: crate::db::DbHandles::single(db),
         driver_registry: Arc::new(DriverRegistry::new()),
         runtime_config: runtime_config.clone(),
@@ -258,7 +257,7 @@ async fn lock_replaces_expired_lock_and_keeps_single_row() {
     let (state, user, file) = build_lock_test_state().await;
     let now = Utc::now();
     lock_repo::create(
-        &state.db,
+        state.writer_db(),
         resource_lock::ActiveModel {
             token: Set("expired-lock".to_string()),
             entity_type: Set(EntityType::File),
@@ -287,14 +286,14 @@ async fn lock_replaces_expired_lock_and_keeps_single_row() {
     .await
     .expect("expired lock should be replaced");
 
-    let locks = lock_repo::find_all(&state.db)
+    let locks = lock_repo::find_all(state.writer_db())
         .await
         .expect("locks should load");
     assert_eq!(locks.len(), 1, "only the replacement lock should remain");
     assert_eq!(locks[0].id, replacement.id);
     assert_ne!(locks[0].token, "expired-lock");
 
-    let reloaded_file = file_repo::find_by_id(&state.db, file.id)
+    let reloaded_file = file_repo::find_by_id(state.writer_db(), file.id)
         .await
         .expect("file should reload");
     assert!(
@@ -306,13 +305,13 @@ async fn lock_replaces_expired_lock_and_keeps_single_row() {
 #[tokio::test]
 async fn clear_entity_locked_if_unlocked_keeps_flag_when_replacement_lock_exists() {
     let (state, user, file) = build_lock_test_state().await;
-    set_entity_locked(&state.db, EntityType::File, file.id, true)
+    set_entity_locked(state.writer_db(), EntityType::File, file.id, true)
         .await
         .expect("file should be marked locked");
 
     let now = Utc::now();
     lock_repo::create(
-        &state.db,
+        state.writer_db(),
         resource_lock::ActiveModel {
             token: Set("active-lock".to_string()),
             entity_type: Set(EntityType::File),
@@ -330,11 +329,11 @@ async fn clear_entity_locked_if_unlocked_keeps_flag_when_replacement_lock_exists
     .await
     .expect("active lock should insert");
 
-    clear_entity_locked_if_unlocked(&state.db, EntityType::File, file.id)
+    clear_entity_locked_if_unlocked(state.writer_db(), EntityType::File, file.id)
         .await
         .expect("helper should succeed");
 
-    let reloaded_file = file_repo::find_by_id(&state.db, file.id)
+    let reloaded_file = file_repo::find_by_id(state.writer_db(), file.id)
         .await
         .expect("file should reload");
     assert!(
@@ -346,15 +345,15 @@ async fn clear_entity_locked_if_unlocked_keeps_flag_when_replacement_lock_exists
 #[tokio::test]
 async fn clear_entity_locked_if_unlocked_clears_flag_when_no_lock_remains() {
     let (state, _, file) = build_lock_test_state().await;
-    set_entity_locked(&state.db, EntityType::File, file.id, true)
+    set_entity_locked(state.writer_db(), EntityType::File, file.id, true)
         .await
         .expect("file should be marked locked");
 
-    clear_entity_locked_if_unlocked(&state.db, EntityType::File, file.id)
+    clear_entity_locked_if_unlocked(state.writer_db(), EntityType::File, file.id)
         .await
         .expect("helper should succeed");
 
-    let reloaded_file = file_repo::find_by_id(&state.db, file.id)
+    let reloaded_file = file_repo::find_by_id(state.writer_db(), file.id)
         .await
         .expect("file should reload");
     assert!(

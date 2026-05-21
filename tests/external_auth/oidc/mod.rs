@@ -398,11 +398,14 @@ pub async fn latest_oidc_email_verification_token(
 
 pub async fn disable_user(state: &aster_drive::runtime::PrimaryAppState, user_id: i64) {
     let user = user::Entity::find_by_id(user_id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("user should query")
         .expect("user should exist");
     let mut active = user.into_active_model();
     active.status = Set(aster_drive::types::UserStatus::Disabled);
-    active.update(&state.db).await.expect("user should update");
+    active
+        .update(state.writer_db())
+        .await
+        .expect("user should update");
 }

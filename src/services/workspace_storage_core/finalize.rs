@@ -92,7 +92,7 @@ pub(crate) async fn finalize_upload_session_file(
         actor_username,
     } = params;
     let scope = scope_from_session(session);
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
 
     let blob =
         file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;

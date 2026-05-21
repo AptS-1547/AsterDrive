@@ -108,7 +108,7 @@ pub async fn update_admin_team(
     team_id: i64,
     input: AdminUpdateTeamInput,
 ) -> Result<AdminTeamInfo> {
-    let team = team_repo::find_active_by_id(&state.db, team_id).await?;
+    let team = team_repo::find_active_by_id(state.writer_db(), team_id).await?;
     let updated = update_team_record(
         state,
         team,
@@ -123,12 +123,12 @@ pub async fn update_admin_team(
 }
 
 pub async fn archive_admin_team(state: &PrimaryAppState, team_id: i64) -> Result<()> {
-    let team = team_repo::find_active_by_id(&state.db, team_id).await?;
+    let team = team_repo::find_active_by_id(state.writer_db(), team_id).await?;
     archive_team_record(state, team).await
 }
 
 pub async fn restore_admin_team(state: &PrimaryAppState, team_id: i64) -> Result<AdminTeamInfo> {
-    let team = team_repo::find_archived_by_id(&state.db, team_id).await?;
+    let team = team_repo::find_archived_by_id(state.writer_db(), team_id).await?;
     let restored = restore_team_record(state, team).await?;
     build_admin_team_info(state, &restored).await
 }

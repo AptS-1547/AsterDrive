@@ -67,7 +67,7 @@ pub(crate) async fn ensure_thumbnail_task(
     );
     let display_name = thumbnail_task_display_name(blob.id, processor);
     if let Some(existing) = background_task_repo::find_latest_by_kind_and_display_name(
-        &state.db,
+        state.writer_db(),
         BackgroundTaskKind::ThumbnailGenerate,
         &display_name,
     )
@@ -101,7 +101,7 @@ pub(crate) async fn ensure_thumbnail_task(
     let steps_json =
         serialize_task_steps(&initial_task_steps(BackgroundTaskKind::ThumbnailGenerate))?;
     background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ThumbnailGenerate),
             status: Set(BackgroundTaskStatus::Pending),
@@ -180,7 +180,8 @@ pub(super) async fn process_thumbnail_generate_task(
     .await?;
 
     let blob =
-        crate::db::repository::file_repo::find_blob_by_id(&state.db, payload.blob_id).await?;
+        crate::db::repository::file_repo::find_blob_by_id(state.writer_db(), payload.blob_id)
+            .await?;
     lease_guard.ensure_active()?;
     set_task_step_succeeded(
         &mut steps,

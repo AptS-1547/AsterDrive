@@ -30,7 +30,7 @@ pub async fn request_email_change(
 ) -> Result<AuthUserInfo> {
     tracing::debug!(user_id, "requesting email change");
     let normalized_email = normalize_email(new_email)?;
-    let existing = user_repo::find_by_id(&state.db, user_id).await?;
+    let existing = user_repo::find_by_id(state.writer_db(), user_id).await?;
 
     if !existing.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
@@ -46,11 +46,11 @@ pub async fn request_email_change(
         ));
     }
 
-    ensure_email_available(&state.db, &normalized_email, Some(existing.id)).await?;
+    ensure_email_available(state.writer_db(), &normalized_email, Some(existing.id)).await?;
     if existing.pending_email.as_deref() == Some(normalized_email.as_str()) {
         ensure_resend_allowed(
             state,
-            &state.db,
+            state.writer_db(),
             existing.id,
             VerificationPurpose::ContactChange,
         )
@@ -61,7 +61,7 @@ pub async fn request_email_change(
         &state.runtime_config,
     );
     let site_name = branding::title_or_default(&state.runtime_config);
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let mut active = existing.into_active_model();
     active.pending_email = Set(Some(normalized_email.clone()));
     active.updated_at = Set(Utc::now());
@@ -95,7 +95,7 @@ pub async fn resend_email_change(
     state: &PrimaryAppState,
     user_id: i64,
 ) -> Result<Option<UserAuditInfo>> {
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
     let pending_email = user
         .pending_email
         .clone()
@@ -110,10 +110,10 @@ pub async fn resend_email_change(
         ));
     }
 
-    ensure_email_available(&state.db, &pending_email, Some(user.id)).await?;
+    ensure_email_available(state.writer_db(), &pending_email, Some(user.id)).await?;
     if !resend_allowed(
         state,
-        &state.db,
+        state.writer_db(),
         user.id,
         VerificationPurpose::ContactChange,
     )
@@ -130,7 +130,7 @@ pub async fn resend_email_change(
     );
     let site_name = branding::title_or_default(&state.runtime_config);
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let token = match issue_contact_verification_token(
         &txn,
         user.id,
@@ -162,7 +162,7 @@ pub async fn request_password_reset(
 ) -> Result<PasswordResetRequestResult> {
     tracing::debug!("requesting password reset");
     let normalized_email = normalize_email(email)?;
-    let Some(user) = user_repo::find_by_email(&state.db, &normalized_email).await? else {
+    let Some(user) = user_repo::find_by_email(state.writer_db(), &normalized_email).await? else {
         return Ok(PasswordResetRequestResult { user: None });
     };
 
@@ -170,7 +170,7 @@ pub async fn request_password_reset(
         return Ok(PasswordResetRequestResult { user: None });
     }
 
-    if !password_reset_request_allowed(state, &state.db, user.id).await? {
+    if !password_reset_request_allowed(state, state.writer_db(), user.id).await? {
         tracing::debug!(
             user_id = user.id,
             "password reset request skipped due to cooldown"
@@ -184,7 +184,7 @@ pub async fn request_password_reset(
         &state.runtime_config,
     );
     let site_name = branding::title_or_default(&state.runtime_config);
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let token = match issue_contact_verification_token(
         &txn,
         user.id,
@@ -226,11 +226,12 @@ pub async fn confirm_password_reset(
     validate_password(new_password)?;
 
     let token_hash = hash::sha256_hex(token.as_bytes());
-    let record = contact_verification_token_repo::find_by_token_hash(&state.db, &token_hash)
-        .await?
-        .ok_or_else(|| {
-            AsterError::contact_verification_invalid("password reset link is invalid")
-        })?;
+    let record =
+        contact_verification_token_repo::find_by_token_hash(state.writer_db(), &token_hash)
+            .await?
+            .ok_or_else(|| {
+                AsterError::contact_verification_invalid("password reset link is invalid")
+            })?;
 
     if record.purpose != VerificationPurpose::PasswordReset {
         return Err(AsterError::contact_verification_invalid(
@@ -248,7 +249,7 @@ pub async fn confirm_password_reset(
         ));
     }
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let existing_user = user_repo::find_by_id(&txn, record.user_id).await?;
     if !existing_user.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
@@ -292,11 +293,12 @@ pub async fn confirm_contact_verification(
 ) -> Result<ContactVerificationConfirmResult> {
     tracing::debug!("confirming contact verification");
     let token_hash = hash::sha256_hex(token.as_bytes());
-    let record = contact_verification_token_repo::find_by_token_hash(&state.db, &token_hash)
-        .await?
-        .ok_or_else(|| {
-            AsterError::contact_verification_invalid("contact verification link is invalid")
-        })?;
+    let record =
+        contact_verification_token_repo::find_by_token_hash(state.writer_db(), &token_hash)
+            .await?
+            .ok_or_else(|| {
+                AsterError::contact_verification_invalid("contact verification link is invalid")
+            })?;
 
     if record.consumed_at.is_some() {
         return Err(AsterError::contact_verification_invalid(
@@ -314,7 +316,7 @@ pub async fn confirm_contact_verification(
     let user_id = record.user_id;
     tracing::debug!(user_id, purpose = ?purpose, "loaded contact verification record");
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let existing_user = user_repo::find_by_id(&txn, user_id).await?;
     if !existing_user.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
@@ -408,5 +410,5 @@ pub async fn confirm_contact_verification(
 }
 
 pub async fn cleanup_expired_contact_verification_tokens(state: &PrimaryAppState) -> Result<u64> {
-    contact_verification_token_repo::delete_expired(&state.db).await
+    contact_verification_token_repo::delete_expired(state.writer_db()).await
 }

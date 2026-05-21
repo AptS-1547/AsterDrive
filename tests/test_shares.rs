@@ -305,9 +305,10 @@ async fn test_shared_folder_file_thumbnail_returns_202_until_background_generati
         .unwrap();
     assert_eq!(stats.succeeded, 1);
 
-    let tasks = aster_drive::db::repository::background_task_repo::list_recent(&state.db, 8)
-        .await
-        .unwrap();
+    let tasks =
+        aster_drive::db::repository::background_task_repo::list_recent(state.writer_db(), 8)
+            .await
+            .unwrap();
     assert!(
         tasks
             .iter()
@@ -627,7 +628,7 @@ async fn test_share_batch_delete_removes_multiple_shares() {
 #[actix_web::test]
 async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_missing_ids() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
     let (owner_token, _) = register_and_login!(app);

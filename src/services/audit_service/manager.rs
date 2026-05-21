@@ -309,6 +309,6 @@ pub async fn log(
     if let Some(manager) = GLOBAL_AUDIT_LOG_MANAGER.get() {
         manager.record(model).await;
     } else {
-        write_audit_model(&state.db, model).await;
+        write_audit_model(state.writer_db(), model).await;
     }
 }

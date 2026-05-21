@@ -125,9 +125,14 @@ pub async fn list_paginated<S: PrimaryRuntimeState>(
     sort_order: SortOrder,
 ) -> Result<OffsetPage<RemoteNodeInfo>> {
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
-        let (items, total) =
-            managed_follower_repo::find_paginated(state.db(), limit, offset, sort_by, sort_order)
-                .await?;
+        let (items, total) = managed_follower_repo::find_paginated(
+            state.writer_db(),
+            limit,
+            offset,
+            sort_by,
+            sort_order,
+        )
+        .await?;
         Ok((items, total))
     })
     .await?;
@@ -148,7 +153,7 @@ pub async fn list_paginated<S: PrimaryRuntimeState>(
 }
 
 pub async fn get<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<RemoteNodeInfo> {
-    let model = managed_follower_repo::find_by_id(state.db(), id).await?;
+    let model = managed_follower_repo::find_by_id(state.writer_db(), id).await?;
     remote_node_info(state, model).await
 }
 
@@ -172,7 +177,7 @@ pub async fn create<S: PrimaryRuntimeState>(
         updated_at: Set(now),
         ..Default::default()
     }
-    .insert(state.db())
+    .insert(state.writer_db())
     .await
     .map_err(map_remote_node_db_err)?;
 
@@ -185,7 +190,7 @@ pub async fn update<S: PrimaryRuntimeState>(
     id: i64,
     input: UpdateRemoteNodeInput,
 ) -> Result<RemoteNodeInfo> {
-    let existing = managed_follower_repo::find_by_id(state.db(), id).await?;
+    let existing = managed_follower_repo::find_by_id(state.writer_db(), id).await?;
     let normalized = normalize_update_input(input)?;
 
     let mut active: managed_follower::ActiveModel = existing.into();
@@ -201,7 +206,7 @@ pub async fn update<S: PrimaryRuntimeState>(
     active.updated_at = Set(Utc::now());
 
     let updated = active
-        .update(state.db())
+        .update(state.writer_db())
         .await
         .map_err(map_remote_node_db_err)?;
     refresh_registry(state).await?;
@@ -219,13 +224,13 @@ pub async fn update<S: PrimaryRuntimeState>(
 
 pub async fn delete<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
     tracing::debug!(remote_node_id = id, "deleting remote node");
-    let policy_refs = policy_repo::count_by_remote_node_id(state.db(), id).await?;
+    let policy_refs = policy_repo::count_by_remote_node_id(state.writer_db(), id).await?;
     if policy_refs > 0 {
         return Err(AsterError::validation_error(format!(
             "cannot delete remote node: {policy_refs} storage policy(s) still reference it"
         )));
     }
-    managed_follower_repo::delete(state.db(), id).await?;
+    managed_follower_repo::delete(state.writer_db(), id).await?;
     refresh_registry(state).await?;
     tracing::info!(remote_node_id = id, "deleted remote node");
     Ok(())
@@ -244,7 +249,7 @@ pub async fn require_completed_enrollment<S: PrimaryRuntimeState>(
     state: &S,
     remote_node_id: i64,
 ) -> Result<managed_follower::Model> {
-    let node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
+    let node = managed_follower_repo::find_by_id(state.writer_db(), remote_node_id).await?;
     if enrollment_status_for_node(state, node.id).await? != RemoteNodeEnrollmentStatus::Completed {
         return Err(precondition_failed_with_subcode(
             ApiSubcode::RemoteNodeEnrollmentRequired,
@@ -277,7 +282,7 @@ async fn enrollment_statuses_for_nodes<S: PrimaryRuntimeState>(
     }
 
     let sessions =
-        follower_enrollment_session_repo::find_by_managed_follower_ids(state.db(), node_ids)
+        follower_enrollment_session_repo::find_by_managed_follower_ids(state.writer_db(), node_ids)
             .await?;
     let mut completed_node_ids = HashSet::new();
     let mut latest_by_node = HashMap::new();
@@ -309,15 +314,20 @@ async fn enrollment_status_for_node<S: PrimaryRuntimeState>(
     state: &S,
     node_id: i64,
 ) -> Result<RemoteNodeEnrollmentStatus> {
-    if follower_enrollment_session_repo::has_completed_for_managed_follower(state.db(), node_id)
-        .await?
+    if follower_enrollment_session_repo::has_completed_for_managed_follower(
+        state.writer_db(),
+        node_id,
+    )
+    .await?
     {
         return Ok(RemoteNodeEnrollmentStatus::Completed);
     }
 
-    let latest =
-        follower_enrollment_session_repo::find_latest_for_managed_follower(state.db(), node_id)
-            .await?;
+    let latest = follower_enrollment_session_repo::find_latest_for_managed_follower(
+        state.writer_db(),
+        node_id,
+    )
+    .await?;
     Ok(enrollment_status_from_latest(latest.as_ref(), Utc::now()))
 }
 
@@ -351,7 +361,7 @@ fn enrollment_status_from_latest(
 pub async fn run_health_tests<S: PrimaryRuntimeState>(
     state: &S,
 ) -> Result<RemoteNodeHealthTestStats> {
-    let nodes = managed_follower_repo::find_all(state.db()).await?;
+    let nodes = managed_follower_repo::find_all(state.writer_db()).await?;
     let node_ids = nodes.iter().map(|node| node.id).collect::<Vec<_>>();
     let enrollment_statuses = enrollment_statuses_for_nodes(state, &node_ids).await?;
     let outcomes = stream::iter(nodes.into_iter().map(|node| {
@@ -400,7 +410,7 @@ async fn policy_requirements_for_node<S: PrimaryRuntimeState>(
     state: &S,
     remote_node_id: i64,
 ) -> Result<Vec<(i64, crate::types::StoragePolicyOptions)>> {
-    let policies = policy_repo::find_by_remote_node_id(state.db(), remote_node_id).await?;
+    let policies = policy_repo::find_by_remote_node_id(state.writer_db(), remote_node_id).await?;
     Ok(policies
         .into_iter()
         .map(|policy| {
@@ -459,7 +469,7 @@ async fn probe_and_persist_node<S: PrimaryRuntimeState>(
         ),
     };
     let model = managed_follower_repo::touch_probe_result(
-        state.db(),
+        state.writer_db(),
         node.id,
         last_capabilities,
         last_error,
@@ -468,7 +478,7 @@ async fn probe_and_persist_node<S: PrimaryRuntimeState>(
     .await?;
     state
         .driver_registry()
-        .reload_managed_followers(state.db())
+        .reload_managed_followers(state.writer_db())
         .await?;
     state.driver_registry().invalidate_all();
 
@@ -555,10 +565,10 @@ fn normalize_non_blank(field: &str, value: &str) -> Result<String> {
 }
 
 async fn refresh_registry<S: PrimaryRuntimeState>(state: &S) -> Result<()> {
-    state.policy_snapshot().reload(state.db()).await?;
+    state.policy_snapshot().reload(state.writer_db()).await?;
     state
         .driver_registry()
-        .reload_managed_followers(state.db())
+        .reload_managed_followers(state.writer_db())
         .await?;
     state.driver_registry().invalidate_all();
     Ok(())

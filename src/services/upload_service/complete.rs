@@ -65,7 +65,7 @@ async fn complete_upload_impl_with_hints(
     let plan = determine_completion_plan(&session, parts)?;
     let plan_label = completion_plan_label(&plan);
     let result = match plan {
-        CompletionPlan::ReturnCompleted => find_file_by_session(&state.db, &session).await,
+        CompletionPlan::ReturnCompleted => find_file_by_session(state.writer_db(), &session).await,
         CompletionPlan::CompletePresigned => {
             complete_presigned_upload(state, session, hints.actor_username).await
         }

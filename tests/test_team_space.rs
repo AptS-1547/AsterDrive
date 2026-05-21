@@ -117,20 +117,24 @@ async fn set_default_policy_chunk_size(
 ) {
     use sea_orm::{ActiveModelTrait, Set};
 
-    let policy = aster_drive::db::repository::policy_repo::find_default(&state.db)
+    let policy = aster_drive::db::repository::policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
     let mut active: aster_drive::entities::storage_policy::ActiveModel = policy.into();
     active.chunk_size = Set(chunk_size);
-    active.update(&state.db).await.unwrap();
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 }
 
 #[actix_web::test]
 async fn test_team_space_upload_browse_download_and_personal_separation() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -311,7 +315,7 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 #[actix_web::test]
 async fn test_team_space_delete_folder_and_non_member_forbidden() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -430,7 +434,7 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
 #[actix_web::test]
 async fn test_team_space_patch_file_and_folder() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -622,7 +626,7 @@ async fn test_team_space_patch_file_and_folder() {
 #[actix_web::test]
 async fn test_team_file_direct_link_supports_public_access_and_team_deactivation() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -711,7 +715,7 @@ async fn test_team_file_direct_link_supports_public_access_and_team_deactivation
 #[actix_web::test]
 async fn test_team_space_copy_file_and_folder() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -900,7 +904,7 @@ async fn test_team_space_copy_file_and_folder() {
 #[actix_web::test]
 async fn test_team_space_content_versions_and_locks() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -1192,7 +1196,7 @@ async fn test_team_space_content_versions_and_locks() {
 #[actix_web::test]
 async fn test_team_update_content_allows_body_larger_than_global_payload_limit() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -1255,7 +1259,7 @@ async fn test_team_update_content_allows_body_larger_than_global_payload_limit()
 #[actix_web::test]
 async fn test_team_versions_enforce_scope_and_membership() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -1384,7 +1388,7 @@ async fn test_team_versions_enforce_scope_and_membership() {
 #[actix_web::test]
 async fn test_team_shares_support_public_folder_access_and_team_management() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -1608,7 +1612,7 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 #[actix_web::test]
 async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -1760,7 +1764,7 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
 #[actix_web::test]
 async fn test_team_trash_purge_all_schedules_background_task() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state.clone());
 
@@ -1859,7 +1863,7 @@ async fn test_team_trash_purge_all_schedules_background_task() {
 #[actix_web::test]
 async fn test_team_trash_purge_all_rejects_non_member_without_creating_task() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -1944,7 +1948,7 @@ async fn test_team_trash_purge_all_rejects_non_member_without_creating_task() {
 #[actix_web::test]
 async fn test_team_trash_rejects_active_and_out_of_scope_items() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2056,7 +2060,7 @@ async fn test_team_trash_rejects_active_and_out_of_scope_items() {
 #[actix_web::test]
 async fn test_team_trash_pagination_preserves_totals_and_membership() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2208,7 +2212,7 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
 #[actix_web::test]
 async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     set_default_policy_chunk_size(&state, 4).await;
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
@@ -2330,7 +2334,7 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 #[actix_web::test]
 async fn test_team_chunk_upload_endpoint_rejects_oversized_chunk_with_413() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     set_default_policy_chunk_size(&state, 4).await;
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
@@ -2394,7 +2398,7 @@ async fn test_team_chunk_upload_endpoint_rejects_oversized_chunk_with_413() {
 #[actix_web::test]
 async fn test_team_chunk_upload_endpoint_keeps_duplicate_size_validation() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     set_default_policy_chunk_size(&state, 4).await;
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
@@ -2465,7 +2469,7 @@ async fn test_team_chunk_upload_endpoint_keeps_duplicate_size_validation() {
 #[actix_web::test]
 async fn test_team_empty_upload_flow_uses_direct_and_creates_file() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2529,7 +2533,7 @@ async fn test_team_empty_upload_flow_uses_direct_and_creates_file() {
 #[actix_web::test]
 async fn test_team_upload_session_enforces_owner_even_for_members() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     set_default_policy_chunk_size(&state, 4).await;
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
@@ -2637,7 +2641,7 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
 #[actix_web::test]
 async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2761,7 +2765,7 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
 #[actix_web::test]
 async fn test_team_search_rejects_invalid_params_via_shared_validation() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2804,7 +2808,7 @@ async fn test_team_search_rejects_invalid_params_via_shared_validation() {
 #[actix_web::test]
 async fn test_team_search_supports_category_and_extension_filters() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2898,7 +2902,7 @@ async fn test_team_search_supports_category_and_extension_filters() {
 #[actix_web::test]
 async fn test_team_batch_routes_support_copy_move_and_delete() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -3061,7 +3065,7 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 #[actix_web::test]
 async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -3181,7 +3185,7 @@ async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
 #[actix_web::test]
 async fn test_team_share_batch_delete_preserves_partial_failures() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 

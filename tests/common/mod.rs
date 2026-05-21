@@ -847,7 +847,6 @@ pub async fn setup_with_memory_cache() -> PrimaryAppState {
     let cache = aster_drive::cache::create_cache(&cache_config).await;
 
     PrimaryAppState {
-        db: base.db,
         db_handles: base.db_handles,
         driver_registry: base.driver_registry,
         runtime_config: base.runtime_config,
@@ -1094,7 +1093,6 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
         );
 
     PrimaryAppState {
-        db: db.clone(),
         db_handles: aster_drive::db::connect_reader_for_writer(&db_cfg, db.clone())
             .await
             .unwrap(),
@@ -1113,7 +1111,7 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
 
 #[allow(dead_code)]
 pub async fn flush_mail_outbox(state: &PrimaryAppState) {
-    flush_mail_outbox_with(&state.db, &state.runtime_config, &state.mail_sender).await;
+    flush_mail_outbox_with(state.writer_db(), &state.runtime_config, &state.mail_sender).await;
 }
 
 #[allow(dead_code)]
@@ -1257,7 +1255,7 @@ macro_rules! create_test_app {
         use actix_web::{App, test, web};
 
         let state = $state;
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         test::init_service(
             App::new()
                 .wrap(aster_drive::api::middleware::security_headers::default_headers())
@@ -1519,8 +1517,8 @@ macro_rules! setup_with_webdav {
         use actix_web::{App, test, web};
 
         let state = common::setup().await;
-        let db1 = state.db.clone();
-        let db2 = state.db.clone();
+        let db1 = state.writer_db().clone();
+        let db2 = state.writer_db().clone();
         let webdav_config = aster_drive::config::WebDavConfig::default();
         let app = test::init_service(
             App::new()
@@ -1544,10 +1542,10 @@ macro_rules! setup_with_webdav_and_mail {
         use actix_web::{App, test, web};
 
         let state = common::setup().await;
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         let mail_sender = state.mail_sender.clone();
-        let db1 = state.db.clone();
-        let db2 = state.db.clone();
+        let db1 = state.writer_db().clone();
+        let db2 = state.writer_db().clone();
         let webdav_config = aster_drive::config::WebDavConfig::default();
         let app = test::init_service(
             App::new()

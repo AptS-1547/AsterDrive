@@ -24,7 +24,7 @@ async fn create_policy_upload_session(
 
     let now = Utc::now();
     upload_session_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::upload_session::ActiveModel {
             id: Set(spec.upload_id.to_string()),
             user_id: Set(spec.user_id),
@@ -153,20 +153,20 @@ async fn test_seed_policy_groups_backfills_missing_users_to_default_group() {
     )
     .await
     .unwrap();
-    let default_group = policy_group_repo::find_default_group(&state.db)
+    let default_group = policy_group_repo::find_default_group(state.writer_db())
         .await
         .unwrap()
         .expect("default group should exist");
 
     let mut user_active: aster_drive::entities::user::ActiveModel = user.into();
     user_active.policy_group_id = Set(None);
-    user_active.update(&state.db).await.unwrap();
+    user_active.update(state.writer_db()).await.unwrap();
 
-    policy_service::ensure_policy_groups_seeded(&state.db)
+    policy_service::ensure_policy_groups_seeded(state.writer_db())
         .await
         .unwrap();
 
-    let updated = user_repo::find_by_email(&state.db, "policy-backfill@example.com")
+    let updated = user_repo::find_by_email(state.writer_db(), "policy-backfill@example.com")
         .await
         .unwrap()
         .expect("user should exist");
@@ -266,7 +266,7 @@ async fn test_policy_delete_rejects_upload_sessions_unless_forced() {
     use aster_drive::db::repository::{policy_repo, upload_session_repo};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
@@ -379,7 +379,7 @@ async fn test_policy_force_delete_schedules_late_temp_object_cleanup() {
     use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
@@ -494,7 +494,7 @@ async fn test_policy_force_delete_still_rejects_blob_references() {
     use aster_drive::types::DriverType;
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
     let user = aster_drive::db::repository::user_repo::find_by_username(&db, "testuser")
@@ -750,7 +750,7 @@ async fn test_system_policy_default_uniqueness() {
     use aster_drive::db::repository::policy_group_repo;
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -803,7 +803,7 @@ async fn test_patch_policy_promotes_existing_policy_to_default() {
     use aster_drive::db::repository::policy_group_repo;
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -867,17 +867,17 @@ async fn test_set_only_default_rejects_missing_policy_without_clearing_default()
     use aster_drive::db::repository::policy_repo;
 
     let state = common::setup().await;
-    let original_default = policy_repo::find_default(&state.db)
+    let original_default = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
 
-    let err = policy_repo::set_only_default(&state.db, i64::MAX)
+    let err = policy_repo::set_only_default(state.writer_db(), i64::MAX)
         .await
         .unwrap_err();
     assert!(err.message().contains("policy"));
 
-    let current_default = policy_repo::find_default(&state.db)
+    let current_default = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should still exist");
@@ -1638,12 +1638,18 @@ async fn test_resolve_policy_fails_without_user_policy_group() {
     .await
     .unwrap();
 
-    let model = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let model = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     let mut active: aster_drive::entities::user::ActiveModel = model.into();
     active.policy_group_id = Set(None);
     active.updated_at = Set(chrono::Utc::now());
-    active.update(&state.db).await.unwrap();
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 
     let err = file_service::resolve_policy(&state, user.id, None)
         .await
@@ -1668,13 +1674,13 @@ async fn test_resolve_policy_fails_for_disabled_assigned_policy_group() {
     .await
     .unwrap();
 
-    let default_policy = aster_drive::db::repository::policy_repo::find_default(&state.db)
+    let default_policy = aster_drive::db::repository::policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .unwrap();
     let now = chrono::Utc::now();
     let group = policy_group_repo::create_group(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::storage_policy_group::ActiveModel {
             name: Set("Disabled Assigned Group".to_string()),
             description: Set(String::new()),
@@ -1688,7 +1694,7 @@ async fn test_resolve_policy_fails_for_disabled_assigned_policy_group() {
     .await
     .unwrap();
     policy_group_repo::create_group_item(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::storage_policy_group_item::ActiveModel {
             group_id: Set(group.id),
             policy_id: Set(default_policy.id),
@@ -1702,22 +1708,28 @@ async fn test_resolve_policy_fails_for_disabled_assigned_policy_group() {
     .await
     .unwrap();
 
-    let user_model = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let user_model = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     let mut user_active: aster_drive::entities::user::ActiveModel = user_model.into();
     user_active.policy_group_id = Set(Some(group.id));
     user_active.updated_at = Set(chrono::Utc::now());
-    user_active.update(&state.db).await.unwrap();
+    user_active.update(state.writer_db()).await.unwrap();
 
-    let group_model = policy_group_repo::find_group_by_id(&state.db, group.id)
+    let group_model = policy_group_repo::find_group_by_id(state.writer_db(), group.id)
         .await
         .unwrap();
     let mut group_active: aster_drive::entities::storage_policy_group::ActiveModel =
         group_model.into();
     group_active.is_enabled = Set(false);
     group_active.updated_at = Set(chrono::Utc::now());
-    group_active.update(&state.db).await.unwrap();
+    group_active.update(state.writer_db()).await.unwrap();
 
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 
     let err = file_service::resolve_policy(&state, user.id, None)
         .await
@@ -1743,7 +1755,10 @@ async fn test_resolve_policy_fails_when_policy_group_has_no_matching_rule() {
     .await
     .unwrap();
 
-    let default_policy = policy_repo::find_default(&state.db).await.unwrap().unwrap();
+    let default_policy = policy_repo::find_default(state.writer_db())
+        .await
+        .unwrap()
+        .unwrap();
     let overflow_path = format!("/tmp/asterdrive-gap-policy-{}", uuid::Uuid::new_v4());
     std::fs::create_dir_all(&overflow_path).unwrap();
     let overflow_policy = policy_service::create(
@@ -1771,7 +1786,7 @@ async fn test_resolve_policy_fails_when_policy_group_has_no_matching_rule() {
 
     let now = chrono::Utc::now();
     let group = policy_group_repo::create_group(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::storage_policy_group::ActiveModel {
             name: Set("Gap Rule Group".to_string()),
             description: Set(String::new()),
@@ -1789,7 +1804,7 @@ async fn test_resolve_policy_fails_when_policy_group_has_no_matching_rule() {
         (2, overflow_policy.id, 20, 0),
     ] {
         policy_group_repo::create_group_item(
-            &state.db,
+            state.writer_db(),
             aster_drive::entities::storage_policy_group_item::ActiveModel {
                 group_id: Set(group.id),
                 policy_id: Set(policy_id),
@@ -1804,12 +1819,18 @@ async fn test_resolve_policy_fails_when_policy_group_has_no_matching_rule() {
         .unwrap();
     }
 
-    let user_model = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let user_model = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     let mut user_active: aster_drive::entities::user::ActiveModel = user_model.into();
     user_active.policy_group_id = Set(Some(group.id));
     user_active.updated_at = Set(now);
-    user_active.update(&state.db).await.unwrap();
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    user_active.update(state.writer_db()).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 
     let err = file_service::resolve_policy_for_size(&state, user.id, None, 15)
         .await
@@ -1823,7 +1844,7 @@ async fn test_policy_delete_clears_folder_policy_reference() {
     use aster_drive::db::repository::folder_repo;
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -1884,7 +1905,7 @@ async fn test_folder_patch_can_clear_policy_with_null() {
     use aster_drive::db::repository::folder_repo;
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 

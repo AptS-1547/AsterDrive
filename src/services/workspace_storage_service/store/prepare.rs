@@ -113,7 +113,7 @@ pub(super) async fn prepare_store_from_temp(
 
     let quota_prechecked = storage_delta > 0 && matches!(blob_plan, TempBlobPlan::Preuploaded(_));
     if quota_prechecked {
-        check_quota(&state.db, scope, storage_delta).await?;
+        check_quota(state.writer_db(), scope, storage_delta).await?;
     }
 
     if let TempBlobPlan::Preuploaded(preuploaded_blob) = &blob_plan {
@@ -208,7 +208,7 @@ async fn load_overwrite_context(
         return Err(AsterError::resource_locked("file is locked"));
     }
 
-    let old_blob = file_repo::find_blob_by_id(&state.db, old_file.blob_id).await?;
+    let old_blob = file_repo::find_blob_by_id(state.writer_db(), old_file.blob_id).await?;
     if let Err(err) =
         crate::services::media_processing_service::delete_thumbnail(state, &old_blob).await
     {

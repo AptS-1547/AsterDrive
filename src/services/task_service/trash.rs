@@ -22,7 +22,8 @@ pub(crate) async fn create_trash_purge_all_task_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
 ) -> Result<TaskInfo> {
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
     let payload = TrashPurgeAllTaskPayload {};
     let task = create_task_record(
         state,

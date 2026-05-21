@@ -37,7 +37,7 @@ pub(super) async fn claim_due_for_lane(
     let now = Utc::now();
     let stale_before = now - Duration::seconds(TASK_PROCESSING_STALE_SECS);
     let due = background_task_repo::list_claimable_by_kinds(
-        &state.db,
+        state.writer_db(),
         now,
         stale_before,
         lane_config.kinds(),
@@ -48,9 +48,12 @@ pub(super) async fn claim_due_for_lane(
         return Ok(Vec::new());
     }
 
-    let active =
-        background_task_repo::count_active_processing_by_kinds(&state.db, now, lane_config.kinds())
-            .await?;
+    let active = background_task_repo::count_active_processing_by_kinds(
+        state.writer_db(),
+        now,
+        lane_config.kinds(),
+    )
+    .await?;
     let available = available_lane_capacity(lane_config.limit, active);
     if available == 0 {
         tracing::debug!(
@@ -89,7 +92,8 @@ pub(super) async fn claim_due_for_lane(
     }
 
     let claimed =
-        claim_candidates_for_lane(&state.db, lane_config, &candidates, stale_before).await?;
+        claim_candidates_for_lane(state.writer_db(), lane_config, &candidates, stale_before)
+            .await?;
     let mut claimed_tasks = Vec::with_capacity(claimed.len());
     for claim in claimed {
         claimed_tasks.push((

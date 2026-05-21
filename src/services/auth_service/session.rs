@@ -49,7 +49,7 @@ pub async fn list_auth_sessions(
     user_id: i64,
     current_refresh_jti: Option<&str>,
 ) -> Result<Vec<AuthSessionInfo>> {
-    auth_session_repo::list_active_for_user(&state.db, user_id)
+    auth_session_repo::list_active_for_user(state.writer_db(), user_id)
         .await
         .map(|sessions| {
             sessions
@@ -74,7 +74,7 @@ pub async fn revoke_auth_session(
     session_id: &str,
     current_refresh_jti: Option<&str>,
 ) -> Result<bool> {
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         let session = auth_session_repo::find_by_id_for_user(&txn, user_id, session_id)
             .await?
@@ -104,7 +104,7 @@ pub async fn revoke_other_auth_sessions(
     user_id: i64,
     current_refresh_jti: &str,
 ) -> Result<u64> {
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         let current_session = auth_session_repo::find_by_refresh_jti(&txn, current_refresh_jti)
             .await?
@@ -142,12 +142,12 @@ pub async fn revoke_other_auth_sessions(
 }
 
 pub async fn cleanup_expired_auth_sessions(state: &PrimaryAppState) -> Result<u64> {
-    auth_session_repo::delete_expired(&state.db).await
+    auth_session_repo::delete_expired(state.writer_db()).await
 }
 
 pub async fn revoke_user_sessions(state: &PrimaryAppState, user_id: i64) -> Result<UserAuditInfo> {
     tracing::debug!(user_id, "revoking user sessions");
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         let user = user_repo::find_by_id(&txn, user_id).await?;
         let next_session_version = user.session_version.saturating_add(1);

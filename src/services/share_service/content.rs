@@ -339,7 +339,7 @@ async fn load_or_enqueue_thumbnail(
     state: &PrimaryAppState,
     file: &file::Model,
 ) -> Result<Option<file_service::ThumbnailResult>> {
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id).await?;
     let thumbnail = media_processing_service::load_thumbnail_if_exists(
         state,
         &blob,
@@ -543,7 +543,7 @@ async fn download_share_resource_with_disposition(
         has_if_none_match = if_none_match.is_some(),
         "starting shared file download"
     );
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id).await?;
 
     if let Some(if_none_match) = if_none_match
         && file_service::if_none_match_matches(if_none_match, &blob.hash)
@@ -564,7 +564,7 @@ async fn download_share_resource_with_disposition(
         .await;
     }
 
-    match share_repo::increment_download_count(&state.db, share.id).await {
+    match share_repo::increment_download_count(state.writer_db(), share.id).await {
         Ok(true) => {
             invalidate_share_token_record_cache_for_share(state, share).await;
             if share.max_downloads > 0
@@ -614,7 +614,7 @@ async fn download_share_resource_with_disposition(
             Ok(outcome)
         }
         Err(error) => {
-            match share_repo::decrement_download_count(&state.db, share.id).await {
+            match share_repo::decrement_download_count(state.writer_db(), share.id).await {
                 Ok(true) => {}
                 Ok(false) => {
                     tracing::warn!(

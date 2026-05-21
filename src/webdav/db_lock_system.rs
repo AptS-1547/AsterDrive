@@ -49,7 +49,7 @@ impl DbLockSystem {
         audit_ctx: AuditContext,
     ) -> Box<Self> {
         Box::new(Self {
-            db: state.db.clone(),
+            db: state.writer_db().clone(),
             user_id,
             root_folder_id,
             audit_state: Some(state),

@@ -12,7 +12,7 @@ const EXPECTED_EXPOSE_HEADERS: &str = "accept-ranges, content-length, content-ra
 macro_rules! create_test_app_with_cors {
     ($state:expr) => {{
         let state = $state;
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         test::init_service(
             App::new()
                 .wrap(aster_drive::api::middleware::cors::RuntimeCors)

@@ -14,8 +14,8 @@ pub async fn list_links(
     state: &PrimaryAppState,
     user_id: i64,
 ) -> Result<Vec<ExternalAuthLinkInfo>> {
-    let identities = external_auth_identity_repo::list_for_user(&state.db, user_id).await?;
-    let providers = external_auth_provider_repo::find_all(&state.db).await?;
+    let identities = external_auth_identity_repo::list_for_user(state.writer_db(), user_id).await?;
+    let providers = external_auth_provider_repo::find_all(state.writer_db()).await?;
     let provider_lookup = providers
         .into_iter()
         .map(|provider| (provider.id, provider))
@@ -50,13 +50,14 @@ fn link_to_info(
 }
 
 pub async fn delete_link(state: &PrimaryAppState, user_id: i64, id: i64) -> Result<bool> {
-    external_auth_identity_repo::delete_for_user(&state.db, id, user_id).await
+    external_auth_identity_repo::delete_for_user(state.writer_db(), id, user_id).await
 }
 
 pub async fn cleanup_expired_flows(state: &PrimaryAppState) -> Result<u64> {
     let now = Utc::now();
-    let login_flows = external_auth_login_flow_repo::cleanup_expired(&state.db, now).await?;
+    let login_flows =
+        external_auth_login_flow_repo::cleanup_expired(state.writer_db(), now).await?;
     let email_flows =
-        external_auth_email_verification_flow_repo::cleanup_expired(&state.db, now).await?;
+        external_auth_email_verification_flow_repo::cleanup_expired(state.writer_db(), now).await?;
     Ok(login_flows + email_flows)
 }

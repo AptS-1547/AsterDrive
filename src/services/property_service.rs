@@ -67,14 +67,14 @@ async fn verify_ownership(
 ) -> Result<()> {
     match entity_type {
         EntityType::File => {
-            let f = file_repo::find_by_id(&state.db, entity_id).await?;
+            let f = file_repo::find_by_id(state.writer_db(), entity_id).await?;
             file_service::ensure_personal_file_scope(&f)?;
             if f.owner_user_id != Some(user_id) {
                 return Err(AsterError::auth_forbidden("not your file"));
             }
         }
         EntityType::Folder => {
-            let f = folder_repo::find_by_id(&state.db, entity_id).await?;
+            let f = folder_repo::find_by_id(state.writer_db(), entity_id).await?;
             folder_service::ensure_personal_folder_scope(&f)?;
             if f.owner_user_id != Some(user_id) {
                 return Err(AsterError::auth_forbidden("not your folder"));
@@ -93,7 +93,7 @@ pub async fn list(
 ) -> Result<Vec<EntityProperty>> {
     verify_ownership(state, entity_type, entity_id, user_id).await?;
     Ok(
-        property_repo::find_by_entity(&state.db, entity_type, entity_id)
+        property_repo::find_by_entity(state.writer_db(), entity_type, entity_id)
             .await?
             .into_iter()
             .filter(|prop| !is_protected_namespace(&prop.namespace))
@@ -133,9 +133,16 @@ pub async fn set(
         ));
     }
 
-    property_repo::upsert(&state.db, entity_type, entity_id, namespace, name, value)
-        .await
-        .map(Into::into)
+    property_repo::upsert(
+        state.writer_db(),
+        entity_type,
+        entity_id,
+        namespace,
+        name,
+        value,
+    )
+    .await
+    .map(Into::into)
 }
 
 /// 删除单个属性
@@ -151,7 +158,7 @@ pub async fn delete(
 
     ensure_user_namespace_mutable(namespace)?;
 
-    property_repo::delete_prop(&state.db, entity_type, entity_id, namespace, name).await?;
+    property_repo::delete_prop(state.writer_db(), entity_type, entity_id, namespace, name).await?;
     tracing::debug!(
         entity_type = ?entity_type,
         entity_id,

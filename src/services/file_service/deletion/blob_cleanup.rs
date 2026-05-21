@@ -8,7 +8,7 @@ pub(crate) async fn ensure_blob_cleanup_if_unreferenced(
     state: &PrimaryAppState,
     blob_id: i64,
 ) -> bool {
-    let current_blob = match file_repo::find_blob_by_id(&state.db, blob_id).await {
+    let current_blob = match file_repo::find_blob_by_id(state.writer_db(), blob_id).await {
         Ok(current_blob) => current_blob,
         Err(AsterError::RecordNotFound(_)) => return true,
         Err(error) => {
@@ -32,7 +32,7 @@ pub(crate) async fn ensure_blob_cleanup_if_unreferenced(
         return true;
     }
 
-    match file_repo::claim_blob_cleanup(&state.db, current_blob.id).await {
+    match file_repo::claim_blob_cleanup(state.writer_db(), current_blob.id).await {
         Ok(true) => cleanup_claimed_blob(state, &current_blob).await,
         Ok(false) => true,
         Err(error) => {
@@ -49,7 +49,7 @@ pub(crate) async fn cleanup_unreferenced_blob(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
 ) -> bool {
-    let current_blob = match file_repo::find_blob_by_id(&state.db, blob.id).await {
+    let current_blob = match file_repo::find_blob_by_id(state.writer_db(), blob.id).await {
         Ok(current_blob) => current_blob,
         Err(AsterError::RecordNotFound(_)) => return true,
         Err(error) => {
@@ -78,7 +78,7 @@ pub(crate) async fn cleanup_unreferenced_blob(
         return false;
     }
 
-    match file_repo::claim_blob_cleanup(&state.db, current_blob.id).await {
+    match file_repo::claim_blob_cleanup(state.writer_db(), current_blob.id).await {
         Ok(true) => {}
         Ok(false) => {
             tracing::warn!(
@@ -101,7 +101,7 @@ pub(crate) async fn cleanup_unreferenced_blob(
 
 async fn cleanup_claimed_blob(state: &PrimaryAppState, current_blob: &file_blob::Model) -> bool {
     async fn restore_cleanup_claim(state: &PrimaryAppState, blob_id: i64, reason: &str) {
-        match file_repo::restore_blob_cleanup_claim(&state.db, blob_id).await {
+        match file_repo::restore_blob_cleanup_claim(state.writer_db(), blob_id).await {
             Ok(true) => {}
             Ok(false) => {
                 tracing::warn!(
@@ -184,7 +184,7 @@ async fn cleanup_claimed_blob(state: &PrimaryAppState, current_blob: &file_blob:
         return false;
     }
 
-    match file_repo::delete_blob_if_cleanup_claimed(&state.db, current_blob.id).await {
+    match file_repo::delete_blob_if_cleanup_claimed(state.writer_db(), current_blob.id).await {
         Ok(true) => true,
         Ok(false) => {
             tracing::warn!(

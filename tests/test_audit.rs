@@ -66,7 +66,7 @@ async fn test_audit_log_persists_long_entity_type_values() {
 
     let entry = audit_log::Entity::find()
         .filter(audit_log::Column::Action.eq(AuditAction::AdminTestExternalAuthProvider))
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("audit log query should succeed")
         .expect("long entity_type audit log should persist");
@@ -802,7 +802,7 @@ async fn test_audit_log_recorded_on_team_archive_cleanup() {
     use sea_orm::{IntoActiveModel, Set};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let state = web::Data::new(state);
     let app = test::init_service(
         App::new()
@@ -836,14 +836,15 @@ async fn test_audit_log_recorded_on_team_archive_cleanup() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let mut archived_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team_id)
-        .await
-        .unwrap()
-        .into_active_model();
+    let mut archived_team =
+        aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team_id)
+            .await
+            .unwrap()
+            .into_active_model();
     let archived_at = Utc::now() - Duration::days(10);
     archived_team.archived_at = Set(Some(archived_at));
     archived_team.updated_at = Set(archived_at);
-    aster_drive::db::repository::team_repo::update(&state.db, archived_team)
+    aster_drive::db::repository::team_repo::update(state.writer_db(), archived_team)
         .await
         .unwrap();
 

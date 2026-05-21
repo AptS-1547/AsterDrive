@@ -46,7 +46,8 @@ pub(crate) async fn create_archive_extract_task_in_scope(
     file_id: i64,
     params: CreateArchiveExtractTaskParams,
 ) -> Result<super::super::TaskInfo> {
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
     let source_file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
     workspace_storage_service::ensure_active_file_scope(&source_file, scope)?;
     ensure_extract_source_supported(&source_file)?;
@@ -139,7 +140,7 @@ pub(super) async fn process_archive_extract_task(
         )?;
         let steps_for_worker = steps.clone();
 
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         let policy_snapshot = state.policy_snapshot.clone();
         let handle = tokio::runtime::Handle::current();
         let lease_guard_for_worker = lease_guard.clone();
@@ -242,7 +243,7 @@ pub(super) async fn process_archive_extract_task(
         let result = ArchiveExtractTaskResult {
             target_folder_id: created_root.id,
             target_folder_name: created_root.name.clone(),
-            target_path: build_folder_display_path(&state.db, created_root.id).await?,
+            target_path: build_folder_display_path(state.writer_db(), created_root.id).await?,
             extracted_file_count: staged.file_count,
             extracted_folder_count: staged.directory_count,
         };
@@ -291,7 +292,7 @@ async fn cleanup_created_extract_root_after_import_error(
     }
 
     let lease = lease_guard.lease();
-    match background_task_repo::find_by_id(&state.db, lease.task_id).await {
+    match background_task_repo::find_by_id(state.writer_db(), lease.task_id).await {
         Ok(current_task)
             if should_cleanup_created_extract_root_for_lease_error(&current_task, lease) =>
         {
@@ -332,7 +333,7 @@ async fn cleanup_created_extract_root(
     root_folder_id: i64,
 ) {
     match crate::services::folder_service::collect_folder_tree_in_scope(
-        &state.db,
+        state.writer_db(),
         scope,
         root_folder_id,
         true,
@@ -349,7 +350,7 @@ async fn cleanup_created_extract_root(
                 );
             }
             if let Err(error) = crate::db::repository::property_repo::delete_all_for_entities(
-                &state.db,
+                state.writer_db(),
                 crate::types::EntityType::Folder,
                 &folder_ids,
             )
@@ -360,9 +361,11 @@ async fn cleanup_created_extract_root(
                     "failed to delete partially imported archive folder properties: {error}"
                 );
             }
-            if let Err(error) =
-                crate::db::repository::share_repo::delete_by_folder_ids(&state.db, &folder_ids)
-                    .await
+            if let Err(error) = crate::db::repository::share_repo::delete_by_folder_ids(
+                state.writer_db(),
+                &folder_ids,
+            )
+            .await
             {
                 tracing::warn!(
                     root_folder_id,
@@ -371,7 +374,8 @@ async fn cleanup_created_extract_root(
             }
             crate::services::folder_service::invalidate_folder_path_cache(state).await;
             if let Err(error) =
-                crate::db::repository::folder_repo::delete_many(&state.db, &folder_ids).await
+                crate::db::repository::folder_repo::delete_many(state.writer_db(), &folder_ids)
+                    .await
             {
                 tracing::warn!(
                     root_folder_id,

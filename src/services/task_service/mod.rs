@@ -189,10 +189,12 @@ pub(crate) async fn list_tasks_paginated_in_scope(
     let limit = limit.clamp(1, operations::task_list_max_limit(&state.runtime_config));
     let (tasks, total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            background_task_repo::find_paginated_personal(&state.db, user_id, limit, offset).await?
+            background_task_repo::find_paginated_personal(state.writer_db(), user_id, limit, offset)
+                .await?
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            background_task_repo::find_paginated_team(&state.db, team_id, limit, offset).await?
+            background_task_repo::find_paginated_team(state.writer_db(), team_id, limit, offset)
+                .await?
         }
     };
 
@@ -211,7 +213,7 @@ pub(crate) async fn list_tasks_paginated_for_admin(
 ) -> Result<OffsetPage<TaskInfo>> {
     let limit = limit.clamp(1, operations::task_list_max_limit(&state.runtime_config));
     let (tasks, total) = background_task_repo::find_paginated_all_filtered(
-        &state.db,
+        state.writer_db(),
         limit,
         offset,
         &background_task_repo::AdminTaskFilters {
@@ -234,7 +236,7 @@ pub(crate) async fn cleanup_tasks_for_admin(
 ) -> Result<u64> {
     validate_admin_task_cleanup_status(filters.status)?;
     background_task_repo::delete_terminal_by_filters(
-        &state.db,
+        state.writer_db(),
         &background_task_repo::TerminalTaskCleanupFilters {
             finished_before: filters.finished_before,
             kind: filters.kind,
@@ -249,8 +251,9 @@ pub(crate) async fn get_task_in_scope(
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<TaskInfo> {
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
-    let task = background_task_repo::find_by_id(&state.db, task_id).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id).await?;
     ensure_task_in_scope(&task, scope)?;
     build_task_info_with_lookup(state, task).await
 }
@@ -260,8 +263,9 @@ pub(crate) async fn retry_task_in_scope(
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<TaskInfo> {
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
-    let task = background_task_repo::find_by_id(&state.db, task_id).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id).await?;
     ensure_task_in_scope(&task, scope)?;
 
     if task.status != BackgroundTaskStatus::Failed {
@@ -283,7 +287,7 @@ pub(crate) async fn retry_task_in_scope(
 
     let now = Utc::now();
     if !background_task_repo::reset_for_manual_retry(
-        &state.db,
+        state.writer_db(),
         task.id,
         now,
         max_attempts,
@@ -450,7 +454,7 @@ pub(super) async fn create_task_record<T: Serialize>(
     // 用户可见的新后台任务都应该走这个入口创建，这样 archive / 未来的
     // download_background 一类任务能自动唤醒 dispatcher，而不是等空闲退避 timer。
     let task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(kind),
             status: Set(BackgroundTaskStatus::Pending),
@@ -512,7 +516,15 @@ pub(super) async fn mark_task_progress(
     status_text: Option<&str>,
     steps: &[TaskStepInfo],
 ) -> Result<()> {
-    update_task_progress_db(&state.db, lease_guard, current, total, status_text, steps).await
+    update_task_progress_db(
+        state.writer_db(),
+        lease_guard,
+        current,
+        total,
+        status_text,
+        steps,
+    )
+    .await
 }
 
 pub(super) async fn update_task_progress_db(
@@ -563,7 +575,7 @@ pub(super) async fn mark_task_succeeded(
     let steps_json = serialize_task_steps(steps)?;
     let lease = lease_guard.lease();
     if background_task_repo::mark_succeeded(
-        &state.db,
+        state.writer_db(),
         background_task_repo::TaskSuccessUpdate {
             id: lease.task_id,
             processing_token: lease.processing_token,

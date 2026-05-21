@@ -161,12 +161,13 @@ pub async fn restore_team(
     team_id: i64,
     actor_user_id: i64,
 ) -> Result<TeamInfo> {
-    let team = team_repo::find_archived_by_id(&state.db, team_id).await?;
-    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, actor_user_id)
-        .await?
-        .ok_or_else(|| {
-            auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
-        })?;
+    let team = team_repo::find_archived_by_id(state.writer_db(), team_id).await?;
+    let membership =
+        team_member_repo::find_by_team_and_user(state.writer_db(), team_id, actor_user_id)
+            .await?
+            .ok_or_else(|| {
+                auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
+            })?;
     ensure_can_manage_team(membership.role)?;
 
     let restored = restore_team_record(state, team).await?;

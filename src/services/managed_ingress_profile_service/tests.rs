@@ -29,10 +29,6 @@ struct TestFollowerState {
 }
 
 impl SharedRuntimeState for TestFollowerState {
-    fn db(&self) -> &DatabaseConnection {
-        &self.db
-    }
-
     fn writer_db(&self) -> &DatabaseConnection {
         &self.db
     }
@@ -102,7 +98,7 @@ async fn setup_state() -> TestFollowerState {
 async fn create_binding(state: &TestFollowerState, access_key: &str) -> master_binding::Model {
     let now = Utc::now();
     master_binding_repo::create(
-        &state.db,
+        state.writer_db(),
         master_binding::ActiveModel {
             name: Set(format!("binding-{access_key}")),
             master_url: Set("https://primary.example.com".to_string()),
@@ -550,7 +546,7 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
     .await
     .unwrap();
     let mut stored = managed_ingress_profile_repo::find_by_binding_and_profile_key(
-        &state.db,
+        state.writer_db(),
         binding.id,
         &profile.profile_key,
     )
@@ -559,7 +555,7 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
     .unwrap();
     let mut active: managed_ingress_profile::ActiveModel = stored.clone().into();
     active.last_error = Set("path failed".to_string());
-    managed_ingress_profile_repo::update(&state.db, active)
+    managed_ingress_profile_repo::update(state.writer_db(), active)
         .await
         .unwrap();
     let error = expect_aster_err(resolve_effective_target(&state, &binding).await);
@@ -569,7 +565,7 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
     );
 
     stored = managed_ingress_profile_repo::find_by_binding_and_profile_key(
-        &state.db,
+        state.writer_db(),
         binding.id,
         &profile.profile_key,
     )
@@ -580,7 +576,7 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
     active.last_error = Set(String::new());
     active.applied_revision = Set(0);
     active.desired_revision = Set(1);
-    managed_ingress_profile_repo::update(&state.db, active)
+    managed_ingress_profile_repo::update(state.writer_db(), active)
         .await
         .unwrap();
     let error = expect_aster_err(resolve_effective_target(&state, &binding).await);

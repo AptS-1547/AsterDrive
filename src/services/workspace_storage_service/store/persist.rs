@@ -36,13 +36,13 @@ pub(super) async fn persist_temp_store(
     let cleanup_blob_plan = blob_plan.clone();
 
     if storage_delta > 0 && !quota_prechecked {
-        check_quota(&state.db, scope, storage_delta).await?;
+        check_quota(state.writer_db(), scope, storage_delta).await?;
     }
     let staged_dedup_target =
         stage_temp_blob_before_transaction(&blob_plan, driver.as_ref(), size, &temp_path).await?;
 
     let create_result = async {
-        let txn = crate::db::transaction::begin(&state.db).await?;
+        let txn = crate::db::transaction::begin(state.writer_db()).await?;
         if storage_delta > 0 {
             check_quota(&txn, scope, storage_delta).await?;
         }
@@ -120,7 +120,7 @@ async fn rollback_staged_dedup_blob(
         return;
     };
 
-    match file_repo::find_blob_by_hash(&state.db, &target.file_hash, policy_id).await {
+    match file_repo::find_blob_by_hash(state.writer_db(), &target.file_hash, policy_id).await {
         Ok(Some(blob)) => {
             tracing::debug!(
                 blob_id = blob.id,

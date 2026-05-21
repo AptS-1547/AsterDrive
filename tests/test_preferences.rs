@@ -153,7 +153,7 @@ async fn test_preferences_empty_patch_noop() {
 #[actix_web::test]
 async fn test_preferences_patch_preserves_custom_user_config_keys() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -354,7 +354,7 @@ async fn test_preferences_color_preset_rejects_invalid_color() {
 #[actix_web::test]
 async fn test_preferences_color_preset_normalizes_legacy_names() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 

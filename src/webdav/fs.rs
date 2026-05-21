@@ -97,7 +97,7 @@ impl AsterDavFs {
             _ => return Err(FsError::Forbidden),
         };
 
-        let blob = file_repo::find_blob_by_id(&self.state.db, file.blob_id)
+        let blob = file_repo::find_blob_by_id(self.state.writer_db(), file.blob_id)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
         let policy = self
@@ -147,7 +147,7 @@ impl DavFileSystem for AsterDavFs {
                 .await?;
 
                 let existing_file = file_repo::find_by_name_in_folder(
-                    &self.state.db,
+                    self.state.writer_db(),
                     self.user_id,
                     parent_id,
                     &filename,
@@ -203,10 +203,11 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(_) => return Err(FsError::Forbidden),
             };
 
-            let folders = folder_repo::find_children(&self.state.db, self.user_id, folder_id)
-                .await
-                .map_err(|_| FsError::GeneralFailure)?;
-            let files = file_repo::find_by_folder(&self.state.db, self.user_id, folder_id)
+            let folders =
+                folder_repo::find_children(self.state.writer_db(), self.user_id, folder_id)
+                    .await
+                    .map_err(|_| FsError::GeneralFailure)?;
+            let files = file_repo::find_by_folder(self.state.writer_db(), self.user_id, folder_id)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -218,7 +219,7 @@ impl DavFileSystem for AsterDavFs {
 
             // 批量查询所有 blob（1 次查询替代 N 次）
             let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
-            let blobs = file_repo::find_blobs_by_ids(&self.state.db, &blob_ids)
+            let blobs = file_repo::find_blobs_by_ids(self.state.writer_db(), &blob_ids)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -247,7 +248,7 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::Root => Box::new(AsterDavMeta::root()),
                 ResolvedNode::Folder(f) => Box::new(AsterDavMeta::from_folder(&f)),
                 ResolvedNode::File(f) => {
-                    let blob = file_repo::find_blob_by_id(&self.state.db, f.blob_id)
+                    let blob = file_repo::find_blob_by_id(self.state.writer_db(), f.blob_id)
                         .await
                         .map_err(|_| FsError::GeneralFailure)?;
                     Box::new(AsterDavMeta::from_file(&f, &blob))
@@ -368,7 +369,7 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(f) => {
                     // 如果目标已有同名文件，先删除（WebDAV MOVE 覆盖语义）
                     if let Some(existing) = file_repo::find_by_name_in_folder(
-                        &self.state.db,
+                        self.state.writer_db(),
                         self.user_id,
                         dest_parent_id,
                         &dest_name,
@@ -440,7 +441,7 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(f) => {
                     // WebDAV COPY 覆盖语义：目标已存在先删除
                     if let Some(existing) = file_repo::find_by_name_in_folder(
-                        &self.state.db,
+                        self.state.writer_db(),
                         self.user_id,
                         dest_parent_id,
                         &dest_name,
@@ -503,7 +504,7 @@ impl DavFileSystem for AsterDavFs {
 
     fn get_quota(&self) -> FsFuture<'_, (u64, Option<u64>)> {
         Box::pin(async move {
-            let user = user_repo::find_by_id(&self.state.db, self.user_id)
+            let user = user_repo::find_by_id(self.state.writer_db(), self.user_id)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -532,7 +533,7 @@ impl DavFileSystem for AsterDavFs {
                     Some(v) => v,
                     None => return false,
                 };
-            property_repo::find_by_entity(&self.state.db, entity_type, entity_id)
+            property_repo::find_by_entity(self.state.writer_db(), entity_type, entity_id)
                 .await
                 .map(|props| {
                     props
@@ -550,9 +551,10 @@ impl DavFileSystem for AsterDavFs {
                     .await
                     .ok_or(FsError::NotFound)?;
 
-            let props = property_repo::find_by_entity(&self.state.db, entity_type, entity_id)
-                .await
-                .map_err(|_| FsError::GeneralFailure)?;
+            let props =
+                property_repo::find_by_entity(self.state.writer_db(), entity_type, entity_id)
+                    .await
+                    .map_err(|_| FsError::GeneralFailure)?;
 
             Ok(props
                 .into_iter()
@@ -600,7 +602,7 @@ impl DavFileSystem for AsterDavFs {
                 let status = if set {
                     let value = prop.xml.as_ref().map(|x| String::from_utf8_lossy(x));
                     match property_repo::upsert(
-                        &self.state.db,
+                        self.state.writer_db(),
                         entity_type,
                         entity_id,
                         ns,
@@ -614,7 +616,7 @@ impl DavFileSystem for AsterDavFs {
                     }
                 } else {
                     match property_repo::delete_prop(
-                        &self.state.db,
+                        self.state.writer_db(),
                         entity_type,
                         entity_id,
                         ns,

@@ -243,7 +243,7 @@ pub(crate) async fn update_content_in_scope(
     body: Bytes,
     if_match: Option<&str>,
 ) -> Result<(crate::entities::file::Model, String)> {
-    let db = &state.db;
+    let db = state.writer_db();
     tracing::debug!(
         scope = ?scope,
         file_id,
@@ -366,7 +366,7 @@ pub(crate) async fn update_content_stream_in_scope(
     declared_size: Option<i64>,
     if_match: Option<&str>,
 ) -> Result<(crate::entities::file::Model, String)> {
-    let db = &state.db;
+    let db = state.writer_db();
     tracing::debug!(
         scope = ?scope,
         file_id,

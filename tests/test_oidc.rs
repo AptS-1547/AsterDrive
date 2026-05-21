@@ -190,7 +190,7 @@ async fn admin_tests_external_auth_provider_draft_params_without_persisting() {
     assert_eq!(body["data"]["checks"][1]["name"], "jwks");
 
     let providers = external_auth_provider::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("providers should query");
     assert!(providers.is_empty());
@@ -198,7 +198,7 @@ async fn admin_tests_external_auth_provider_draft_params_without_persisting() {
     let audit_entry = audit_log::Entity::find()
         .filter(audit_log::Column::Action.eq(AuditAction::AdminTestExternalAuthProvider))
         .order_by_desc(audit_log::Column::Id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("audit log should query")
         .expect("draft test should write an audit log");
@@ -231,7 +231,7 @@ async fn admin_tests_external_auth_provider_draft_params_without_persisting() {
     let audit_entry = audit_log::Entity::find()
         .filter(audit_log::Column::Action.eq(AuditAction::AdminTestExternalAuthProvider))
         .order_by_desc(audit_log::Column::Id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("audit log should query")
         .expect("failed draft test should write an audit log");
@@ -276,7 +276,7 @@ async fn admin_tests_external_auth_provider_draft_params_without_persisting() {
     assert_eq!(body["data"]["issuer"], mock_provider.issuer);
 
     let providers = external_auth_provider::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("providers should query");
     assert_eq!(providers.len(), 1);
@@ -397,7 +397,7 @@ async fn start_login_persists_pkce_flow_and_rejects_replayed_state() {
     );
 
     let flows = external_auth_login_flow::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("flows should query");
     assert_eq!(flows.len(), 1);
@@ -405,7 +405,7 @@ async fn start_login_persists_pkce_flow_and_rejects_replayed_state() {
     assert_ne!(flows[0].state_hash, authorize_request.state);
 
     let consumed = external_auth_login_flow_repo::consume_by_state_hash(
-        &state.db,
+        state.writer_db(),
         &aster_drive::utils::hash::sha256_hex(authorize_request.state.as_bytes()),
         Utc::now(),
     )
@@ -413,7 +413,7 @@ async fn start_login_persists_pkce_flow_and_rejects_replayed_state() {
     .expect("flow consume should succeed");
     assert!(consumed.is_some());
     let replay = external_auth_login_flow_repo::consume_by_state_hash(
-        &state.db,
+        state.writer_db(),
         &aster_drive::utils::hash::sha256_hex(authorize_request.state.as_bytes()),
         Utc::now(),
     )
@@ -450,7 +450,7 @@ async fn finish_callback_verifies_jwks_and_issues_asterdrive_cookies() {
     assert!(common::extract_cookie(&resp, "aster_csrf").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -500,7 +500,7 @@ async fn finish_callback_auto_links_verified_email_to_existing_user() {
     assert!(common::extract_cookie(&resp, "aster_refresh").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -545,7 +545,7 @@ async fn finish_callback_falls_back_to_manual_binding_for_unverified_auto_link_e
     let flow_token = oidc_email_required_flow(&resp);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -555,7 +555,7 @@ async fn finish_callback_falls_back_to_manual_binding_for_unverified_auto_link_e
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -590,7 +590,7 @@ async fn finish_callback_rejects_disabled_user_with_existing_identity() {
         .as_i64()
         .expect("provider id should be returned");
     external_auth_identity_repo::create_identity(
-        &state.db,
+        state.writer_db(),
         external_auth_identity_repo::CreateExternalAuthIdentityInput {
             user_id: disabled_user_id,
             provider_id,
@@ -636,7 +636,7 @@ async fn finish_callback_allows_existing_identity_without_email_claim() {
         .as_i64()
         .expect("provider id should be returned");
     external_auth_identity_repo::create_identity(
-        &state.db,
+        state.writer_db(),
         external_auth_identity_repo::CreateExternalAuthIdentityInput {
             user_id: linked_user_id,
             provider_id,
@@ -693,12 +693,12 @@ async fn finish_callback_falls_back_to_manual_binding_when_auto_provision_disabl
     let flow_token = oidc_email_required_flow(&resp);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
     let users = user::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("users should query");
     assert_eq!(users.len(), 2);
@@ -708,7 +708,7 @@ async fn finish_callback_falls_back_to_manual_binding_when_auto_provision_disabl
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -756,12 +756,12 @@ async fn finish_callback_respects_global_registration_setting_for_auto_provision
     let flow_token = oidc_email_required_flow(&resp);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
     let users = user::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("users should query");
     assert_eq!(users.len(), 2);
@@ -771,7 +771,7 @@ async fn finish_callback_respects_global_registration_setting_for_auto_provision
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -779,7 +779,7 @@ async fn finish_callback_respects_global_registration_setting_for_auto_provision
     assert_eq!(identities[0].subject, "registration-closed-subject");
     assert_eq!(identities[0].email_snapshot.as_deref(), None);
     let users = user::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("users should query");
     assert_eq!(users.len(), 2);
@@ -819,12 +819,12 @@ async fn manual_binding_respects_global_registration_setting_only_when_email_ver
     assert_eq!(resp.status(), 403);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
     let users = user::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("users should query");
     assert_eq!(users.len(), 1);
@@ -876,7 +876,7 @@ async fn finish_callback_auto_link_by_verified_email_ignores_global_registration
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -927,13 +927,13 @@ async fn no_email_claim_can_register_after_local_email_verification() {
 
     let user = user::Entity::find()
         .filter(user::Column::Email.eq("fallback-provision@example.com"))
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("user should query")
         .expect("OIDC verified email should create user");
     assert!(user.email_verified_at.is_some());
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -975,7 +975,7 @@ async fn auto_provision_retries_username_collision_with_random_suffix() {
 
     let user = user::Entity::find()
         .filter(user::Column::Email.eq("username-collision@example.com"))
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("user should query")
         .expect("OIDC auto-provision should create user");
@@ -985,7 +985,7 @@ async fn auto_provision_retries_username_collision_with_random_suffix() {
 
     let identities = external_auth_identity::Entity::find()
         .filter(external_auth_identity::Column::Subject.eq("username-collision-subject"))
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -1044,7 +1044,7 @@ async fn no_email_claim_falls_back_to_local_email_verification_for_existing_user
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -1096,7 +1096,7 @@ async fn manual_email_verification_can_link_existing_user_without_auto_link_enab
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -1147,7 +1147,7 @@ async fn no_email_claim_can_link_after_local_password_login() {
     assert!(body["data"]["expires_in"].as_u64().is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -1194,12 +1194,12 @@ async fn oidc_password_link_rejects_wrong_password_without_sending_email() {
     assert!(common::extract_cookie(&resp, "aster_access").is_none());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
     let email_flows = external_auth_email_verification_flow::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("email verification flows should query");
     assert_eq!(email_flows.len(), 1);
@@ -1243,12 +1243,12 @@ async fn oidc_email_verification_respects_global_registration_setting() {
     assert_eq!(resp.status(), 403);
 
     let users = user::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("users should query");
     assert_eq!(users.len(), 1);
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -1283,7 +1283,7 @@ async fn oidc_email_verification_enforces_entered_email_domain() {
     let resp = start_oidc_email_verification(&app, &flow_token, "user@example.org").await;
     assert_eq!(resp.status(), 403);
     let users = user::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("users should query");
     assert_eq!(users.len(), 1);
@@ -1333,7 +1333,7 @@ async fn oidc_email_verification_rejects_replay() {
     );
     assert!(common::extract_cookie(&resp, "aster_access").is_none());
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);
@@ -1365,13 +1365,15 @@ async fn oidc_email_verification_rejects_expired_pending_flow() {
     let resp = finish_oidc_callback(&app, &provider_key, &state_value).await;
     let flow_token = oidc_email_required_flow(&resp);
     let mut flow = external_auth_email_verification_flow::Entity::find()
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("flow should query")
         .expect("flow should exist")
         .into_active_model();
     flow.expires_at = Set(Utc::now() - Duration::minutes(1));
-    flow.update(&state.db).await.expect("flow should update");
+    flow.update(state.writer_db())
+        .await
+        .expect("flow should update");
 
     let resp =
         start_oidc_email_verification(&app, &flow_token, "fallback-expired@example.com").await;
@@ -1409,7 +1411,7 @@ async fn finish_callback_rejects_flow_after_provider_disabled() {
     let resp = finish_oidc_callback(&app, &provider_key, &state_value).await;
     assert_oidc_error_redirect(&resp);
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -1435,7 +1437,7 @@ async fn finish_callback_rejects_audience_mismatch() {
     assert_oidc_error_redirect(&resp);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -1461,7 +1463,7 @@ async fn finish_callback_rejects_oversized_subject_before_db_write() {
     assert_oidc_error_redirect(&resp);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -1486,7 +1488,7 @@ async fn finish_callback_rejects_nonce_mismatch() {
     assert_oidc_error_redirect(&resp);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -1510,7 +1512,7 @@ async fn finish_callback_rejects_provider_key_mismatch() {
     assert_oidc_error_redirect(&resp);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -1544,12 +1546,12 @@ async fn finish_callback_enforces_allowed_domains() {
     assert_oidc_error_redirect(&resp);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
     let users = user::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("users should query");
     assert_eq!(users.len(), 1);
@@ -1611,7 +1613,7 @@ async fn oidc_links_can_be_listed_and_deleted_after_login() {
     assert_eq!(body["data"].as_array().unwrap().len(), 0);
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -1661,7 +1663,7 @@ async fn finish_callback_rejects_issuer_mismatch_after_id_token_verification() {
     assert!(common::extract_cookie(&resp, "aster_access").is_none());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert!(identities.is_empty());
@@ -1673,13 +1675,13 @@ async fn finish_callback_rejects_issuer_mismatch_after_id_token_verification() {
 async fn external_auth_identity_lookup_uses_namespace_subject_not_provider_id() {
     let state = common::setup().await;
     let provider_a = external_auth_provider_repo::create(
-        &state.db,
+        state.writer_db(),
         external_auth_provider_model("a", "http://issuer.example.test", true),
     )
     .await
     .expect("provider a should create");
     let provider_b = external_auth_provider_repo::create(
-        &state.db,
+        state.writer_db(),
         external_auth_provider_model("b", "http://issuer.example.test", true),
     )
     .await
@@ -1695,7 +1697,7 @@ async fn external_auth_identity_lookup_uses_namespace_subject_not_provider_id() 
     .expect("admin token should verify");
 
     external_auth_identity_repo::create_identity(
-        &state.db,
+        state.writer_db(),
         external_auth_identity_repo::CreateExternalAuthIdentityInput {
             user_id: claims.user_id,
             provider_id: provider_a.id,
@@ -1713,7 +1715,7 @@ async fn external_auth_identity_lookup_uses_namespace_subject_not_provider_id() 
     .expect("identity should create");
 
     let found = external_auth_identity_repo::find_by_identity_namespace_subject(
-        &state.db,
+        state.writer_db(),
         provider_b
             .issuer_url
             .as_deref()
@@ -1726,7 +1728,7 @@ async fn external_auth_identity_lookup_uses_namespace_subject_not_provider_id() 
     assert_eq!(found.provider_id, provider_a.id);
 
     let duplicate = external_auth_identity_repo::create_identity(
-        &state.db,
+        state.writer_db(),
         external_auth_identity_repo::CreateExternalAuthIdentityInput {
             user_id: claims.user_id,
             provider_id: provider_b.id,
@@ -1748,7 +1750,7 @@ async fn external_auth_identity_lookup_uses_namespace_subject_not_provider_id() 
 async fn cleanup_expired_flows_removes_only_expired_rows() {
     let state = common::setup().await;
     let provider = external_auth_provider_repo::create(
-        &state.db,
+        state.writer_db(),
         external_auth_provider_model("cleanup", "http://cleanup.example.test", true),
     )
     .await
@@ -1759,7 +1761,7 @@ async fn cleanup_expired_flows_removes_only_expired_rows() {
         ("active", now + Duration::minutes(5)),
     ] {
         external_auth_login_flow_repo::create(
-            &state.db,
+            state.writer_db(),
             external_auth_login_flow::ActiveModel {
                 provider_id: Set(provider.id),
                 state_hash: Set(state_hash.to_string()),
@@ -1796,7 +1798,7 @@ async fn cleanup_expired_flows_removes_only_expired_rows() {
             consumed_at: Set(None),
             ..Default::default()
         }
-        .insert(&state.db)
+        .insert(state.writer_db())
         .await
         .expect("email verification flow should create");
     }
@@ -1806,13 +1808,13 @@ async fn cleanup_expired_flows_removes_only_expired_rows() {
         .expect("cleanup should succeed");
     assert_eq!(removed, 2);
     let flows = external_auth_login_flow::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("flows should query");
     assert_eq!(flows.len(), 1);
     assert_eq!(flows[0].state_hash, "active");
     let email_flows = external_auth_email_verification_flow::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("email verification flows should query");
     assert_eq!(email_flows.len(), 1);
@@ -1893,7 +1895,7 @@ async fn dex_container_authorization_code_login_e2e() {
     assert!(common::extract_cookie(&resp, "aster_csrf").is_some());
 
     let identities = external_auth_identity::Entity::find()
-        .all(&state.db)
+        .all(state.writer_db())
         .await
         .expect("identities should query");
     assert_eq!(identities.len(), 1);

@@ -303,10 +303,11 @@ pub(crate) async fn suggest_available_relative_target(
 ) -> Result<String> {
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            file_repo::resolve_unique_filename(&state.db, user_id, folder_id, name).await
+            file_repo::resolve_unique_filename(state.writer_db(), user_id, folder_id, name).await
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            file_repo::resolve_unique_team_filename(&state.db, team_id, folder_id, name).await
+            file_repo::resolve_unique_team_filename(state.writer_db(), team_id, folder_id, name)
+                .await
         }
     }
 }
@@ -318,7 +319,8 @@ pub(crate) async fn resolve_available_rename_target(
     current_file_id: i64,
     requested_name: &str,
 ) -> Result<String> {
-    let existing = find_file_by_name_in_scope(&state.db, scope, folder_id, requested_name).await?;
+    let existing =
+        find_file_by_name_in_scope(state.writer_db(), scope, folder_id, requested_name).await?;
     if match existing.as_ref() {
         None => true,
         Some(file) => file.id == current_file_id,

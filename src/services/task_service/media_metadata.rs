@@ -55,7 +55,7 @@ pub(crate) async fn ensure_media_metadata_task(
 ) -> Result<()> {
     let display_name = media_metadata_service::task_display_name(blob.id, kind);
     if let Some(existing) = background_task_repo::find_latest_by_kind_and_display_name(
-        &state.db,
+        state.writer_db(),
         BackgroundTaskKind::MediaMetadataExtract,
         &display_name,
     )
@@ -88,7 +88,7 @@ pub(crate) async fn ensure_media_metadata_task(
         BackgroundTaskKind::MediaMetadataExtract,
     ))?;
     background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::MediaMetadataExtract),
             status: Set(BackgroundTaskStatus::Pending),
@@ -158,7 +158,8 @@ pub(super) async fn process_media_metadata_extract_task(
     .await?;
 
     let blob =
-        crate::db::repository::file_repo::find_blob_by_id(&state.db, payload.blob_id).await?;
+        crate::db::repository::file_repo::find_blob_by_id(state.writer_db(), payload.blob_id)
+            .await?;
     if blob.hash != payload.blob_hash {
         return Err(AsterError::validation_error("source blob hash changed"));
     }

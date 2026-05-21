@@ -20,7 +20,6 @@ pub async fn prepare_follower() -> Result<PreparedFollowerRuntime> {
 
     Ok(PreparedFollowerRuntime {
         state: FollowerAppState {
-            db: common.database,
             db_handles: common.db_handles,
             driver_registry: common.driver_registry,
             policy_snapshot: common.policy_snapshot,

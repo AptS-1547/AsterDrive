@@ -110,7 +110,7 @@ pub async fn update(
         }
     }
 
-    let existing = user_repo::find_by_id(&state.db, id).await?;
+    let existing = user_repo::find_by_id(state.writer_db(), id).await?;
     let existing_policy_group_id = existing.policy_group_id;
     let existing_email_verified = auth_service::is_email_verified(&existing);
     let email_verified_changed =
@@ -137,14 +137,16 @@ pub async fn update(
     }
     if let Some(group_id) = policy_group_id {
         let group =
-            crate::db::repository::policy_group_repo::find_group_by_id(&state.db, group_id).await?;
+            crate::db::repository::policy_group_repo::find_group_by_id(state.writer_db(), group_id)
+                .await?;
         if !group.is_enabled {
             return Err(AsterError::validation_error(
                 "cannot assign a disabled storage policy group",
             ));
         }
         let items =
-            crate::db::repository::policy_group_repo::find_group_items(&state.db, group_id).await?;
+            crate::db::repository::policy_group_repo::find_group_items(state.writer_db(), group_id)
+                .await?;
         if items.is_empty() {
             return Err(AsterError::validation_error(
                 "cannot assign a storage policy group without policies",
@@ -156,7 +158,7 @@ pub async fn update(
         active.session_version = Set(current_session_version.saturating_add(1));
     }
     active.updated_at = Set(Utc::now());
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         let updated = active
             .update(&txn)
@@ -242,7 +244,7 @@ pub async fn force_delete(
     state: &PrimaryAppState,
     target_user_id: i64,
 ) -> Result<ForceDeleteSummary> {
-    let db = &state.db;
+    let db = state.writer_db();
     let user = user_repo::find_by_id(db, target_user_id).await?;
 
     if target_user_id == 1 {

@@ -37,7 +37,6 @@ pub async fn prepare_primary() -> Result<PreparedPrimaryRuntime> {
 
     Ok(PreparedPrimaryRuntime {
         state: PrimaryAppState {
-            db: common.database,
             db_handles: common.db_handles,
             driver_registry: common.driver_registry,
             runtime_config,

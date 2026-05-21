@@ -125,7 +125,7 @@ async fn init_remote_presigned_single_upload(
     with_unique_upload_id(|upload_id| async {
         let temp_key = format!("files/{upload_id}");
         let inserted = try_persist_upload_session(
-            &state.db,
+            state.writer_db(),
             UploadSessionRecordParams {
                 upload_id: &upload_id,
                 scope: ctx.scope,
@@ -150,7 +150,7 @@ async fn init_remote_presigned_single_upload(
             Ok(url) => url,
             Err(error) => {
                 delete_upload_session_record_after_init_error(
-                    &state.db,
+                    state.writer_db(),
                     &upload_id,
                     "remote presigned URL initialization error",
                 )

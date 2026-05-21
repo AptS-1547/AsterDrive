@@ -21,7 +21,7 @@ pub async fn drain(state: &PrimaryAppState) -> Result<DispatchStats> {
             continue;
         }
 
-        if background_task_repo::count_processing(&state.db).await? == 0 {
+        if background_task_repo::count_processing(state.writer_db()).await? == 0 {
             break;
         }
 
@@ -72,26 +72,27 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
         // 这里只删“产物目录”，不删 background_task 记录：
         // - 终态且 expires_at 已到的任务：删 temp 目录，保留历史行；
         // - 数据库里已经没有任务行的孤儿目录：直接删，避免长期泄露磁盘。
-        let should_cleanup = match background_task_repo::find_by_id(&state.db, task_id).await {
-            Ok(task) => {
-                task.expires_at <= now
-                    && matches!(
-                        task.status,
-                        BackgroundTaskStatus::Succeeded
-                            | BackgroundTaskStatus::Failed
-                            | BackgroundTaskStatus::Canceled
-                    )
-            }
-            Err(AsterError::RecordNotFound(_)) => {
-                tracing::warn!(
-                    task_id,
-                    path = %path_display,
-                    "cleaning orphaned task temp dir without task record"
-                );
-                true
-            }
-            Err(error) => return Err(error),
-        };
+        let should_cleanup =
+            match background_task_repo::find_by_id(state.writer_db(), task_id).await {
+                Ok(task) => {
+                    task.expires_at <= now
+                        && matches!(
+                            task.status,
+                            BackgroundTaskStatus::Succeeded
+                                | BackgroundTaskStatus::Failed
+                                | BackgroundTaskStatus::Canceled
+                        )
+                }
+                Err(AsterError::RecordNotFound(_)) => {
+                    tracing::warn!(
+                        task_id,
+                        path = %path_display,
+                        "cleaning orphaned task temp dir without task record"
+                    );
+                    true
+                }
+                Err(error) => return Err(error),
+            };
         if !should_cleanup {
             continue;
         }

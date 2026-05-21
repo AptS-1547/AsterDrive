@@ -379,7 +379,6 @@ async fn log_writes_synchronously_without_global_manager() {
             crate::config::operations::DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY,
         );
     let state = crate::runtime::PrimaryAppState {
-        db: db.clone(),
         db_handles: crate::db::DbHandles::single(db.clone()),
         driver_registry: std::sync::Arc::new(crate::storage::DriverRegistry::new()),
         runtime_config,

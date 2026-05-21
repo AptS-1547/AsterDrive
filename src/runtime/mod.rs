@@ -21,8 +21,6 @@ use tokio::sync::Notify;
 
 #[derive(Clone)]
 pub struct PrimaryAppState {
-    /// Writer connection. Keep all transactions and write-capable flows on this handle.
-    pub db: DatabaseConnection,
     pub db_handles: DbHandles,
     pub driver_registry: Arc<DriverRegistry>,
     pub runtime_config: Arc<RuntimeConfig>,
@@ -40,8 +38,6 @@ pub struct PrimaryAppState {
 
 #[derive(Clone)]
 pub struct FollowerAppState {
-    /// Writer connection. Keep all transactions and write-capable flows on this handle.
-    pub db: DatabaseConnection,
     pub db_handles: DbHandles,
     pub driver_registry: Arc<DriverRegistry>,
     pub policy_snapshot: Arc<PolicySnapshot>,
@@ -50,7 +46,6 @@ pub struct FollowerAppState {
 }
 
 pub trait SharedRuntimeState {
-    fn db(&self) -> &DatabaseConnection;
     fn writer_db(&self) -> &DatabaseConnection;
     fn reader_db(&self) -> &DatabaseConnection;
     fn driver_registry(&self) -> &Arc<DriverRegistry>;
@@ -81,6 +76,10 @@ impl PrimaryAppState {
         self.db_handles.reader()
     }
 
+    pub fn sqlite_read_write_split(&self) -> bool {
+        self.db_handles.sqlite_read_write_split()
+    }
+
     pub fn wake_background_task_dispatcher(&self) {
         self.background_task_dispatch_wakeup.notify_one();
     }
@@ -93,7 +92,6 @@ impl PrimaryAppState {
 impl From<&PrimaryAppState> for FollowerAppState {
     fn from(state: &PrimaryAppState) -> Self {
         Self {
-            db: state.db.clone(),
             db_handles: state.db_handles.clone(),
             driver_registry: state.driver_registry.clone(),
             policy_snapshot: state.policy_snapshot.clone(),
@@ -111,13 +109,13 @@ impl FollowerAppState {
     pub fn reader_db(&self) -> &DatabaseConnection {
         self.db_handles.reader()
     }
+
+    pub fn sqlite_read_write_split(&self) -> bool {
+        self.db_handles.sqlite_read_write_split()
+    }
 }
 
 impl SharedRuntimeState for PrimaryAppState {
-    fn db(&self) -> &DatabaseConnection {
-        &self.db
-    }
-
     fn writer_db(&self) -> &DatabaseConnection {
         self.db_handles.writer()
     }
@@ -162,10 +160,6 @@ impl PrimaryRuntimeState for PrimaryAppState {
 }
 
 impl SharedRuntimeState for FollowerAppState {
-    fn db(&self) -> &DatabaseConnection {
-        &self.db
-    }
-
     fn writer_db(&self) -> &DatabaseConnection {
         self.db_handles.writer()
     }
@@ -194,10 +188,6 @@ impl SharedRuntimeState for FollowerAppState {
 impl FollowerRuntimeState for FollowerAppState {}
 
 impl<T: SharedRuntimeState> SharedRuntimeState for web::Data<T> {
-    fn db(&self) -> &DatabaseConnection {
-        self.get_ref().db()
-    }
-
     fn writer_db(&self) -> &DatabaseConnection {
         self.get_ref().writer_db()
     }
@@ -275,7 +265,6 @@ mod tests {
         let (share_download_rollback, _worker) = build_share_download_rollback_queue(db.clone(), 1);
 
         PrimaryAppState {
-            db: db.clone(),
             db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config,
@@ -306,8 +295,8 @@ mod tests {
         assert!(Arc::ptr_eq(&state.config, follower.config()));
         assert!(Arc::ptr_eq(&state.cache, follower.cache()));
         assert_eq!(
-            state.db.get_database_backend(),
-            follower.db().get_database_backend()
+            state.writer_db().get_database_backend(),
+            follower.writer_db().get_database_backend()
         );
         assert_eq!(
             state.writer_db().get_database_backend(),
@@ -333,8 +322,8 @@ mod tests {
         let data = web::Data::new(state.clone());
 
         assert_eq!(
-            SharedRuntimeState::db(&data).get_database_backend(),
-            state.db.get_database_backend()
+            SharedRuntimeState::writer_db(&data).get_database_backend(),
+            state.writer_db().get_database_backend()
         );
         assert_eq!(
             SharedRuntimeState::writer_db(&data).get_database_backend(),

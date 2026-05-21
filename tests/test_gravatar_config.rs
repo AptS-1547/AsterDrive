@@ -11,7 +11,9 @@ use aster_drive::services::profile_service;
 use aster_drive::types::AvatarSource;
 
 async fn load_user_model(state: &PrimaryAppState, user_id: i64) -> user::Model {
-    user_repo::find_by_id(&state.db, user_id).await.unwrap()
+    user_repo::find_by_id(state.writer_db(), user_id)
+        .await
+        .unwrap()
 }
 
 #[actix_web::test]
@@ -65,7 +67,7 @@ async fn test_gravatar_custom_base_url() {
 
     // 设置自定义 gravatar base url
     let config = config_repo::upsert(
-        &state.db,
+        state.writer_db(),
         "gravatar_base_url",
         "https://cravatar.cn/avatar",
         user.id,
@@ -108,7 +110,7 @@ async fn test_gravatar_empty_config_fallback() {
     .unwrap();
 
     // 设置空字符串配置
-    let config = config_repo::upsert(&state.db, "gravatar_base_url", "", user.id)
+    let config = config_repo::upsert(state.writer_db(), "gravatar_base_url", "", user.id)
         .await
         .unwrap();
     state.runtime_config.apply(config);
@@ -147,7 +149,7 @@ async fn test_gravatar_trailing_slash_normalization() {
 
     // 配置带末尾斜杠
     let config = config_repo::upsert(
-        &state.db,
+        state.writer_db(),
         "gravatar_base_url",
         "https://mirror.example.com/avatar/",
         user.id,
@@ -195,7 +197,7 @@ async fn test_gravatar_whitespace_only_config_fallback() {
     .unwrap();
 
     // 配置只有空白字符
-    let config = config_repo::upsert(&state.db, "gravatar_base_url", "   ", user.id)
+    let config = config_repo::upsert(state.writer_db(), "gravatar_base_url", "   ", user.id)
         .await
         .unwrap();
     state.runtime_config.apply(config);

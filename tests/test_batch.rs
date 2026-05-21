@@ -1007,7 +1007,7 @@ async fn test_batch_copy_preserves_partial_failures_for_quota() {
     use sea_orm::{ActiveModelTrait, Set};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 

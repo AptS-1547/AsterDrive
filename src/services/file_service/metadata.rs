@@ -29,7 +29,7 @@ pub(crate) async fn update_in_scope(
     name: Option<String>,
     folder_id: NullablePatch<i64>,
 ) -> Result<file::Model> {
-    let db = &state.db;
+    let db = state.writer_db();
     tracing::debug!(
         scope = ?scope,
         file_id = id,

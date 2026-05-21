@@ -30,7 +30,7 @@ pub async fn list_admin_members(
     limit: u64,
     offset: u64,
 ) -> Result<TeamMemberPage> {
-    team_repo::find_by_id(&state.db, team_id).await?;
+    team_repo::find_by_id(state.writer_db(), team_id).await?;
     load_team_member_page(state, team_id, &filters, limit, offset).await
 }
 
@@ -39,13 +39,14 @@ pub async fn get_admin_member(
     team_id: i64,
     member_user_id: i64,
 ) -> Result<TeamMemberInfo> {
-    team_repo::find_by_id(&state.db, team_id).await?;
-    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, member_user_id)
-        .await?
-        .ok_or_else(|| {
-            AsterError::record_not_found(format!("team member user #{member_user_id}"))
-        })?;
-    let user = user_repo::find_by_id(&state.db, member_user_id).await?;
+    team_repo::find_by_id(state.writer_db(), team_id).await?;
+    let membership =
+        team_member_repo::find_by_team_and_user(state.writer_db(), team_id, member_user_id)
+            .await?
+            .ok_or_else(|| {
+                AsterError::record_not_found(format!("team member user #{member_user_id}"))
+            })?;
+    let user = user_repo::find_by_id(state.writer_db(), member_user_id).await?;
     build_team_member_info(state, membership, user).await
 }
 
@@ -63,7 +64,7 @@ pub async fn add_admin_member(
     }
 
     let now = Utc::now();
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     // 先锁团队再查 membership，避免并发添加把同一用户重复插入 team_members。
@@ -102,7 +103,7 @@ pub async fn update_admin_member_role(
     member_user_id: i64,
     role: TeamMemberRole,
 ) -> Result<TeamMemberInfo> {
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
@@ -138,7 +139,7 @@ pub async fn remove_admin_member(
     team_id: i64,
     member_user_id: i64,
 ) -> Result<()> {
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
@@ -191,12 +192,13 @@ pub async fn get_member(
     member_user_id: i64,
 ) -> Result<TeamMemberInfo> {
     require_team_membership(state, team_id, actor_user_id).await?;
-    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, member_user_id)
-        .await?
-        .ok_or_else(|| {
-            AsterError::record_not_found(format!("team member user #{member_user_id}"))
-        })?;
-    let user = user_repo::find_by_id(&state.db, member_user_id).await?;
+    let membership =
+        team_member_repo::find_by_team_and_user(state.writer_db(), team_id, member_user_id)
+            .await?
+            .ok_or_else(|| {
+                AsterError::record_not_found(format!("team member user #{member_user_id}"))
+            })?;
+    let user = user_repo::find_by_id(state.writer_db(), member_user_id).await?;
     build_team_member_info(state, membership, user).await
 }
 
@@ -215,7 +217,7 @@ pub async fn add_member(
     }
 
     let now = Utc::now();
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
@@ -268,7 +270,7 @@ pub async fn update_member_role(
     member_user_id: i64,
     role: TeamMemberRole,
 ) -> Result<TeamMemberInfo> {
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
@@ -321,7 +323,7 @@ pub async fn remove_member(
     actor_user_id: i64,
     member_user_id: i64,
 ) -> Result<()> {
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     team_repo::lock_active_by_id(&txn, team_id).await?;
 
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)

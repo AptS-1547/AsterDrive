@@ -264,7 +264,7 @@ pub(super) async fn create_first_admin(
 ) -> Result<user::Model> {
     tracing::info!("first user registered — granting admin role to '{username}'");
     create_user_with_role(
-        &state.db,
+        state.writer_db(),
         state,
         CreateUserWithRoleInput {
             username,

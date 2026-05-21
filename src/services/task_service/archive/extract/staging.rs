@@ -141,7 +141,7 @@ pub(super) async fn download_file_to_temp(
     source_file: &file::Model,
     temp_path: &Path,
 ) -> Result<()> {
-    let blob = file_repo::find_blob_by_id(&state.db, source_file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.writer_db(), source_file.blob_id).await?;
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let mut stream = driver.get_stream(&blob.storage_path).await?;

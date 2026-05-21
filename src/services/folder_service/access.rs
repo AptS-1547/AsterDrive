@@ -54,7 +54,7 @@ pub async fn verify_folder_access(
     user_id: i64,
     folder_id: i64,
 ) -> Result<()> {
-    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    let folder = folder_repo::find_by_id(state.writer_db(), folder_id).await?;
     ensure_personal_folder_scope(&folder)?;
     crate::utils::verify_optional_owner(folder.owner_user_id, user_id, "folder")?;
     if folder.deleted_at.is_some() {

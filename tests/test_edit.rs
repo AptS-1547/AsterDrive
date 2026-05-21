@@ -361,7 +361,7 @@ async fn test_update_content_etag_mismatch() {
 #[actix_web::test]
 async fn test_update_content_locked_by_other() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
     let file_id = upload_test_file!(app, token);

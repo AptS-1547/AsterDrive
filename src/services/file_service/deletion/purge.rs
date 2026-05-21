@@ -28,9 +28,10 @@ pub(crate) async fn purge_in_scope(
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
 
-    let file = file_repo::find_by_id(&state.db, id).await?;
+    let file = file_repo::find_by_id(state.writer_db(), id).await?;
     workspace_storage_service::ensure_file_scope(&file, scope)?;
 
     batch_purge_in_scope(state, scope, vec![file]).await?;
@@ -99,7 +100,7 @@ async fn batch_purge_in_resource_scope_internal(
     let blob_ids: Vec<i64> = files.iter().map(|file| file.blob_id).collect();
     let count = usize_to_u32(files.len(), "purged file count")?;
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
 
     let version_blob_ids =
         crate::db::repository::version_repo::delete_all_by_file_ids(&txn, &file_ids).await?;

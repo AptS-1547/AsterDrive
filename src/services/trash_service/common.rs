@@ -129,8 +129,9 @@ pub(super) async fn verify_file_in_trash_in_scope(
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
+    let file = file_repo::find_by_id(state.writer_db(), file_id).await?;
     workspace_storage_service::ensure_file_scope(&file, scope)?;
     if file.deleted_at.is_none() {
         return Err(AsterError::validation_error("file is not in trash"));
@@ -143,8 +144,9 @@ pub(super) async fn verify_folder_in_trash_in_scope(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
-    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
+    let folder = folder_repo::find_by_id(state.writer_db(), folder_id).await?;
     workspace_storage_service::ensure_folder_scope(&folder, scope)?;
     if folder.deleted_at.is_none() {
         return Err(AsterError::validation_error("folder is not in trash"));
@@ -238,7 +240,7 @@ pub(super) async fn purge_folder_forest_in_resource_scope(
         root_folder_count = folder_ids.len(),
         "purging folder forest permanently"
     );
-    let root_folders = folder_repo::find_by_ids(&state.db, folder_ids).await?;
+    let root_folders = folder_repo::find_by_ids(state.writer_db(), folder_ids).await?;
     let root_parent_ids: HashMap<i64, Option<i64>> = root_folders
         .iter()
         .map(|folder| (folder.id, folder.parent_id))
@@ -247,15 +249,21 @@ pub(super) async fn purge_folder_forest_in_resource_scope(
         .iter()
         .map(|folder_id| root_parent_ids.get(folder_id).copied().flatten())
         .collect();
-    let (all_files, all_folder_ids) =
-        folder_service::collect_folder_forest_in_resource_scope(&state.db, scope, folder_ids, true)
-            .await?;
+    let (all_files, all_folder_ids) = folder_service::collect_folder_forest_in_resource_scope(
+        state.writer_db(),
+        scope,
+        folder_ids,
+        true,
+    )
+    .await?;
     let file_count = all_files.len();
     let folder_count = all_folder_ids.len();
     let file_summary =
         file_service::batch_purge_in_resource_scope_silent(state, scope, all_files).await?;
-    property_repo::delete_all_for_entities(&state.db, EntityType::Folder, &all_folder_ids).await?;
-    let deleted_shares = share_repo::delete_by_folder_ids(&state.db, &all_folder_ids).await?;
+    property_repo::delete_all_for_entities(state.writer_db(), EntityType::Folder, &all_folder_ids)
+        .await?;
+    let deleted_shares =
+        share_repo::delete_by_folder_ids(state.writer_db(), &all_folder_ids).await?;
     if deleted_shares > 0 {
         crate::services::share_service::invalidate_active_share_target_cache_for_resource_scope(
             state, scope,
@@ -264,7 +272,7 @@ pub(super) async fn purge_folder_forest_in_resource_scope(
         crate::services::share_service::invalidate_all_share_token_record_cache(state).await;
     }
     crate::services::folder_service::invalidate_folder_path_cache(state).await;
-    folder_repo::delete_many(&state.db, &all_folder_ids).await?;
+    folder_repo::delete_many(state.writer_db(), &all_folder_ids).await?;
     if emit_storage_event {
         storage_change_service::publish(
             state,

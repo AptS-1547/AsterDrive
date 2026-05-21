@@ -91,7 +91,7 @@ async fn process_claimed_task(
                     {
                         let now = Utc::now();
                         background_task_repo::touch_heartbeat(
-                            &state.db,
+                            state.writer_db(),
                             task.id,
                             lease.processing_token,
                             now,
@@ -137,7 +137,7 @@ async fn process_claimed_task(
             if !should_auto_retry {
                 let finished_at = Utc::now();
                 let failed = background_task_repo::mark_failed(
-                    &state.db,
+                    state.writer_db(),
                     background_task_repo::TaskFailureUpdate {
                         id: task.id,
                         processing_token: lease.processing_token,
@@ -172,7 +172,7 @@ async fn process_claimed_task(
             } else {
                 let retry_at = Utc::now() + Duration::seconds(retry_delay_secs(attempt_count));
                 let retried = background_task_repo::mark_retry(
-                    &state.db,
+                    state.writer_db(),
                     task.id,
                     lease.processing_token,
                     attempt_count,
@@ -250,7 +250,7 @@ async fn build_failed_task_steps_json(
     kind: BackgroundTaskKind,
     error_message: &str,
 ) -> Option<String> {
-    let latest = background_task_repo::find_by_id(&state.db, task_id)
+    let latest = background_task_repo::find_by_id(state.writer_db(), task_id)
         .await
         .ok()?;
     let mut steps =

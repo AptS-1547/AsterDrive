@@ -48,10 +48,10 @@ async fn find_files_by_ids_in_scope(
 ) -> Result<Vec<file::Model>> {
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            file_repo::find_by_ids_in_personal_scope(&state.db, user_id, ids).await
+            file_repo::find_by_ids_in_personal_scope(state.writer_db(), user_id, ids).await
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            file_repo::find_by_ids_in_team_scope(&state.db, team_id, ids).await
+            file_repo::find_by_ids_in_team_scope(state.writer_db(), team_id, ids).await
         }
     }
 }
@@ -63,10 +63,10 @@ async fn find_folders_by_ids_in_scope(
 ) -> Result<Vec<folder::Model>> {
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_by_ids_in_personal_scope(&state.db, user_id, ids).await
+            folder_repo::find_by_ids_in_personal_scope(state.writer_db(), user_id, ids).await
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_by_ids_in_team_scope(&state.db, team_id, ids).await
+            folder_repo::find_by_ids_in_team_scope(state.writer_db(), team_id, ids).await
         }
     }
 }
@@ -224,7 +224,7 @@ pub(super) async fn load_folder_ancestor_ids_in_scope(
         workspace_storage_service::ensure_active_folder_scope(&folder, scope)?;
         ancestors.insert(folder.id);
         current = match folder.parent_id {
-            Some(parent_id) => Some(folder_repo::find_by_id(&state.db, parent_id).await?),
+            Some(parent_id) => Some(folder_repo::find_by_id(state.writer_db(), parent_id).await?),
             None => None,
         };
     }

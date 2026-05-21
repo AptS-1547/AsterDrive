@@ -99,7 +99,8 @@ pub(crate) async fn purge_all_in_scope_silent(
     scope: WorkspaceStorageScope,
 ) -> Result<PurgeAllSummary> {
     tracing::debug!(scope = ?scope, "purging all trash contents");
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
     let mut summary = PurgeAllSummary::default();
 
     let mut folder_cursor: Option<(chrono::DateTime<chrono::Utc>, i64)> = None;
@@ -107,7 +108,7 @@ pub(crate) async fn purge_all_in_scope_silent(
         let (top_folders, _) = match scope {
             WorkspaceStorageScope::Personal { user_id } => {
                 folder_repo::find_top_level_deleted_cursor(
-                    &state.db,
+                    state.writer_db(),
                     user_id,
                     PURGE_ALL_BATCH_SIZE,
                     folder_cursor,
@@ -116,7 +117,7 @@ pub(crate) async fn purge_all_in_scope_silent(
             }
             WorkspaceStorageScope::Team { team_id, .. } => {
                 folder_repo::find_top_level_deleted_by_team_cursor(
-                    &state.db,
+                    state.writer_db(),
                     team_id,
                     PURGE_ALL_BATCH_SIZE,
                     folder_cursor,
@@ -154,7 +155,7 @@ pub(crate) async fn purge_all_in_scope_silent(
         let (top_files, _) = match scope {
             WorkspaceStorageScope::Personal { user_id } => {
                 file_repo::find_top_level_deleted_paginated(
-                    &state.db,
+                    state.writer_db(),
                     user_id,
                     PURGE_ALL_BATCH_SIZE,
                     file_cursor,
@@ -163,7 +164,7 @@ pub(crate) async fn purge_all_in_scope_silent(
             }
             WorkspaceStorageScope::Team { team_id, .. } => {
                 file_repo::find_top_level_deleted_by_team_paginated(
-                    &state.db,
+                    state.writer_db(),
                     team_id,
                     PURGE_ALL_BATCH_SIZE,
                     file_cursor,

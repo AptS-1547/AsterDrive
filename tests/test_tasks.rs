@@ -537,7 +537,7 @@ async fn insert_processing_task(
 ) -> i64 {
     let now = Utc::now();
     background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ArchiveCompress),
             status: Set(BackgroundTaskStatus::Processing),
@@ -598,7 +598,7 @@ async fn insert_pending_dispatch_task(
         _ => panic!("unsupported dispatch test task kind"),
     };
     background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(kind),
             status: Set(BackgroundTaskStatus::Pending),
@@ -643,7 +643,7 @@ async fn insert_pending_lane_task(
 ) -> background_task::Model {
     let now = Utc::now();
     background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(kind),
             status: Set(BackgroundTaskStatus::Pending),
@@ -717,7 +717,7 @@ async fn test_processing_task_claimability_requires_explicit_lease_expiry() {
     )
     .await;
 
-    let claimable = background_task_repo::list_claimable(&state.db, now, stale_before, 10)
+    let claimable = background_task_repo::list_claimable(state.writer_db(), now, stale_before, 10)
         .await
         .expect("claimable task list should load");
     let ids = claimable.iter().map(|task| task.id).collect::<Vec<_>>();
@@ -734,7 +734,7 @@ async fn test_processing_task_claimability_prefers_explicit_lease_expiry_when_pr
     let stale_before = now - Duration::seconds(60);
 
     let fresh_lease = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ArchiveCompress),
             status: Set(BackgroundTaskStatus::Processing),
@@ -768,7 +768,7 @@ async fn test_processing_task_claimability_prefers_explicit_lease_expiry_when_pr
     .expect("fresh explicit lease task should be inserted");
 
     let expired_lease = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ArchiveCompress),
             status: Set(BackgroundTaskStatus::Processing),
@@ -801,7 +801,7 @@ async fn test_processing_task_claimability_prefers_explicit_lease_expiry_when_pr
     .await
     .expect("expired explicit lease task should be inserted");
 
-    let claimable = background_task_repo::list_claimable(&state.db, now, stale_before, 10)
+    let claimable = background_task_repo::list_claimable(state.writer_db(), now, stale_before, 10)
         .await
         .expect("claimable task list should load");
     let ids = claimable.iter().map(|task| task.id).collect::<Vec<_>>();
@@ -820,7 +820,7 @@ async fn test_touch_heartbeat_refreshes_processing_task_liveness() {
 
     let touched_at = Utc::now();
     let touched = background_task_repo::touch_heartbeat(
-        &state.db,
+        state.writer_db(),
         task_id,
         0,
         touched_at,
@@ -830,7 +830,7 @@ async fn test_touch_heartbeat_refreshes_processing_task_liveness() {
     .expect("heartbeat touch should succeed");
     assert!(touched);
 
-    let task = background_task_repo::find_by_id(&state.db, task_id)
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id)
         .await
         .expect("task should still exist");
     assert!(
@@ -851,7 +851,7 @@ async fn test_processing_token_fences_stale_worker_updates_after_reclaim() {
     let now = Utc::now();
     let stale_before = now - Duration::seconds(60);
     let task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ArchiveCompress),
             status: Set(BackgroundTaskStatus::Processing),
@@ -885,7 +885,7 @@ async fn test_processing_token_fences_stale_worker_updates_after_reclaim() {
     .expect("processing task with token should be inserted");
 
     let reclaimed = background_task_repo::try_claim(
-        &state.db,
+        state.writer_db(),
         task.id,
         task.processing_token,
         Utc::now(),
@@ -898,7 +898,7 @@ async fn test_processing_token_fences_stale_worker_updates_after_reclaim() {
     assert!(reclaimed);
 
     let stale_touched = background_task_repo::touch_heartbeat(
-        &state.db,
+        state.writer_db(),
         task.id,
         task.processing_token,
         Utc::now(),
@@ -909,7 +909,7 @@ async fn test_processing_token_fences_stale_worker_updates_after_reclaim() {
     assert!(!stale_touched);
 
     let stale_progress = background_task_repo::mark_progress(
-        &state.db,
+        state.writer_db(),
         background_task_repo::TaskProgressUpdate {
             id: task.id,
             processing_token: task.processing_token,
@@ -926,7 +926,7 @@ async fn test_processing_token_fences_stale_worker_updates_after_reclaim() {
     assert!(!stale_progress);
 
     let fresh_touched = background_task_repo::touch_heartbeat(
-        &state.db,
+        state.writer_db(),
         task.id,
         task.processing_token + 1,
         Utc::now(),
@@ -936,7 +936,7 @@ async fn test_processing_token_fences_stale_worker_updates_after_reclaim() {
     .expect("current worker heartbeat should still succeed");
     assert!(fresh_touched);
 
-    let stored = background_task_repo::find_by_id(&state.db, task.id)
+    let stored = background_task_repo::find_by_id(state.writer_db(), task.id)
         .await
         .expect("reclaimed task should still exist");
     assert_eq!(stored.status, BackgroundTaskStatus::Processing);
@@ -949,7 +949,7 @@ async fn test_dispatch_due_reclaims_stale_processing_task_with_new_token() {
     let state = common::setup().await;
     let now = Utc::now();
     let task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::SystemRuntime),
             status: Set(BackgroundTaskStatus::Processing),
@@ -993,7 +993,7 @@ async fn test_dispatch_due_reclaims_stale_processing_task_with_new_token() {
     assert_eq!(stats.failed, 1);
     assert_eq!(stats.succeeded, 0);
 
-    let stored = background_task_repo::find_by_id(&state.db, task.id)
+    let stored = background_task_repo::find_by_id(state.writer_db(), task.id)
         .await
         .expect("reclaimed task should still exist");
     assert_eq!(stored.status, BackgroundTaskStatus::Failed);
@@ -1073,7 +1073,7 @@ async fn test_cleanup_expired_keeps_terminal_task_records() {
     let state = common::setup().await;
     let now = Utc::now();
     let task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ArchiveCompress),
             status: Set(BackgroundTaskStatus::Succeeded),
@@ -1119,7 +1119,7 @@ async fn test_cleanup_expired_keeps_terminal_task_records() {
         "expired task temp dir should be removed"
     );
 
-    let stored = background_task_repo::find_by_id(&state.db, task.id)
+    let stored = background_task_repo::find_by_id(state.writer_db(), task.id)
         .await
         .expect("expired task record should still exist");
     assert_eq!(stored.status, BackgroundTaskStatus::Succeeded);
@@ -1222,7 +1222,7 @@ async fn test_record_runtime_task_run_skips_quiet_outcome() {
     .expect("quiet runtime task handling should succeed");
 
     assert!(recorded.is_none());
-    let recent = background_task_repo::list_recent(&state.db, 10)
+    let recent = background_task_repo::list_recent(state.writer_db(), 10)
         .await
         .expect("recent background tasks should load");
     assert!(recent.is_empty());
@@ -1270,7 +1270,7 @@ async fn test_record_runtime_task_run_refreshes_latest_healthy_system_check() {
     assert_eq!(second.finished_at, Some(second_finished_at));
     assert_eq!(second.updated_at, second_finished_at);
 
-    let recent = background_task_repo::list_recent(&state.db, 10)
+    let recent = background_task_repo::list_recent(state.writer_db(), 10)
         .await
         .expect("recent background tasks should load");
     assert_eq!(recent.len(), 1);
@@ -1319,7 +1319,7 @@ async fn test_record_runtime_task_run_keeps_health_failure_history_before_recove
     assert_ne!(recovered.id, failed.id);
     assert_eq!(recovered.status, BackgroundTaskStatus::Succeeded);
 
-    let recent = background_task_repo::list_recent(&state.db, 10)
+    let recent = background_task_repo::list_recent(state.writer_db(), 10)
         .await
         .expect("recent background tasks should load");
     assert_eq!(recent.len(), 2);
@@ -1341,7 +1341,7 @@ async fn test_dispatch_due_marks_manual_retryable_task_failed_without_auto_retry
     assert_eq!(stats.failed, 1);
     assert_eq!(stats.succeeded, 0);
 
-    let stored = background_task_repo::find_by_id(&state.db, task.id)
+    let stored = background_task_repo::find_by_id(state.writer_db(), task.id)
         .await
         .expect("failed task should still exist");
     assert_eq!(stored.status, BackgroundTaskStatus::Failed);
@@ -1367,7 +1367,7 @@ async fn test_dispatch_due_marks_task_failed_after_max_attempts() {
     assert_eq!(stats.failed, 1);
     assert_eq!(stats.succeeded, 0);
 
-    let stored = background_task_repo::find_by_id(&state.db, task.id)
+    let stored = background_task_repo::find_by_id(state.writer_db(), task.id)
         .await
         .expect("failed task should still exist");
     assert_eq!(stored.status, BackgroundTaskStatus::Failed);
@@ -1388,7 +1388,7 @@ async fn test_dispatch_due_marks_task_failed_after_max_attempts() {
 #[actix_web::test]
 async fn test_personal_archive_stream_preserves_empty_folders() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let state = web::Data::new(state);
     let app = test::init_service(
@@ -1402,7 +1402,7 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
 
     register_user!(
         app,
-        state.db.clone(),
+        state.writer_db().clone(),
         mail_sender,
         "taskowner",
         "taskowner@example.com",
@@ -1501,7 +1501,7 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
 #[actix_web::test]
 async fn test_team_archive_stream_is_scoped_to_team_routes() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let state = web::Data::new(state);
     let app = test::init_service(
@@ -1515,7 +1515,7 @@ async fn test_team_archive_stream_is_scoped_to_team_routes() {
 
     register_user!(
         app,
-        state.db.clone(),
+        state.writer_db().clone(),
         mail_sender,
         "teamowner",
         "teamowner@example.com",
@@ -1594,7 +1594,7 @@ async fn test_team_archive_stream_is_scoped_to_team_routes() {
 #[actix_web::test]
 async fn test_personal_archive_compress_task_creates_workspace_file() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let state = web::Data::new(state);
     let app = test::init_service(
@@ -1617,7 +1617,7 @@ async fn test_personal_archive_compress_task_creates_workspace_file() {
 
     register_user!(
         app,
-        state.db.clone(),
+        state.writer_db().clone(),
         mail_sender,
         "compressor",
         "compressor@example.com",
@@ -1908,14 +1908,15 @@ async fn test_archive_compress_task_rejects_quota_before_building_archive() {
     let body: Value = test::read_body_json(resp).await;
     let file_id = body["data"]["id"].as_i64().unwrap();
 
-    let owner = aster_drive::db::repository::user_repo::find_by_username(&state.db, "testuser")
-        .await
-        .expect("owner lookup should succeed")
-        .expect("owner should exist");
+    let owner =
+        aster_drive::db::repository::user_repo::find_by_username(state.writer_db(), "testuser")
+            .await
+            .expect("owner lookup should succeed")
+            .expect("owner should exist");
     let mut owner_active = owner.into_active_model();
     owner_active.storage_quota = Set(owner_active.storage_used.clone().unwrap());
     owner_active
-        .update(&state.db)
+        .update(state.writer_db())
         .await
         .expect("owner quota should update");
 
@@ -2059,10 +2060,11 @@ async fn test_retry_task_reloads_max_attempts_from_runtime_config() {
     let state = common::setup().await;
     let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
-    let owner = aster_drive::db::repository::user_repo::find_by_username(&state.db, "testuser")
-        .await
-        .expect("owner lookup should succeed")
-        .expect("owner should exist");
+    let owner =
+        aster_drive::db::repository::user_repo::find_by_username(state.writer_db(), "testuser")
+            .await
+            .expect("owner lookup should succeed")
+            .expect("owner should exist");
 
     aster_drive::services::config_service::set(&state, "background_task_max_attempts", "4", 1)
         .await
@@ -2079,7 +2081,7 @@ async fn test_retry_task_reloads_max_attempts_from_runtime_config() {
     )
     .expect("archive payload should serialize");
     let task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ArchiveCompress),
             status: Set(BackgroundTaskStatus::Failed),
@@ -2130,7 +2132,7 @@ async fn test_retry_task_reloads_max_attempts_from_runtime_config() {
         .await
         .expect("manual task retry should wake the dispatcher");
 
-    let stored = background_task_repo::find_by_id(&state.db, task.id)
+    let stored = background_task_repo::find_by_id(state.writer_db(), task.id)
         .await
         .expect("retried task should still exist");
     assert_eq!(stored.status, BackgroundTaskStatus::Pending);
@@ -2141,7 +2143,7 @@ async fn test_retry_task_reloads_max_attempts_from_runtime_config() {
 #[actix_web::test]
 async fn test_team_archive_extract_task_creates_team_folder_tree() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let state = web::Data::new(state);
     let app = test::init_service(
@@ -2155,7 +2157,7 @@ async fn test_team_archive_extract_task_creates_team_folder_tree() {
 
     register_user!(
         app,
-        state.db.clone(),
+        state.writer_db().clone(),
         mail_sender,
         "extractor",
         "extractor@example.com",
@@ -2657,17 +2659,18 @@ async fn test_archive_extract_task_fails_before_staging_when_quota_is_insufficie
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let owner = aster_drive::db::repository::user_repo::find_by_username(&state.db, "testuser")
-        .await
-        .expect("owner lookup should succeed")
-        .expect("owner should exist");
+    let owner =
+        aster_drive::db::repository::user_repo::find_by_username(state.writer_db(), "testuser")
+            .await
+            .expect("owner lookup should succeed")
+            .expect("owner should exist");
     let quota_base = owner.storage_used;
     let mut owner_active = owner.into_active_model();
     owner_active.storage_quota = Set(quota_base
         .checked_add(8)
         .expect("quota adjustment should stay within i64"));
     owner_active
-        .update(&state.db)
+        .update(state.writer_db())
         .await
         .expect("owner quota should update");
 
@@ -3245,13 +3248,13 @@ async fn test_archive_extract_task_fails_when_downloaded_source_exceeds_declared
     assert_eq!(resp.status(), 200);
 
     let source_file =
-        aster_drive::db::repository::file_repo::find_by_id(&state.db, archive_file_id)
+        aster_drive::db::repository::file_repo::find_by_id(state.writer_db(), archive_file_id)
             .await
             .expect("archive file should be loaded");
     let mut file_active = source_file.into_active_model();
     file_active.size = Set(1);
     file_active
-        .update(&state.db)
+        .update(state.writer_db())
         .await
         .expect("archive file declared size should update");
 
@@ -3311,10 +3314,11 @@ async fn test_archive_extract_task_cleans_created_root_after_import_failure() {
         .await
         .expect("background task max attempts config should update");
     let (token, _) = register_and_login!(app);
-    let owner = aster_drive::db::repository::user_repo::find_by_username(&state.db, "testuser")
-        .await
-        .expect("owner lookup should succeed")
-        .expect("owner should exist");
+    let owner =
+        aster_drive::db::repository::user_repo::find_by_username(state.writer_db(), "testuser")
+            .await
+            .expect("owner lookup should succeed")
+            .expect("owner should exist");
 
     let req = test::TestRequest::post()
         .uri("/api/v1/files/new")
@@ -3374,7 +3378,7 @@ async fn test_archive_extract_task_cleans_created_root_after_import_failure() {
     assert_eq!(body["data"]["status"], "failed");
 
     let cleanup_root = aster_drive::db::repository::folder_repo::find_by_name_in_parent(
-        &state.db,
+        state.writer_db(),
         owner.id,
         None,
         "cleanup-root",

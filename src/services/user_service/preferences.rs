@@ -35,7 +35,7 @@ pub async fn get_preferences(
     state: &PrimaryAppState,
     user_id: i64,
 ) -> Result<Option<UserPreferences>> {
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
     Ok(parse_preferences(&user))
 }
 
@@ -122,7 +122,7 @@ async fn save_user_config(
         Some(StoredUserConfig::from_config(config).map_aster_err(AsterError::internal_error)?)
     });
     active.updated_at = Set(Utc::now());
-    active.save(&state.db).await?;
+    active.save(state.writer_db()).await?;
     Ok(())
 }
 
@@ -145,7 +145,7 @@ pub async fn update_preferences(
         custom,
         remove_custom_keys,
     } = patch;
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
     let mut config = parse_user_config(&user).unwrap_or_default();
     let original_config = config.clone();
     let prefs = &mut config.preferences;

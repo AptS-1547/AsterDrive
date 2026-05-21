@@ -36,7 +36,7 @@ pub async fn cleanup_expired_completed_upload_sessions(
 
     loop {
         let sessions = upload_session_repo::find_expired_completed_paginated(
-            &state.db,
+            state.writer_db(),
             now,
             last_id.as_deref(),
             COMPLETED_SESSION_BATCH_SIZE,
@@ -55,9 +55,11 @@ pub async fn cleanup_expired_completed_upload_sessions(
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
-        let tracked_blob_paths =
-            file_repo::find_blob_storage_paths_by_storage_paths(&state.db, &broken_temp_keys)
-                .await?;
+        let tracked_blob_paths = file_repo::find_blob_storage_paths_by_storage_paths(
+            state.writer_db(),
+            &broken_temp_keys,
+        )
+        .await?;
 
         for session in sessions {
             let broken_completed = session.file_id.is_none();
@@ -72,7 +74,7 @@ pub async fn cleanup_expired_completed_upload_sessions(
             );
             crate::utils::cleanup_temp_dir(&temp_dir).await;
 
-            match upload_session_repo::delete(&state.db, &session.id).await {
+            match upload_session_repo::delete(state.writer_db(), &session.id).await {
                 Ok(()) => {
                     stats.completed_sessions_deleted += 1;
                     if broken_completed {
@@ -98,9 +100,12 @@ pub async fn reconcile_blob_state(state: &PrimaryAppState) -> Result<BlobMainten
     let mut stats = BlobMaintenanceStats::default();
 
     loop {
-        let blobs =
-            file_repo::find_blobs_paginated(&state.db, last_blob_id, BLOB_RECONCILE_BATCH_SIZE)
-                .await?;
+        let blobs = file_repo::find_blobs_paginated(
+            state.writer_db(),
+            last_blob_id,
+            BLOB_RECONCILE_BATCH_SIZE,
+        )
+        .await?;
 
         if blobs.is_empty() {
             break;
@@ -150,7 +155,7 @@ async fn reconcile_single_blob_ref_count(
     state: &PrimaryAppState,
     blob_id: i64,
 ) -> Result<Option<ReconciledBlob>> {
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         let mut blob = match file_repo::lock_blob_by_id(&txn, blob_id).await {
             Ok(blob) => blob,
@@ -213,9 +218,9 @@ async fn current_blob_ref_count<C: sea_orm::ConnectionTrait>(db: &C, blob_id: i6
 async fn load_actual_blob_ref_counts(
     state: &PrimaryAppState,
 ) -> Result<std::collections::HashMap<i64, i64>> {
-    let mut actual = file_repo::count_blob_refs_from_files(&state.db).await?;
+    let mut actual = file_repo::count_blob_refs_from_files(state.writer_db()).await?;
 
-    let version_refs = version_repo::count_blob_refs_from_versions(&state.db).await?;
+    let version_refs = version_repo::count_blob_refs_from_versions(state.writer_db()).await?;
     for (blob_id, ref_count) in version_refs {
         *actual.entry(blob_id).or_insert(0) += ref_count;
     }

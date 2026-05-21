@@ -195,12 +195,13 @@ where
 async fn archive_preview_tasks(
     state: &aster_drive::runtime::PrimaryAppState,
 ) -> Vec<background_task::Model> {
-    let mut tasks = aster_drive::db::repository::background_task_repo::list_recent(&state.db, 50)
-        .await
-        .expect("task list should load")
-        .into_iter()
-        .filter(|task| task.kind == BackgroundTaskKind::ArchivePreviewGenerate)
-        .collect::<Vec<_>>();
+    let mut tasks =
+        aster_drive::db::repository::background_task_repo::list_recent(state.writer_db(), 50)
+            .await
+            .expect("task list should load")
+            .into_iter()
+            .filter(|task| task.kind == BackgroundTaskKind::ArchivePreviewGenerate)
+            .collect::<Vec<_>>();
     tasks.sort_by_key(|task| task.id);
     tasks
 }
@@ -286,9 +287,10 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
 
-    let tasks = aster_drive::db::repository::background_task_repo::list_recent(&state.db, 10)
-        .await
-        .expect("task list should load");
+    let tasks =
+        aster_drive::db::repository::background_task_repo::list_recent(state.writer_db(), 10)
+            .await
+            .expect("task list should load");
     let task = tasks
         .iter()
         .find(|task| task.kind == BackgroundTaskKind::ArchivePreviewGenerate)
@@ -298,9 +300,10 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
     aster_drive::services::task_service::drain(&state)
         .await
         .expect("archive preview task should drain");
-    let tasks = aster_drive::db::repository::background_task_repo::list_recent(&state.db, 10)
-        .await
-        .expect("task list should load");
+    let tasks =
+        aster_drive::db::repository::background_task_repo::list_recent(state.writer_db(), 10)
+            .await
+            .expect("task list should load");
     let task = tasks
         .iter()
         .find(|task| task.kind == BackgroundTaskKind::ArchivePreviewGenerate)
@@ -378,7 +381,7 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
     );
 
     let cached = property_repo::find_by_key(
-        &state.db,
+        state.writer_db(),
         EntityType::File,
         file_id,
         "system.archive_preview",
@@ -793,7 +796,7 @@ async fn test_archive_preview_caps_high_manifest_limit_to_cache_storage_limit() 
     );
 
     let cached = property_repo::find_by_key(
-        &state.db,
+        state.writer_db(),
         EntityType::File,
         file_id,
         "system.archive_preview",

@@ -37,7 +37,7 @@ pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) 
         }
     }
 
-    if let Err(error) = file_repo::clear_thumbnail_metadata(&state.db, blob.id).await {
+    if let Err(error) = file_repo::clear_thumbnail_metadata(state.writer_db(), blob.id).await {
         tracing::warn!(
             blob_id = blob.id,
             "failed to clear thumbnail metadata: {error}"
@@ -168,7 +168,7 @@ async fn read_thumbnail_from_path(
 }
 
 async fn clear_thumbnail_metadata(state: &PrimaryAppState, blob: &file_blob::Model) {
-    if let Err(error) = file_repo::clear_thumbnail_metadata(&state.db, blob.id).await {
+    if let Err(error) = file_repo::clear_thumbnail_metadata(state.writer_db(), blob.id).await {
         tracing::warn!(
             blob_id = blob.id,
             "failed to clear stale thumbnail metadata: {error}"
@@ -184,7 +184,8 @@ pub(super) async fn persist_thumbnail_metadata(
     version: &str,
 ) {
     if let Err(error) =
-        file_repo::set_thumbnail_metadata(&state.db, blob.id, path, processor, version).await
+        file_repo::set_thumbnail_metadata(state.writer_db(), blob.id, path, processor, version)
+            .await
     {
         tracing::warn!(
             blob_id = blob.id,

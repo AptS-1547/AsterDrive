@@ -381,7 +381,7 @@ async fn test_file_preview_link_usage_limit_falls_back_when_cache_backend_does_n
 #[actix_web::test]
 async fn test_file_repo_resolve_unique_filename_prefers_first_gap_and_preserves_suffix() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
 
     let (token, _) = register_and_login!(app);
@@ -412,7 +412,7 @@ async fn test_file_repo_resolve_unique_filename_prefers_first_gap_and_preserves_
 #[actix_web::test]
 async fn test_file_repo_resolve_unique_filename_treats_nfd_and_nfc_as_same_name() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
 
     let (token, _) = register_and_login!(app);
@@ -432,7 +432,7 @@ async fn test_file_repo_resolve_unique_filename_treats_nfd_and_nfc_as_same_name(
 #[actix_web::test]
 async fn test_file_repo_resolve_unique_filename_falls_back_after_candidate_batch() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
 
     let (token, _) = register_and_login!(app);

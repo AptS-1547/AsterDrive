@@ -14,7 +14,7 @@ pub(crate) async fn delete_in_scope(
     if file.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }
-    file_repo::soft_delete(&state.db, id).await?;
+    file_repo::soft_delete(state.writer_db(), id).await?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(

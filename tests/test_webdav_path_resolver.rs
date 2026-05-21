@@ -102,7 +102,7 @@ async fn test_path_resolver_resolves_deep_folder_file_and_parent_paths() {
         seed_nested_file(&state, user.id, None).await;
 
     let folder_path = DavPath::new("/projects/docs/reports").unwrap();
-    match resolve_path(&state.db, user.id, &folder_path, None)
+    match resolve_path(state.writer_db(), user.id, &folder_path, None)
         .await
         .unwrap()
     {
@@ -111,7 +111,7 @@ async fn test_path_resolver_resolves_deep_folder_file_and_parent_paths() {
     }
 
     let file_path = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
-    match resolve_path(&state.db, user.id, &file_path, None)
+    match resolve_path(state.writer_db(), user.id, &file_path, None)
         .await
         .unwrap()
     {
@@ -121,11 +121,11 @@ async fn test_path_resolver_resolves_deep_folder_file_and_parent_paths() {
 
     let missing_intermediate = DavPath::new("/projects/docs/q1.txt/final.txt").unwrap();
     assert!(matches!(
-        resolve_path(&state.db, user.id, &missing_intermediate, None).await,
+        resolve_path(state.writer_db(), user.id, &missing_intermediate, None).await,
         Err(FsError::NotFound)
     ));
 
-    let (parent_id, leaf_name) = resolve_parent(&state.db, user.id, &file_path, None)
+    let (parent_id, leaf_name) = resolve_parent(state.writer_db(), user.id, &file_path, None)
         .await
         .unwrap();
     assert_eq!(parent_id, Some(reports.id));
@@ -155,16 +155,21 @@ async fn test_path_resolver_honors_scoped_root_semantics() {
 
     let root_path = DavPath::new("/").unwrap();
     assert!(matches!(
-        resolve_path(&state.db, user.id, &root_path, Some(scoped_root.id))
+        resolve_path(state.writer_db(), user.id, &root_path, Some(scoped_root.id))
             .await
             .unwrap(),
         ResolvedNode::Root
     ));
 
     let scoped_file_path = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
-    match resolve_path(&state.db, user.id, &scoped_file_path, Some(scoped_root.id))
-        .await
-        .unwrap()
+    match resolve_path(
+        state.writer_db(),
+        user.id,
+        &scoped_file_path,
+        Some(scoped_root.id),
+    )
+    .await
+    .unwrap()
     {
         ResolvedNode::File(found) => assert_eq!(found.id, file.id),
         other => panic!("expected scoped file, got {other:?}"),
@@ -172,12 +177,18 @@ async fn test_path_resolver_honors_scoped_root_semantics() {
 
     let escaped_scope = DavPath::new("/scoped-root/projects/docs/reports/q1.txt").unwrap();
     assert!(matches!(
-        resolve_path(&state.db, user.id, &escaped_scope, Some(scoped_root.id)).await,
+        resolve_path(
+            state.writer_db(),
+            user.id,
+            &escaped_scope,
+            Some(scoped_root.id)
+        )
+        .await,
         Err(FsError::NotFound)
     ));
 
     let (parent_id, leaf_name) = resolve_parent(
-        &state.db,
+        state.writer_db(),
         user.id,
         &DavPath::new("/draft.txt").unwrap(),
         Some(scoped_root.id),
@@ -219,18 +230,29 @@ async fn test_path_resolver_handles_root_level_and_missing_path_boundaries() {
     .unwrap();
 
     assert!(matches!(
-        resolve_path(&state.db, user.id, &DavPath::new("/").unwrap(), None)
-            .await
-            .unwrap(),
+        resolve_path(
+            state.writer_db(),
+            user.id,
+            &DavPath::new("/").unwrap(),
+            None
+        )
+        .await
+        .unwrap(),
         ResolvedNode::Root
     ));
     assert!(matches!(
-        resolve_parent(&state.db, user.id, &DavPath::new("/").unwrap(), None).await,
+        resolve_parent(
+            state.writer_db(),
+            user.id,
+            &DavPath::new("/").unwrap(),
+            None
+        )
+        .await,
         Err(FsError::Forbidden)
     ));
 
     match resolve_path(
-        &state.db,
+        state.writer_db(),
         user.id,
         &DavPath::new("/root.txt").unwrap(),
         None,
@@ -244,7 +266,7 @@ async fn test_path_resolver_handles_root_level_and_missing_path_boundaries() {
 
     assert!(matches!(
         resolve_path(
-            &state.db,
+            state.writer_db(),
             user.id,
             &DavPath::new("/missing.txt").unwrap(),
             None
@@ -254,7 +276,7 @@ async fn test_path_resolver_handles_root_level_and_missing_path_boundaries() {
     ));
     assert!(matches!(
         resolve_path(
-            &state.db,
+            state.writer_db(),
             user.id,
             &DavPath::new("/missing/final.txt").unwrap(),
             None,
@@ -264,7 +286,7 @@ async fn test_path_resolver_handles_root_level_and_missing_path_boundaries() {
     ));
     assert!(matches!(
         resolve_parent(
-            &state.db,
+            state.writer_db(),
             user.id,
             &DavPath::new("/missing/final.txt").unwrap(),
             None,
@@ -302,7 +324,7 @@ async fn test_path_resolver_prefers_folder_when_file_and_folder_share_name() {
     .unwrap();
 
     match resolve_path(
-        &state.db,
+        state.writer_db(),
         user.id,
         &DavPath::new("/shared-name").unwrap(),
         None,
@@ -315,7 +337,7 @@ async fn test_path_resolver_prefers_folder_when_file_and_folder_share_name() {
     }
 
     let (parent_id, leaf_name) = resolve_parent(
-        &state.db,
+        state.writer_db(),
         user.id,
         &DavPath::new("/shared-name/child.txt").unwrap(),
         None,
@@ -326,7 +348,7 @@ async fn test_path_resolver_prefers_folder_when_file_and_folder_share_name() {
     assert_eq!(leaf_name, "child.txt");
 
     let root_level_file = resolve_path(
-        &state.db,
+        state.writer_db(),
         user.id,
         &DavPath::new("/shared-name").unwrap(),
         None,
@@ -349,21 +371,22 @@ async fn test_path_resolver_hides_deleted_intermediate_folders() {
     let (_projects, docs, _reports, _file, _contents) =
         seed_nested_file(&state, user.id, None).await;
 
-    let docs_model = aster_drive::db::repository::folder_repo::find_by_id(&state.db, docs.id)
-        .await
-        .unwrap();
+    let docs_model =
+        aster_drive::db::repository::folder_repo::find_by_id(state.writer_db(), docs.id)
+            .await
+            .unwrap();
     let mut deleted_docs: aster_drive::entities::folder::ActiveModel = docs_model.into();
     deleted_docs.deleted_at = Set(Some(chrono::Utc::now()));
     deleted_docs.updated_at = Set(chrono::Utc::now());
-    deleted_docs.update(&state.db).await.unwrap();
+    deleted_docs.update(state.writer_db()).await.unwrap();
 
     let file_path = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
     assert!(matches!(
-        resolve_path(&state.db, user.id, &file_path, None).await,
+        resolve_path(state.writer_db(), user.id, &file_path, None).await,
         Err(FsError::NotFound)
     ));
     assert!(matches!(
-        resolve_parent(&state.db, user.id, &file_path, None).await,
+        resolve_parent(state.writer_db(), user.id, &file_path, None).await,
         Err(FsError::NotFound)
     ));
 }
@@ -517,10 +540,11 @@ async fn test_aster_dav_fs_deep_write_create_new_and_overwrite_boundaries() {
         .unwrap();
     new_file.flush().await.unwrap();
 
-    let stored = file_repo::find_by_name_in_folder(&state.db, user.id, Some(reports.id), "new.txt")
-        .await
-        .unwrap()
-        .expect("deep WebDAV write should create a file");
+    let stored =
+        file_repo::find_by_name_in_folder(state.writer_db(), user.id, Some(reports.id), "new.txt")
+            .await
+            .unwrap()
+            .expect("deep WebDAV write should create a file");
     assert_eq!(stored.size, "first version".len() as i64);
 
     assert!(matches!(
@@ -539,7 +563,7 @@ async fn test_aster_dav_fs_deep_write_create_new_and_overwrite_boundaries() {
     overwrite.flush().await.unwrap();
 
     let overwritten =
-        file_repo::find_by_name_in_folder(&state.db, user.id, Some(reports.id), "new.txt")
+        file_repo::find_by_name_in_folder(state.writer_db(), user.id, Some(reports.id), "new.txt")
             .await
             .unwrap()
             .expect("overwritten file should still exist");
@@ -598,7 +622,7 @@ async fn test_aster_dav_fs_copy_file_publishes_storage_event() {
     assert_eq!(event.affected_parent_ids, vec![reports.id]);
     assert!(!event.root_affected);
 
-    match resolve_path(&state.db, user.id, &destination, None)
+    match resolve_path(state.writer_db(), user.id, &destination, None)
         .await
         .unwrap()
     {
@@ -645,7 +669,7 @@ async fn test_aster_dav_fs_remove_dir_publishes_storage_event() {
     assert_eq!(event.affected_parent_ids, vec![projects.id]);
     assert!(!event.root_affected);
     assert!(matches!(
-        resolve_path(&state.db, user.id, &target, None).await,
+        resolve_path(state.writer_db(), user.id, &target, None).await,
         Err(FsError::NotFound)
     ));
 }
@@ -690,7 +714,7 @@ async fn test_aster_dav_fs_copy_folder_publishes_storage_event() {
     assert!(!event.root_affected);
 
     match resolve_path(
-        &state.db,
+        state.writer_db(),
         user.id,
         &DavPath::new("/projects/docs-copy/reports/q1.txt").unwrap(),
         None,

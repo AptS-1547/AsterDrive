@@ -183,7 +183,6 @@ async fn build_deletion_test_state() -> (
             crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
         );
     let state = PrimaryAppState {
-        db: db.clone(),
         db_handles: crate::db::DbHandles::single(db),
         driver_registry,
         runtime_config: runtime_config.clone(),
@@ -272,7 +271,7 @@ async fn set_user_storage_used(
 #[tokio::test]
 async fn ensure_blob_cleanup_if_unreferenced_deletes_zero_ref_blob() {
     let (state, _user, policy, driver) = build_deletion_test_state().await;
-    let blob = create_blob(&state.db, policy.id, "files/orphan.bin", 7, 0).await;
+    let blob = create_blob(state.writer_db(), policy.id, "files/orphan.bin", 7, 0).await;
     driver.insert_object(&blob.storage_path);
 
     let cleaned = ensure_blob_cleanup_if_unreferenced(&state, blob.id).await;
@@ -285,7 +284,7 @@ async fn ensure_blob_cleanup_if_unreferenced_deletes_zero_ref_blob() {
     );
     assert!(
         file_blob::Entity::find_by_id(blob.id)
-            .one(&state.db)
+            .one(state.writer_db())
             .await
             .expect("blob lookup should succeed")
             .is_none(),
@@ -296,7 +295,7 @@ async fn ensure_blob_cleanup_if_unreferenced_deletes_zero_ref_blob() {
 #[tokio::test]
 async fn ensure_blob_cleanup_if_unreferenced_skips_referenced_blob() {
     let (state, _user, policy, driver) = build_deletion_test_state().await;
-    let blob = create_blob(&state.db, policy.id, "files/in-use.bin", 9, 2).await;
+    let blob = create_blob(state.writer_db(), policy.id, "files/in-use.bin", 9, 2).await;
     driver.insert_object(&blob.storage_path);
 
     let cleaned = ensure_blob_cleanup_if_unreferenced(&state, blob.id).await;
@@ -312,7 +311,7 @@ async fn ensure_blob_cleanup_if_unreferenced_skips_referenced_blob() {
     );
     assert!(
         file_blob::Entity::find_by_id(blob.id)
-            .one(&state.db)
+            .one(state.writer_db())
             .await
             .expect("blob lookup should succeed")
             .is_some(),
@@ -324,7 +323,7 @@ async fn ensure_blob_cleanup_if_unreferenced_skips_referenced_blob() {
 async fn ensure_blob_cleanup_if_unreferenced_skips_cleanup_claimed_blob() {
     let (state, _user, policy, driver) = build_deletion_test_state().await;
     let blob = create_blob(
-        &state.db,
+        state.writer_db(),
         policy.id,
         "files/claimed.bin",
         9,
@@ -345,7 +344,7 @@ async fn ensure_blob_cleanup_if_unreferenced_skips_cleanup_claimed_blob() {
         "cleanup-claimed blob must not be deleted by a competing cleanup path"
     );
     let reloaded_blob = file_blob::Entity::find_by_id(blob.id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("blob lookup should succeed")
         .expect("cleanup-claimed blob row should remain");
@@ -359,7 +358,7 @@ async fn ensure_blob_cleanup_if_unreferenced_skips_cleanup_claimed_blob() {
 async fn cleanup_unreferenced_blob_skips_cleanup_claimed_blob() {
     let (state, _user, policy, driver) = build_deletion_test_state().await;
     let blob = create_blob(
-        &state.db,
+        state.writer_db(),
         policy.id,
         "files/reconcile-claimed.bin",
         9,
@@ -380,7 +379,7 @@ async fn cleanup_unreferenced_blob_skips_cleanup_claimed_blob() {
         "cleanup-claimed blob must not be deleted by a competing cleanup path"
     );
     let reloaded_blob = file_blob::Entity::find_by_id(blob.id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("blob lookup should succeed")
         .expect("cleanup-claimed blob row should remain");
@@ -393,10 +392,10 @@ async fn cleanup_unreferenced_blob_skips_cleanup_claimed_blob() {
 #[tokio::test]
 async fn batch_purge_in_scope_deletes_last_blob_reference() {
     let (state, user, policy, driver) = build_deletion_test_state().await;
-    let blob = create_blob(&state.db, policy.id, "files/last-ref.bin", 11, 1).await;
+    let blob = create_blob(state.writer_db(), policy.id, "files/last-ref.bin", 11, 1).await;
     driver.insert_object(&blob.storage_path);
-    let file = create_file(&state.db, user.id, blob.id, 11, "last-ref.bin").await;
-    set_user_storage_used(&state.db, &user, 11).await;
+    let file = create_file(state.writer_db(), user.id, blob.id, 11, "last-ref.bin").await;
+    set_user_storage_used(state.writer_db(), &user, 11).await;
 
     let purged = batch_purge_in_scope(
         &state,
@@ -414,7 +413,7 @@ async fn batch_purge_in_scope_deletes_last_blob_reference() {
     );
     assert!(
         file::Entity::find_by_id(file.id)
-            .one(&state.db)
+            .one(state.writer_db())
             .await
             .expect("file lookup should succeed")
             .is_none(),
@@ -422,14 +421,14 @@ async fn batch_purge_in_scope_deletes_last_blob_reference() {
     );
     assert!(
         file_blob::Entity::find_by_id(blob.id)
-            .one(&state.db)
+            .one(state.writer_db())
             .await
             .expect("blob lookup should succeed")
             .is_none(),
         "blob row should be deleted when the last reference is purged"
     );
     let reloaded_user = user::Entity::find_by_id(user.id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("user lookup should succeed")
         .expect("user should remain");
@@ -442,11 +441,11 @@ async fn batch_purge_in_scope_deletes_last_blob_reference() {
 #[tokio::test]
 async fn batch_purge_in_scope_keeps_blob_when_other_file_still_references_it() {
     let (state, user, policy, driver) = build_deletion_test_state().await;
-    let blob = create_blob(&state.db, policy.id, "files/shared.bin", 13, 2).await;
+    let blob = create_blob(state.writer_db(), policy.id, "files/shared.bin", 13, 2).await;
     driver.insert_object(&blob.storage_path);
-    let file_a = create_file(&state.db, user.id, blob.id, 13, "shared-a.bin").await;
-    let _file_b = create_file(&state.db, user.id, blob.id, 13, "shared-b.bin").await;
-    set_user_storage_used(&state.db, &user, 26).await;
+    let file_a = create_file(state.writer_db(), user.id, blob.id, 13, "shared-a.bin").await;
+    let _file_b = create_file(state.writer_db(), user.id, blob.id, 13, "shared-b.bin").await;
+    set_user_storage_used(state.writer_db(), &user, 26).await;
 
     let purged = batch_purge_in_scope(
         &state,
@@ -463,7 +462,7 @@ async fn batch_purge_in_scope_keeps_blob_when_other_file_still_references_it() {
         "shared blob must not be deleted while another file still references it"
     );
     let reloaded_blob = file_blob::Entity::find_by_id(blob.id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("blob lookup should succeed")
         .expect("shared blob should remain");
@@ -472,7 +471,7 @@ async fn batch_purge_in_scope_keeps_blob_when_other_file_still_references_it() {
         "shared blob ref_count should decrement to 1"
     );
     let reloaded_user = user::Entity::find_by_id(user.id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .expect("user lookup should succeed")
         .expect("user should remain");

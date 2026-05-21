@@ -202,8 +202,8 @@ async fn seed_migration_fixture(database_url: &str) -> i64 {
         .expect("folder id should exist");
 
     let file_id = upload_test_file_to_folder!(app, token, folder_id);
-    seed_passkey_fixture(&state.db).await;
-    seed_remote_node_fixture(&state.db).await;
+    seed_passkey_fixture(state.writer_db()).await;
+    seed_remote_node_fixture(state.writer_db()).await;
     file_id
 }
 
@@ -1043,7 +1043,7 @@ async fn test_migrations_reject_existing_schema_with_empty_history() {
 async fn test_root_binary_doctor_deep_fix_repairs_counters() {
     let database_url = setup_database_url().await;
     let state = common::setup_with_database_url(&database_url).await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
     let file_id = upload_test_file!(app, token);
@@ -1107,7 +1107,7 @@ async fn test_root_binary_doctor_deep_fix_repairs_counters() {
 async fn test_root_binary_doctor_scope_and_policy_filter_limit_deep_checks() {
     let database_url = setup_database_url().await;
     let state = common::setup_with_database_url(&database_url).await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let policy = policy_repo::find_default(&db)
         .await
         .unwrap()

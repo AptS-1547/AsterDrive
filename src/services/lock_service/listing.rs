@@ -17,7 +17,8 @@ pub async fn list_paginated(
 ) -> Result<OffsetPage<ResourceLock>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
-            lock_repo::find_paginated(&state.db, limit, offset, sort_by, sort_order).await?;
+            lock_repo::find_paginated(state.writer_db(), limit, offset, sort_by, sort_order)
+                .await?;
         let items = build_resource_locks(state, items).await?;
         Ok((items, total))
     })

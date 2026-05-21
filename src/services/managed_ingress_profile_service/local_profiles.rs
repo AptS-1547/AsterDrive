@@ -19,7 +19,7 @@ pub async fn list<S: FollowerRuntimeState>(
     binding: &master_binding::Model,
 ) -> Result<Vec<RemoteIngressProfileInfo>> {
     Ok(
-        managed_ingress_profile_repo::find_all_by_binding(state.db(), binding.id)
+        managed_ingress_profile_repo::find_all_by_binding(state.writer_db(), binding.id)
             .await?
             .into_iter()
             .map(Into::into)
@@ -33,7 +33,7 @@ pub async fn create<S: FollowerRuntimeState>(
     input: RemoteCreateIngressProfileRequest,
 ) -> Result<RemoteIngressProfileInfo> {
     let normalized = normalize_create_input(input)?;
-    let profile_id = crate::db::transaction::with_transaction(state.db(), async |txn| {
+    let profile_id = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
         let should_set_default = normalized.is_default == Some(true)
             || managed_ingress_profile_repo::count_by_binding(txn, binding.id).await? == 0;
         let now = Utc::now();
@@ -67,7 +67,7 @@ pub async fn create<S: FollowerRuntimeState>(
         Ok(created.id)
     })
     .await?;
-    let profile = managed_ingress_profile_repo::find_by_id(state.db(), profile_id).await?;
+    let profile = managed_ingress_profile_repo::find_by_id(state.writer_db(), profile_id).await?;
     Ok(reconcile_profile(state, profile).await?.into())
 }
 
@@ -87,7 +87,7 @@ pub async fn update<S: FollowerRuntimeState>(
         ));
     }
 
-    let profile_id = crate::db::transaction::with_transaction(state.db(), async |txn| {
+    let profile_id = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
         let mut active: managed_ingress_profile::ActiveModel = existing.clone().into();
         active.name = Set(normalized.name);
         active.driver_type = Set(normalized.driver_type);
@@ -110,7 +110,7 @@ pub async fn update<S: FollowerRuntimeState>(
         Ok(updated.id)
     })
     .await?;
-    let profile = managed_ingress_profile_repo::find_by_id(state.db(), profile_id).await?;
+    let profile = managed_ingress_profile_repo::find_by_id(state.writer_db(), profile_id).await?;
     Ok(reconcile_profile(state, profile).await?.into())
 }
 
@@ -126,7 +126,8 @@ pub async fn delete<S: FollowerRuntimeState>(
         is_default = existing.is_default,
         "deleting managed ingress profile"
     );
-    let count = managed_ingress_profile_repo::count_by_binding(state.db(), binding.id).await?;
+    let count =
+        managed_ingress_profile_repo::count_by_binding(state.writer_db(), binding.id).await?;
     if existing.is_default && count > 1 {
         return Err(precondition_failed_with_subcode(
             ApiSubcode::ManagedIngressDefaultDeleteRequiresReplacement,
@@ -134,7 +135,7 @@ pub async fn delete<S: FollowerRuntimeState>(
         ));
     }
     managed_ingress_profile_repo::delete_by_binding_and_profile_key(
-        state.db(),
+        state.writer_db(),
         binding.id,
         &existing.profile_key,
     )
@@ -152,7 +153,7 @@ pub async fn resolve_effective_target<S: FollowerRuntimeState>(
     binding: &master_binding::Model,
 ) -> Result<ResolvedIngressTarget> {
     let profiles =
-        managed_ingress_profile_repo::find_all_by_binding(state.db(), binding.id).await?;
+        managed_ingress_profile_repo::find_all_by_binding(state.writer_db(), binding.id).await?;
     if profiles.is_empty() {
         return Err(precondition_failed_with_subcode(
             ApiSubcode::ManagedIngressRequired,
@@ -160,14 +161,15 @@ pub async fn resolve_effective_target<S: FollowerRuntimeState>(
         ));
     }
 
-    let profile = managed_ingress_profile_repo::find_default_by_binding(state.db(), binding.id)
-        .await?
-        .ok_or_else(|| {
-            precondition_failed_with_subcode(
-                ApiSubcode::ManagedIngressDefaultMissing,
-                "managed ingress profiles exist but no default profile is configured",
-            )
-        })?;
+    let profile =
+        managed_ingress_profile_repo::find_default_by_binding(state.writer_db(), binding.id)
+            .await?
+            .ok_or_else(|| {
+                precondition_failed_with_subcode(
+                    ApiSubcode::ManagedIngressDefaultMissing,
+                    "managed ingress profiles exist but no default profile is configured",
+                )
+            })?;
     if !profile.last_error.trim().is_empty() {
         return Err(precondition_failed_with_subcode(
             ApiSubcode::ManagedIngressDefaultError,
@@ -200,7 +202,7 @@ async fn find_profile_or_err<S: FollowerRuntimeState>(
     profile_key: &str,
 ) -> Result<managed_ingress_profile::Model> {
     managed_ingress_profile_repo::find_by_binding_and_profile_key(
-        state.db(),
+        state.writer_db(),
         master_binding_id,
         profile_key,
     )
@@ -225,5 +227,5 @@ async fn reconcile_profile<S: FollowerRuntimeState>(
         }
     }
     active.updated_at = Set(Utc::now());
-    managed_ingress_profile_repo::update(state.db(), active).await
+    managed_ingress_profile_repo::update(state.writer_db(), active).await
 }

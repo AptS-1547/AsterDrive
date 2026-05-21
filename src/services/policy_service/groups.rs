@@ -149,9 +149,9 @@ pub async fn create_group(
         ));
     }
 
-    validate_group_items(&state.db, &items).await?;
+    validate_group_items(state.writer_db(), &items).await?;
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let now = Utc::now();
     let group = policy_group_repo::create_group(
         &txn,
@@ -172,8 +172,8 @@ pub async fn create_group(
         policy_group_repo::set_only_default_group(&txn, group.id).await?;
     }
     crate::db::transaction::commit(txn).await?;
-    state.policy_snapshot.reload(&state.db).await?;
-    let group = policy_group_repo::find_group_by_id(&state.db, group.id).await?;
+    state.policy_snapshot.reload(state.writer_db()).await?;
+    let group = policy_group_repo::find_group_by_id(state.writer_db(), group.id).await?;
     Ok(build_group_info(state, &group))
 }
 
@@ -189,7 +189,7 @@ pub async fn update_group(
         is_default,
         items,
     } = input;
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let existing = policy_group_repo::find_group_by_id(&txn, id).await?;
     let next_is_enabled = is_enabled.unwrap_or(existing.is_enabled);
     let next_is_default = is_default.unwrap_or(existing.is_default);
@@ -265,13 +265,13 @@ pub async fn update_group(
     }
 
     crate::db::transaction::commit(txn).await?;
-    state.policy_snapshot.reload(&state.db).await?;
-    let group = policy_group_repo::find_group_by_id(&state.db, group.id).await?;
+    state.policy_snapshot.reload(state.writer_db()).await?;
+    let group = policy_group_repo::find_group_by_id(state.writer_db(), group.id).await?;
     Ok(build_group_info(state, &group))
 }
 
 pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
-    let group = policy_group_repo::find_group_by_id(&state.db, id).await?;
+    let group = policy_group_repo::find_group_by_id(state.writer_db(), id).await?;
     tracing::debug!(
         policy_group_id = id,
         policy_group_name = %group.name,
@@ -280,7 +280,7 @@ pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
     );
 
     if group.is_default {
-        let all = policy_group_repo::find_all_groups(&state.db).await?;
+        let all = policy_group_repo::find_all_groups(state.writer_db()).await?;
         let default_count = all.iter().filter(|item| item.is_default).count();
         if default_count <= 1 {
             return Err(AsterError::validation_error(
@@ -290,16 +290,17 @@ pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
     }
 
     let user_assignment_count =
-        policy_group_repo::count_user_group_assignments(&state.db, id).await?;
-    let team_assignment_count = team_repo::count_active_by_policy_group(&state.db, id).await?;
+        policy_group_repo::count_user_group_assignments(state.writer_db(), id).await?;
+    let team_assignment_count =
+        team_repo::count_active_by_policy_group(state.writer_db(), id).await?;
     if let Some(message) =
         format_group_assignment_blocker("delete", user_assignment_count, team_assignment_count)
     {
         return Err(AsterError::validation_error(message));
     }
 
-    policy_group_repo::delete_group(&state.db, id).await?;
-    state.policy_snapshot.reload(&state.db).await?;
+    policy_group_repo::delete_group(state.writer_db(), id).await?;
+    state.policy_snapshot.reload(state.writer_db()).await?;
     tracing::info!(
         policy_group_id = id,
         policy_group_name = %group.name,
@@ -319,14 +320,15 @@ pub async fn migrate_group_users(
         ));
     }
 
-    policy_group_repo::find_group_by_id(&state.db, source_group_id).await?;
-    let target_group = policy_group_repo::find_group_by_id(&state.db, target_group_id).await?;
+    policy_group_repo::find_group_by_id(state.writer_db(), source_group_id).await?;
+    let target_group =
+        policy_group_repo::find_group_by_id(state.writer_db(), target_group_id).await?;
     if !target_group.is_enabled {
         return Err(AsterError::validation_error(
             "cannot migrate users to a disabled storage policy group",
         ));
     }
-    if policy_group_repo::find_group_items(&state.db, target_group_id)
+    if policy_group_repo::find_group_items(state.writer_db(), target_group_id)
         .await?
         .is_empty()
     {
@@ -335,7 +337,7 @@ pub async fn migrate_group_users(
         ));
     }
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let migrated_assignments = user_repo::migrate_policy_group_assignments(
         &txn,
         source_group_id,
@@ -354,7 +356,7 @@ pub async fn migrate_group_users(
             migrated_assignments: 0,
         });
     }
-    state.policy_snapshot.reload(&state.db).await?;
+    state.policy_snapshot.reload(state.writer_db()).await?;
 
     Ok(PolicyGroupUserMigrationResult {
         source_group_id,

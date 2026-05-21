@@ -481,7 +481,6 @@ async fn build_test_state() -> (PrimaryAppState, PathBuf, storage_policy::Model,
         );
 
     let state = PrimaryAppState {
-        db: db.clone(),
         db_handles: crate::db::DbHandles::single(db),
         driver_registry: Arc::new(DriverRegistry::new()),
         runtime_config: runtime_config.clone(),
@@ -525,7 +524,10 @@ async fn exact_name_conflict_cleans_preuploaded_local_blob() {
     .await
     .unwrap();
 
-    let blob_count_before = file_blob::Entity::find().count(&state.db).await.unwrap();
+    let blob_count_before = file_blob::Entity::find()
+        .count(state.writer_db())
+        .await
+        .unwrap();
     let upload_tree_before = snapshot_dir_tree(&uploads_root).unwrap();
 
     let second_temp = temp_root.join("second.bin");
@@ -555,7 +557,10 @@ async fn exact_name_conflict_cleans_preuploaded_local_blob() {
         err.message()
     );
 
-    let blob_count_after = file_blob::Entity::find().count(&state.db).await.unwrap();
+    let blob_count_after = file_blob::Entity::find()
+        .count(state.writer_db())
+        .await
+        .unwrap();
     let upload_tree_after = snapshot_dir_tree(&uploads_root).unwrap();
     assert_eq!(blob_count_after, blob_count_before);
     assert_eq!(upload_tree_after, upload_tree_before);
@@ -620,7 +625,7 @@ async fn temp_store_silent_exact_name_updates_storage_without_storage_event() {
     .expect("silent temp store should succeed");
     assert_eq!(silent.name, "silent.txt");
 
-    let owner = crate::db::repository::user_repo::find_by_id(&state.db, user.id)
+    let owner = crate::db::repository::user_repo::find_by_id(state.writer_db(), user.id)
         .await
         .expect("owner should still exist");
     assert_eq!(
@@ -654,7 +659,7 @@ async fn temp_preupload_quota_failure_does_not_write_blob() {
 
     let mut active: user::ActiveModel = user.clone().into();
     active.storage_quota = Set((payload.len() as i64) - 1);
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     let upload_tree_before = snapshot_dir_tree(&uploads_root).unwrap();
     let err = store_from_temp_with_hints(
@@ -677,7 +682,13 @@ async fn temp_preupload_quota_failure_does_not_write_blob() {
 
     assert_eq!(err.code(), "E032");
     assert_eq!(driver.put_file_count(), 0);
-    assert_eq!(file_blob::Entity::find().count(&state.db).await.unwrap(), 0);
+    assert_eq!(
+        file_blob::Entity::find()
+            .count(state.writer_db())
+            .await
+            .unwrap(),
+        0
+    );
     assert_eq!(
         snapshot_dir_tree(&uploads_root).unwrap(),
         upload_tree_before
@@ -713,7 +724,7 @@ async fn preuploaded_quota_failure_cleans_local_blob() {
 
     let mut active: user::ActiveModel = user.clone().into();
     active.storage_quota = Set((payload.len() as i64) - 1);
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     let err = store_preuploaded_nondedup(
         &state,
@@ -733,7 +744,13 @@ async fn preuploaded_quota_failure_cleans_local_blob() {
     .expect_err("quota failure should clean preuploaded blob");
 
     assert_eq!(err.code(), "E032");
-    assert_eq!(file_blob::Entity::find().count(&state.db).await.unwrap(), 0);
+    assert_eq!(
+        file_blob::Entity::find()
+            .count(state.writer_db())
+            .await
+            .unwrap(),
+        0
+    );
     assert!(snapshot_dir_tree(&uploads_root).unwrap().is_empty());
 
     drop(state);

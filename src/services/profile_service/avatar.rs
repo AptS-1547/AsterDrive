@@ -38,7 +38,7 @@ async fn write_local_avatar(path: &std::path::Path, data: &[u8]) -> Result<()> {
 }
 
 pub async fn cleanup_avatar_upload(state: &PrimaryAppState, user_id: i64) -> Result<()> {
-    let profile = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    let profile = user_profile_repo::find_by_user_id(state.writer_db(), user_id).await?;
     if let Some(profile) = profile.as_ref() {
         delete_upload_objects(state, profile).await;
     }
@@ -50,8 +50,8 @@ pub async fn upload_avatar(
     user_id: i64,
     payload: &mut Multipart,
 ) -> Result<UserProfileInfo> {
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
-    let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
+    let existing = user_profile_repo::find_by_user_id(state.writer_db(), user_id).await?;
     let upload_data = read_avatar_upload(
         payload,
         operations::avatar_max_upload_size_bytes(&state.runtime_config),
@@ -64,7 +64,7 @@ pub async fn upload_avatar(
     )
     .await?;
     user_repo::check_quota(
-        &state.db,
+        state.writer_db(),
         user_id,
         i64::try_from(processed_avatar.small_bytes.len() + processed_avatar.large_bytes.len())
             .unwrap_or(i64::MAX),
@@ -94,14 +94,14 @@ pub async fn upload_avatar(
             active.avatar_key = Set(Some(prefix_key.clone()));
             active.avatar_version = Set(version);
             active.updated_at = Set(now);
-            user_profile_repo::update(&state.db, active).await
+            user_profile_repo::update(state.writer_db(), active).await
         }
         None => {
             let mut active = default_profile_active_model(user_id, now);
             active.avatar_source = Set(AvatarSource::Upload);
             active.avatar_key = Set(Some(prefix_key.clone()));
             active.avatar_version = Set(version);
-            user_profile_repo::create(&state.db, active).await
+            user_profile_repo::create(state.writer_db(), active).await
         }
     };
 
@@ -137,8 +137,8 @@ pub async fn set_avatar_source(
         ));
     }
 
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
-    let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
+    let existing = user_profile_repo::find_by_user_id(state.writer_db(), user_id).await?;
     let gravatar_base_url = resolve_gravatar_base_url(state);
 
     if existing.is_none() && source == AvatarSource::None {
@@ -159,12 +159,12 @@ pub async fn set_avatar_source(
             active.avatar_key = Set(None);
             active.avatar_version = Set(next_version);
             active.updated_at = Set(now);
-            user_profile_repo::update(&state.db, active).await?
+            user_profile_repo::update(state.writer_db(), active).await?
         }
         None => {
             let mut active = default_profile_active_model(user_id, now);
             active.avatar_source = Set(source);
-            user_profile_repo::create(&state.db, active).await?
+            user_profile_repo::create(state.writer_db(), active).await?
         }
     };
 

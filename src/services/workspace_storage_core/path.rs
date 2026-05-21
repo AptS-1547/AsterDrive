@@ -72,7 +72,7 @@ pub(crate) async fn ensure_upload_parent_path(
         });
     }
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let mut current_parent = parsed.base_folder_id;
     let mut current_folder = parsed.base_folder;
 

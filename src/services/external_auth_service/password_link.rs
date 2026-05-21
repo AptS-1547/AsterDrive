@@ -33,7 +33,7 @@ pub async fn link_with_password(
 
     let now = Utc::now();
     let flow = external_auth_email_verification_flow_repo::find_active_by_flow_token_hash(
-        &state.db,
+        state.writer_db(),
         &token_hash(&flow_token),
         now,
     )
@@ -41,14 +41,15 @@ pub async fn link_with_password(
     .ok_or_else(|| {
         AsterError::contact_verification_invalid("external auth email verification flow is invalid")
     })?;
-    let provider = external_auth_provider_repo::find_by_id(&state.db, flow.provider_id).await?;
+    let provider =
+        external_auth_provider_repo::find_by_id(state.writer_db(), flow.provider_id).await?;
     if !provider.enabled {
         return Err(AsterError::auth_forbidden(
             "external auth provider is disabled",
         ));
     }
 
-    let user = auth_service::shared::find_user_by_identifier(&state.db, identifier).await?;
+    let user = auth_service::shared::find_user_by_identifier(state.writer_db(), identifier).await?;
     let password_hash = user
         .as_ref()
         .map(|user| user.password_hash.as_str())
@@ -69,7 +70,7 @@ pub async fn link_with_password(
     }
 
     let claims = claims_without_provider_email(&flow);
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         let consumed =
             external_auth_email_verification_flow_repo::mark_consumed_if_unused(&txn, flow.id, now)

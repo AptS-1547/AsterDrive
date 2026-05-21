@@ -37,7 +37,7 @@ pub(crate) async fn create_in_scope(
     {
         workspace_storage_service::require_team_access_with_db(
             state,
-            &state.db,
+            state.writer_db(),
             team_id,
             actor_user_id,
         )
@@ -45,10 +45,10 @@ pub(crate) async fn create_in_scope(
     }
 
     let name = crate::utils::normalize_validate_name(name)?;
-    let created_by_username = load_scope_actor_username(&state.db, scope).await?;
+    let created_by_username = load_scope_actor_username(state.writer_db(), scope).await?;
 
     let now = Utc::now();
-    let created = crate::db::transaction::with_transaction(&state.db, async |txn| {
+    let created = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
         if let Some(pid) = parent_id {
             let parent = folder_repo::lock_by_id(txn, pid).await?;
             ensure_folder_model_in_scope(&parent, scope)?;
@@ -125,7 +125,7 @@ pub(crate) async fn delete_in_scope(
     let now = Utc::now();
 
     let (folder, file_count, folder_count) =
-        crate::db::transaction::with_transaction(&state.db, async |txn| {
+        crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
             let folder = folder_repo::lock_by_id(txn, folder_id).await?;
             ensure_folder_model_in_scope(&folder, scope)?;
             if folder.is_locked {
@@ -185,7 +185,7 @@ pub(crate) async fn update_in_scope(
     parent_id: NullablePatch<i64>,
     policy_id: NullablePatch<i64>,
 ) -> Result<folder::Model> {
-    let db = &state.db;
+    let db = state.writer_db();
     tracing::debug!(
         scope = ?scope,
         folder_id = id,

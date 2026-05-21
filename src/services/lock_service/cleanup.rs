@@ -11,7 +11,7 @@ use crate::utils::numbers::usize_to_u64;
 
 /// 清理过期锁（后台任务用）
 pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
-    let db = &state.db;
+    let db = state.writer_db();
 
     // 先查出过期锁的 entity 信息（需要重置 is_locked）
     let now = Utc::now();

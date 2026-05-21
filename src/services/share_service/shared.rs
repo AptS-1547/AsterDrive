@@ -86,7 +86,7 @@ pub(super) async fn load_share_in_scope(
     share_id: i64,
 ) -> Result<share::Model> {
     workspace_storage_service::require_scope_access(state, scope).await?;
-    let share = share_repo::find_by_id(&state.db, share_id).await?;
+    let share = share_repo::find_by_id(state.writer_db(), share_id).await?;
     ensure_share_scope(&share, scope)?;
     Ok(share)
 }

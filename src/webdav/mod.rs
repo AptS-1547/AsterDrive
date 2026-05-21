@@ -114,13 +114,25 @@ pub async fn webdav_handler(
         "OPTIONS" => handle_options(),
         "REPORT" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
-                deltav::handle_report(req.uri(), &body, &state.db, &auth_result, &webdav.prefix)
-                    .await
+                deltav::handle_report(
+                    req.uri(),
+                    &body,
+                    state.writer_db(),
+                    &auth_result,
+                    &webdav.prefix,
+                )
+                .await
             }
             Err(resp) => resp,
         },
         "VERSION-CONTROL" => {
-            deltav::handle_version_control(req.uri(), &state.db, &auth_result, &webdav.prefix).await
+            deltav::handle_version_control(
+                req.uri(),
+                state.writer_db(),
+                &auth_result,
+                &webdav.prefix,
+            )
+            .await
         }
         "PROPFIND" => match collect_xml_payload(&mut payload, webdav.xml_payload_limit).await {
             Ok(body) => {
@@ -1738,7 +1750,6 @@ mod tests {
             );
 
         let state = PrimaryAppState {
-            db: db.clone(),
             db_handles: crate::db::DbHandles::single(db.clone()),
             driver_registry,
             runtime_config: runtime_config.clone(),
@@ -1765,7 +1776,7 @@ mod tests {
     ) -> (file::Model, file_blob::Model) {
         let now = Utc::now();
         let blob = file_repo::create_blob(
-            &state.db,
+            state.writer_db(),
             file_blob::ActiveModel {
                 hash: Set(format!("webdav-blob-{}", uuid::Uuid::new_v4())),
                 size: Set(size),
@@ -1781,7 +1792,7 @@ mod tests {
         .expect("webdav handler blob should be inserted");
 
         let file = file_repo::create(
-            &state.db,
+            state.writer_db(),
             file::ActiveModel {
                 name: Set(filename.to_string()),
                 folder_id: Set(None),
@@ -2237,10 +2248,11 @@ mod tests {
             "known-size WebDAV PUT should not fall back to StorageDriver::put_file()"
         );
 
-        let stored = file_repo::find_by_name_in_folder(&state.db, user.id, None, "direct.txt")
-            .await
-            .expect("stored WebDAV file lookup should succeed")
-            .expect("direct WebDAV PUT should create a file");
+        let stored =
+            file_repo::find_by_name_in_folder(state.writer_db(), user.id, None, "direct.txt")
+                .await
+                .expect("stored WebDAV file lookup should succeed")
+                .expect("direct WebDAV PUT should create a file");
         assert_eq!(
             stored.size,
             i64::try_from(body.len()).expect("request body length should fit i64")

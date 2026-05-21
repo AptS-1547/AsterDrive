@@ -248,7 +248,7 @@ async fn test_folder_name_validation_returns_400() {
 #[actix_web::test]
 async fn test_folder_repo_find_ancestors_returns_full_chain() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -540,7 +540,7 @@ async fn test_folder_copy_quota_failure_does_not_materialize_nested_descendants(
     use sea_orm::{ActiveModelTrait, Set};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -705,7 +705,7 @@ async fn test_folder_patch_can_move_to_root_with_null() {
 #[actix_web::test]
 async fn test_folder_copy_preserves_policy_ids() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 

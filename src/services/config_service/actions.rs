@@ -115,7 +115,7 @@ async fn execute_mail_action(
 ) -> Result<ConfigActionResult> {
     match action {
         ConfigActionType::SendTestEmail => {
-            let actor = user_repo::find_by_id(&state.db, actor_user_id).await?;
+            let actor = user_repo::find_by_id(state.writer_db(), actor_user_id).await?;
             let requested_target = target_email.unwrap_or(&actor.email);
             let normalized_target = mail::normalize_mail_address_config_value(requested_target)?;
             if normalized_target.is_empty() {

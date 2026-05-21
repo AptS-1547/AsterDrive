@@ -41,7 +41,7 @@ async fn copy_frontier_files_in_scope(
         return Ok(0);
     }
 
-    let db = &state.db;
+    let db = state.writer_db();
     let src_folder_ids: Vec<i64> = frontier.iter().map(|item| item.src_folder_id).collect();
     let dest_by_src: HashMap<i64, i64> = frontier
         .iter()
@@ -98,7 +98,7 @@ async fn load_frontier_child_plans_in_scope(
         return Ok(vec![]);
     }
 
-    let db = &state.db;
+    let db = state.writer_db();
     let src_folder_ids: Vec<i64> = frontier.iter().map(|item| item.src_folder_id).collect();
     let dest_by_src: HashMap<i64, i64> = frontier
         .iter()
@@ -150,7 +150,7 @@ async fn create_frontier_children_from_plans_in_scope(
         return Ok(vec![]);
     }
 
-    let db = &state.db;
+    let db = state.writer_db();
     let mut dest_parent_ids: Vec<i64> =
         child_plans.iter().map(|plan| plan.dest_parent_id).collect();
     dest_parent_ids.sort_unstable();
@@ -221,7 +221,7 @@ pub(crate) async fn copy_folder_tree_in_scope(
     dest_parent_id: Option<i64>,
     dest_name: &str,
 ) -> Result<(folder::Model, i64)> {
-    let db = &state.db;
+    let db = state.writer_db();
     let now = Utc::now();
     let src_folder = folder_repo::find_by_id(db, src_folder_id).await?;
     ensure_folder_model_in_scope(&src_folder, scope)?;
@@ -271,7 +271,7 @@ pub(crate) async fn copy_folder_in_scope(
     src_id: i64,
     dest_parent_id: Option<i64>,
 ) -> Result<folder::Model> {
-    let db = &state.db;
+    let db = state.writer_db();
     tracing::debug!(
         scope = ?scope,
         src_folder_id = src_id,

@@ -45,7 +45,7 @@ macro_rules! login_user {
 #[actix_web::test]
 async fn test_team_crud_and_member_lifecycle() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -195,7 +195,7 @@ async fn test_team_crud_and_member_lifecycle() {
 #[actix_web::test]
 async fn test_team_list_keyword_filters_visible_teams_and_archived_state() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -321,7 +321,7 @@ async fn test_team_list_keyword_filters_visible_teams_and_archived_state() {
 #[actix_web::test]
 async fn test_team_permissions_for_member_and_admin() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -421,7 +421,7 @@ async fn test_team_permissions_for_member_and_admin() {
 #[actix_web::test]
 async fn test_only_system_admin_can_create_team() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -458,7 +458,7 @@ async fn test_only_system_admin_can_create_team() {
 #[actix_web::test]
 async fn test_team_owner_protection_and_archive() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -566,7 +566,7 @@ async fn test_team_owner_protection_and_archive() {
 #[actix_web::test]
 async fn test_team_admin_can_restore_archived_team() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 

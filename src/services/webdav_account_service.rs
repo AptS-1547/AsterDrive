@@ -95,7 +95,7 @@ pub async fn create(
     root_folder_id: Option<i64>,
 ) -> Result<WebdavAccountCreated> {
     // 检查用户名是否已存在
-    if webdav_account_repo::find_by_username(&state.db, username)
+    if webdav_account_repo::find_by_username(state.writer_db(), username)
         .await?
         .is_some()
     {
@@ -113,7 +113,7 @@ pub async fn create(
 
     // 如果指定了 root_folder_id，验证文件夹属于该用户
     let root_folder_path = if let Some(fid) = root_folder_id {
-        let folder = folder_repo::find_by_id(&state.db, fid).await?;
+        let folder = folder_repo::find_by_id(state.writer_db(), fid).await?;
         crate::services::folder_service::ensure_personal_folder_scope(&folder)?;
         crate::utils::verify_optional_owner(folder.owner_user_id, user_id, "folder")?;
         crate::services::folder_service::build_folder_paths_cached(state, &[fid])
@@ -135,7 +135,7 @@ pub async fn create(
     };
 
     let created = model
-        .insert(&state.db)
+        .insert(state.writer_db())
         .await
         .map_err(map_webdav_account_create_db_err)?;
     crate::webdav::auth::invalidate_webdav_auth_for_username(state, &created.username).await;
@@ -150,7 +150,7 @@ pub async fn create(
 
 /// 列出用户的所有 WebDAV 账号（带文件夹路径）
 pub async fn list(state: &PrimaryAppState, user_id: i64) -> Result<Vec<WebdavAccountInfo>> {
-    let accounts = webdav_account_repo::find_by_user(&state.db, user_id).await?;
+    let accounts = webdav_account_repo::find_by_user(state.writer_db(), user_id).await?;
     build_account_infos(state, accounts).await
 }
 
@@ -162,7 +162,8 @@ pub async fn list_paginated(
 ) -> Result<OffsetPage<WebdavAccountInfo>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
-            webdav_account_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?;
+            webdav_account_repo::find_by_user_paginated(state.writer_db(), user_id, limit, offset)
+                .await?;
         let items = build_account_infos(state, items).await?;
         Ok((items, total))
     })
@@ -199,9 +200,9 @@ async fn build_account_infos(
 
 /// 删除 WebDAV 账号（需要验证归属）
 pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
-    let account = webdav_account_repo::find_by_id(&state.db, id).await?;
+    let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
-    webdav_account_repo::delete(&state.db, id).await?;
+    webdav_account_repo::delete(state.writer_db(), id).await?;
     crate::webdav::auth::invalidate_webdav_auth_for_username(state, &account.username).await;
     tracing::debug!(
         webdav_account_id = id,
@@ -218,14 +219,14 @@ pub async fn toggle_active(
     id: i64,
     user_id: i64,
 ) -> Result<WebdavAccount> {
-    let account = webdav_account_repo::find_by_id(&state.db, id).await?;
+    let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
     let new_is_active = !account.is_active;
     let username = account.username.clone();
     let mut active: webdav_account::ActiveModel = account.into();
     active.is_active = Set(new_is_active);
     active.updated_at = Set(Utc::now());
-    let updated = webdav_account_repo::update(&state.db, active)
+    let updated = webdav_account_repo::update(state.writer_db(), active)
         .await
         .map(Into::into)?;
     crate::webdav::auth::invalidate_webdav_auth_for_username(state, &username).await;
@@ -238,7 +239,7 @@ pub async fn test_credentials(
     username: &str,
     password: &str,
 ) -> Result<()> {
-    let account = webdav_account_repo::find_by_username(&state.db, username)
+    let account = webdav_account_repo::find_by_username(state.writer_db(), username)
         .await?
         .ok_or_else(|| AsterError::auth_invalid_credentials("WebDAV account not found"))?;
 
@@ -250,7 +251,8 @@ pub async fn test_credentials(
         return Err(AsterError::auth_invalid_credentials("wrong password"));
     }
 
-    let user = crate::db::repository::user_repo::find_by_id(&state.db, account.user_id).await?;
+    let user =
+        crate::db::repository::user_repo::find_by_id(state.writer_db(), account.user_id).await?;
     if !user.status.is_active() {
         return Err(AsterError::auth_forbidden("user account is disabled"));
     }

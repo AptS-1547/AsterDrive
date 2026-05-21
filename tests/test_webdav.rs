@@ -79,7 +79,7 @@ async fn setup_with_custom_webdav_config(
     Error = actix_web::Error,
 > {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let rl = RateLimitConfig::default();
     let network_trust = state.config.network_trust.clone();
 
@@ -445,8 +445,8 @@ async fn test_webdav_get_and_head_do_not_create_runtime_temp_files() {
     let state = common::setup().await;
     let runtime_temp_dir =
         aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
-    let db1 = state.db.clone();
-    let db2 = state.db.clone();
+    let db1 = state.writer_db().clone();
+    let db2 = state.writer_db().clone();
     let webdav_config = aster_drive::config::WebDavConfig::default();
     let app = test::init_service(
         App::new()
@@ -510,8 +510,8 @@ async fn test_webdav_put_local_fast_path_avoids_runtime_temp_files() {
     let state = common::setup().await;
     let runtime_temp_dir =
         aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
-    let db1 = state.db.clone();
-    let db2 = state.db.clone();
+    let db1 = state.writer_db().clone();
+    let db2 = state.writer_db().clone();
     let webdav_config = aster_drive::config::WebDavConfig::default();
     let app = test::init_service(
         App::new()
@@ -570,8 +570,8 @@ async fn test_webdav_put_without_content_length_avoids_runtime_temp_files() {
     let runtime_temp_dir =
         aster_drive::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
     let upload_temp_dir = state.config.server.upload_temp_dir.clone();
-    let db1 = state.db.clone();
-    let db2 = state.db.clone();
+    let db1 = state.writer_db().clone();
+    let db2 = state.writer_db().clone();
     let webdav_config = aster_drive::config::WebDavConfig::default();
     let app = test::init_service(
         App::new()
@@ -637,8 +637,8 @@ async fn test_webdav_runtime_toggle_takes_effect_immediately() {
     use serde_json::Value;
 
     let state = common::setup().await;
-    let db1 = state.db.clone();
-    let db2 = state.db.clone();
+    let db1 = state.writer_db().clone();
+    let db2 = state.writer_db().clone();
     let webdav_config = aster_drive::config::WebDavConfig::default();
     let app = test::init_service(
         App::new()
@@ -1393,8 +1393,8 @@ async fn test_webdav_hides_and_rejects_system_property_namespace() {
     use aster_drive::services::auth_service;
 
     let state = common::setup().await;
-    let db1 = state.db.clone();
-    let db2 = state.db.clone();
+    let db1 = state.writer_db().clone();
+    let db2 = state.writer_db().clone();
     let webdav_config = aster_drive::config::WebDavConfig::default();
     let app = test::init_service(
         App::new()
@@ -1422,13 +1422,17 @@ async fn test_webdav_hides_and_rejects_system_property_namespace() {
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 201 || resp.status() == 204);
 
-    let file =
-        file_repo::find_by_name_in_folder(&state.db, claims.user_id, None, "system-props.zip")
-            .await
-            .expect("file lookup should succeed")
-            .expect("uploaded file should exist");
+    let file = file_repo::find_by_name_in_folder(
+        state.writer_db(),
+        claims.user_id,
+        None,
+        "system-props.zip",
+    )
+    .await
+    .expect("file lookup should succeed")
+    .expect("uploaded file should exist");
     property_repo::upsert(
-        &state.db,
+        state.writer_db(),
         EntityType::File,
         file.id,
         "system.archive_preview",
@@ -1484,7 +1488,7 @@ async fn test_webdav_hides_and_rejects_system_property_namespace() {
     );
 
     let cached = property_repo::find_by_key(
-        &state.db,
+        state.writer_db(),
         EntityType::File,
         file.id,
         "system.archive_preview",

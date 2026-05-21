@@ -447,7 +447,7 @@ async fn upload_chunk_impl(
     chunk_number: i32,
     data: Bytes,
 ) -> Result<ChunkUploadResponse> {
-    let db = &state.db;
+    let db = state.writer_db();
     let upload_id = session.id.as_str();
     tracing::debug!(
         upload_id,
@@ -653,7 +653,7 @@ async fn upload_chunk_payload_impl(
     chunk_number: i32,
     mut payload: actix_web::web::Payload,
 ) -> Result<ChunkUploadResponse> {
-    let db = &state.db;
+    let db = state.writer_db();
     let upload_id = session.id.as_str();
     tracing::debug!(
         upload_id,

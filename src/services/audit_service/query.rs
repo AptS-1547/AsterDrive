@@ -213,7 +213,7 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
         });
 
     let cutoff = Utc::now() - Duration::days(retention_days);
-    let deleted = audit_log_repo::delete_before(&state.db, cutoff).await?;
+    let deleted = audit_log_repo::delete_before(state.writer_db(), cutoff).await?;
     if deleted > 0 {
         tracing::info!("cleaned up {deleted} expired audit log entries");
     }

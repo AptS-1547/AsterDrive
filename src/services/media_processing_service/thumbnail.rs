@@ -56,7 +56,7 @@ pub async fn get_or_generate_thumbnail(
     if let Err(error) = ctx.driver.put(&thumbnail_path, &webp_bytes).await {
         tracing::warn!("failed to store thumbnail {thumbnail_path}: {error}");
     } else if let Err(error) = file_repo::set_thumbnail_metadata(
-        &state.db,
+        state.writer_db(),
         blob.id,
         &thumbnail_path,
         &thumbnail_processor,
@@ -145,7 +145,7 @@ async fn generate_and_store_with_context(
     .await?;
     let stored_path = ctx.driver.put(&thumbnail_path, &webp_bytes).await?;
     file_repo::set_thumbnail_metadata(
-        &state.db,
+        state.writer_db(),
         blob.id,
         &stored_path,
         &thumbnail_processor,

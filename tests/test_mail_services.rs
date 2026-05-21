@@ -217,7 +217,7 @@ async fn test_mail_outbox_dispatch_sends_due_message_and_clears_payload() {
     .to_stored()
     .unwrap();
     let row = mail_outbox_repo::create(
-        &state.db,
+        state.writer_db(),
         outbox_model(MailOutboxStatus::Pending, 0, Utc::now(), payload),
     )
     .await
@@ -229,7 +229,7 @@ async fn test_mail_outbox_dispatch_sends_due_message_and_clears_payload() {
     assert_eq!(stats.sent, 1);
     assert_eq!(stats.retried, 0);
     assert_eq!(stats.failed, 0);
-    let stored = find_outbox_row(&state.db, row.id).await;
+    let stored = find_outbox_row(state.writer_db(), row.id).await;
     assert_eq!(stored.status, MailOutboxStatus::Sent);
     assert_eq!(
         stored.payload_json.as_ref(),
@@ -257,7 +257,7 @@ async fn test_mail_outbox_dispatch_skips_future_retry_rows() {
     .to_stored()
     .unwrap();
     mail_outbox_repo::create(
-        &state.db,
+        state.writer_db(),
         outbox_model(
             MailOutboxStatus::Retry,
             1,
@@ -292,7 +292,7 @@ async fn test_mail_outbox_dispatch_retries_failed_delivery_with_truncated_error(
     .to_stored()
     .unwrap();
     let row = mail_outbox_repo::create(
-        &state.db,
+        state.writer_db(),
         outbox_model(MailOutboxStatus::Pending, 0, Utc::now(), payload),
     )
     .await
@@ -300,15 +300,16 @@ async fn test_mail_outbox_dispatch_retries_failed_delivery_with_truncated_error(
     let failing = FailingMailSender::new("x".repeat(1_200));
     let sender: Arc<dyn MailSender> = failing.clone();
 
-    let stats = mail_outbox_service::dispatch_due_with(&state.db, &state.runtime_config, &sender)
-        .await
-        .unwrap();
+    let stats =
+        mail_outbox_service::dispatch_due_with(state.writer_db(), &state.runtime_config, &sender)
+            .await
+            .unwrap();
 
     assert_eq!(stats.claimed, 1);
     assert_eq!(stats.retried, 1);
     assert_eq!(stats.failed, 0);
     assert_eq!(failing.attempts(), 1);
-    let stored = find_outbox_row(&state.db, row.id).await;
+    let stored = find_outbox_row(state.writer_db(), row.id).await;
     assert_eq!(stored.status, MailOutboxStatus::Retry);
     assert_eq!(stored.attempt_count, 1);
     assert!(stored.next_attempt_at > Utc::now());
@@ -327,7 +328,7 @@ async fn test_mail_outbox_dispatch_marks_final_failure_and_clears_payload() {
     .to_stored()
     .unwrap();
     let row = mail_outbox_repo::create(
-        &state.db,
+        state.writer_db(),
         outbox_model(MailOutboxStatus::Pending, 5, Utc::now(), payload),
     )
     .await
@@ -335,15 +336,16 @@ async fn test_mail_outbox_dispatch_marks_final_failure_and_clears_payload() {
     let failing = FailingMailSender::new("smtp unavailable");
     let sender: Arc<dyn MailSender> = failing.clone();
 
-    let stats = mail_outbox_service::dispatch_due_with(&state.db, &state.runtime_config, &sender)
-        .await
-        .unwrap();
+    let stats =
+        mail_outbox_service::dispatch_due_with(state.writer_db(), &state.runtime_config, &sender)
+            .await
+            .unwrap();
 
     assert_eq!(stats.claimed, 1);
     assert_eq!(stats.retried, 0);
     assert_eq!(stats.failed, 1);
     assert_eq!(failing.attempts(), 1);
-    let stored = find_outbox_row(&state.db, row.id).await;
+    let stored = find_outbox_row(state.writer_db(), row.id).await;
     assert_eq!(stored.status, MailOutboxStatus::Failed);
     assert_eq!(stored.attempt_count, 6);
     assert_eq!(
@@ -369,9 +371,11 @@ async fn test_mail_outbox_dispatch_reclaims_stale_processing_rows_and_drain_merg
     .unwrap();
     let mut model = outbox_model(MailOutboxStatus::Processing, 0, Utc::now(), payload.clone());
     model.processing_started_at = Set(Some(Utc::now() - Duration::seconds(120)));
-    let stale = mail_outbox_repo::create(&state.db, model).await.unwrap();
+    let stale = mail_outbox_repo::create(state.writer_db(), model)
+        .await
+        .unwrap();
     mail_outbox_repo::create(
-        &state.db,
+        state.writer_db(),
         outbox_model(MailOutboxStatus::Pending, 0, Utc::now(), payload),
     )
     .await
@@ -384,10 +388,15 @@ async fn test_mail_outbox_dispatch_reclaims_stale_processing_rows_and_drain_merg
     assert_eq!(stats.retried, 0);
     assert_eq!(stats.failed, 0);
     assert_eq!(
-        find_outbox_row(&state.db, stale.id).await.status,
+        find_outbox_row(state.writer_db(), stale.id).await.status,
         MailOutboxStatus::Sent
     );
-    assert_eq!(mail_outbox_repo::count_active(&state.db).await.unwrap(), 0);
+    assert_eq!(
+        mail_outbox_repo::count_active(state.writer_db())
+            .await
+            .unwrap(),
+        0
+    );
 }
 
 #[tokio::test]
@@ -395,7 +404,7 @@ async fn test_mail_outbox_dispatch_invalid_payload_schedules_retry_without_sendi
     let state = common::setup().await;
     apply_mail_config(&state);
     let row = mail_outbox_repo::create(
-        &state.db,
+        state.writer_db(),
         outbox_model(
             MailOutboxStatus::Pending,
             0,
@@ -416,7 +425,7 @@ async fn test_mail_outbox_dispatch_invalid_payload_schedules_retry_without_sendi
             .messages()
             .is_empty()
     );
-    let stored = find_outbox_row(&state.db, row.id).await;
+    let stored = find_outbox_row(state.writer_db(), row.id).await;
     assert_eq!(stored.status, MailOutboxStatus::Retry);
     assert!(stored.last_error.unwrap().contains("failed to decode"));
 }
@@ -434,7 +443,9 @@ async fn test_mail_outbox_dispatch_does_not_reclaim_fresh_processing_rows() {
     .unwrap();
     let mut model = outbox_model(MailOutboxStatus::Processing, 0, Utc::now(), payload);
     model.processing_started_at = Set(Some(Utc::now()));
-    mail_outbox_repo::create(&state.db, model).await.unwrap();
+    mail_outbox_repo::create(state.writer_db(), model)
+        .await
+        .unwrap();
 
     let stats = mail_outbox_service::dispatch_due(&state).await.unwrap();
 

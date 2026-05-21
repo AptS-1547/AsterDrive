@@ -40,7 +40,7 @@ impl Drop for DirModeGuard {
 async fn default_policy(
     state: &aster_drive::runtime::PrimaryAppState,
 ) -> aster_drive::entities::storage_policy::Model {
-    aster_drive::db::repository::policy_repo::find_default(&state.db)
+    aster_drive::db::repository::policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist in test setup")
@@ -100,7 +100,7 @@ async fn create_upload_session(
     let policy = default_policy(state).await;
     let now = chrono::Utc::now();
     upload_session_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::upload_session::ActiveModel {
             id: Set(spec.upload_id.to_string()),
             user_id: Set(user_id),
@@ -187,7 +187,7 @@ async fn create_blob(
 
     let now = Utc::now();
     file_repo::create_blob(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::file_blob::ActiveModel {
             hash: Set(hash.to_string()),
             size: Set(bytes.len() as i64),
@@ -213,7 +213,7 @@ async fn create_wopi_session(
     use aster_drive::db::repository::wopi_session_repo;
 
     wopi_session_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::wopi_session::ActiveModel {
             token_hash: Set(aster_drive::utils::hash::sha256_hex(token.as_bytes())),
             actor_user_id: Set(actor_user_id),
@@ -263,7 +263,7 @@ async fn test_cleanup_expired_completed_upload_sessions_removes_broken_temp_obje
     assert_eq!(stats.completed_sessions_deleted, 1);
     assert_eq!(stats.broken_completed_sessions_deleted, 1);
     assert!(
-        upload_session_repo::find_by_id(&state.db, "broken-completed")
+        upload_session_repo::find_by_id(state.writer_db(), "broken-completed")
             .await
             .is_err()
     );
@@ -307,7 +307,7 @@ async fn test_cleanup_expired_completed_upload_sessions_removes_broken_completed
     assert_eq!(stats.completed_sessions_deleted, 1);
     assert_eq!(stats.broken_completed_sessions_deleted, 1);
     assert!(
-        upload_session_repo::find_by_id(&state.db, "broken-completed-multipart")
+        upload_session_repo::find_by_id(state.writer_db(), "broken-completed-multipart")
             .await
             .is_err()
     );
@@ -324,7 +324,7 @@ async fn test_cleanup_expired_completed_upload_sessions_keeps_live_blob() {
         .await
         .unwrap();
     let file = store_test_file(&state, user.id, "kept.txt", b"kept blob").await;
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
         .await
         .unwrap();
     let policy = default_policy(&state).await;
@@ -350,12 +350,20 @@ async fn test_cleanup_expired_completed_upload_sessions_keeps_live_blob() {
     assert_eq!(stats.completed_sessions_deleted, 1);
     assert_eq!(stats.broken_completed_sessions_deleted, 0);
     assert!(
-        upload_session_repo::find_by_id(&state.db, "completed-with-file")
+        upload_session_repo::find_by_id(state.writer_db(), "completed-with-file")
             .await
             .is_err()
     );
-    assert!(file_repo::find_by_id(&state.db, file.id).await.is_ok());
-    assert!(file_repo::find_blob_by_id(&state.db, blob.id).await.is_ok());
+    assert!(
+        file_repo::find_by_id(state.writer_db(), file.id)
+            .await
+            .is_ok()
+    );
+    assert!(
+        file_repo::find_blob_by_id(state.writer_db(), blob.id)
+            .await
+            .is_ok()
+    );
     assert!(driver.exists(&blob.storage_path).await.unwrap());
 }
 
@@ -393,7 +401,7 @@ async fn test_cleanup_expired_wopi_sessions_removes_only_expired_rows() {
 
     assert!(
         wopi_session_repo::find_by_token_hash(
-            &state.db,
+            state.writer_db(),
             &aster_drive::utils::hash::sha256_hex(b"expired-wopi-token"),
         )
         .await
@@ -402,7 +410,7 @@ async fn test_cleanup_expired_wopi_sessions_removes_only_expired_rows() {
     );
     assert!(
         wopi_session_repo::find_by_token_hash(
-            &state.db,
+            state.writer_db(),
             &aster_drive::utils::hash::sha256_hex(b"live-wopi-token"),
         )
         .await
@@ -411,7 +419,10 @@ async fn test_cleanup_expired_wopi_sessions_removes_only_expired_rows() {
     );
 
     assert_eq!(
-        wopi_session::Entity::find().count(&state.db).await.unwrap(),
+        wopi_session::Entity::find()
+            .count(state.writer_db())
+            .await
+            .unwrap(),
         1
     );
 }
@@ -459,7 +470,13 @@ async fn test_cleanup_expired_completed_upload_sessions_processes_all_batches() 
 
     assert_eq!(stats.completed_sessions_deleted, 1001);
     assert_eq!(stats.broken_completed_sessions_deleted, 501);
-    assert_eq!(UploadSession::find().count(&state.db).await.unwrap(), 0);
+    assert_eq!(
+        UploadSession::find()
+            .count(state.writer_db())
+            .await
+            .unwrap(),
+        0
+    );
 }
 
 #[actix_web::test]
@@ -506,7 +523,7 @@ async fn test_cleanup_expired_completed_upload_sessions_cleans_team_sessions() {
     assert_eq!(stats.completed_sessions_deleted, 1);
     assert_eq!(stats.broken_completed_sessions_deleted, 1);
     assert!(
-        upload_session_repo::find_by_id(&state.db, "team-broken-completed")
+        upload_session_repo::find_by_id(state.writer_db(), "team-broken-completed")
             .await
             .is_err()
     );
@@ -526,14 +543,14 @@ async fn test_reconcile_blob_state_deletes_orphans_and_fixes_ref_counts() {
     let driver = state.driver_registry.get_driver(&policy).unwrap();
 
     let live_file = store_test_file(&state, user.id, "live.txt", b"live blob").await;
-    let live_blob = file_repo::find_blob_by_id(&state.db, live_file.blob_id)
+    let live_blob = file_repo::find_blob_by_id(state.writer_db(), live_file.blob_id)
         .await
         .unwrap();
     let mut live_blob_active: aster_drive::entities::file_blob::ActiveModel =
         live_blob.clone().into();
     live_blob_active.ref_count = Set(7);
     live_blob_active.updated_at = Set(Utc::now());
-    live_blob_active.update(&state.db).await.unwrap();
+    live_blob_active.update(state.writer_db()).await.unwrap();
 
     let version_hash = "b".repeat(64);
     let version_blob = create_blob(
@@ -545,7 +562,7 @@ async fn test_reconcile_blob_state_deletes_orphans_and_fixes_ref_counts() {
     )
     .await;
     version_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::file_version::ActiveModel {
             file_id: Set(live_file.id),
             blob_id: Set(version_blob.id),
@@ -571,18 +588,18 @@ async fn test_reconcile_blob_state_deletes_orphans_and_fixes_ref_counts() {
     assert_eq!(stats.ref_count_fixed, 3);
     assert_eq!(stats.orphan_blobs_deleted, 1);
 
-    let live_blob_after = file_repo::find_blob_by_id(&state.db, live_blob.id)
+    let live_blob_after = file_repo::find_blob_by_id(state.writer_db(), live_blob.id)
         .await
         .unwrap();
     assert_eq!(live_blob_after.ref_count, 1);
 
-    let version_blob_after = file_repo::find_blob_by_id(&state.db, version_blob.id)
+    let version_blob_after = file_repo::find_blob_by_id(state.writer_db(), version_blob.id)
         .await
         .unwrap();
     assert_eq!(version_blob_after.ref_count, 1);
 
     assert!(
-        file_repo::find_blob_by_id(&state.db, orphan_blob.id)
+        file_repo::find_blob_by_id(state.writer_db(), orphan_blob.id)
             .await
             .is_err()
     );
@@ -611,7 +628,7 @@ async fn test_reconcile_blob_state_processes_all_batches_without_skipping() {
 
     assert_eq!(stats.ref_count_fixed, 1001);
     assert_eq!(stats.orphan_blobs_deleted, 1001);
-    assert_eq!(FileBlob::find().count(&state.db).await.unwrap(), 0);
+    assert_eq!(FileBlob::find().count(state.writer_db()).await.unwrap(), 0);
     assert!(!driver.exists("paging/blob-0000.bin").await.unwrap());
     assert!(!driver.exists("paging/blob-1000.bin").await.unwrap());
 }
@@ -640,7 +657,7 @@ async fn test_reconcile_blob_state_skips_fresh_cleanup_claim() {
 
     assert_eq!(stats.ref_count_fixed, 0);
     assert_eq!(stats.orphan_blobs_deleted, 0);
-    let reloaded_blob = file_repo::find_blob_by_id(&state.db, blob.id)
+    let reloaded_blob = file_repo::find_blob_by_id(state.writer_db(), blob.id)
         .await
         .unwrap();
     assert_eq!(
@@ -669,7 +686,7 @@ async fn test_reconcile_blob_state_recovers_stale_cleanup_claim() {
     .await;
     let mut active: aster_drive::entities::file_blob::ActiveModel = blob.clone().into();
     active.updated_at = Set(Utc::now() - Duration::minutes(11));
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     let stats = maintenance_service::reconcile_blob_state(&state)
         .await
@@ -678,7 +695,7 @@ async fn test_reconcile_blob_state_recovers_stale_cleanup_claim() {
     assert_eq!(stats.ref_count_fixed, 1);
     assert_eq!(stats.orphan_blobs_deleted, 1);
     assert!(
-        file_repo::find_blob_by_id(&state.db, blob.id)
+        file_repo::find_blob_by_id(state.writer_db(), blob.id)
             .await
             .is_err()
     );
@@ -699,7 +716,7 @@ async fn test_purge_keeps_blob_row_when_storage_delete_fails_then_maintenance_re
     let driver = state.driver_registry.get_driver(&policy).unwrap();
 
     let file = store_test_file(&state, user.id, "retry.txt", b"retry blob").await;
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
         .await
         .unwrap();
 
@@ -712,8 +729,12 @@ async fn test_purge_keeps_blob_row_when_storage_delete_fails_then_maintenance_re
 
     file_service::purge(&state, file.id, user.id).await.unwrap();
 
-    assert!(file_repo::find_by_id(&state.db, file.id).await.is_err());
-    let blob_after_purge = file_repo::find_blob_by_id(&state.db, blob.id)
+    assert!(
+        file_repo::find_by_id(state.writer_db(), file.id)
+            .await
+            .is_err()
+    );
+    let blob_after_purge = file_repo::find_blob_by_id(state.writer_db(), blob.id)
         .await
         .unwrap();
     assert_eq!(blob_after_purge.ref_count, 0);
@@ -727,7 +748,7 @@ async fn test_purge_keeps_blob_row_when_storage_delete_fails_then_maintenance_re
 
     assert_eq!(stats.orphan_blobs_deleted, 1);
     assert!(
-        file_repo::find_blob_by_id(&state.db, blob.id)
+        file_repo::find_blob_by_id(state.writer_db(), blob.id)
             .await
             .is_err()
     );
@@ -758,7 +779,9 @@ async fn test_purge_releases_all_versioned_storage_used() {
     .await
     .unwrap();
 
-    let before_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let before_purge = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     assert_eq!(
         before_purge.storage_used,
         initial_bytes.len() as i64 + updated_bytes.len() as i64
@@ -766,7 +789,9 @@ async fn test_purge_releases_all_versioned_storage_used() {
 
     file_service::purge(&state, file.id, user.id).await.unwrap();
 
-    let after_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let after_purge = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     assert_eq!(after_purge.storage_used, 0);
 }
 
@@ -807,13 +832,15 @@ async fn test_batch_purge_releases_all_versioned_storage_used() {
     .await
     .unwrap();
 
-    let before_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let before_purge = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     assert_eq!(
         before_purge.storage_used,
         (file_a_v1.len() + file_a_v2.len() + file_b_v1.len() + file_b_v2.len()) as i64
     );
 
-    let files = file_repo::find_by_ids(&state.db, &[file_a.id, file_b.id])
+    let files = file_repo::find_by_ids(state.writer_db(), &[file_a.id, file_b.id])
         .await
         .unwrap();
     let purged = file_service::batch_purge(&state, files, user.id)
@@ -821,7 +848,9 @@ async fn test_batch_purge_releases_all_versioned_storage_used() {
         .unwrap();
     assert_eq!(purged, 2);
 
-    let after_purge = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let after_purge = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     assert_eq!(after_purge.storage_used, 0);
 }
 
@@ -839,22 +868,22 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
     let driver = state.driver_registry.get_driver(&policy).unwrap();
 
     let live_file = store_test_file(&state, user.id, "audit.txt", b"audit blob").await;
-    let live_blob = file_repo::find_blob_by_id(&state.db, live_file.blob_id)
+    let live_blob = file_repo::find_blob_by_id(state.writer_db(), live_file.blob_id)
         .await
         .unwrap();
 
     let mut user_active: aster_drive::entities::user::ActiveModel =
-        user_repo::find_by_id(&state.db, user.id)
+        user_repo::find_by_id(state.writer_db(), user.id)
             .await
             .unwrap()
             .into();
     user_active.storage_used = Set(999);
-    user_active.update(&state.db).await.unwrap();
+    user_active.update(state.writer_db()).await.unwrap();
 
     let mut blob_active: file_blob::ActiveModel = live_blob.clone().into();
     blob_active.ref_count = Set(7);
     blob_active.updated_at = Set(Utc::now());
-    blob_active.update(&state.db).await.unwrap();
+    blob_active.update(state.writer_db()).await.unwrap();
 
     driver.delete(&live_blob.storage_path).await.unwrap();
     driver.put("stray/untracked.bin", b"stray").await.unwrap();
@@ -866,11 +895,11 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
         .unwrap();
 
     let now = Utc::now();
-    common::set_foreign_key_checks(&state.db, false)
+    common::set_foreign_key_checks(state.writer_db(), false)
         .await
         .unwrap();
     let dangling_folder = folder_repo::create(
-        &state.db,
+        state.writer_db(),
         folder::ActiveModel {
             name: Set("dangling".to_string()),
             parent_id: Set(Some(999_999)),
@@ -886,12 +915,12 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
     )
     .await
     .unwrap();
-    common::set_foreign_key_checks(&state.db, true)
+    common::set_foreign_key_checks(state.writer_db(), true)
         .await
         .unwrap();
 
     let cycle_a = folder_repo::create(
-        &state.db,
+        state.writer_db(),
         folder::ActiveModel {
             name: Set("cycle-a".to_string()),
             parent_id: Set(None),
@@ -909,7 +938,7 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
     .unwrap();
 
     let cycle_b = folder_repo::create(
-        &state.db,
+        state.writer_db(),
         folder::ActiveModel {
             name: Set("cycle-b".to_string()),
             parent_id: Set(Some(cycle_a.id)),
@@ -929,9 +958,9 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
     let mut cycle_a_active: folder::ActiveModel = cycle_a.clone().into();
     cycle_a_active.parent_id = Set(Some(cycle_b.id));
     cycle_a_active.updated_at = Set(Utc::now());
-    cycle_a_active.update(&state.db).await.unwrap();
+    cycle_a_active.update(state.writer_db()).await.unwrap();
 
-    let usage_drifts = integrity_service::audit_storage_usage(&state.db)
+    let usage_drifts = integrity_service::audit_storage_usage(state.writer_db())
         .await
         .unwrap();
     assert!(usage_drifts.iter().any(|drift| {
@@ -940,7 +969,7 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
             && drift.recorded_bytes == 999
     }));
 
-    let blob_drifts = integrity_service::audit_blob_ref_counts(&state.db, None)
+    let blob_drifts = integrity_service::audit_blob_ref_counts(state.writer_db(), None)
         .await
         .unwrap();
     assert!(blob_drifts.iter().any(|drift| {
@@ -949,10 +978,13 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
             && drift.actual_ref_count == 1
     }));
 
-    let storage_report =
-        integrity_service::audit_storage_objects(&state.db, state.driver_registry.as_ref(), None)
-            .await
-            .unwrap();
+    let storage_report = integrity_service::audit_storage_objects(
+        state.writer_db(),
+        state.driver_registry.as_ref(),
+        None,
+    )
+    .await
+    .unwrap();
     assert!(
         storage_report
             .missing_blob_objects
@@ -972,7 +1004,7 @@ async fn test_integrity_audit_detects_storage_and_tree_inconsistencies() {
             .any(|issue| issue.path == current_thumb_path(&orphan_thumb_hash))
     );
 
-    let folder_issues = integrity_service::audit_folder_tree(&state.db)
+    let folder_issues = integrity_service::audit_folder_tree(state.writer_db())
         .await
         .unwrap();
     assert!(folder_issues.iter().any(|issue| {
@@ -997,46 +1029,46 @@ async fn test_integrity_fix_repairs_storage_usage_and_blob_ref_counts() {
         .await
         .unwrap();
     let file = store_test_file(&state, user.id, "repair.txt", b"repair blob").await;
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
         .await
         .unwrap();
 
     let mut user_active: aster_drive::entities::user::ActiveModel =
-        user_repo::find_by_id(&state.db, user.id)
+        user_repo::find_by_id(state.writer_db(), user.id)
             .await
             .unwrap()
             .into();
     user_active.storage_used = Set(0);
-    user_active.update(&state.db).await.unwrap();
+    user_active.update(state.writer_db()).await.unwrap();
 
     let mut blob_active: file_blob::ActiveModel = blob.clone().into();
     blob_active.ref_count = Set(0);
     blob_active.updated_at = Set(Utc::now());
-    blob_active.update(&state.db).await.unwrap();
+    blob_active.update(state.writer_db()).await.unwrap();
 
-    let usage_drifts = integrity_service::audit_storage_usage(&state.db)
+    let usage_drifts = integrity_service::audit_storage_usage(state.writer_db())
         .await
         .unwrap();
     assert_eq!(usage_drifts.len(), 1);
-    integrity_service::fix_storage_usage_drifts(&state.db, &usage_drifts)
+    integrity_service::fix_storage_usage_drifts(state.writer_db(), &usage_drifts)
         .await
         .unwrap();
     assert!(
-        integrity_service::audit_storage_usage(&state.db)
+        integrity_service::audit_storage_usage(state.writer_db())
             .await
             .unwrap()
             .is_empty()
     );
 
-    let blob_drifts = integrity_service::audit_blob_ref_counts(&state.db, None)
+    let blob_drifts = integrity_service::audit_blob_ref_counts(state.writer_db(), None)
         .await
         .unwrap();
     assert_eq!(blob_drifts.len(), 1);
-    integrity_service::fix_blob_ref_count_drifts(&state.db, &blob_drifts)
+    integrity_service::fix_blob_ref_count_drifts(state.writer_db(), &blob_drifts)
         .await
         .unwrap();
     assert!(
-        integrity_service::audit_blob_ref_counts(&state.db, None)
+        integrity_service::audit_blob_ref_counts(state.writer_db(), None)
             .await
             .unwrap()
             .is_empty()

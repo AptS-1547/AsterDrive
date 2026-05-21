@@ -175,7 +175,9 @@ async fn thumbnail_task_display_name_for_processor(
     file_id: i64,
     processor: MediaProcessorKind,
 ) -> String {
-    let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
+    let file = file_repo::find_by_id(state.writer_db(), file_id)
+        .await
+        .unwrap();
     format!(
         "Generate thumbnail for blob #{} via {}",
         file.blob_id,
@@ -195,15 +197,17 @@ async fn blob_for_file(
     state: &PrimaryAppState,
     file_id: i64,
 ) -> aster_drive::entities::file_blob::Model {
-    let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
-    file_repo::find_blob_by_id(&state.db, file.blob_id)
+    let file = file_repo::find_by_id(state.writer_db(), file_id)
+        .await
+        .unwrap();
+    file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
         .await
         .unwrap()
 }
 
 async fn thumbnail_task_count(state: &PrimaryAppState, file_id: i64) -> usize {
     let display_name = thumbnail_task_display_name(state, file_id).await;
-    background_task_repo::list_recent(&state.db, 32)
+    background_task_repo::list_recent(state.writer_db(), 32)
         .await
         .unwrap()
         .into_iter()
@@ -214,7 +218,7 @@ async fn thumbnail_task_count(state: &PrimaryAppState, file_id: i64) -> usize {
 }
 
 async fn enable_default_policy_storage_native_thumbnail(state: &PrimaryAppState) {
-    let policy = policy_repo::find_default(&state.db)
+    let policy = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
@@ -225,8 +229,12 @@ async fn enable_default_policy_storage_native_thumbnail(state: &PrimaryAppState)
         ..Default::default()
     })
     .unwrap());
-    active.update(&state.db).await.unwrap();
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 }
 
 async fn latest_thumbnail_task(
@@ -243,7 +251,7 @@ async fn latest_thumbnail_task_for_processor(
 ) -> aster_drive::entities::background_task::Model {
     let display_name = thumbnail_task_display_name_for_processor(state, file_id, processor).await;
     background_task_repo::find_latest_by_kind_and_display_name(
-        &state.db,
+        state.writer_db(),
         BackgroundTaskKind::ThumbnailGenerate,
         &display_name,
     )
@@ -447,7 +455,7 @@ async fn test_thumbnail_non_image_returns_bad_request_without_task() {
     let resp = request_thumbnail!(app, token, file_id);
 
     assert_eq!(resp.status(), 400);
-    let tasks = background_task_repo::list_recent(&state.db, 16)
+    let tasks = background_task_repo::list_recent(state.writer_db(), 16)
         .await
         .unwrap();
     assert!(

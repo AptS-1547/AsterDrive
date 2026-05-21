@@ -30,7 +30,7 @@ pub(crate) async fn ensure_archive_preview_task(
         archive_preview_task_display_name(source_file.id, blob.id, &blob.hash, limit_signature);
     if let Some(existing) =
         crate::db::repository::background_task_repo::find_latest_by_kind_and_display_name(
-            &state.db,
+            state.writer_db(),
             BackgroundTaskKind::ArchivePreviewGenerate,
             &display_name,
         )
@@ -121,7 +121,7 @@ pub(super) async fn process_archive_preview_task(
             Some("Worker claimed task"),
             None,
         )?;
-        let source_file = file_repo::find_by_id(&state.db, payload.file_id).await?;
+        let source_file = file_repo::find_by_id(state.writer_db(), payload.file_id).await?;
         ensure_source_file_matches_payload(&source_file, &payload)?;
         archive_preview_service::ensure_archive_preview_source_supported(&source_file)?;
         let limits = archive_preview_service::ArchivePreviewLimits::from_runtime_config(
@@ -142,7 +142,7 @@ pub(super) async fn process_archive_preview_task(
                 ),
             ));
         }
-        let blob = file_repo::find_blob_by_id(&state.db, source_file.blob_id).await?;
+        let blob = file_repo::find_blob_by_id(state.writer_db(), source_file.blob_id).await?;
         ensure_source_blob_matches_payload(&blob, &payload)?;
 
         let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;

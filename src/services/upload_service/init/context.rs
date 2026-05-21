@@ -163,7 +163,7 @@ async fn resolve_init_upload_policy(
     )
     .await?;
     validate_policy_upload_size(&policy, total_size)?;
-    workspace_storage_service::check_quota(&state.db, scope, total_size).await?;
+    workspace_storage_service::check_quota(state.writer_db(), scope, total_size).await?;
     Ok(policy)
 }
 
@@ -207,7 +207,7 @@ pub(super) async fn init_multipart_session_with_retry(
         let temp_key = format!("files/{upload_id}");
         let multipart_id = multipart.create_multipart_upload(&temp_key).await?;
         let inserted_result = try_persist_upload_session(
-            &state.db,
+            state.writer_db(),
             UploadSessionRecordParams {
                 upload_id: &upload_id,
                 scope: ctx.scope,

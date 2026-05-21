@@ -185,7 +185,7 @@ pub(crate) async fn batch_move_in_scope(
             .flat_map(|folder| [folder.parent_id, target_folder_id])
             .collect();
 
-        let txn = crate::db::transaction::begin(&state.db).await?;
+        let txn = crate::db::transaction::begin(state.writer_db()).await?;
         revalidate_batch_folder_move(&txn, scope, &folder_ids_to_move, target_folder_id).await?;
         file_repo::move_many_to_folder(&txn, &file_ids_to_move, target_folder_id, now).await?;
         folder_repo::move_many_to_parent(&txn, &folder_ids_to_move, target_folder_id, now).await?;

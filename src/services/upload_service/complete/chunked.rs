@@ -36,7 +36,7 @@ pub(super) async fn complete_chunked_upload_with_actor_username(
     session: upload_session::Model,
     actor_username: Option<&str>,
 ) -> Result<file::Model> {
-    let db = &state.db;
+    let db = state.writer_db();
     let created = run_upload_completion_stage(
         db,
         &session,
@@ -350,7 +350,7 @@ async fn persist_assembled_upload(
 ) -> Result<file::Model> {
     let now = Utc::now();
     let create_result = async {
-        let txn = crate::db::transaction::begin(&state.db).await?;
+        let txn = crate::db::transaction::begin(state.writer_db()).await?;
 
         let blob = match blob_plan {
             AssembledBlobPlan::Dedup {
@@ -408,7 +408,7 @@ async fn persist_preuploaded_chunked_upload(
 ) -> Result<file::Model> {
     let now = Utc::now();
     let create_result = async {
-        let txn = crate::db::transaction::begin(&state.db).await?;
+        let txn = crate::db::transaction::begin(state.writer_db()).await?;
         let blob = workspace_storage_service::persist_preuploaded_blob(&txn, prepared).await?;
         let created = workspace_storage_service::finalize_upload_session_blob_with_actor_username(
             &txn,

@@ -186,7 +186,7 @@ pub async fn set(
     }
 
     let config = apply_system_config_definition(
-        config_repo::upsert(&state.db, key, &normalized_value, updated_by).await?,
+        config_repo::upsert(state.writer_db(), key, &normalized_value, updated_by).await?,
     );
     state.runtime_config.apply(config.clone());
     invalidate_dependent_public_config_caches(key);
@@ -194,7 +194,7 @@ pub async fn set(
 }
 
 pub async fn delete(state: &PrimaryAppState, key: &str) -> Result<()> {
-    config_repo::delete_by_key(&state.db, key).await?;
+    config_repo::delete_by_key(state.writer_db(), key).await?;
     state.runtime_config.remove(key);
     invalidate_dependent_public_config_caches(key);
     tracing::debug!(key, "deleted runtime config");

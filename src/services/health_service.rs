@@ -229,7 +229,7 @@ pub async fn run_primary_system_health_checks<S: PrimaryRuntimeState>(
     state: &S,
 ) -> SystemHealthReport {
     let mut components = Vec::with_capacity(3);
-    components.push(check_database_component(state.db()).await);
+    components.push(check_database_component(state.writer_db()).await);
     components.push(check_cache_component(state).await);
     components.push(check_remote_nodes_component(state).await);
     SystemHealthReport { components }

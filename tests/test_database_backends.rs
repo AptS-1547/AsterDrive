@@ -294,12 +294,12 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
 
     let state = common::setup_with_database_url(database_url).await;
     match backend {
-        DbBackend::Postgres => assert_postgres_search_objects(&state.db).await,
-        DbBackend::MySql => assert_mysql_search_objects(&state.db).await,
+        DbBackend::Postgres => assert_postgres_search_objects(state.writer_db()).await,
+        DbBackend::MySql => assert_mysql_search_objects(state.writer_db()).await,
         _ => unreachable!("only postgres/mysql smoke tests use this helper"),
     }
-    assert_background_task_display_name_column_len(&state.db, backend).await;
-    assert_background_task_display_name_accepts_expanded_len(&state.db).await;
+    assert_background_task_display_name_column_len(state.writer_db(), backend).await;
+    assert_background_task_display_name_accepts_expanded_len(state.writer_db()).await;
 
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);

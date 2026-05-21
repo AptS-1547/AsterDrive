@@ -66,7 +66,7 @@ async fn restore_version_inner(
     file: crate::entities::file::Model,
     version: file_version::Model,
 ) -> Result<crate::entities::file::Model> {
-    let db = &state.db;
+    let db = state.writer_db();
     if file.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }
@@ -82,7 +82,7 @@ async fn restore_version_inner(
         );
     }
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
 
     let previous_blob_id = current_blob.id;
     let target_blob_id = version.blob_id;
@@ -176,7 +176,7 @@ async fn delete_version_inner(
     let version_number = version.version;
     let blob_id = version.blob_id;
     let size = version.size;
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     version_repo::delete_by_id(&txn, version_id).await?;
     version_repo::decrement_versions_after(&txn, file_id, version_number).await?;
     if size != 0 {
@@ -231,7 +231,7 @@ async fn restore_version_in_scope(
         workspace_storage_service::require_team_management_access(state, team_id, actor_user_id)
             .await?;
     }
-    let version = load_version_for_file(&state.db, file_id, version_id).await?;
+    let version = load_version_for_file(state.writer_db(), file_id, version_id).await?;
     restore_version_inner(state, scope, file, version).await
 }
 
@@ -250,7 +250,7 @@ async fn delete_version_in_scope(
         workspace_storage_service::require_team_management_access(state, team_id, actor_user_id)
             .await?;
     }
-    let version = load_version_for_file(&state.db, file_id, version_id).await?;
+    let version = load_version_for_file(state.writer_db(), file_id, version_id).await?;
     delete_version_inner(state, scope, file.folder_id, version).await
 }
 
@@ -392,7 +392,7 @@ pub async fn delete_version_with_audit(
         file_id,
     )
     .await?;
-    let _version = load_version_for_file(&state.db, file_id, version_id).await?;
+    let _version = load_version_for_file(state.writer_db(), file_id, version_id).await?;
     delete_version(state, file_id, version_id, user_id).await?;
     audit_service::log(
         state,
@@ -443,7 +443,7 @@ pub async fn delete_version_for_team_with_audit(
         file_id,
     )
     .await?;
-    let _version = load_version_for_file(&state.db, file_id, version_id).await?;
+    let _version = load_version_for_file(state.writer_db(), file_id, version_id).await?;
     delete_version_for_team(state, team_id, file_id, version_id, user_id).await?;
     audit_service::log(
         state,
@@ -460,7 +460,7 @@ pub async fn delete_version_for_team_with_audit(
 
 /// 超出版本上限时清理最旧版本
 pub async fn cleanup_excess(state: &PrimaryAppState, file_id: i64) -> Result<()> {
-    let db = &state.db;
+    let db = state.writer_db();
     let file = file_repo::find_by_id(db, file_id).await?;
     let scope = resource_scope_from_file(&file)?;
     let max_versions = get_max_versions(state).await;
@@ -474,7 +474,7 @@ pub async fn cleanup_excess(state: &PrimaryAppState, file_id: i64) -> Result<()>
         }
         let oldest = version_repo::find_oldest_by_file_id(db, file_id).await?;
         if let Some(oldest) = oldest {
-            let txn = crate::db::transaction::begin(&state.db).await?;
+            let txn = crate::db::transaction::begin(state.writer_db()).await?;
             version_repo::delete_by_id(&txn, oldest.id).await?;
             version_repo::decrement_versions_after(&txn, file_id, oldest.version).await?;
             if oldest.size != 0 {
@@ -524,7 +524,7 @@ pub async fn cleanup_excess(state: &PrimaryAppState, file_id: i64) -> Result<()>
 
 /// 清理所有版本（文件永久删除时调用）
 pub async fn purge_all_versions(state: &PrimaryAppState, file_id: i64) -> Result<()> {
-    let db = &state.db;
+    let db = state.writer_db();
     let file = file_repo::find_by_id(db, file_id).await?;
     let scope = resource_scope_from_file(&file)?;
     let versions = version_repo::find_by_file_id(db, file_id).await?;
@@ -537,7 +537,7 @@ pub async fn purge_all_versions(state: &PrimaryAppState, file_id: i64) -> Result
         )?;
     }
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let blob_ids = version_repo::delete_all_by_file_id(&txn, file_id).await?;
     if reclaimed_bytes != 0 {
         workspace_storage_service::update_storage_used_for_resource_scope(
@@ -565,7 +565,7 @@ pub async fn purge_all_versions(state: &PrimaryAppState, file_id: i64) -> Result
 
 /// 如果 blob 不再被任何文件或版本引用，减 ref_count 并可能删除物理文件
 async fn cleanup_blob_if_unused(state: &PrimaryAppState, blob_id: i64) -> Result<()> {
-    let db = &state.db;
+    let db = state.writer_db();
     let blob = file_repo::find_blob_by_id(db, blob_id).await?;
 
     file_repo::decrement_blob_ref_count(db, blob.id).await?;
@@ -587,7 +587,7 @@ async fn cleanup_blobs_if_unused_by_counts(
         return Ok(());
     }
 
-    file_repo::decrement_blob_ref_counts_by(&state.db, blob_counts).await?;
+    file_repo::decrement_blob_ref_counts_by(state.writer_db(), blob_counts).await?;
     for &(blob_id, _) in blob_counts {
         if !crate::services::file_service::ensure_blob_cleanup_if_unreferenced(state, blob_id).await
         {

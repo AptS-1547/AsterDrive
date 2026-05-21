@@ -146,7 +146,7 @@ pub(crate) async fn create_empty(
     let should_dedup = local_content_dedup_enabled(&policy);
     let now = Utc::now();
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let blob = if should_dedup {
         let storage_path = crate::utils::storage_path_from_blob_key(EMPTY_SHA256);
         let blob = file_repo::find_or_create_blob(
@@ -217,7 +217,7 @@ pub(crate) async fn store_preuploaded_nondedup(
         preuploaded_blob,
         actor_username,
     } = params;
-    let db = &state.db;
+    let db = state.writer_db();
 
     tracing::debug!(
         scope = ?scope,
@@ -277,7 +277,7 @@ pub(crate) async fn store_preuploaded_nondedup(
         .to_string();
 
     let create_result = async {
-        let txn = crate::db::transaction::begin(&state.db).await?;
+        let txn = crate::db::transaction::begin(state.writer_db()).await?;
         if storage_delta > 0 {
             check_quota(&txn, scope, storage_delta).await?;
         }

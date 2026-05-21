@@ -550,7 +550,7 @@ async fn test_register_and_login() {
     )
     .expect("refresh token should verify");
     let refresh_jti = refresh_claims.jti.expect("refresh token should carry jti");
-    let auth_session = auth_session_repo::find_by_refresh_jti(&state.db, &refresh_jti)
+    let auth_session = auth_session_repo::find_by_refresh_jti(state.writer_db(), &refresh_jti)
         .await
         .unwrap()
         .expect("auth session row should exist");
@@ -807,7 +807,7 @@ async fn test_refresh_accepts_matching_csrf_token_and_rotates_cookie() {
         .jti
         .clone()
         .expect("rotated refresh token should carry jti");
-    let rotated_session = auth_session_repo::find_by_refresh_jti(&state.db, &rotated_jti)
+    let rotated_session = auth_session_repo::find_by_refresh_jti(state.writer_db(), &rotated_jti)
         .await
         .unwrap()
         .expect("rotated auth session should exist");
@@ -838,7 +838,7 @@ async fn test_refresh_accepts_matching_csrf_token_and_rotates_cookie() {
         .jti
         .clone()
         .expect("next refresh token should carry jti");
-    let next_session = auth_session_repo::find_by_refresh_jti(&state.db, &next_jti)
+    let next_session = auth_session_repo::find_by_refresh_jti(state.writer_db(), &next_jti)
         .await
         .unwrap()
         .expect("next auth session should exist");
@@ -905,7 +905,7 @@ async fn test_refresh_reuse_detected_revokes_all_sessions() {
         .clone()
         .expect("refresh token should carry jti");
     assert!(
-        auth_session_repo::find_by_refresh_jti(&state.db, &original_jti)
+        auth_session_repo::find_by_refresh_jti(state.writer_db(), &original_jti)
             .await
             .unwrap()
             .is_some()
@@ -926,18 +926,18 @@ async fn test_refresh_reuse_detected_revokes_all_sessions() {
         .clone()
         .expect("rotated refresh token should carry jti");
     assert!(
-        auth_session_repo::find_by_refresh_jti(&state.db, &original_jti)
+        auth_session_repo::find_by_refresh_jti(state.writer_db(), &original_jti)
             .await
             .unwrap()
             .is_none()
     );
-    let rotated_session = auth_session_repo::find_by_refresh_jti(&state.db, &rotated_jti)
+    let rotated_session = auth_session_repo::find_by_refresh_jti(state.writer_db(), &rotated_jti)
         .await
         .unwrap()
         .expect("rotated auth session should exist");
     let mut active = rotated_session.into_active_model();
     active.last_seen_at = Set(chrono::Utc::now() - chrono::Duration::seconds(60));
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
@@ -946,13 +946,13 @@ async fn test_refresh_reuse_detected_revokes_all_sessions() {
         .to_request();
     assert_service_status!(app, req, 401, "refresh token reuse should be rejected");
 
-    let user = user_repo::find_by_username(&state.db, "testuser")
+    let user = user_repo::find_by_username(state.writer_db(), "testuser")
         .await
         .unwrap()
         .expect("user should exist");
     assert_eq!(user.session_version, 2);
     assert!(
-        auth_session_repo::list_active_for_user(&state.db, user.id)
+        auth_session_repo::list_active_for_user(state.writer_db(), user.id)
             .await
             .unwrap()
             .is_empty()
@@ -1059,13 +1059,13 @@ async fn test_concurrent_refresh_same_token_has_single_winner() {
     let loser = first.as_ref().err().or(second.as_ref().err()).unwrap();
     assert_eq!(loser.code(), "E012");
 
-    let user = user_repo::find_by_username(&state.db, "testuser")
+    let user = user_repo::find_by_username(state.writer_db(), "testuser")
         .await
         .unwrap()
         .expect("user should exist");
     assert_eq!(user.session_version, 1);
     assert!(
-        auth_session_repo::list_active_for_user(&state.db, user.id)
+        auth_session_repo::list_active_for_user(state.writer_db(), user.id)
             .await
             .unwrap()
             .len()
@@ -1110,13 +1110,13 @@ async fn test_recent_refresh_reuse_from_different_client_revokes_all_sessions() 
         "recent refresh reuse from a different client should be treated as compromise"
     );
 
-    let user = user_repo::find_by_username(&state.db, "testuser")
+    let user = user_repo::find_by_username(state.writer_db(), "testuser")
         .await
         .unwrap()
         .expect("user should exist");
     assert_eq!(user.session_version, 2);
     assert!(
-        auth_session_repo::list_active_for_user(&state.db, user.id)
+        auth_session_repo::list_active_for_user(state.writer_db(), user.id)
             .await
             .unwrap()
             .is_empty()
@@ -1180,13 +1180,13 @@ async fn test_recent_refresh_reuse_from_spoofed_forwarded_ip_stays_stale() {
         "untrusted forwarded IP changes should not make same-client stale refresh look compromised"
     );
 
-    let user = user_repo::find_by_username(&state.db, "testuser")
+    let user = user_repo::find_by_username(state.writer_db(), "testuser")
         .await
         .unwrap()
         .expect("user should exist");
     assert_eq!(user.session_version, 1);
     assert_eq!(
-        auth_session_repo::list_active_for_user(&state.db, user.id)
+        auth_session_repo::list_active_for_user(state.writer_db(), user.id)
             .await
             .unwrap()
             .len(),
@@ -1221,13 +1221,13 @@ async fn test_recent_refresh_reuse_without_client_evidence_revokes_all_sessions(
         "recent refresh reuse without client evidence should be treated as compromise"
     );
 
-    let user = user_repo::find_by_username(&state.db, "testuser")
+    let user = user_repo::find_by_username(state.writer_db(), "testuser")
         .await
         .unwrap()
         .expect("user should exist");
     assert_eq!(user.session_version, 2);
     assert!(
-        auth_session_repo::list_active_for_user(&state.db, user.id)
+        auth_session_repo::list_active_for_user(state.writer_db(), user.id)
             .await
             .unwrap()
             .is_empty()
@@ -1295,7 +1295,7 @@ async fn test_setup_bootstraps_public_site_url_from_request_origin() {
     assert_eq!(resp.status(), 201);
 
     let stored = aster_drive::db::repository::config_repo::find_by_key(
-        &state.db,
+        state.writer_db(),
         aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
     )
     .await
@@ -1332,7 +1332,7 @@ async fn test_setup_does_not_overwrite_existing_public_site_url() {
     assert_eq!(resp.status(), 201);
 
     let stored = aster_drive::db::repository::config_repo::find_by_key(
-        &state.db,
+        state.writer_db(),
         aster_drive::config::site_url::PUBLIC_SITE_URL_KEY,
     )
     .await
@@ -1432,7 +1432,7 @@ async fn test_register_is_blocked_when_public_registration_is_disabled() {
 #[actix_web::test]
 async fn test_register_requires_activation_until_confirmed() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -1492,7 +1492,7 @@ async fn test_register_requires_activation_until_confirmed() {
 #[actix_web::test]
 async fn test_register_skips_activation_when_register_activation_is_disabled() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     state.runtime_config.apply(common::system_config_model(
@@ -1528,7 +1528,7 @@ async fn test_register_skips_activation_when_register_activation_is_disabled() {
 #[actix_web::test]
 async fn test_register_resend_is_generic_for_unknown_identifier_and_cooldown() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -1576,7 +1576,7 @@ async fn test_register_resend_is_generic_for_unknown_identifier_and_cooldown() {
 #[actix_web::test]
 async fn test_email_change_confirmation_redirects_and_notifies_previous_email() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -1643,7 +1643,7 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
 #[actix_web::test]
 async fn test_email_change_resend_returns_generic_success_during_cooldown() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -1710,7 +1710,7 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
     use sea_orm::EntityTrait;
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -1817,7 +1817,7 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
 #[actix_web::test]
 async fn test_password_reset_confirm_rejects_reused_token() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -1873,7 +1873,7 @@ async fn test_password_reset_confirm_rejects_expired_token() {
     use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -1926,7 +1926,7 @@ async fn test_password_reset_confirm_rejects_expired_token() {
 #[actix_web::test]
 async fn test_contact_verification_confirm_rejects_password_reset_token() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -1970,7 +1970,7 @@ async fn test_contact_verification_confirm_rejects_password_reset_token() {
 #[actix_web::test]
 async fn test_password_reset_request_cooldown_returns_generic_success() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
@@ -2006,7 +2006,7 @@ async fn test_contact_verification_tokens_allow_only_one_unconsumed_token_per_pu
     use sea_orm::Set;
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let _ = register_and_login!(app);
 
@@ -2404,7 +2404,7 @@ async fn test_storage_events_stream_closes_on_server_shutdown() {
     let app = {
         use actix_web::{App, test, web};
 
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         test::init_service(
             App::new()
                 .wrap(aster_drive::api::middleware::security_headers::default_headers())
@@ -2441,7 +2441,7 @@ async fn test_storage_events_stream_rejects_new_connections_after_shutdown() {
     let app = {
         use actix_web::{App, test, web};
 
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         test::init_service(
             App::new()
                 .wrap(aster_drive::api::middleware::security_headers::default_headers())
@@ -2553,7 +2553,7 @@ async fn test_logout_clears_cookies_and_revokes_refresh_token() {
         .expect("refresh token should verify");
     let refresh_jti = refresh_claims.jti.expect("refresh token should carry jti");
     assert!(
-        auth_session_repo::find_by_refresh_jti(&state.db, &refresh_jti)
+        auth_session_repo::find_by_refresh_jti(state.writer_db(), &refresh_jti)
             .await
             .unwrap()
             .is_some()
@@ -2593,7 +2593,7 @@ async fn test_logout_clears_cookies_and_revokes_refresh_token() {
     );
     assert_eq!(cleared_access_path.as_deref(), Some("/"));
     assert_eq!(cleared_refresh_path.as_deref(), Some("/api/v1/auth"));
-    let revoked_session = auth_session_repo::find_by_refresh_jti(&state.db, &refresh_jti)
+    let revoked_session = auth_session_repo::find_by_refresh_jti(state.writer_db(), &refresh_jti)
         .await
         .unwrap()
         .expect("revoked auth session should remain as tombstone");
@@ -2727,12 +2727,12 @@ async fn test_auth_sessions_list_and_revoke_specific_device() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     assert!(
-        auth_session_repo::find_by_refresh_jti(&state.db, &refresh_a_jti)
+        auth_session_repo::find_by_refresh_jti(state.writer_db(), &refresh_a_jti)
             .await
             .unwrap()
             .is_some()
     );
-    let user = user_repo::find_by_username(&state.db, "alice")
+    let user = user_repo::find_by_username(state.writer_db(), "alice")
         .await
         .unwrap()
         .expect("user should exist");
@@ -2840,12 +2840,12 @@ async fn test_auth_sessions_can_revoke_other_devices() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["removed"], 2);
     assert!(
-        auth_session_repo::find_by_refresh_jti(&state.db, &refresh_a_jti)
+        auth_session_repo::find_by_refresh_jti(state.writer_db(), &refresh_a_jti)
             .await
             .unwrap()
             .is_some()
     );
-    let user = user_repo::find_by_username(&state.db, "testuser")
+    let user = user_repo::find_by_username(state.writer_db(), "testuser")
         .await
         .unwrap()
         .expect("user should exist");
@@ -2885,7 +2885,7 @@ async fn test_auth_sessions_can_revoke_current_device_and_clear_cookies() {
     let refresh_claims = auth_service::verify_token(&refresh, &state.config.auth.jwt_secret)
         .expect("refresh token should verify");
     let refresh_jti = refresh_claims.jti.expect("refresh token should carry jti");
-    let current_session = auth_session_repo::find_by_refresh_jti(&state.db, &refresh_jti)
+    let current_session = auth_session_repo::find_by_refresh_jti(state.writer_db(), &refresh_jti)
         .await
         .unwrap()
         .expect("current auth session should exist");
@@ -2908,7 +2908,7 @@ async fn test_auth_sessions_can_revoke_current_device_and_clear_cookies() {
         common::extract_cookie(&resp, "aster_refresh").as_deref(),
         Some("")
     );
-    let revoked_session = auth_session_repo::find_by_id(&state.db, &current_session.id)
+    let revoked_session = auth_session_repo::find_by_id(state.writer_db(), &current_session.id)
         .await
         .unwrap()
         .expect("revoked auth session should remain as tombstone");
@@ -2921,7 +2921,7 @@ async fn test_register_auto_assigns_policy() {
     use aster_drive::db::repository::policy_group_repo;
 
     let state = common::setup().await;
-    let expected_default_id = policy_group_repo::find_default_group(&state.db)
+    let expected_default_id = policy_group_repo::find_default_group(state.writer_db())
         .await
         .unwrap()
         .expect("default policy group should exist")
@@ -2981,7 +2981,6 @@ async fn test_user_status_cached_in_auth_middleware() {
 
     let base = common::setup().await;
     let state = aster_drive::runtime::PrimaryAppState {
-        db: base.db,
         db_handles: base.db_handles,
         driver_registry: base.driver_registry,
         runtime_config: base.runtime_config,
@@ -3028,7 +3027,6 @@ async fn test_disable_user_invalidates_status_cache() {
 
     let base = common::setup().await;
     let state = aster_drive::runtime::PrimaryAppState {
-        db: base.db,
         db_handles: base.db_handles,
         driver_registry: base.driver_registry,
         runtime_config: base.runtime_config,
@@ -3402,7 +3400,7 @@ async fn test_change_password_rotates_session_and_updates_login_secret() {
         .jti
         .clone()
         .expect("rotated refresh token should carry jti");
-    let rotated_session = auth_session_repo::find_by_refresh_jti(&state.db, &rotated_jti)
+    let rotated_session = auth_session_repo::find_by_refresh_jti(state.writer_db(), &rotated_jti)
         .await
         .unwrap()
         .expect("rotated auth session should exist");
@@ -3579,11 +3577,12 @@ async fn test_avatar_upload_and_source_switch() {
         .runtime_config
         .get(aster_drive::config::avatar::AVATAR_DIR_KEY)
         .expect("avatar_dir should exist");
-    let shared_policy_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist")
-        .base_path;
+    let shared_policy_base_path =
+        aster_drive::db::repository::policy_repo::find_default(state.writer_db())
+            .await
+            .unwrap()
+            .expect("default policy should exist")
+            .base_path;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -3683,7 +3682,7 @@ async fn test_avatar_read_rejects_tampered_stored_key() {
     use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let avatar_base_path = state
         .runtime_config
         .get(aster_drive::config::avatar::AVATAR_DIR_KEY)
@@ -3896,9 +3895,9 @@ async fn test_passkey_register_login_and_replay_protection() {
     let (mut softpasskey, passkey) = register_test_passkey(&app, &access, "Laptop").await;
     assert_eq!(passkey["name"], "Laptop");
     assert_eq!(passkey["sign_count"], 0);
-    let user_id = testuser_id(&state.db).await;
+    let user_id = testuser_id(state.writer_db()).await;
     let passkey_id = passkey["id"].as_i64().unwrap();
-    let stored_passkey = passkey_repo::find_by_id_for_user(&state.db, passkey_id, user_id)
+    let stored_passkey = passkey_repo::find_by_id_for_user(state.writer_db(), passkey_id, user_id)
         .await
         .unwrap()
         .unwrap();
@@ -3933,7 +3932,7 @@ async fn test_passkey_register_login_and_replay_protection() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
 
-    let sessions = auth_session_repo::list_active_for_user(&state.db, user_id)
+    let sessions = auth_session_repo::list_active_for_user(state.writer_db(), user_id)
         .await
         .unwrap();
     assert_eq!(sessions.len(), 2);
@@ -3955,9 +3954,9 @@ async fn test_passkey_login_without_identifier() {
     let (access, _) = register_and_login!(app);
 
     let (mut softpasskey, passkey) = register_test_passkey(&app, &access, "Laptop").await;
-    let user_id = testuser_id(&state.db).await;
+    let user_id = testuser_id(state.writer_db()).await;
     let passkey_id = passkey["id"].as_i64().unwrap();
-    let stored_passkey = passkey_repo::find_by_id_for_user(&state.db, passkey_id, user_id)
+    let stored_passkey = passkey_repo::find_by_id_for_user(state.writer_db(), passkey_id, user_id)
         .await
         .unwrap()
         .unwrap();
@@ -3995,9 +3994,9 @@ async fn test_passkey_conditional_login_preserves_mediation() {
     let (access, _) = register_and_login!(app);
 
     let (mut softpasskey, passkey) = register_test_passkey(&app, &access, "Laptop").await;
-    let user_id = testuser_id(&state.db).await;
+    let user_id = testuser_id(state.writer_db()).await;
     let passkey_id = passkey["id"].as_i64().unwrap();
-    let stored_passkey = passkey_repo::find_by_id_for_user(&state.db, passkey_id, user_id)
+    let stored_passkey = passkey_repo::find_by_id_for_user(state.writer_db(), passkey_id, user_id)
         .await
         .unwrap()
         .unwrap();
@@ -4039,9 +4038,9 @@ async fn test_passkey_login_rejects_identifier_mismatch() {
     let (access, _) = register_and_login!(app);
 
     let (mut softpasskey, passkey) = register_test_passkey(&app, &access, "Laptop").await;
-    let user_id = testuser_id(&state.db).await;
+    let user_id = testuser_id(state.writer_db()).await;
     let passkey_id = passkey["id"].as_i64().unwrap();
-    let stored_passkey = passkey_repo::find_by_id_for_user(&state.db, passkey_id, user_id)
+    let stored_passkey = passkey_repo::find_by_id_for_user(state.writer_db(), passkey_id, user_id)
         .await
         .unwrap()
         .unwrap();
@@ -4139,9 +4138,9 @@ async fn test_passkey_delete_prevents_future_login() {
     let (access, _) = register_and_login!(app);
 
     let (mut softpasskey, passkey) = register_test_passkey(&app, &access, "Laptop").await;
-    let user_id = testuser_id(&state.db).await;
+    let user_id = testuser_id(state.writer_db()).await;
     let passkey_id = passkey["id"].as_i64().unwrap();
-    let stored_passkey = passkey_repo::find_by_id_for_user(&state.db, passkey_id, user_id)
+    let stored_passkey = passkey_repo::find_by_id_for_user(state.writer_db(), passkey_id, user_id)
         .await
         .unwrap()
         .unwrap();
@@ -4200,18 +4199,18 @@ async fn test_passkey_disabled_user_cannot_login() {
     let (access, _) = register_and_login!(app);
 
     let (mut softpasskey, passkey) = register_test_passkey(&app, &access, "Laptop").await;
-    let user_id = testuser_id(&state.db).await;
+    let user_id = testuser_id(state.writer_db()).await;
     let passkey_id = passkey["id"].as_i64().unwrap();
-    let stored_passkey = passkey_repo::find_by_id_for_user(&state.db, passkey_id, user_id)
+    let stored_passkey = passkey_repo::find_by_id_for_user(state.writer_db(), passkey_id, user_id)
         .await
         .unwrap()
         .unwrap();
-    let mut user = user_repo::find_by_id(&state.db, 1)
+    let mut user = user_repo::find_by_id(state.writer_db(), 1)
         .await
         .unwrap()
         .into_active_model();
     user.status = Set(UserStatus::Disabled);
-    user.update(&state.db).await.unwrap();
+    user.update(state.writer_db()).await.unwrap();
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/passkeys/login/start")

@@ -19,7 +19,7 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u32> {
     let mut count: u32 = 0;
 
     // 清理过期文件（批量）
-    let expired_files = file_repo::find_expired_deleted(&state.db, cutoff).await?;
+    let expired_files = file_repo::find_expired_deleted(state.writer_db(), cutoff).await?;
     let mut by_user: HashMap<i64, Vec<file::Model>> = HashMap::new();
     let mut by_team: HashMap<i64, Vec<file::Model>> = HashMap::new();
     for file in expired_files {
@@ -66,7 +66,7 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u32> {
     }
 
     // 清理过期文件夹，只处理顶层，父文件夹会递归覆盖子项。
-    let expired_folders = folder_repo::find_expired_deleted(&state.db, cutoff).await?;
+    let expired_folders = folder_repo::find_expired_deleted(state.writer_db(), cutoff).await?;
     let expired_folder_ids: HashSet<i64> = expired_folders.iter().map(|folder| folder.id).collect();
     let top_level_folders: Vec<&folder::Model> = expired_folders
         .iter()

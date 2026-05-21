@@ -163,7 +163,7 @@ impl AsterDavFile {
                     return Err(FsError::TooLarge);
                 }
                 workspace_storage_service::check_quota(
-                    &state.db,
+                    state.writer_db(),
                     WorkspaceStorageScope::Personal { user_id },
                     size_hint,
                 )
@@ -880,7 +880,6 @@ mod tests {
             );
 
         let state = PrimaryAppState {
-            db: db.clone(),
             db_handles: crate::db::DbHandles::single(db),
             driver_registry,
             runtime_config: runtime_config.clone(),
@@ -929,10 +928,11 @@ mod tests {
             "known-size S3 WebDAV write should not create runtime temp files"
         );
 
-        let stored = file_repo::find_by_name_in_folder(&state.db, user.id, None, "direct-s3.txt")
-            .await
-            .expect("stored file lookup should succeed")
-            .expect("S3 direct WebDAV flush should create a file");
+        let stored =
+            file_repo::find_by_name_in_folder(state.writer_db(), user.id, None, "direct-s3.txt")
+                .await
+                .expect("stored file lookup should succeed")
+                .expect("S3 direct WebDAV flush should create a file");
         assert_eq!(
             stored.size,
             i64::try_from(payload.len()).expect("payload length should fit i64")

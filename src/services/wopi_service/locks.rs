@@ -206,9 +206,14 @@ pub async fn unlock_file(
 
     match active_lock.payload {
         Some(payload) if payload.lock == lock_value => {
-            lock_service::set_entity_locked(&state.db, EntityType::File, resolved.file.id, false)
-                .await?;
-            lock_repo::delete_by_id(&state.db, active_lock.lock.id).await?;
+            lock_service::set_entity_locked(
+                state.writer_db(),
+                EntityType::File,
+                resolved.file.id,
+                false,
+            )
+            .await?;
+            lock_repo::delete_by_id(state.writer_db(), active_lock.lock.id).await?;
             log_wopi_lock_action(
                 state,
                 request_info,
@@ -311,15 +316,18 @@ pub(crate) async fn load_active_lock(
     state: &PrimaryAppState,
     file_id: i64,
 ) -> Result<Option<ActiveWopiLock>> {
-    let Some(lock) = lock_repo::find_by_entity(&state.db, EntityType::File, file_id).await? else {
+    let Some(lock) =
+        lock_repo::find_by_entity(state.writer_db(), EntityType::File, file_id).await?
+    else {
         return Ok(None);
     };
 
     if let Some(timeout_at) = lock.timeout_at
         && timeout_at < Utc::now()
     {
-        lock_repo::delete_by_id(&state.db, lock.id).await?;
-        lock_service::set_entity_locked(&state.db, EntityType::File, file_id, false).await?;
+        lock_repo::delete_by_id(state.writer_db(), lock.id).await?;
+        lock_service::set_entity_locked(state.writer_db(), EntityType::File, file_id, false)
+            .await?;
         return Ok(None);
     }
 
@@ -342,7 +350,8 @@ async fn create_wopi_lock(
     file: &file::Model,
     requested_lock: &str,
 ) -> Result<()> {
-    let path = lock_service::resolve_entity_path(&state.db, EntityType::File, file.id).await?;
+    let path =
+        lock_service::resolve_entity_path(state.writer_db(), EntityType::File, file.id).await?;
     let now = Utc::now();
     let timeout_at = now + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config));
     let owner_info = lock_service::ResourceLockOwnerInfo::Wopi(lock_service::WopiLockOwnerInfo {
@@ -366,8 +375,8 @@ async fn create_wopi_lock(
         ..Default::default()
     };
 
-    lock_repo::create(&state.db, model).await?;
-    lock_service::set_entity_locked(&state.db, EntityType::File, file.id, true).await?;
+    lock_repo::create(state.writer_db(), model).await?;
+    lock_service::set_entity_locked(state.writer_db(), EntityType::File, file.id, true).await?;
     Ok(())
 }
 
@@ -377,7 +386,7 @@ async fn refresh_lock_model(state: &PrimaryAppState, lock: resource_lock::Model)
         Utc::now() + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config)),
     ));
     active
-        .update(&state.db)
+        .update(state.writer_db())
         .await
         .map_aster_err(AsterError::database_operation)?;
     Ok(())
@@ -402,7 +411,7 @@ async fn replace_wopi_lock_model(
         Utc::now() + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config)),
     ));
     active
-        .update(&state.db)
+        .update(state.writer_db())
         .await
         .map_aster_err(AsterError::database_operation)?;
     Ok(())

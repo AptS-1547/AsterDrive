@@ -25,7 +25,7 @@ pub async fn login(
     };
     tracing::debug!(identifier_kind, "login attempt");
 
-    let Some(user) = find_user_by_identifier(&state.db, identifier).await? else {
+    let Some(user) = find_user_by_identifier(state.writer_db(), identifier).await? else {
         tracing::debug!(identifier_kind, "login rejected: user not found");
         return Err(AsterError::auth_invalid_credentials("user not found"));
     };
@@ -74,7 +74,7 @@ pub async fn change_password(
     new_password: &str,
 ) -> Result<AuthUserInfo> {
     tracing::debug!(user_id, "changing password");
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
 
     if !user.status.is_active() {
         return Err(auth_forbidden_with_subcode(
@@ -96,7 +96,7 @@ pub async fn set_password(
     new_password: &str,
 ) -> Result<AuthUserInfo> {
     tracing::debug!(user_id, "setting password");
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         let user = user_repo::find_by_id(&txn, user_id).await?;
         let updated = update_password_in_connection(&txn, user, new_password).await?;

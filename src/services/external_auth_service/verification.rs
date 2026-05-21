@@ -54,7 +54,7 @@ pub(super) async fn create_pending_email_verification_flow(
         "external auth email verification flow ttl",
     )?;
     external_auth_email_verification_flow_repo::create(
-        &state.db,
+        state.writer_db(),
         external_auth_email_verification_flow::ActiveModel {
             provider_id: Set(provider.id),
             identity_namespace: Set(claims.identity_namespace.clone()),
@@ -88,7 +88,7 @@ pub async fn start_email_verification(
     let email = normalize_email_for_external_auth(&input.email)?;
     let now = Utc::now();
     let flow = external_auth_email_verification_flow_repo::find_active_by_flow_token_hash(
-        &state.db,
+        state.writer_db(),
         &token_hash(&flow_token),
         now,
     )
@@ -102,7 +102,8 @@ pub async fn start_email_verification(
         ));
     }
 
-    let provider = external_auth_provider_repo::find_by_id(&state.db, flow.provider_id).await?;
+    let provider =
+        external_auth_provider_repo::find_by_id(state.writer_db(), flow.provider_id).await?;
     if !provider.enabled {
         return Err(AsterError::auth_forbidden(
             "external auth provider is disabled",
@@ -114,7 +115,7 @@ pub async fn start_email_verification(
         ));
     }
 
-    match user_repo::find_by_email(&state.db, &email).await? {
+    match user_repo::find_by_email(state.writer_db(), &email).await? {
         Some(user) => {
             if !user.status.is_active() {
                 return Err(AsterError::auth_forbidden("account is disabled"));
@@ -140,7 +141,7 @@ pub async fn start_email_verification(
     let provider_name = provider.display_name.clone();
     let site_name = branding::title_or_default(&state.runtime_config);
     let expires_in = format_mail_duration_seconds((flow.expires_at - now).num_seconds());
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         external_auth_email_verification_flow_repo::update_email_request(
             &txn,
@@ -198,7 +199,7 @@ pub async fn confirm_email_verification(
     }
     let now = Utc::now();
     let flow = external_auth_email_verification_flow_repo::find_active_by_verification_token_hash(
-        &state.db,
+        state.writer_db(),
         &token_hash(token),
         now,
     )
@@ -211,7 +212,8 @@ pub async fn confirm_email_verification(
             "external auth email verification target is missing",
         )
     })?;
-    let provider = external_auth_provider_repo::find_by_id(&state.db, flow.provider_id).await?;
+    let provider =
+        external_auth_provider_repo::find_by_id(state.writer_db(), flow.provider_id).await?;
     if !provider.enabled {
         return Err(AsterError::auth_forbidden(
             "external auth provider is disabled",
@@ -219,7 +221,7 @@ pub async fn confirm_email_verification(
     }
 
     let claims = claims_with_verified_local_email(&flow, &email);
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let result = async {
         let consumed =
             external_auth_email_verification_flow_repo::mark_consumed_if_unused(&txn, flow.id, now)

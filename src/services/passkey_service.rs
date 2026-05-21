@@ -432,7 +432,7 @@ fn map_unique_passkey_err(err: DbErr) -> AsterError {
 }
 
 pub async fn list_passkeys(state: &PrimaryAppState, user_id: i64) -> Result<Vec<PasskeyInfo>> {
-    passkey_repo::list_for_user(&state.db, user_id)
+    passkey_repo::list_for_user(state.writer_db(), user_id)
         .await
         .map(|items| items.into_iter().map(model_to_info).collect())
 }
@@ -443,12 +443,12 @@ pub async fn start_registration(
     name: Option<&str>,
 ) -> Result<PasskeyRegisterStartResp> {
     let webauthn = build_webauthn(state)?;
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
     if !user.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
     }
-    let existing = passkey_repo::list_for_user(&state.db, user.id).await?;
-    let user_handle = user_handle_for_registration(&state.db, &existing).await?;
+    let existing = passkey_repo::list_for_user(state.writer_db(), user.id).await?;
+    let user_handle = user_handle_for_registration(state.writer_db(), &existing).await?;
     let exclude_credentials = existing
         .iter()
         .map(|item| passkey_from_json(&item.credential).map(|passkey| passkey.cred_id().clone()))
@@ -499,7 +499,7 @@ pub async fn finish_registration(
             "passkey registration challenge does not belong to user",
         ));
     }
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
     if !user.status.is_active() {
         return Err(AsterError::auth_forbidden("account is disabled"));
     }
@@ -510,7 +510,7 @@ pub async fn finish_registration(
         .finish_passkey_registration(&credential, &challenge.state)
         .map_err(webauthn_error)?;
     let credential_id = credential_id_to_storage(passkey.cred_id());
-    if passkey_repo::find_by_credential_id(&state.db, &credential_id)
+    if passkey_repo::find_by_credential_id(state.writer_db(), &credential_id)
         .await?
         .is_some()
     {
@@ -542,7 +542,7 @@ pub async fn finish_registration(
         ..Default::default()
     };
     let created = model
-        .insert(&state.db)
+        .insert(state.writer_db())
         .await
         .map_err(map_unique_passkey_err)?;
     Ok(model_to_info(created))
@@ -555,17 +555,17 @@ pub async fn rename_passkey(
     name: &str,
 ) -> Result<PasskeyInfo> {
     let name = normalize_passkey_name(Some(name))?;
-    if !passkey_repo::update_name_for_user(&state.db, id, user_id, &name).await? {
+    if !passkey_repo::update_name_for_user(state.writer_db(), id, user_id, &name).await? {
         return Err(AsterError::record_not_found(format!("passkey #{id}")));
     }
-    let passkey = passkey_repo::find_by_id_for_user(&state.db, id, user_id)
+    let passkey = passkey_repo::find_by_id_for_user(state.writer_db(), id, user_id)
         .await?
         .ok_or_else(|| AsterError::record_not_found(format!("passkey #{id}")))?;
     Ok(model_to_info(passkey))
 }
 
 pub async fn delete_passkey(state: &PrimaryAppState, user_id: i64, id: i64) -> Result<bool> {
-    passkey_repo::delete_for_user(&state.db, id, user_id).await
+    passkey_repo::delete_for_user(state.writer_db(), id, user_id).await
 }
 
 pub async fn start_login(
@@ -615,14 +615,14 @@ pub async fn finish_login(
         ));
     }
     let passkey = passkey_repo::find_by_user_handle_and_credential_id(
-        &state.db,
+        state.writer_db(),
         &user_handle_to_storage(user_handle),
         &credential_id,
     )
     .await?
     .ok_or_else(|| AsterError::auth_invalid_credentials("passkey not found"))?;
 
-    let user = user_repo::find_by_id(&state.db, passkey.user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), passkey.user_id).await?;
     if let Some(identifier) = challenge.identifier.as_deref() {
         ensure_login_identifier_matches(&user, identifier)?;
     }
@@ -645,7 +645,7 @@ pub async fn finish_login(
     if changed {
         let credential = stored_passkey_credential(&passkey_to_json(&stored)?)?;
         if !passkey_repo::update_credential_after_auth(
-            &state.db,
+            state.writer_db(),
             passkey.id,
             credential,
             result.backup_eligible(),
@@ -658,7 +658,7 @@ pub async fn finish_login(
             return Err(AsterError::auth_invalid_credentials("passkey not found"));
         }
     } else {
-        if !passkey_repo::touch_last_used(&state.db, passkey.id, now).await? {
+        if !passkey_repo::touch_last_used(state.writer_db(), passkey.id, now).await? {
             return Err(AsterError::auth_invalid_credentials("passkey not found"));
         }
     }

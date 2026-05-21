@@ -26,7 +26,7 @@ async fn restore_file_in_scope(
     let mut restore_to_root = false;
 
     if let Some(folder_id) = file.folder_id {
-        let parent = folder_repo::find_by_id(&state.db, folder_id).await;
+        let parent = folder_repo::find_by_id(state.writer_db(), folder_id).await;
         if parent_restore_target_unavailable(&parent, scope)? {
             restored_parent_id = None;
             restore_to_root = true;
@@ -34,7 +34,7 @@ async fn restore_file_in_scope(
     }
 
     if restore_to_root {
-        let txn = crate::db::transaction::begin(&state.db).await?;
+        let txn = crate::db::transaction::begin(state.writer_db()).await?;
         let file_name = file.name.clone();
         let mut active: file::ActiveModel = file.into();
         active.folder_id = Set(None);
@@ -45,7 +45,7 @@ async fn restore_file_in_scope(
             .map_err(|err| file_repo::map_name_db_err(err, &file_name))?;
         crate::db::transaction::commit(txn).await?;
     } else {
-        file_repo::restore(&state.db, id).await?;
+        file_repo::restore(state.writer_db(), id).await?;
     }
     storage_change_service::publish(
         state,
@@ -77,18 +77,18 @@ async fn restore_folder_in_scope(
     let mut restored_parent_id = folder.parent_id;
     let mut restore_to_root = false;
     let (files, folder_ids) =
-        folder_service::collect_folder_tree_in_scope(&state.db, scope, id, true).await?;
+        folder_service::collect_folder_tree_in_scope(state.writer_db(), scope, id, true).await?;
     let child_folder_ids: Vec<i64> = folder_ids.into_iter().filter(|&fid| fid != id).collect();
 
     if let Some(parent_id) = folder.parent_id {
-        let parent = folder_repo::find_by_id(&state.db, parent_id).await;
+        let parent = folder_repo::find_by_id(state.writer_db(), parent_id).await;
         if parent_restore_target_unavailable(&parent, scope)? {
             restore_to_root = true;
             restored_parent_id = None;
         }
     }
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let mut active: folder::ActiveModel = folder.into();
     let folder_name = active.name.clone().take().unwrap_or_default();
     if restore_to_root {

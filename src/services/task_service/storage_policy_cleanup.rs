@@ -71,7 +71,7 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
     ))?;
 
     background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::StoragePolicyTempCleanup),
             status: Set(BackgroundTaskStatus::Pending),
@@ -287,7 +287,7 @@ async fn remote_node_snapshot_for_policy(
     let remote_node_id = policy.remote_node_id.ok_or_else(|| {
         AsterError::validation_error("remote storage policy requires remote_node_id")
     })?;
-    let remote = managed_follower_repo::find_by_id(&state.db, remote_node_id).await?;
+    let remote = managed_follower_repo::find_by_id(state.writer_db(), remote_node_id).await?;
     Ok(Some(StoragePolicyCleanupRemoteNodeSnapshot {
         id: remote.id,
         name: remote.name,

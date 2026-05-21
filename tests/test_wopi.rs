@@ -178,7 +178,7 @@ fn parse_wopi_result_url(url: &str) -> (i64, String) {
 async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
 
     let (access_cookie, _) = register_and_login!(app);
@@ -1018,7 +1018,7 @@ async fn test_wopi_put_file_contents_rejects_non_put_override() {
 async fn test_wopi_put_relative_creates_copy_for_suggested_target() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
 
     let (access_cookie, _) = register_and_login!(app);
@@ -1710,7 +1710,7 @@ async fn test_wopi_check_file_info_rejects_untrusted_referer() {
 async fn test_disabled_wopi_app_invalidates_existing_access_token() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
 
@@ -1760,7 +1760,7 @@ async fn test_disabled_wopi_app_invalidates_existing_access_token() {
 async fn test_disabled_user_invalidates_wopi_access_token() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -1815,7 +1815,7 @@ async fn test_disabled_user_invalidates_wopi_access_token() {
 async fn test_expired_wopi_access_token_is_rejected_and_removed() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
 
     let (access_cookie, _) = register_and_login!(app);
@@ -1938,7 +1938,7 @@ async fn test_wopi_put_file_returns_conflict_when_file_is_locked_outside_wopi() 
 async fn test_revoked_user_sessions_invalidate_wopi_access_token() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
 
     let (access_cookie, _) = register_and_login!(app);
@@ -1997,7 +1997,7 @@ async fn test_revoked_user_sessions_invalidate_wopi_access_token() {
 async fn test_team_file_wopi_open_persists_team_scope_and_allows_check_file_info() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2084,7 +2084,7 @@ async fn test_team_file_wopi_open_persists_team_scope_and_allows_check_file_info
 async fn test_team_wopi_access_token_is_rejected_after_member_removal() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2164,7 +2164,7 @@ async fn test_team_wopi_access_token_is_rejected_after_member_removal() {
 async fn test_team_wopi_put_relative_is_rejected_after_member_removal() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2247,7 +2247,7 @@ async fn test_team_wopi_put_relative_is_rejected_after_member_removal() {
 async fn test_team_wopi_put_relative_accepts_body_larger_than_global_payload_limit() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
@@ -2352,7 +2352,7 @@ async fn test_team_wopi_put_relative_accepts_body_larger_than_global_payload_lim
 async fn test_team_file_wopi_open_rejects_non_member() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 

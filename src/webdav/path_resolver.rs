@@ -149,7 +149,8 @@ async fn validate_cached_folder_path(
     folder_id: i64,
     segments: &[String],
 ) -> Result<bool, FsError> {
-    let chain = match folder_repo::find_ancestor_models(&state.db, user_id, folder_id).await {
+    let chain = match folder_repo::find_ancestor_models(state.writer_db(), user_id, folder_id).await
+    {
         Ok(chain) => chain,
         Err(error) if is_missing_entity(&error) => return Ok(false),
         Err(_) => return Err(FsError::GeneralFailure),
@@ -194,7 +195,7 @@ async fn load_cached_resolved_node(
             parent_id,
             name,
         } => {
-            let folder = match folder_repo::find_by_id(&state.db, id).await {
+            let folder = match folder_repo::find_by_id(state.writer_db(), id).await {
                 Ok(folder) => folder,
                 Err(error) if is_missing_entity(&error) => {
                     state.cache.delete(cache_key).await;
@@ -227,7 +228,7 @@ async fn load_cached_resolved_node(
             folder_id,
             name,
         } => {
-            let file = match file_repo::find_by_id(&state.db, id).await {
+            let file = match file_repo::find_by_id(state.writer_db(), id).await {
                 Ok(file) => file,
                 Err(error) if is_missing_entity(&error) => {
                     state.cache.delete(cache_key).await;
@@ -334,7 +335,7 @@ pub async fn resolve_path_cached(
         return Ok(node);
     }
 
-    let node = resolve_path(&state.db, user_id, path, root_folder_id).await?;
+    let node = resolve_path(state.writer_db(), user_id, path, root_folder_id).await?;
     state
         .cache
         .set(
@@ -422,7 +423,8 @@ pub async fn resolve_parent_cached(
         state.cache.delete(&cache_key).await;
     }
 
-    let (parent_id, name) = resolve_parent(&state.db, user_id, path, root_folder_id).await?;
+    let (parent_id, name) =
+        resolve_parent(state.writer_db(), user_id, path, root_folder_id).await?;
     state
         .cache
         .set(

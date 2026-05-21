@@ -16,7 +16,7 @@ use super::shared::{
 };
 
 pub async fn get_share_info(state: &PrimaryAppState, token: &str) -> Result<SharePublicInfo> {
-    let db = &state.db;
+    let db = state.writer_db();
     let share = load_valid_share(state, token).await?;
     tracing::debug!(share_id = share.id, "loading public share info");
 

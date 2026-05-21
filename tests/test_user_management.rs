@@ -176,7 +176,7 @@ async fn test_force_delete_user() {
 #[actix_web::test]
 async fn test_force_delete_user_preserves_team_upload_and_blob_ref() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);
 
@@ -454,7 +454,7 @@ async fn test_admin_create_user_uses_default_quota_and_policy() {
     use aster_drive::db::repository::policy_group_repo;
 
     let state = common::setup().await;
-    let expected_default_id = policy_group_repo::find_default_group(&state.db)
+    let expected_default_id = policy_group_repo::find_default_group(state.writer_db())
         .await
         .unwrap()
         .expect("default policy group should exist")

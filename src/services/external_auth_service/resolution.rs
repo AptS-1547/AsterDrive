@@ -263,7 +263,7 @@ async fn create_external_auth_user_and_identity(
         let username = external_auth_username_candidate(&username_base, attempt);
         let password = random_internal_password();
 
-        let txn = crate::db::transaction::begin(&state.db).await?;
+        let txn = crate::db::transaction::begin(state.writer_db()).await?;
         let result = async {
             if user_repo::find_by_email(&txn, email).await?.is_some() {
                 return Err(AsterError::validation_error(
@@ -460,21 +460,21 @@ pub(super) async fn resolve_external_auth_user(
 ) -> Result<Option<ResolvedExternalAuthUser>> {
     let now = Utc::now();
     if let Some(identity) = external_auth_identity_repo::find_by_identity_namespace_subject(
-        &state.db,
+        state.writer_db(),
         &claims.identity_namespace,
         &claims.subject,
     )
     .await?
     {
         external_auth_identity_repo::touch_login(
-            &state.db,
+            state.writer_db(),
             identity.id,
             claims.email.as_deref(),
             claims.display_name.as_deref(),
             now,
         )
         .await?;
-        let user = user_repo::find_by_id(&state.db, identity.user_id).await?;
+        let user = user_repo::find_by_id(state.writer_db(), identity.user_id).await?;
         if !user.status.is_active() {
             return Err(AsterError::auth_forbidden("account is disabled"));
         }
@@ -497,12 +497,12 @@ pub(super) async fn resolve_external_auth_user(
     if provider.auto_link_verified_email_enabled
         && claims.email_verified
         && let Some(email) = claims.email.as_deref()
-        && let Some(user) = user_repo::find_by_email(&state.db, email).await?
+        && let Some(user) = user_repo::find_by_email(state.writer_db(), email).await?
     {
         if !user.status.is_active() {
             return Err(AsterError::auth_forbidden("account is disabled"));
         }
-        create_identity_for_claims(&state.db, user.id, provider, claims, now).await?;
+        create_identity_for_claims(state.writer_db(), user.id, provider, claims, now).await?;
         return Ok(Some(ResolvedExternalAuthUser {
             user,
             linked: true,
@@ -523,7 +523,10 @@ pub(super) async fn resolve_external_auth_user(
         if !auth_policy.allow_user_registration {
             return Ok(None);
         }
-        if user_repo::find_by_email(&state.db, email).await?.is_some() {
+        if user_repo::find_by_email(state.writer_db(), email)
+            .await?
+            .is_some()
+        {
             return Ok(None);
         }
         return create_external_auth_user_and_identity(state, provider, claims, now)

@@ -137,11 +137,11 @@ pub(crate) async fn stream_file(
     };
     direct_link_service::validate_public_file_name(&file, requested_name)?;
 
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id).await?;
     let count_reservation = ensure_counted_once(state, session_token, &payload).await?;
 
     if matches!(count_reservation, CountReservation::Reserved) {
-        match share_repo::increment_download_count(&state.db, share.id).await {
+        match share_repo::increment_download_count(state.writer_db(), share.id).await {
             Ok(true) => {
                 mark_counted(state, session_token, &payload).await?;
                 share_service::invalidate_all_share_token_record_cache(state).await;
@@ -175,7 +175,7 @@ pub(crate) async fn stream_file(
         Err(error) => {
             if matches!(count_reservation, CountReservation::Reserved) {
                 release_counted_marker(state, session_token).await;
-                match share_repo::decrement_download_count(&state.db, share.id).await {
+                match share_repo::decrement_download_count(state.writer_db(), share.id).await {
                     Ok(true) | Ok(false) => {}
                     Err(rollback_error) => {
                         tracing::warn!(

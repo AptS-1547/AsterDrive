@@ -335,7 +335,7 @@ pub(crate) async fn store_cached_manifest(
     }
 
     property_repo::upsert(
-        &state.db,
+        state.writer_db(),
         EntityType::File,
         source_file.id,
         CACHE_NAMESPACE,

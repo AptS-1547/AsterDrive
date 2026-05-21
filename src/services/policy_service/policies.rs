@@ -119,14 +119,15 @@ pub async fn create(
     } = connection;
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
     validate_connection_credentials(driver_type, &access_key, &secret_key)?;
-    let remote_node_id = validate_remote_binding(&state.db, driver_type, remote_node_id).await?;
+    let remote_node_id =
+        validate_remote_binding(state.writer_db(), driver_type, remote_node_id).await?;
     let allowed_types = allowed_types.unwrap_or_default();
     let options = options.unwrap_or_default().normalized();
     let serialized_options = serialize_options(&options)?;
     let chunk_size = chunk_size.unwrap_or(5_242_880);
     ensure_storage_native_thumbnail_supported(driver_type, &options)?;
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let now = Utc::now();
     let model = storage_policy::ActiveModel {
         name: Set(name),
@@ -154,15 +155,15 @@ pub async fn create(
         policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
     }
     crate::db::transaction::commit(txn).await?;
-    state.policy_snapshot.reload(&state.db).await?;
+    state.policy_snapshot.reload(state.writer_db()).await?;
     crate::services::config_service::invalidate_public_thumbnail_support_cache();
-    policy_repo::find_by_id(&state.db, result.id)
+    policy_repo::find_by_id(state.writer_db(), result.id)
         .await
         .map(Into::into)
 }
 
 pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()> {
-    let policy = policy_repo::find_by_id(&state.db, id).await?;
+    let policy = policy_repo::find_by_id(state.writer_db(), id).await?;
     tracing::debug!(
         policy_id = id,
         policy_name = %policy.name,
@@ -177,7 +178,7 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
     }
 
     if policy.is_default {
-        let all = policy_repo::find_all(&state.db).await?;
+        let all = policy_repo::find_all(state.writer_db()).await?;
         let default_count = all.iter().filter(|p| p.is_default).count();
         if default_count <= 1 {
             return Err(AsterError::validation_error(
@@ -186,14 +187,16 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
         }
     }
 
-    let blob_count = crate::db::repository::file_repo::count_blobs_by_policy(&state.db, id).await?;
+    let blob_count =
+        crate::db::repository::file_repo::count_blobs_by_policy(state.writer_db(), id).await?;
     if blob_count > 0 {
         return Err(AsterError::validation_error(format!(
             "cannot delete policy: {blob_count} blob(s) still reference it"
         )));
     }
 
-    let group_ref_count = policy_group_repo::count_group_items_by_policy(&state.db, id).await?;
+    let group_ref_count =
+        policy_group_repo::count_group_items_by_policy(state.writer_db(), id).await?;
     if group_ref_count > 0 {
         return Err(AsterError::validation_error(format!(
             "cannot delete policy: {group_ref_count} policy group item(s) still reference it"
@@ -201,7 +204,7 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
     }
 
     let upload_session_count =
-        crate::db::repository::upload_session_repo::count_by_policy(&state.db, id).await?;
+        crate::db::repository::upload_session_repo::count_by_policy(state.writer_db(), id).await?;
     if upload_session_count > 0 {
         if !force {
             return Err(validation_error_with_subcode(
@@ -231,7 +234,8 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
         );
     }
 
-    let blob_count = crate::db::repository::file_repo::count_blobs_by_policy(&state.db, id).await?;
+    let blob_count =
+        crate::db::repository::file_repo::count_blobs_by_policy(state.writer_db(), id).await?;
     if blob_count > 0 {
         return Err(AsterError::validation_error(format!(
             "cannot delete policy: {blob_count} blob(s) still reference it"
@@ -239,17 +243,17 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
     }
 
     let cleared =
-        crate::db::repository::folder_repo::clear_policy_references(&state.db, id).await?;
+        crate::db::repository::folder_repo::clear_policy_references(state.writer_db(), id).await?;
     if cleared > 0 {
         tracing::info!("cleared policy_id on {cleared} folders before deleting policy #{id}");
     }
 
-    policy_repo::delete(&state.db, id).await?;
+    policy_repo::delete(state.writer_db(), id).await?;
 
     // 与 update 一致：先 invalidate driver 再 reload snapshot，
     // 避免"策略行已删除但 driver 仍在缓存里"的窗口。
     state.driver_registry.invalidate(id);
-    state.policy_snapshot.reload(&state.db).await?;
+    state.policy_snapshot.reload(state.writer_db()).await?;
     crate::services::config_service::invalidate_public_thumbnail_support_cache();
     tracing::info!(
         policy_id = id,
@@ -279,7 +283,7 @@ pub async fn update(
         allowed_types,
         options,
     } = input;
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let existing = policy_repo::find_by_id(&txn, id).await?;
     let existing_endpoint = existing.endpoint.clone();
     let existing_bucket = existing.bucket.clone();
@@ -379,10 +383,10 @@ pub async fn update(
     // 如果反过来，中间窗口里读请求可能拿到"新 policy model + 旧 driver cache"，
     // 把写操作发到老的 endpoint/bucket/credential 上——无日志、无报错的静默错路由。
     state.driver_registry.invalidate(id);
-    state.policy_snapshot.reload(&state.db).await?;
+    state.policy_snapshot.reload(state.writer_db()).await?;
     crate::services::config_service::invalidate_public_thumbnail_support_cache();
 
-    policy_repo::find_by_id(&state.db, result.id)
+    policy_repo::find_by_id(state.writer_db(), result.id)
         .await
         .map(Into::into)
 }
@@ -399,7 +403,7 @@ pub async fn test_default_connection<S: PrimaryRuntimeState>(state: &S) -> Resul
 }
 
 pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
-    let policy = policy_repo::find_by_id(state.db(), id).await?;
+    let policy = policy_repo::find_by_id(state.writer_db(), id).await?;
     let driver = state.driver_registry().get_driver(&policy)?;
     probe_storage_driver(driver.as_ref(), "write test failed").await
 }
@@ -423,7 +427,8 @@ pub async fn test_connection_params<S: PrimaryRuntimeState>(
     } = input;
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
     validate_connection_credentials(driver_type, &access_key, &secret_key)?;
-    let remote_node_id = validate_remote_binding(state.db(), driver_type, remote_node_id).await?;
+    let remote_node_id =
+        validate_remote_binding(state.writer_db(), driver_type, remote_node_id).await?;
 
     let fake_policy = storage_policy::Model {
         id: 0,
@@ -450,7 +455,8 @@ pub async fn test_connection_params<S: PrimaryRuntimeState>(
             let remote_node_id = fake_policy.remote_node_id.ok_or_else(|| {
                 AsterError::validation_error("remote storage policy requires remote_node_id")
             })?;
-            let remote_node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
+            let remote_node =
+                managed_follower_repo::find_by_id(state.writer_db(), remote_node_id).await?;
             Box::new(RemoteDriver::new(&fake_policy, &remote_node)?)
         }
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),

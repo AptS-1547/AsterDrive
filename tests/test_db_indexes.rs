@@ -61,12 +61,12 @@ fn assert_uses_virtual_table(plan: &[String], virtual_table: &str, base_table: &
 #[actix_web::test]
 async fn test_directory_lookup_indexes_cover_listing_and_duplicate_name_queries() {
     let state = common::setup().await;
-    if !skip_unless_sqlite(&state.db) {
+    if !skip_unless_sqlite(state.writer_db()) {
         return;
     }
 
     let folder_listing = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT * FROM folders \
          WHERE owner_user_id = 1 AND deleted_at IS NULL AND parent_id = 2 \
          ORDER BY name",
@@ -80,7 +80,7 @@ async fn test_directory_lookup_indexes_cover_listing_and_duplicate_name_queries(
     assert_no_temp_btree(&folder_listing);
 
     let file_listing = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT * FROM files \
          WHERE owner_user_id = 1 AND deleted_at IS NULL AND folder_id = 2 \
          ORDER BY name",
@@ -94,7 +94,7 @@ async fn test_directory_lookup_indexes_cover_listing_and_duplicate_name_queries(
     assert_no_temp_btree(&file_listing);
 
     let folder_duplicate = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT * FROM folders \
          WHERE owner_user_id = 1 AND name = 'dup' AND deleted_at IS NULL AND parent_id = 2",
     )
@@ -106,7 +106,7 @@ async fn test_directory_lookup_indexes_cover_listing_and_duplicate_name_queries(
     );
 
     let file_duplicate = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT * FROM files \
          WHERE owner_user_id = 1 AND name = 'dup' AND deleted_at IS NULL AND folder_id = 2",
     )
@@ -121,12 +121,12 @@ async fn test_directory_lookup_indexes_cover_listing_and_duplicate_name_queries(
 #[actix_web::test]
 async fn test_trash_pagination_indexes_cover_deleted_item_queries() {
     let state = common::setup().await;
-    if !skip_unless_sqlite(&state.db) {
+    if !skip_unless_sqlite(state.writer_db()) {
         return;
     }
 
     let folder_trash = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT * FROM folders \
          WHERE owner_user_id = 1 \
            AND deleted_at IS NOT NULL \
@@ -142,7 +142,7 @@ async fn test_trash_pagination_indexes_cover_deleted_item_queries() {
     assert_no_temp_btree(&folder_trash);
 
     let file_trash = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT * FROM files \
          WHERE owner_user_id = 1 \
            AND deleted_at IS NOT NULL \
@@ -161,12 +161,12 @@ async fn test_trash_pagination_indexes_cover_deleted_item_queries() {
 #[actix_web::test]
 async fn test_sqlite_file_type_filter_indexes_cover_search_queries() {
     let state = common::setup().await;
-    if !skip_unless_sqlite(&state.db) {
+    if !skip_unless_sqlite(state.writer_db()) {
         return;
     }
 
     let personal_category = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT id FROM files \
          WHERE owner_user_id = 1 \
            AND team_id IS NULL \
@@ -184,7 +184,7 @@ async fn test_sqlite_file_type_filter_indexes_cover_search_queries() {
     );
 
     let personal_compound = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT id FROM files \
          WHERE owner_user_id = 1 \
            AND team_id IS NULL \
@@ -200,7 +200,7 @@ async fn test_sqlite_file_type_filter_indexes_cover_search_queries() {
     );
 
     let team_category = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT id FROM files \
          WHERE team_id = 7 \
            AND deleted_at IS NULL \
@@ -219,7 +219,7 @@ async fn test_sqlite_file_type_filter_indexes_cover_search_queries() {
 #[actix_web::test]
 async fn test_sqlite_search_fts_objects_exist() {
     let state = common::setup().await;
-    if !skip_unless_sqlite(&state.db) {
+    if !skip_unless_sqlite(state.writer_db()) {
         return;
     }
 
@@ -283,12 +283,12 @@ async fn test_sqlite_search_fts_objects_exist() {
 #[actix_web::test]
 async fn test_sqlite_search_fts_query_plan_uses_virtual_tables() {
     let state = common::setup().await;
-    if !skip_unless_sqlite(&state.db) {
+    if !skip_unless_sqlite(state.writer_db()) {
         return;
     }
 
     let file_search_count_plan = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT COUNT(*) \
          FROM files \
          WHERE files.deleted_at IS NULL \
@@ -303,7 +303,7 @@ async fn test_sqlite_search_fts_query_plan_uses_virtual_tables() {
     assert_uses_virtual_table(&file_search_count_plan, "files_name_fts", "files");
 
     let file_search_plan = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT \
              files.id, files.name, file_blobs.size \
          FROM files \
@@ -322,7 +322,7 @@ async fn test_sqlite_search_fts_query_plan_uses_virtual_tables() {
     assert_uses_virtual_table(&file_search_plan, "files_name_fts", "files");
 
     let folder_search_plan = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT \
              folders.id, folders.name \
          FROM folders \
@@ -339,7 +339,7 @@ async fn test_sqlite_search_fts_query_plan_uses_virtual_tables() {
     assert_uses_virtual_table(&folder_search_plan, "folders_name_fts", "folders");
 
     let user_search_plan = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT users.* \
          FROM users \
          WHERE users.id IN ( \
@@ -354,7 +354,7 @@ async fn test_sqlite_search_fts_query_plan_uses_virtual_tables() {
     assert_uses_virtual_table(&user_search_plan, "users_search_fts", "users");
 
     let team_search_plan = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT teams.* \
          FROM teams \
          WHERE teams.archived_at IS NULL \
@@ -368,7 +368,7 @@ async fn test_sqlite_search_fts_query_plan_uses_virtual_tables() {
     assert_uses_virtual_table(&team_search_plan, "teams_search_fts", "teams");
 
     let team_member_search_plan = explain_query_plan(
-        &state.db,
+        state.writer_db(),
         "SELECT team_members.id, users.username \
          FROM team_members \
          JOIN users ON users.id = team_members.user_id \

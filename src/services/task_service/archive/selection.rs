@@ -102,7 +102,7 @@ pub(crate) async fn stream_archive_download_in_scope(
 
     let (reader, writer) = tokio::io::duplex(64 * 1024);
     let handle = tokio::runtime::Handle::current();
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let driver_registry = state.driver_registry.clone();
     let policy_snapshot = state.policy_snapshot.clone();
     let archive_name_for_worker = archive_name.clone();
@@ -198,10 +198,11 @@ async fn ensure_archive_selection_request_in_scope(
     file_ids: &[i64],
     folder_ids: &[i64],
 ) -> Result<()> {
-    workspace_storage_service::require_scope_access_with_db(state, &state.db, scope).await?;
+    workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
+        .await?;
     batch_service::validate_batch_ids(file_ids, folder_ids)?;
 
-    let file_map: HashMap<i64, file::Model> = file_repo::find_by_ids(&state.db, file_ids)
+    let file_map: HashMap<i64, file::Model> = file_repo::find_by_ids(state.writer_db(), file_ids)
         .await?
         .into_iter()
         .map(|file| (file.id, file))
@@ -213,11 +214,12 @@ async fn ensure_archive_selection_request_in_scope(
         workspace_storage_service::ensure_active_file_scope(file, scope)?;
     }
 
-    let folder_map: HashMap<i64, folder::Model> = folder_repo::find_by_ids(&state.db, folder_ids)
-        .await?
-        .into_iter()
-        .map(|folder| (folder.id, folder))
-        .collect();
+    let folder_map: HashMap<i64, folder::Model> =
+        folder_repo::find_by_ids(state.writer_db(), folder_ids)
+            .await?
+            .into_iter()
+            .map(|folder| (folder.id, folder))
+            .collect();
     for &folder_id in folder_ids {
         let folder = folder_map
             .get(&folder_id)
@@ -284,9 +286,13 @@ pub(super) async fn collect_archive_entries_from_selection_in_scope(
         let archive_root =
             batch_service::reserve_unique_name(&mut reserved_root_names, &folder.name);
 
-        let (tree_files, tree_folder_ids) =
-            folder_service::collect_folder_tree_in_scope(&state.db, scope, folder_id, false)
-                .await?;
+        let (tree_files, tree_folder_ids) = folder_service::collect_folder_tree_in_scope(
+            state.writer_db(),
+            scope,
+            folder_id,
+            false,
+        )
+        .await?;
         let folder_paths =
             folder_service::build_folder_paths_cached(state, &tree_folder_ids).await?;
         let root_path = folder_paths

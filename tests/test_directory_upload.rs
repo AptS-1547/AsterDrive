@@ -10,7 +10,7 @@ use serde_json::Value;
 #[actix_web::test]
 async fn test_direct_upload_with_relative_path_creates_nested_folders() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -85,7 +85,7 @@ async fn test_direct_upload_with_relative_path_creates_nested_folders() {
 #[actix_web::test]
 async fn test_init_upload_with_relative_path_reuses_existing_directories() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -139,7 +139,7 @@ async fn test_init_upload_with_relative_path_uses_parent_folder_policy() {
     use sea_orm::{ActiveModelTrait, Set};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 

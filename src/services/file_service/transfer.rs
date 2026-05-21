@@ -39,7 +39,7 @@ pub(crate) async fn copy_file_in_scope(
     src_id: i64,
     dest_folder_id: Option<i64>,
 ) -> Result<file::Model> {
-    let db = &state.db;
+    let db = state.writer_db();
     tracing::debug!(
         scope = ?scope,
         src_file_id = src_id,
@@ -156,7 +156,7 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
     })?;
     let now = chrono::Utc::now();
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let created_by_username = load_scope_actor_username(&txn, scope).await?;
 
     // 原子性地增加配额（CAS 语义：如果 quota > 0 且 used + total_size > quota，则失败）
@@ -227,11 +227,11 @@ pub(crate) async fn duplicate_file_record_in_scope(
     dest_folder_id: Option<i64>,
     dest_name: &str,
 ) -> Result<file::Model> {
-    let blob = file_repo::find_blob_by_id(&state.db, src.blob_id).await?;
+    let blob = file_repo::find_blob_by_id(state.writer_db(), src.blob_id).await?;
     let now = Utc::now();
     let blob_size = blob.size;
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let created_by_username = load_scope_actor_username(&txn, scope).await?;
     workspace_storage_service::check_quota(&txn, scope, blob_size).await?;
 
@@ -349,9 +349,9 @@ pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
     })?;
     let now = chrono::Utc::now();
 
-    workspace_storage_service::check_quota(&state.db, scope, total_size).await?;
+    workspace_storage_service::check_quota(state.writer_db(), scope, total_size).await?;
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let created_by_username = load_scope_actor_username(&txn, scope).await?;
     workspace_storage_service::check_quota(&txn, scope, total_size).await?;
 

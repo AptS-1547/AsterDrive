@@ -189,7 +189,7 @@ fn map_driver_test_result(
 pub async fn list_public_providers(
     state: &PrimaryAppState,
 ) -> Result<Vec<ExternalAuthPublicProvider>> {
-    Ok(external_auth_provider_repo::find_enabled(&state.db)
+    Ok(external_auth_provider_repo::find_enabled(state.writer_db())
         .await?
         .into_iter()
         .filter(|provider| registry::default_registry().contains(provider.provider_kind))
@@ -202,7 +202,7 @@ pub async fn list_public_providers_by_kind(
     provider_kind: ExternalAuthProviderKind,
 ) -> Result<Vec<ExternalAuthPublicProvider>> {
     Ok(
-        external_auth_provider_repo::find_enabled_by_kind(&state.db, provider_kind)
+        external_auth_provider_repo::find_enabled_by_kind(state.writer_db(), provider_kind)
             .await?
             .into_iter()
             .filter(|provider| registry::default_registry().contains(provider.provider_kind))
@@ -218,7 +218,7 @@ pub async fn list_admin_providers(
 ) -> Result<OffsetPage<AdminExternalAuthProviderInfo>> {
     let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         external_auth_provider_repo::find_paginated(
-            &state.db,
+            state.writer_db(),
             limit,
             offset,
             registry::default_registry().supported_kinds(),
@@ -246,7 +246,7 @@ pub async fn get_admin_provider(
     state: &PrimaryAppState,
     id: i64,
 ) -> Result<AdminExternalAuthProviderInfo> {
-    let provider = external_auth_provider_repo::find_by_id(&state.db, id).await?;
+    let provider = external_auth_provider_repo::find_by_id(state.writer_db(), id).await?;
     if !registry::default_registry().contains(provider.provider_kind) {
         return Err(AsterError::record_not_found(format!(
             "external auth provider #{id}"
@@ -269,7 +269,7 @@ pub async fn create_provider(
         )));
     }
     let key = id::new_best_effort_uuid("external auth provider key", |candidate| {
-        let db = &state.db;
+        let db = state.writer_db();
         let provider_kind = input.provider_kind;
         async move {
             let candidate_key = candidate.to_string();
@@ -358,7 +358,7 @@ pub async fn create_provider(
         updated_at: Set(now),
         ..Default::default()
     };
-    let provider = external_auth_provider_repo::create(&state.db, model).await?;
+    let provider = external_auth_provider_repo::create(state.writer_db(), model).await?;
     provider_to_admin(provider)
 }
 
@@ -367,7 +367,7 @@ pub async fn update_provider(
     id: i64,
     input: UpdateExternalAuthProviderInput,
 ) -> Result<AdminExternalAuthProviderInfo> {
-    let existing = external_auth_provider_repo::find_by_id(&state.db, id).await?;
+    let existing = external_auth_provider_repo::find_by_id(state.writer_db(), id).await?;
     if !registry::default_registry().contains(existing.provider_kind) {
         return Err(AsterError::record_not_found(format!(
             "external auth provider #{id}"
@@ -466,30 +466,30 @@ pub async fn update_provider(
     }
     active.updated_at = Set(Utc::now());
 
-    let provider = external_auth_provider_repo::update(&state.db, active).await?;
+    let provider = external_auth_provider_repo::update(state.writer_db(), active).await?;
     provider_to_admin(provider)
 }
 
 pub async fn delete_provider(state: &PrimaryAppState, id: i64) -> Result<()> {
-    let provider = external_auth_provider_repo::find_by_id(&state.db, id).await?;
+    let provider = external_auth_provider_repo::find_by_id(state.writer_db(), id).await?;
     if !registry::default_registry().contains(provider.provider_kind) {
         return Err(AsterError::record_not_found(format!(
             "external auth provider #{id}"
         )));
     }
-    external_auth_provider_repo::delete(&state.db, id).await
+    external_auth_provider_repo::delete(state.writer_db(), id).await
 }
 
 pub async fn test_provider(
     state: &PrimaryAppState,
     id: i64,
 ) -> Result<ExternalAuthProviderTestResult> {
-    let provider = external_auth_provider_repo::find_by_id(&state.db, id).await?;
+    let provider = external_auth_provider_repo::find_by_id(state.writer_db(), id).await?;
     let result = registry::default_registry()
         .get_driver(provider.provider_kind)?
         .test_provider(&external_auth_provider_config(&provider))
         .await?;
-    external_auth_provider_repo::touch_updated_at(&state.db, id, Utc::now()).await?;
+    external_auth_provider_repo::touch_updated_at(state.writer_db(), id, Utc::now()).await?;
     Ok(map_driver_test_result(result))
 }
 

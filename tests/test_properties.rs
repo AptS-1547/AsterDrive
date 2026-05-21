@@ -92,7 +92,7 @@ async fn test_entity_properties() {
     assert_eq!(resp.status(), 403);
 
     property_repo::upsert(
-        &state.db,
+        state.writer_db(),
         EntityType::File,
         file_id,
         "system.archive_preview",

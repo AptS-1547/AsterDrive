@@ -28,7 +28,7 @@ pub async fn lock(
     let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
     let timeout_at = timeout.map(|d| now + d);
     let serialized_owner_info = serialize_resource_lock_owner_info(owner_info.as_ref())?;
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
 
     let result = async {
         if let Some(existing) = lock_repo::find_by_entity(&txn, entity_type, entity_id).await? {
@@ -105,7 +105,7 @@ pub async fn unlock(
     entity_id: i64,
     user_id: i64,
 ) -> Result<()> {
-    let db = &state.db;
+    let db = state.writer_db();
 
     // 校验归属：只有锁持有者或文件所有者可以解锁
     if let Some(existing) = lock_repo::find_by_entity(db, entity_type, entity_id).await? {
@@ -131,7 +131,7 @@ pub async fn unlock(
 
 /// 按 token 解锁（WebDAV UNLOCK 用）
 pub async fn unlock_by_token(state: &PrimaryAppState, token: &str) -> Result<()> {
-    let db = &state.db;
+    let db = state.writer_db();
     let lock = lock_repo::find_by_token(db, token)
         .await?
         .ok_or_else(|| AsterError::record_not_found("lock not found"))?;
@@ -149,7 +149,7 @@ pub async fn unlock_by_token(state: &PrimaryAppState, token: &str) -> Result<()>
 
 /// 强制解锁（admin 用）
 pub async fn force_unlock(state: &PrimaryAppState, lock_id: i64) -> Result<()> {
-    let db = &state.db;
+    let db = state.writer_db();
     let lock = lock_repo::find_by_id(db, lock_id)
         .await?
         .ok_or_else(|| AsterError::record_not_found("lock not found"))?;
@@ -170,7 +170,7 @@ pub async fn force_unlock_with_audit(
     lock_id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<()> {
-    let lock = lock_repo::find_by_id(&state.db, lock_id)
+    let lock = lock_repo::find_by_id(state.writer_db(), lock_id)
         .await?
         .ok_or_else(|| AsterError::record_not_found("lock not found"))?;
     force_unlock(state, lock_id).await?;
@@ -195,7 +195,7 @@ async fn do_unlock_by_entity(
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<()> {
-    lock_repo::delete_by_entity(&state.db, entity_type, entity_id).await?;
-    clear_entity_locked_if_unlocked(&state.db, entity_type, entity_id).await?;
+    lock_repo::delete_by_entity(state.writer_db(), entity_type, entity_id).await?;
+    clear_entity_locked_if_unlocked(state.writer_db(), entity_type, entity_id).await?;
     Ok(())
 }

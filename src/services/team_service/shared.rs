@@ -313,12 +313,12 @@ pub(super) async fn resolve_target_user(
         (None, None) => Err(AsterError::validation_error(
             "user_id or identifier is required",
         )),
-        (Some(user_id), None) => user_repo::find_by_id(&state.db, user_id).await,
+        (Some(user_id), None) => user_repo::find_by_id(state.writer_db(), user_id).await,
         (None, Some(identifier)) => {
-            if let Some(user) = user_repo::find_by_username(&state.db, identifier).await? {
+            if let Some(user) = user_repo::find_by_username(state.writer_db(), identifier).await? {
                 return Ok(user);
             }
-            if let Some(user) = user_repo::find_by_email(&state.db, identifier).await? {
+            if let Some(user) = user_repo::find_by_email(state.writer_db(), identifier).await? {
                 return Ok(user);
             }
             Err(AsterError::record_not_found(format!("user '{identifier}'")))
@@ -331,7 +331,7 @@ pub(super) async fn require_team_membership(
     team_id: i64,
     user_id: i64,
 ) -> Result<(team::Model, team_member::Model)> {
-    require_team_membership_with_db(&state.db, team_id, user_id).await
+    require_team_membership_with_db(state.writer_db(), team_id, user_id).await
 }
 
 pub(super) async fn require_team_membership_for_read(
@@ -431,14 +431,14 @@ pub(super) async fn ensure_assignable_policy_group(
     state: &PrimaryAppState,
     group_id: i64,
 ) -> Result<()> {
-    let group = policy_group_repo::find_group_by_id(&state.db, group_id).await?;
+    let group = policy_group_repo::find_group_by_id(state.writer_db(), group_id).await?;
     if !group.is_enabled {
         return Err(AsterError::validation_error(
             "cannot assign a disabled storage policy group",
         ));
     }
 
-    let items = policy_group_repo::find_group_items(&state.db, group_id).await?;
+    let items = policy_group_repo::find_group_items(state.writer_db(), group_id).await?;
     if items.is_empty() {
         return Err(AsterError::validation_error(
             "cannot assign a storage policy group without policies",
@@ -482,7 +482,7 @@ pub(super) async fn create_team_record(
     let storage_quota = default_team_storage_quota(state);
     let now = Utc::now();
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let created_team = team_repo::create(
         &txn,
         team::ActiveModel {
@@ -549,7 +549,7 @@ pub(super) async fn update_team_record(
     }
     active.updated_at = Set(Utc::now());
 
-    let updated = team_repo::update(&state.db, active).await?;
+    let updated = team_repo::update(state.writer_db(), active).await?;
     crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
         state, updated.id,
     )
@@ -569,7 +569,7 @@ pub(super) async fn archive_team_record(state: &PrimaryAppState, team: team::Mod
     let now = Utc::now();
     active.archived_at = Set(Some(now));
     active.updated_at = Set(now);
-    team_repo::update(&state.db, active).await?;
+    team_repo::update(state.writer_db(), active).await?;
     crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
         state, team_id,
     )
@@ -593,7 +593,7 @@ pub(super) async fn restore_team_record(
     let now = Utc::now();
     active.archived_at = Set(None);
     active.updated_at = Set(now);
-    let restored = team_repo::update(&state.db, active).await?;
+    let restored = team_repo::update(state.writer_db(), active).await?;
     crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
         state,
         restored.id,

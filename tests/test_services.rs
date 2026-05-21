@@ -78,7 +78,7 @@ async fn store_service_file(
 }
 
 async fn user_storage_used(state: &aster_drive::runtime::PrimaryAppState, user_id: i64) -> i64 {
-    aster_drive::db::repository::user_repo::find_by_id(&state.db, user_id)
+    aster_drive::db::repository::user_repo::find_by_id(state.writer_db(), user_id)
         .await
         .unwrap()
         .storage_used
@@ -90,16 +90,17 @@ async fn wait_for_share_download_count(
     expected: i64,
 ) {
     for _ in 0..40 {
-        let reloaded = aster_drive::db::repository::share_repo::find_by_id(&state.db, share_id)
-            .await
-            .unwrap();
+        let reloaded =
+            aster_drive::db::repository::share_repo::find_by_id(state.writer_db(), share_id)
+                .await
+                .unwrap();
         if reloaded.download_count == expected {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
 
-    let reloaded = aster_drive::db::repository::share_repo::find_by_id(&state.db, share_id)
+    let reloaded = aster_drive::db::repository::share_repo::find_by_id(state.writer_db(), share_id)
         .await
         .unwrap();
     panic!(
@@ -334,12 +335,12 @@ async fn test_file_active_model_partial_name_update_refreshes_classification() {
         name: Set("backup.tar.gz".to_string()),
         ..Default::default()
     }
-    .update(&state.db)
+    .update(state.writer_db())
     .await
     .unwrap();
 
     let updated = file::Entity::find_by_id(file_id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .unwrap()
         .unwrap();
@@ -370,12 +371,12 @@ async fn test_file_active_model_partial_mime_update_refreshes_classification() {
         mime_type: Set("image/png".to_string()),
         ..Default::default()
     }
-    .update(&state.db)
+    .update(state.writer_db())
     .await
     .unwrap();
 
     let updated = file::Entity::find_by_id(file_id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .unwrap()
         .unwrap();
@@ -718,7 +719,7 @@ async fn test_lock_service_lock_unlock() {
     assert!(!lock.token.is_empty());
 
     // 锁定后 is_locked 应该为 true
-    let f = aster_drive::db::repository::folder_repo::find_by_id(&state.db, folder.id)
+    let f = aster_drive::db::repository::folder_repo::find_by_id(state.writer_db(), folder.id)
         .await
         .unwrap();
     assert!(f.is_locked);
@@ -750,7 +751,7 @@ async fn test_lock_service_lock_unlock() {
     .unwrap();
 
     // is_locked 应该回到 false
-    let f = aster_drive::db::repository::folder_repo::find_by_id(&state.db, folder.id)
+    let f = aster_drive::db::repository::folder_repo::find_by_id(state.writer_db(), folder.id)
         .await
         .unwrap();
     assert!(!f.is_locked);
@@ -794,7 +795,7 @@ async fn test_lock_service_force_unlock() {
         .await
         .unwrap();
 
-    let f = aster_drive::db::repository::folder_repo::find_by_id(&state.db, folder.id)
+    let f = aster_drive::db::repository::folder_repo::find_by_id(state.writer_db(), folder.id)
         .await
         .unwrap();
     assert!(!f.is_locked);
@@ -834,17 +835,21 @@ async fn test_lock_service_unlock_by_token_clears_file_lock_state() {
     .await
     .unwrap();
 
-    let locked = file_repo::find_by_id(&state.db, file.id).await.unwrap();
+    let locked = file_repo::find_by_id(state.writer_db(), file.id)
+        .await
+        .unwrap();
     assert!(locked.is_locked);
 
     lock_service::unlock_by_token(&state, &lock.token)
         .await
         .unwrap();
 
-    let unlocked = file_repo::find_by_id(&state.db, file.id).await.unwrap();
+    let unlocked = file_repo::find_by_id(state.writer_db(), file.id)
+        .await
+        .unwrap();
     assert!(!unlocked.is_locked);
     assert!(
-        lock_repo::find_by_token(&state.db, &lock.token)
+        lock_repo::find_by_token(state.writer_db(), &lock.token)
             .await
             .unwrap()
             .is_none()
@@ -893,22 +898,22 @@ async fn test_lock_service_cleanup_expired_unlocks_only_expired_resources() {
     let cleaned = lock_service::cleanup_expired(&state).await.unwrap();
     assert_eq!(cleaned, 1);
 
-    let expired = folder_repo::find_by_id(&state.db, expired_folder.id)
+    let expired = folder_repo::find_by_id(state.writer_db(), expired_folder.id)
         .await
         .unwrap();
-    let active = folder_repo::find_by_id(&state.db, active_folder.id)
+    let active = folder_repo::find_by_id(state.writer_db(), active_folder.id)
         .await
         .unwrap();
     assert!(!expired.is_locked);
     assert!(active.is_locked);
     assert!(
-        lock_repo::find_by_token(&state.db, &expired_lock.token)
+        lock_repo::find_by_token(state.writer_db(), &expired_lock.token)
             .await
             .unwrap()
             .is_none()
     );
     assert!(
-        lock_repo::find_by_token(&state.db, &active_lock.token)
+        lock_repo::find_by_token(state.writer_db(), &active_lock.token)
             .await
             .unwrap()
             .is_some()
@@ -1169,11 +1174,13 @@ async fn test_version_cleanup_excess_reclaims_storage_used() {
     .await
     .unwrap();
 
-    let mut max_versions =
-        aster_drive::db::repository::config_repo::find_by_key(&state.db, "max_versions_per_file")
-            .await
-            .unwrap()
-            .unwrap();
+    let mut max_versions = aster_drive::db::repository::config_repo::find_by_key(
+        state.writer_db(),
+        "max_versions_per_file",
+    )
+    .await
+    .unwrap()
+    .unwrap();
     max_versions.value = "1".to_string();
     state.runtime_config.apply(max_versions);
 
@@ -1299,24 +1306,27 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     assert_eq!(versions[0].blob_id, v1.blob_id);
 
     assert!(
-        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v1.blob_id)
+        aster_drive::db::repository::file_repo::find_blob_by_id(state.writer_db(), v1.blob_id)
             .await
             .is_ok()
     );
     assert!(
-        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v2.blob_id)
+        aster_drive::db::repository::file_repo::find_blob_by_id(state.writer_db(), v2.blob_id)
             .await
             .is_ok()
     );
     assert!(
-        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v3.blob_id)
+        aster_drive::db::repository::file_repo::find_blob_by_id(state.writer_db(), v3.blob_id)
             .await
             .is_err()
     );
     assert!(
-        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, old_current_blob_id)
-            .await
-            .is_err()
+        aster_drive::db::repository::file_repo::find_blob_by_id(
+            state.writer_db(),
+            old_current_blob_id
+        )
+        .await
+        .is_err()
     );
 
     let temp5 = format!("{}/v5.txt", temp_dir);
@@ -1486,23 +1496,26 @@ async fn test_folder_copy_preserves_multi_level_tree_and_storage_used() {
         storage_before_copy * 2
     );
 
-    let copied_root_files =
-        aster_drive::db::repository::file_repo::find_by_folder(&state.db, user.id, Some(copied.id))
-            .await
-            .unwrap();
+    let copied_root_files = aster_drive::db::repository::file_repo::find_by_folder(
+        state.writer_db(),
+        user.id,
+        Some(copied.id),
+    )
+    .await
+    .unwrap();
     assert_eq!(copied_root_files.len(), 1);
     assert_eq!(copied_root_files[0].name, "root.txt");
     assert_ne!(copied_root_files[0].id, root_file_id);
     assert_eq!(
         copied_root_files[0].blob_id,
-        aster_drive::db::repository::file_repo::find_by_id(&state.db, root_file_id)
+        aster_drive::db::repository::file_repo::find_by_id(state.writer_db(), root_file_id)
             .await
             .unwrap()
             .blob_id
     );
 
     let copied_children = aster_drive::db::repository::folder_repo::find_children(
-        &state.db,
+        state.writer_db(),
         user.id,
         Some(copied.id),
     )
@@ -1527,7 +1540,7 @@ async fn test_folder_copy_preserves_multi_level_tree_and_storage_used() {
         .unwrap();
 
     let copied_child_a_files = aster_drive::db::repository::file_repo::find_by_folder(
-        &state.db,
+        state.writer_db(),
         user.id,
         Some(copied_child_a.id),
     )
@@ -1538,7 +1551,7 @@ async fn test_folder_copy_preserves_multi_level_tree_and_storage_used() {
     assert_ne!(copied_child_a_files[0].id, child_a_file_id);
 
     let copied_child_b_files = aster_drive::db::repository::file_repo::find_by_folder(
-        &state.db,
+        state.writer_db(),
         user.id,
         Some(copied_child_b.id),
     )
@@ -1549,7 +1562,7 @@ async fn test_folder_copy_preserves_multi_level_tree_and_storage_used() {
     assert_ne!(copied_child_b_files[0].id, child_b_file_id);
 
     let copied_grandchildren = aster_drive::db::repository::folder_repo::find_children(
-        &state.db,
+        state.writer_db(),
         user.id,
         Some(copied_child_a.id),
     )
@@ -1559,7 +1572,7 @@ async fn test_folder_copy_preserves_multi_level_tree_and_storage_used() {
     assert_eq!(copied_grandchildren[0].name, "Grandchild");
 
     let copied_grandchild_files = aster_drive::db::repository::file_repo::find_by_folder(
-        &state.db,
+        state.writer_db(),
         user.id,
         Some(copied_grandchildren[0].id),
     )
@@ -1570,7 +1583,7 @@ async fn test_folder_copy_preserves_multi_level_tree_and_storage_used() {
     assert_ne!(copied_grandchild_files[0].id, grandchild_file_id);
     assert_eq!(
         copied_grandchild_files[0].blob_id,
-        aster_drive::db::repository::file_repo::find_by_id(&state.db, grandchild_file_id)
+        aster_drive::db::repository::file_repo::find_by_id(state.writer_db(), grandchild_file_id)
             .await
             .unwrap()
             .blob_id
@@ -1582,7 +1595,7 @@ async fn test_folder_copy_quota_failure_does_not_create_descendants() {
     use sea_orm::{ActiveModelTrait, Set};
 
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
 
     let user = aster_drive::services::auth_service::register(
         &state,
@@ -1744,7 +1757,7 @@ async fn test_driver_registry_invalidate_on_policy_update() {
     let state = common::setup().await;
 
     // 获取默认策略
-    let policies = aster_drive::db::repository::policy_repo::find_all(&state.db)
+    let policies = aster_drive::db::repository::policy_repo::find_all(state.writer_db())
         .await
         .unwrap();
     let policy = &policies[0];
@@ -1772,9 +1785,10 @@ async fn test_driver_registry_invalidate_on_policy_update() {
     .unwrap();
 
     // 更新后获取 → 应是新的实例（缓存已失效，重新创建）
-    let updated_policy = aster_drive::db::repository::policy_repo::find_by_id(&state.db, policy.id)
-        .await
-        .unwrap();
+    let updated_policy =
+        aster_drive::db::repository::policy_repo::find_by_id(state.writer_db(), policy.id)
+            .await
+            .unwrap();
     let driver3 = state.driver_registry.get_driver(&updated_policy).unwrap();
     assert!(
         !std::sync::Arc::ptr_eq(&driver1, &driver3),
@@ -1857,12 +1871,13 @@ async fn test_share_download_failure_rolls_back_download_quota() {
     .await
     .unwrap();
 
-    let file = aster_drive::db::repository::file_repo::find_by_id(&state.db, file_id)
+    let file = aster_drive::db::repository::file_repo::find_by_id(state.writer_db(), file_id)
         .await
         .unwrap();
-    let blob = aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file.blob_id)
-        .await
-        .unwrap();
+    let blob =
+        aster_drive::db::repository::file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
+            .await
+            .unwrap();
     let policy = state
         .policy_snapshot
         .get_policy_or_err(blob.policy_id)
@@ -1876,7 +1891,7 @@ async fn test_share_download_failure_rolls_back_download_quota() {
             .unwrap_err();
     assert_ne!(err.code(), "E053");
 
-    let reloaded = aster_drive::db::repository::share_repo::find_by_id(&state.db, share.id)
+    let reloaded = aster_drive::db::repository::share_repo::find_by_id(state.writer_db(), share.id)
         .await
         .unwrap();
     assert_eq!(reloaded.download_count, 0);
@@ -1887,7 +1902,7 @@ async fn test_share_download_failure_rolls_back_download_quota() {
             .unwrap_err();
     assert_ne!(err.code(), "E053");
 
-    let reloaded = aster_drive::db::repository::share_repo::find_by_id(&state.db, share.id)
+    let reloaded = aster_drive::db::repository::share_repo::find_by_id(state.writer_db(), share.id)
         .await
         .unwrap();
     assert_eq!(reloaded.download_count, 0);
@@ -1982,10 +1997,10 @@ async fn test_share_target_check_constraint_rejects_zero_or_multiple_targets() {
         updated_at: Set(now),
         ..Default::default()
     }
-    .insert(&state.db)
+    .insert(state.writer_db())
     .await
     .unwrap_err();
-    assert_share_target_check_violation(&state.db, &err);
+    assert_share_target_check_violation(state.writer_db(), &err);
 
     let err = aster_drive::entities::share::ActiveModel {
         token: Set(uuid::Uuid::new_v4().simple().to_string()),
@@ -2002,10 +2017,10 @@ async fn test_share_target_check_constraint_rejects_zero_or_multiple_targets() {
         updated_at: Set(now),
         ..Default::default()
     }
-    .insert(&state.db)
+    .insert(state.writer_db())
     .await
     .unwrap_err();
-    assert_share_target_check_violation(&state.db, &err);
+    assert_share_target_check_violation(state.writer_db(), &err);
 }
 
 #[actix_web::test]
@@ -2040,11 +2055,11 @@ async fn test_share_token_length_constraint_rejects_tokens_longer_than_32_chars(
         updated_at: Set(now),
         ..Default::default()
     }
-    .insert(&state.db)
+    .insert(state.writer_db())
     .await
     .unwrap_err();
 
-    assert_share_token_length_violation(&state.db, &err);
+    assert_share_token_length_violation(state.writer_db(), &err);
 }
 
 #[actix_web::test]
@@ -2101,11 +2116,13 @@ async fn test_team_service_clamps_negative_default_storage_quota() {
     .await
     .unwrap();
 
-    let mut updated =
-        aster_drive::db::repository::config_repo::find_by_key(&state.db, "default_storage_quota")
-            .await
-            .unwrap()
-            .unwrap();
+    let mut updated = aster_drive::db::repository::config_repo::find_by_key(
+        state.writer_db(),
+        "default_storage_quota",
+    )
+    .await
+    .unwrap()
+    .unwrap();
     updated.value = "-1".to_string();
     state.runtime_config.apply(updated);
 
@@ -2142,7 +2159,11 @@ async fn test_team_service_rejects_create_without_default_policy_group() {
         .execute_unprepared("UPDATE storage_policy_groups SET is_default = FALSE;")
         .await
         .unwrap();
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 
     let err = aster_drive::services::team_service::create_team(
         &state,
@@ -2208,18 +2229,19 @@ async fn test_team_service_degrades_missing_creator_rows() {
     .await
     .unwrap();
 
-    common::set_foreign_key_checks(&state.db, false)
+    common::set_foreign_key_checks(state.writer_db(), false)
         .await
         .unwrap();
-    let mut broken_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
-        .await
-        .unwrap()
-        .into_active_model();
+    let mut broken_team =
+        aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team.id)
+            .await
+            .unwrap()
+            .into_active_model();
     broken_team.created_by = Set(i64::MAX);
-    aster_drive::db::repository::team_repo::update(&state.db, broken_team)
+    aster_drive::db::repository::team_repo::update(state.writer_db(), broken_team)
         .await
         .unwrap();
-    common::set_foreign_key_checks(&state.db, true)
+    common::set_foreign_key_checks(state.writer_db(), true)
         .await
         .unwrap();
 
@@ -2262,7 +2284,7 @@ async fn test_folder_repo_find_expired_deleted_includes_team_folders() {
 
     let deleted_at = Utc::now() - Duration::days(10);
     let created = aster_drive::db::repository::folder_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::folder::ActiveModel {
             name: Set("Team Trash".to_string()),
             parent_id: Set(None),
@@ -2281,10 +2303,12 @@ async fn test_folder_repo_find_expired_deleted_includes_team_folders() {
     .await
     .unwrap();
 
-    let expired =
-        aster_drive::db::repository::folder_repo::find_expired_deleted(&state.db, Utc::now())
-            .await
-            .unwrap();
+    let expired = aster_drive::db::repository::folder_repo::find_expired_deleted(
+        state.writer_db(),
+        Utc::now(),
+    )
+    .await
+    .unwrap();
 
     assert!(expired.iter().any(|folder| folder.id == created.id));
 }
@@ -2338,7 +2362,7 @@ async fn test_folder_repo_find_all_by_user_excludes_team_folders() {
 
     let now = Utc::now();
     let personal = aster_drive::db::repository::folder_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::folder::ActiveModel {
             name: Set("Personal".to_string()),
             parent_id: Set(None),
@@ -2357,7 +2381,7 @@ async fn test_folder_repo_find_all_by_user_excludes_team_folders() {
     .await
     .unwrap();
     let team_folder = aster_drive::db::repository::folder_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::folder::ActiveModel {
             name: Set("Team".to_string()),
             parent_id: Set(None),
@@ -2376,9 +2400,10 @@ async fn test_folder_repo_find_all_by_user_excludes_team_folders() {
     .await
     .unwrap();
 
-    let folders = aster_drive::db::repository::folder_repo::find_all_by_user(&state.db, member.id)
-        .await
-        .unwrap();
+    let folders =
+        aster_drive::db::repository::folder_repo::find_all_by_user(state.writer_db(), member.id)
+            .await
+            .unwrap();
     let folder_ids: BTreeSet<i64> = folders.into_iter().map(|folder| folder.id).collect();
 
     assert!(folder_ids.contains(&personal.id));
@@ -2402,7 +2427,7 @@ async fn test_folder_repo_top_level_deleted_pagination_is_stable_for_equal_times
 
     let deleted_at = Utc::now();
     let first = aster_drive::db::repository::folder_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::folder::ActiveModel {
             name: Set("first".to_string()),
             parent_id: Set(None),
@@ -2421,7 +2446,7 @@ async fn test_folder_repo_top_level_deleted_pagination_is_stable_for_equal_times
     .await
     .unwrap();
     let second = aster_drive::db::repository::folder_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::folder::ActiveModel {
             name: Set("second".to_string()),
             parent_id: Set(None),
@@ -2442,12 +2467,18 @@ async fn test_folder_repo_top_level_deleted_pagination_is_stable_for_equal_times
 
     let (page_one, total) =
         aster_drive::db::repository::folder_repo::find_top_level_deleted_paginated(
-            &state.db, user.id, 1, 0,
+            state.writer_db(),
+            user.id,
+            1,
+            0,
         )
         .await
         .unwrap();
     let (page_two, _) = aster_drive::db::repository::folder_repo::find_top_level_deleted_paginated(
-        &state.db, user.id, 1, 1,
+        state.writer_db(),
+        user.id,
+        1,
+        1,
     )
     .await
     .unwrap();
@@ -2613,14 +2644,15 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
     .await
     .unwrap();
 
-    let default_policy_id = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist")
-        .id;
+    let default_policy_id =
+        aster_drive::db::repository::policy_repo::find_default(state.writer_db())
+            .await
+            .unwrap()
+            .expect("default policy should exist")
+            .id;
     let now = Utc::now();
     let folder = aster_drive::db::repository::folder_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::folder::ActiveModel {
             name: Set("cleanup-folder".to_string()),
             parent_id: Set(None),
@@ -2640,7 +2672,7 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
     .unwrap();
 
     let blob = aster_drive::db::repository::file_repo::create_blob(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::file_blob::ActiveModel {
             hash: Set(format!("cleanup-blob-{}", uuid::Uuid::new_v4())),
             size: Set(12),
@@ -2655,7 +2687,7 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
     .await
     .unwrap();
     let file = aster_drive::db::repository::file_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::file::ActiveModel {
             name: Set("cleanup.txt".to_string()),
             folder_id: Set(Some(folder.id)),
@@ -2677,7 +2709,7 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
     .unwrap();
 
     aster_drive::db::repository::property_repo::upsert(
-        &state.db,
+        state.writer_db(),
         aster_drive::types::EntityType::Folder,
         folder.id,
         "test",
@@ -2699,7 +2731,7 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
     .unwrap();
 
     aster_drive::db::repository::share_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::share::ActiveModel {
             token: Set(uuid::Uuid::new_v4().simple().to_string()),
             user_id: Set(owner.id),
@@ -2721,7 +2753,7 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
 
     let upload_id = uuid::Uuid::new_v4().to_string();
     aster_drive::db::repository::upload_session_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::upload_session::ActiveModel {
             id: Set(upload_id.clone()),
             user_id: Set(owner.id),
@@ -2749,13 +2781,14 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
         .await
         .unwrap();
 
-    let mut archived_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
-        .await
-        .unwrap()
-        .into_active_model();
+    let mut archived_team =
+        aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team.id)
+            .await
+            .unwrap()
+            .into_active_model();
     archived_team.archived_at = Set(Some(Utc::now() - Duration::days(8)));
     archived_team.updated_at = Set(Utc::now() - Duration::days(8));
-    aster_drive::db::repository::team_repo::update(&state.db, archived_team)
+    aster_drive::db::repository::team_repo::update(state.writer_db(), archived_team)
         .await
         .unwrap();
 
@@ -2764,43 +2797,45 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
         .unwrap();
     assert_eq!(deleted, 1);
     assert!(
-        aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
+        aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team.id)
             .await
             .is_err()
     );
     assert!(
-        aster_drive::db::repository::file_repo::find_by_id(&state.db, file.id)
+        aster_drive::db::repository::file_repo::find_by_id(state.writer_db(), file.id)
             .await
             .is_err()
     );
     assert!(
-        aster_drive::db::repository::folder_repo::find_by_id(&state.db, folder.id)
+        aster_drive::db::repository::folder_repo::find_by_id(state.writer_db(), folder.id)
             .await
             .is_err()
     );
     assert!(
         aster_drive::db::repository::team_member_repo::find_by_team_and_user(
-            &state.db, team.id, owner.id
+            state.writer_db(),
+            team.id,
+            owner.id
         )
         .await
         .unwrap()
         .is_none()
     );
     assert!(
-        aster_drive::db::repository::share_repo::find_by_team(&state.db, team.id)
+        aster_drive::db::repository::share_repo::find_by_team(state.writer_db(), team.id)
             .await
             .unwrap()
             .is_empty()
     );
     assert!(
-        aster_drive::db::repository::upload_session_repo::find_by_team(&state.db, team.id)
+        aster_drive::db::repository::upload_session_repo::find_by_team(state.writer_db(), team.id)
             .await
             .unwrap()
             .is_empty()
     );
     assert!(
         aster_drive::db::repository::lock_repo::find_by_path_prefix(
-            &state.db,
+            state.writer_db(),
             &format!("/teams/{}/", team.id),
         )
         .await
@@ -2809,7 +2844,7 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
     );
     assert!(
         aster_drive::db::repository::property_repo::find_by_entity(
-            &state.db,
+            state.writer_db(),
             aster_drive::types::EntityType::Folder,
             folder.id,
         )
@@ -2844,14 +2879,15 @@ async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() 
     .await
     .unwrap();
 
-    let default_policy_id = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist")
-        .id;
+    let default_policy_id =
+        aster_drive::db::repository::policy_repo::find_default(state.writer_db())
+            .await
+            .unwrap()
+            .expect("default policy should exist")
+            .id;
     let now = Utc::now();
     let blob = aster_drive::db::repository::file_repo::create_blob(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::file_blob::ActiveModel {
             hash: Set(format!("batch-cleanup-blob-{}", uuid::Uuid::new_v4())),
             size: Set(1),
@@ -2869,7 +2905,7 @@ async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() 
     let mut sample_file_ids = Vec::new();
     for idx in 0..1001 {
         let file = aster_drive::db::repository::file_repo::create(
-            &state.db,
+            state.writer_db(),
             aster_drive::entities::file::ActiveModel {
                 name: Set(format!("batched-file-{idx:04}.txt")),
                 folder_id: Set(None),
@@ -2897,7 +2933,7 @@ async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() 
     let mut sample_folder_ids = Vec::new();
     for idx in 0..1001 {
         let folder = aster_drive::db::repository::folder_repo::create(
-            &state.db,
+            state.writer_db(),
             aster_drive::entities::folder::ActiveModel {
                 name: Set(format!("batched-folder-{idx:04}")),
                 parent_id: Set(None),
@@ -2917,7 +2953,7 @@ async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() 
         .unwrap();
         if idx == 0 || idx == 1000 {
             aster_drive::db::repository::property_repo::upsert(
-                &state.db,
+                state.writer_db(),
                 aster_drive::types::EntityType::Folder,
                 folder.id,
                 "aster:",
@@ -2934,13 +2970,14 @@ async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() 
         .await
         .unwrap();
 
-    let mut archived_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
-        .await
-        .unwrap()
-        .into_active_model();
+    let mut archived_team =
+        aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team.id)
+            .await
+            .unwrap()
+            .into_active_model();
     archived_team.archived_at = Set(Some(Utc::now() - Duration::days(8)));
     archived_team.updated_at = Set(Utc::now() - Duration::days(8));
-    aster_drive::db::repository::team_repo::update(&state.db, archived_team)
+    aster_drive::db::repository::team_repo::update(state.writer_db(), archived_team)
         .await
         .unwrap();
 
@@ -2949,26 +2986,26 @@ async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() 
         .unwrap();
     assert_eq!(deleted, 1);
     assert!(
-        aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
+        aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team.id)
             .await
             .is_err()
     );
     for file_id in sample_file_ids {
         assert!(
-            aster_drive::db::repository::file_repo::find_by_id(&state.db, file_id)
+            aster_drive::db::repository::file_repo::find_by_id(state.writer_db(), file_id)
                 .await
                 .is_err()
         );
     }
     for folder_id in sample_folder_ids {
         assert!(
-            aster_drive::db::repository::folder_repo::find_by_id(&state.db, folder_id)
+            aster_drive::db::repository::folder_repo::find_by_id(state.writer_db(), folder_id)
                 .await
                 .is_err()
         );
         assert!(
             aster_drive::db::repository::property_repo::find_by_entity(
-                &state.db,
+                state.writer_db(),
                 aster_drive::types::EntityType::Folder,
                 folder_id,
             )
@@ -2978,7 +3015,7 @@ async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() 
         );
     }
     assert!(
-        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, blob.id)
+        aster_drive::db::repository::file_repo::find_blob_by_id(state.writer_db(), blob.id)
             .await
             .is_err()
     );
@@ -3010,7 +3047,7 @@ async fn test_team_archive_cleanup_respects_configured_retention() {
     .unwrap();
 
     let mut config = aster_drive::db::repository::config_repo::find_by_key(
-        &state.db,
+        state.writer_db(),
         "team_archive_retention_days",
     )
     .await
@@ -3023,13 +3060,14 @@ async fn test_team_archive_cleanup_respects_configured_retention() {
         .await
         .unwrap();
 
-    let mut archived_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
-        .await
-        .unwrap()
-        .into_active_model();
+    let mut archived_team =
+        aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team.id)
+            .await
+            .unwrap()
+            .into_active_model();
     archived_team.archived_at = Set(Some(Utc::now() - Duration::days(8)));
     archived_team.updated_at = Set(Utc::now() - Duration::days(8));
-    aster_drive::db::repository::team_repo::update(&state.db, archived_team)
+    aster_drive::db::repository::team_repo::update(state.writer_db(), archived_team)
         .await
         .unwrap();
 
@@ -3038,8 +3076,9 @@ async fn test_team_archive_cleanup_respects_configured_retention() {
         .unwrap();
     assert_eq!(deleted, 0);
 
-    let archived = aster_drive::db::repository::team_repo::find_archived_by_id(&state.db, team.id)
-        .await
-        .unwrap();
+    let archived =
+        aster_drive::db::repository::team_repo::find_archived_by_id(state.writer_db(), team.id)
+            .await
+            .unwrap();
     assert_eq!(archived.id, team.id);
 }

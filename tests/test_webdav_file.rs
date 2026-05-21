@@ -87,7 +87,7 @@ async fn test_aster_dav_file_write_mode_persists_empty_and_written_content() {
     empty_file.flush().await.unwrap();
 
     let empty_stored =
-        file_repo::find_by_name_in_folder(&state.db, user.id, None, "empty-dav-file.txt")
+        file_repo::find_by_name_in_folder(state.writer_db(), user.id, None, "empty-dav-file.txt")
             .await
             .unwrap()
             .expect("empty WebDAV flush should create a zero-byte file record");
@@ -115,11 +115,15 @@ async fn test_aster_dav_file_write_mode_persists_empty_and_written_content() {
         .unwrap();
     written_file.flush().await.unwrap();
 
-    let stored =
-        file_repo::find_by_name_in_folder(&state.db, user.id, None, "buffered-dav-file.txt")
-            .await
-            .unwrap()
-            .expect("buffered WebDAV flush should create a file record");
+    let stored = file_repo::find_by_name_in_folder(
+        state.writer_db(),
+        user.id,
+        None,
+        "buffered-dav-file.txt",
+    )
+    .await
+    .unwrap()
+    .expect("buffered WebDAV flush should create a file record");
     assert_eq!(stored.size, 11);
 }
 
@@ -163,12 +167,12 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     assert_eq!(total, None);
 
     let mut updated_user: aster_drive::entities::user::ActiveModel =
-        user_repo::find_by_id(&state.db, user.id)
+        user_repo::find_by_id(state.writer_db(), user.id)
             .await
             .unwrap()
             .into();
     updated_user.storage_quota = Set(128);
-    updated_user.update(&state.db).await.unwrap();
+    updated_user.update(state.writer_db()).await.unwrap();
 
     let (used, total) = dav_fs.get_quota().await.unwrap();
     assert_eq!(used, content.len() as u64);
@@ -194,7 +198,7 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     assert!(dav_fs.have_props(&file_path).await);
 
     let stored_file = aster_drive::db::repository::file_repo::find_by_name_in_folder(
-        &state.db,
+        state.writer_db(),
         user.id,
         None,
         "quota-props.txt",
@@ -203,7 +207,7 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     .unwrap()
     .expect("stored file should exist");
     property_repo::upsert(
-        &state.db,
+        state.writer_db(),
         EntityType::File,
         stored_file.id,
         "system.archive_preview",
@@ -213,7 +217,7 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     .await
     .unwrap();
     property_repo::upsert(
-        &state.db,
+        state.writer_db(),
         EntityType::File,
         stored_file.id,
         "DAV:",

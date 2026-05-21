@@ -415,7 +415,7 @@ pub(crate) async fn verify_folder_access(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
-    verify_folder_access_with_db(&state.db, state, scope, folder_id).await
+    verify_folder_access_with_db(state.writer_db(), state, scope, folder_id).await
 }
 
 pub(crate) async fn verify_folder_access_for_read(
@@ -446,7 +446,7 @@ pub(crate) async fn verify_file_access(
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
-    verify_file_access_with_db(&state.db, state, scope, file_id).await
+    verify_file_access_with_db(state.writer_db(), state, scope, file_id).await
 }
 
 pub(crate) async fn verify_file_access_for_read(
@@ -552,7 +552,6 @@ mod tests {
             );
 
         PrimaryAppState {
-            db: db.clone(),
             db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config: runtime_config.clone(),
@@ -586,7 +585,7 @@ mod tests {
             config: Set(None),
             ..Default::default()
         }
-        .insert(&state.db)
+        .insert(state.writer_db())
         .await
         .expect("test user should insert")
     }
@@ -597,7 +596,7 @@ mod tests {
     ) -> storage_policy_group::Model {
         let now = Utc::now();
         let policy = policy_repo::create(
-            &state.db,
+            state.writer_db(),
             storage_policy::ActiveModel {
                 name: Set(format!("{name} Policy")),
                 driver_type: Set(DriverType::Local),
@@ -620,7 +619,7 @@ mod tests {
         .await
         .expect("test policy should insert");
         let group = policy_group_repo::create_group(
-            &state.db,
+            state.writer_db(),
             storage_policy_group::ActiveModel {
                 name: Set(format!("{name} Group")),
                 description: Set(String::new()),
@@ -634,7 +633,7 @@ mod tests {
         .await
         .expect("test policy group should insert");
         policy_group_repo::create_group_item(
-            &state.db,
+            state.writer_db(),
             storage_policy_group_item::ActiveModel {
                 group_id: Set(group.id),
                 policy_id: Set(policy.id),
@@ -649,7 +648,7 @@ mod tests {
         .expect("test policy group item should insert");
         state
             .policy_snapshot
-            .reload(&state.db)
+            .reload(state.writer_db())
             .await
             .expect("policy snapshot should reload");
         group
@@ -663,7 +662,7 @@ mod tests {
     ) -> (team::Model, team_member::Model) {
         let now = Utc::now();
         let team = team_repo::create(
-            &state.db,
+            state.writer_db(),
             team::ActiveModel {
                 name: Set("Cache Test Team".to_string()),
                 description: Set(String::new()),
@@ -680,7 +679,7 @@ mod tests {
         .await
         .expect("test team should insert");
         team_member_repo::create(
-            &state.db,
+            state.writer_db(),
             team_member::ActiveModel {
                 team_id: Set(team.id),
                 user_id: Set(owner.id),
@@ -693,7 +692,7 @@ mod tests {
         .await
         .expect("test owner membership should insert");
         let membership = team_member_repo::create(
-            &state.db,
+            state.writer_db(),
             team_member::ActiveModel {
                 team_id: Set(team.id),
                 user_id: Set(member.id),
@@ -724,7 +723,7 @@ mod tests {
 
         let mut active = team.clone().into_active_model();
         active.policy_group_id = Set(Some(second_group.id));
-        team_repo::update(&state.db, active)
+        team_repo::update(state.writer_db(), active)
             .await
             .expect("team policy group should update");
         let policy_group_id = require_team_policy_group_id(&state, team.id, member.id)
@@ -732,7 +731,7 @@ mod tests {
             .expect("cached access should refresh policy group from database");
         assert_eq!(policy_group_id, second_group.id);
 
-        team_member_repo::delete(&state.db, membership.id)
+        team_member_repo::delete(state.writer_db(), membership.id)
             .await
             .expect("membership should delete");
         let error = require_team_access(&state, team.id, member.id)
@@ -747,7 +746,7 @@ mod tests {
         let user = create_user(&state, "folder-owner").await;
         let now = Utc::now();
         let parent = crate::db::repository::folder_repo::create(
-            &state.db,
+            state.writer_db(),
             crate::entities::folder::ActiveModel {
                 name: Set("Parent".to_string()),
                 parent_id: Set(None),
@@ -766,7 +765,7 @@ mod tests {
         .await
         .expect("parent folder should insert");
         let child = crate::db::repository::folder_repo::create(
-            &state.db,
+            state.writer_db(),
             crate::entities::folder::ActiveModel {
                 name: Set("Child".to_string()),
                 parent_id: Set(Some(parent.id)),
@@ -797,7 +796,7 @@ mod tests {
         active.name = Set("Renamed".to_string());
         active.updated_at = Set(Utc::now());
         active
-            .update(&state.db)
+            .update(state.writer_db())
             .await
             .expect("parent should rename");
 
@@ -825,7 +824,7 @@ mod tests {
         let team_id = team.id;
         let mut active = team.into_active_model();
         active.archived_at = Set(Some(Utc::now()));
-        team_repo::update(&state.db, active)
+        team_repo::update(state.writer_db(), active)
             .await
             .expect("team should archive");
 

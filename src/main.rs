@@ -221,8 +221,8 @@ async fn run_primary_http_server(
         "starting HTTP service"
     );
 
-    let configure_db = state.db.clone();
-    let shutdown_db = state.db.clone();
+    let configure_db = state.writer_db().clone();
+    let shutdown_db = state.writer_db().clone();
     let http_shutdown_token = CancellationToken::new();
     let state = web::Data::new(state);
     let task_state = state.clone();
@@ -283,7 +283,7 @@ async fn run_follower_http_server(
         "starting HTTP service"
     );
 
-    let shutdown_db = state.db.clone();
+    let shutdown_db = state.writer_db().clone();
     let state = web::Data::new(state);
     let http_shutdown_token = CancellationToken::new();
     let server = HttpServer::new(move || {

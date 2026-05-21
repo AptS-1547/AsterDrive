@@ -178,7 +178,7 @@ pub async fn issue_tokens_for_session(
     user_agent: Option<&str>,
 ) -> Result<(String, String)> {
     let tokens = issue_tokens_for_session_id(state, user_id, session_version, None)?;
-    persist_auth_session(&state.db, user_id, &tokens, ip_address, user_agent).await?;
+    persist_auth_session(state.writer_db(), user_id, &tokens, ip_address, user_agent).await?;
     Ok((tokens.access_token, tokens.refresh_token))
 }
 
@@ -206,7 +206,7 @@ pub async fn revoke_refresh_token(state: &PrimaryAppState, token: &str) -> Resul
     let Some(jti) = claims.jti else {
         return Ok(false);
     };
-    auth_session_repo::revoke_by_refresh_jti(&state.db, &jti, Utc::now()).await
+    auth_session_repo::revoke_by_refresh_jti(state.writer_db(), &jti, Utc::now()).await
 }
 
 struct CreatedToken {

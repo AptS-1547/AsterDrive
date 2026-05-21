@@ -142,12 +142,14 @@ pub async fn record_runtime_task_run(
     })?;
 
     if should_refresh_latest_success(task_name, outcome)
-        && let Some(existing) =
-            background_task_repo::find_latest_system_runtime_by_task_name(&state.db, task_name)
-                .await?
+        && let Some(existing) = background_task_repo::find_latest_system_runtime_by_task_name(
+            state.writer_db(),
+            task_name,
+        )
+        .await?
         && existing.status == BackgroundTaskStatus::Succeeded
         && background_task_repo::refresh_system_runtime_success(
-            &state.db,
+            state.writer_db(),
             background_task_repo::SystemRuntimeSuccessRefresh {
                 id: existing.id,
                 result_json: result_json.as_ref(),
@@ -160,7 +162,7 @@ pub async fn record_runtime_task_run(
         )
         .await?
     {
-        return background_task_repo::find_by_id(&state.db, existing.id)
+        return background_task_repo::find_by_id(state.writer_db(), existing.id)
             .await
             .map(Some);
     }
@@ -169,7 +171,7 @@ pub async fn record_runtime_task_run(
     // 区别在于 runtime 任务的 kind 是 SystemRuntime，它们只是执行事件记录，
     // 不会再被 dispatcher 拿去执行。
     let task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::SystemRuntime),
             status: Set(outcome.status()),

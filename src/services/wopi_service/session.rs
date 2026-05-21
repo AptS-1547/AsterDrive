@@ -108,7 +108,7 @@ async fn load_wopi_session_by_hash(
         return Ok(Some(cached));
     }
 
-    let session = wopi_session_repo::find_by_token_hash(&state.db, token_hash).await?;
+    let session = wopi_session_repo::find_by_token_hash(state.writer_db(), token_hash).await?;
     if let Some(session) = &session {
         cache_wopi_session(state, session).await;
     }
@@ -121,7 +121,7 @@ async fn delete_wopi_session(
     token_hash: &str,
     session_id: i64,
 ) -> Result<()> {
-    wopi_session_repo::delete_by_id(&state.db, session_id).await?;
+    wopi_session_repo::delete_by_id(state.writer_db(), session_id).await?;
     state
         .cache
         .delete(&wopi_session_cache_key(token_hash))
@@ -351,7 +351,7 @@ async fn create_access_token_session(
         .ok_or_else(|| AsterError::internal_error("invalid WOPI access token expiry"))?;
     let now = Utc::now();
     let session = wopi_session_repo::create(
-        &state.db,
+        state.writer_db(),
         wopi_session::ActiveModel {
             token_hash: Set(token_hash),
             actor_user_id: Set(payload.actor_user_id),
@@ -385,5 +385,5 @@ fn payload_from_session(session: &CachedWopiSession) -> Result<WopiAccessTokenPa
 }
 
 pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
-    wopi_session_repo::delete_expired(&state.db).await
+    wopi_session_repo::delete_expired(state.writer_db()).await
 }

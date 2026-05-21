@@ -173,7 +173,7 @@ pub async fn sync_from_primary<S: FollowerRuntimeState>(
     access_key: &str,
     input: SyncMasterBindingInput,
 ) -> Result<master_binding::Model> {
-    let existing = master_binding_repo::find_by_access_key(state.db(), access_key)
+    let existing = master_binding_repo::find_by_access_key(state.writer_db(), access_key)
         .await?
         .ok_or_else(|| AsterError::auth_invalid_credentials("unknown internal access_key"))?;
     let normalized = normalize_sync_input(input)?;
@@ -183,10 +183,10 @@ pub async fn sync_from_primary<S: FollowerRuntimeState>(
     active.is_enabled = Set(normalized.is_enabled);
     active.updated_at = Set(Utc::now());
 
-    let updated = master_binding_repo::update(state.db(), active).await?;
+    let updated = master_binding_repo::update(state.writer_db(), active).await?;
     state
         .driver_registry()
-        .reload_master_bindings(state.db())
+        .reload_master_bindings(state.writer_db())
         .await?;
     Ok(updated)
 }
@@ -333,7 +333,7 @@ pub fn provider_storage_prefix(binding: &master_binding::Model, prefix: &str) ->
 }
 
 pub async fn assert_follower_ready<S: FollowerRuntimeState>(state: &S) -> Result<()> {
-    let bindings = master_binding_repo::find_all(state.db()).await?;
+    let bindings = master_binding_repo::find_all(state.writer_db()).await?;
     let enabled_bindings: Vec<_> = bindings
         .into_iter()
         .filter(|binding| binding.is_enabled)

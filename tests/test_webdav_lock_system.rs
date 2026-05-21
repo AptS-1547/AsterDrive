@@ -47,7 +47,7 @@ async fn test_db_lock_system_deep_lock_supports_check_refresh_discover_and_delet
     .await
     .unwrap();
 
-    let lock_system = DbLockSystem::new(state.db.clone(), user.id, None);
+    let lock_system = DbLockSystem::new(state.writer_db().clone(), user.id, None);
     let folder_path = DavPath::new("/projects/").unwrap();
     let child_path = DavPath::new("/projects/docs/note.txt").unwrap();
     let owner = Element::parse(Cursor::new(
@@ -70,7 +70,7 @@ async fn test_db_lock_system_deep_lock_supports_check_refresh_discover_and_delet
     assert_eq!(lock.principal.as_deref(), Some("tester"));
     assert!(!lock.token.is_empty());
 
-    let locked_folder = folder_repo::find_by_id(&state.db, projects.id)
+    let locked_folder = folder_repo::find_by_id(state.writer_db(), projects.id)
         .await
         .unwrap();
     assert!(locked_folder.is_locked);
@@ -107,7 +107,7 @@ async fn test_db_lock_system_deep_lock_supports_check_refresh_discover_and_delet
     assert!(refreshed.owner.is_some());
     assert_eq!(refreshed.timeout, Some(Duration::from_secs(30)));
 
-    let persisted = lock_repo::find_by_token(&state.db, &lock.token)
+    let persisted = lock_repo::find_by_token(state.writer_db(), &lock.token)
         .await
         .unwrap()
         .expect("refreshed lock should still exist");
@@ -115,12 +115,12 @@ async fn test_db_lock_system_deep_lock_supports_check_refresh_discover_and_delet
 
     lock_system.delete(&folder_path).await.unwrap();
     assert!(
-        lock_repo::find_by_token(&state.db, &lock.token)
+        lock_repo::find_by_token(state.writer_db(), &lock.token)
             .await
             .unwrap()
             .is_none()
     );
-    let unlocked_folder = folder_repo::find_by_id(&state.db, projects.id)
+    let unlocked_folder = folder_repo::find_by_id(state.writer_db(), projects.id)
         .await
         .unwrap();
     assert!(!unlocked_folder.is_locked);
@@ -171,7 +171,7 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
     .await
     .unwrap();
 
-    let lock_system = DbLockSystem::new(state.db.clone(), user.id, None);
+    let lock_system = DbLockSystem::new(state.writer_db().clone(), user.id, None);
     let file_path = DavPath::new("/expired.txt").unwrap();
 
     let replacement = lock_system
@@ -187,13 +187,15 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
         .unwrap();
     assert_ne!(replacement.token, expired_lock.token);
     assert!(
-        lock_repo::find_by_token(&state.db, &expired_lock.token)
+        lock_repo::find_by_token(state.writer_db(), &expired_lock.token)
             .await
             .unwrap()
             .is_none()
     );
 
-    let locked_file = file_repo::find_by_id(&state.db, file.id).await.unwrap();
+    let locked_file = file_repo::find_by_id(state.writer_db(), file.id)
+        .await
+        .unwrap();
     assert!(locked_file.is_locked);
 
     let conflict = lock_system
@@ -221,11 +223,13 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
         .await
         .unwrap();
     assert!(
-        lock_repo::find_by_token(&state.db, &replacement.token)
+        lock_repo::find_by_token(state.writer_db(), &replacement.token)
             .await
             .unwrap()
             .is_none()
     );
-    let unlocked_file = file_repo::find_by_id(&state.db, file.id).await.unwrap();
+    let unlocked_file = file_repo::find_by_id(state.writer_db(), file.id)
+        .await
+        .unwrap();
     assert!(!unlocked_file.is_locked);
 }

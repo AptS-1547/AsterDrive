@@ -57,7 +57,7 @@ pub(crate) async fn invalidate_webdav_auth_for_user(
     state: &PrimaryAppState,
     user_id: i64,
 ) -> Result<(), AsterError> {
-    let accounts = webdav_account_repo::find_by_user(&state.db, user_id).await?;
+    let accounts = webdav_account_repo::find_by_user(state.writer_db(), user_id).await?;
     for account in accounts {
         invalidate_webdav_auth_for_username(state, &account.username).await;
     }
@@ -112,7 +112,7 @@ async fn authenticate_basic(
     }
 
     // 查 WebDAV 专用账号
-    let account = webdav_account_repo::find_by_username(&state.db, username)
+    let account = webdav_account_repo::find_by_username(state.writer_db(), username)
         .await?
         .ok_or_else(|| AsterError::auth_invalid_credentials("WebDAV account not found"))?;
 
@@ -128,7 +128,7 @@ async fn authenticate_basic(
     }
 
     // 确认关联用户仍然活跃
-    let user = user_repo::find_by_id(&state.db, account.user_id).await?;
+    let user = user_repo::find_by_id(state.writer_db(), account.user_id).await?;
     if !user.status.is_active() {
         return Err(auth_forbidden_with_subcode(
             ApiSubcode::AuthAccountDisabled,
@@ -198,7 +198,6 @@ mod tests {
             );
 
         PrimaryAppState {
-            db: db.clone(),
             db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(DriverRegistry::new()),
             runtime_config: runtime_config.clone(),
@@ -232,7 +231,7 @@ mod tests {
             config: Set(None),
             ..Default::default()
         }
-        .insert(&state.db)
+        .insert(state.writer_db())
         .await
         .expect("webdav auth test user should be inserted");
 
@@ -252,7 +251,7 @@ mod tests {
             updated_at: Set(now),
             ..Default::default()
         }
-        .insert(&state.db)
+        .insert(state.writer_db())
         .await
         .expect("webdav auth test account should be inserted");
 

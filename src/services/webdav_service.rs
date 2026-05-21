@@ -36,7 +36,7 @@ pub async fn collect_folder_tree(
     folder_id: i64,
     include_deleted: bool,
 ) -> Result<(Vec<FileInfo>, Vec<i64>)> {
-    collect_folder_tree_models(&state.db, user_id, folder_id, include_deleted)
+    collect_folder_tree_models(state.writer_db(), user_id, folder_id, include_deleted)
         .await
         .map(|(files, folder_ids)| (files.into_iter().map(FileInfo::from).collect(), folder_ids))
 }
@@ -51,16 +51,16 @@ pub async fn recursive_soft_delete(
 ) -> Result<()> {
     let scope = WorkspaceStorageScope::Personal { user_id };
     tracing::debug!(user_id, folder_id, "webdav soft deleting folder tree");
-    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    let folder = folder_repo::find_by_id(state.writer_db(), folder_id).await?;
     let (files, folder_ids) =
-        collect_folder_tree_models(&state.db, user_id, folder_id, false).await?;
+        collect_folder_tree_models(state.writer_db(), user_id, folder_id, false).await?;
 
     let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
     let file_count = file_ids.len();
     let folder_count = folder_ids.len();
     let now = Utc::now();
 
-    let txn = crate::db::transaction::begin(&state.db).await?;
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
     file_repo::soft_delete_many(&txn, &file_ids, now).await?;
     folder_repo::soft_delete_many(&txn, &folder_ids, now).await?;
     crate::db::transaction::commit(txn).await?;
@@ -96,7 +96,7 @@ pub async fn purge_folder_tree(
 ) -> Result<()> {
     tracing::debug!(user_id, folder_id, "webdav purging folder tree");
     let (all_files, all_folder_ids) =
-        collect_folder_tree_models(&state.db, user_id, folder_id, true).await?;
+        collect_folder_tree_models(state.writer_db(), user_id, folder_id, true).await?;
     let file_count = all_files.len();
     let folder_count = all_folder_ids.len();
 
@@ -108,13 +108,14 @@ pub async fn purge_folder_tree(
     .await?;
 
     crate::db::repository::property_repo::delete_all_for_entities(
-        &state.db,
+        state.writer_db(),
         crate::types::EntityType::Folder,
         &all_folder_ids,
     )
     .await?;
 
-    let deleted_shares = share_repo::delete_by_folder_ids(&state.db, &all_folder_ids).await?;
+    let deleted_shares =
+        share_repo::delete_by_folder_ids(state.writer_db(), &all_folder_ids).await?;
     if deleted_shares > 0 {
         crate::services::share_service::invalidate_active_share_target_cache_for_scope(
             state,
@@ -124,7 +125,7 @@ pub async fn purge_folder_tree(
         crate::services::share_service::invalidate_all_share_token_record_cache(state).await;
     }
     crate::services::folder_service::invalidate_folder_path_cache(state).await;
-    folder_repo::delete_many(&state.db, &all_folder_ids).await?;
+    folder_repo::delete_many(state.writer_db(), &all_folder_ids).await?;
     tracing::debug!(
         user_id,
         folder_id,

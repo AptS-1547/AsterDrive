@@ -728,7 +728,7 @@ async fn test_search_excludes_deleted() {
 #[actix_web::test]
 async fn test_search_only_own_files() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let mail_sender = state.mail_sender.clone();
     let runtime_config = state.runtime_config.clone();
     let app = create_test_app!(state);

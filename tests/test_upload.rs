@@ -18,7 +18,11 @@ fn new_test_upload_id() -> String {
 }
 
 async fn reload_policy_snapshot(state: &aster_drive::runtime::PrimaryAppState) {
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 }
 
 async fn set_default_local_content_dedup(
@@ -28,7 +32,7 @@ async fn set_default_local_content_dedup(
     use aster_drive::db::repository::policy_repo;
     use sea_orm::{ActiveModelTrait, Set};
 
-    let policy = policy_repo::find_default(&state.db)
+    let policy = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist in test setup");
@@ -41,7 +45,7 @@ async fn set_default_local_content_dedup(
         }
         .to_string(),
     ));
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
     reload_policy_snapshot(state).await;
 }
 
@@ -107,10 +111,10 @@ async fn upload_same_content_direct_and_chunked(
         .await
         .unwrap();
 
-    let direct_blob = file_repo::find_blob_by_id(&state.db, direct_file.blob_id)
+    let direct_blob = file_repo::find_blob_by_id(state.writer_db(), direct_file.blob_id)
         .await
         .unwrap();
-    let chunked_blob = file_repo::find_blob_by_id(&state.db, chunked_file.blob_id)
+    let chunked_blob = file_repo::find_blob_by_id(state.writer_db(), chunked_file.blob_id)
         .await
         .unwrap();
 
@@ -180,14 +184,14 @@ async fn create_upload_session(
     use aster_drive::db::repository::{policy_repo, upload_session_repo};
     use sea_orm::Set;
 
-    let policy = policy_repo::find_default(&state.db)
+    let policy = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist in test setup");
     let policy_id = spec.policy_id.unwrap_or(policy.id);
     let now = chrono::Utc::now();
     upload_session_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::upload_session::ActiveModel {
             id: Set(spec.upload_id.to_string()),
             user_id: Set(user_id),
@@ -226,7 +230,7 @@ async fn test_upload_session_try_create_reports_id_conflict() {
     )
     .await
     .unwrap();
-    let policy = policy_repo::find_default(&state.db)
+    let policy = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
@@ -254,12 +258,12 @@ async fn test_upload_session_try_create_reports_id_conflict() {
     };
 
     assert!(
-        upload_session_repo::try_create(&state.db, build_model())
+        upload_session_repo::try_create(state.writer_db(), build_model())
             .await
             .unwrap()
     );
     assert!(
-        !upload_session_repo::try_create(&state.db, build_model())
+        !upload_session_repo::try_create(state.writer_db(), build_model())
             .await
             .unwrap()
     );
@@ -286,7 +290,7 @@ async fn test_upload_session_try_create_preserves_non_id_unique_conflict() {
     )
     .await
     .unwrap();
-    let policy = policy_repo::find_default(&state.db)
+    let policy = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
@@ -314,11 +318,11 @@ async fn test_upload_session_try_create_preserves_non_id_unique_conflict() {
     };
 
     assert!(
-        upload_session_repo::try_create(&state.db, build_model(new_test_upload_id()))
+        upload_session_repo::try_create(state.writer_db(), build_model(new_test_upload_id()))
             .await
             .unwrap()
     );
-    let err = upload_session_repo::try_create(&state.db, build_model(new_test_upload_id()))
+    let err = upload_session_repo::try_create(state.writer_db(), build_model(new_test_upload_id()))
         .await
         .expect_err("non-id unique conflict should not be treated as id retry");
     assert_eq!(err.code(), "E002");
@@ -336,7 +340,7 @@ async fn create_dead_remote_policy(
 
     let now = chrono::Utc::now();
     let remote_node = managed_follower_repo::create(
-        &state.db,
+        state.writer_db(),
         managed_follower::ActiveModel {
             name: Set(format!("dead-remote-{}", uuid::Uuid::new_v4())),
             base_url: Set("http://127.0.0.1:9".to_string()),
@@ -358,7 +362,7 @@ async fn create_dead_remote_policy(
     .unwrap();
 
     let policy = policy_repo::create(
-        &state.db,
+        state.writer_db(),
         storage_policy::ActiveModel {
             name: Set(format!("dead-remote-policy-{}", uuid::Uuid::new_v4())),
             driver_type: Set(DriverType::Remote),
@@ -383,12 +387,12 @@ async fn create_dead_remote_policy(
 
     state
         .policy_snapshot
-        .reload(&state.db)
+        .reload(state.writer_db())
         .await
         .expect("policy snapshot should reload after creating dead remote policy");
     state
         .driver_registry
-        .reload_managed_followers(&state.db)
+        .reload_managed_followers(state.writer_db())
         .await
         .expect("driver registry should reload managed followers after creating dead remote node");
     state.driver_registry.invalidate(policy.id);
@@ -591,7 +595,7 @@ async fn create_s3_policy(
 
     let now = Utc::now();
     let policy = aster_drive::db::repository::policy_repo::create(
-        &state.db,
+        state.writer_db(),
         aster_drive::entities::storage_policy::ActiveModel {
             name: Set(name.to_string()),
             driver_type: Set(aster_drive::types::DriverType::S3),
@@ -614,7 +618,11 @@ async fn create_s3_policy(
     )
     .await
     .unwrap();
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
     state.driver_registry.invalidate(policy.id);
     policy
 }
@@ -788,8 +796,12 @@ async fn test_concurrent_store_from_temp_same_name_auto_renames() {
 
     let first = first.unwrap();
     let second = second.unwrap();
-    let first = file_repo::find_by_id(&state.db, first.id).await.unwrap();
-    let second = file_repo::find_by_id(&state.db, second.id).await.unwrap();
+    let first = file_repo::find_by_id(state.writer_db(), first.id)
+        .await
+        .unwrap();
+    let second = file_repo::find_by_id(state.writer_db(), second.id)
+        .await
+        .unwrap();
 
     let mut names = vec![first.name, second.name];
     names.sort();
@@ -1123,7 +1135,7 @@ async fn test_upload_service_init_upload_normalizes_nfd_filename_and_rejects_win
     let upload_id = init
         .upload_id
         .expect("chunked upload should return upload_id");
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session.filename, "caf\u{00e9}.txt");
@@ -1149,7 +1161,7 @@ async fn test_update_storage_used_is_atomic_under_concurrency() {
 
     let mut tasks = JoinSet::new();
     for _ in 0..32 {
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         let user_id = user.id;
         tasks.spawn(async move { user_repo::update_storage_used(&db, user_id, 1).await });
     }
@@ -1158,12 +1170,14 @@ async fn test_update_storage_used_is_atomic_under_concurrency() {
         result.unwrap().unwrap();
     }
 
-    let updated = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let updated = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     assert_eq!(updated.storage_used, 32);
 
     let mut tasks = JoinSet::new();
     for _ in 0..40 {
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         let user_id = user.id;
         tasks.spawn(async move { user_repo::update_storage_used(&db, user_id, -1).await });
     }
@@ -1172,7 +1186,9 @@ async fn test_update_storage_used_is_atomic_under_concurrency() {
         result.unwrap().unwrap();
     }
 
-    let updated = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    let updated = user_repo::find_by_id(state.writer_db(), user.id)
+        .await
+        .unwrap();
     assert_eq!(
         updated.storage_used, 0,
         "storage_used should not go below zero"
@@ -1198,17 +1214,17 @@ async fn test_concurrent_quota_overrun_is_rejected_by_cas() {
 
     // 设 quota = 100 字节，并发提交 20 个 +10 字节请求（总需求 200，超额一倍）
     let model = user::Entity::find_by_id(registered.id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .unwrap()
         .unwrap();
     let mut active = model.into_active_model();
     active.storage_quota = Set(100);
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     let mut tasks = JoinSet::new();
     for _ in 0..20 {
-        let db = state.db.clone();
+        let db = state.writer_db().clone();
         let user_id = registered.id;
         tasks.spawn(async move { user_repo::update_storage_used(&db, user_id, 10).await });
     }
@@ -1228,7 +1244,7 @@ async fn test_concurrent_quota_overrun_is_rejected_by_cas() {
     assert_eq!(succeeded, 10, "exactly 10 requests should fit in quota=100");
     assert_eq!(quota_exceeded, 10, "remaining 10 must be rejected");
 
-    let final_state = user_repo::find_by_id(&state.db, registered.id)
+    let final_state = user_repo::find_by_id(state.writer_db(), registered.id)
         .await
         .unwrap();
     assert_eq!(final_state.storage_used, 100, "must not exceed quota");
@@ -1249,17 +1265,17 @@ async fn test_check_quota_rejects_integer_overflow() {
 
     // 把 storage_used 调到接近 i64::MAX，再传一个会触发溢出的 delta
     let model = user::Entity::find_by_id(registered.id)
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .unwrap()
         .unwrap();
     let mut active = model.into_active_model();
     active.storage_used = Set(i64::MAX - 100);
     active.storage_quota = Set(0); // 不限，证明检查的是溢出本身而非配额
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     // 不限配额下，i64 加法溢出本来会 wrap 成负数通过 check，现在必须明确拒绝
-    let result = user_repo::check_quota(&state.db, registered.id, 200).await;
+    let result = user_repo::check_quota(state.writer_db(), registered.id, 200).await;
     let err = result.expect_err("overflow must be rejected");
     assert_eq!(err.code(), "E004", "expected internal_error for overflow");
 }
@@ -1552,12 +1568,13 @@ async fn test_chunked_upload_streaming_assembly_preserves_content() {
         .unwrap();
     assert_eq!(file.name, "streamed.txt");
 
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
         .await
         .unwrap();
-    let policy = aster_drive::db::repository::policy_repo::find_by_id(&state.db, blob.policy_id)
-        .await
-        .unwrap();
+    let policy =
+        aster_drive::db::repository::policy_repo::find_by_id(state.writer_db(), blob.policy_id)
+            .await
+            .unwrap();
     let driver = state.driver_registry.get_driver(&policy).unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
 
@@ -1658,13 +1675,13 @@ async fn test_concurrent_chunked_dedup_complete_reuses_blob_without_overwrite() 
 
     let first = tasks.join_next().await.unwrap().unwrap();
     let second = tasks.join_next().await.unwrap().unwrap();
-    let first_blob = file_repo::find_blob_by_id(&state.db, first.blob_id)
+    let first_blob = file_repo::find_blob_by_id(state.writer_db(), first.blob_id)
         .await
         .unwrap();
-    let second_blob = file_repo::find_blob_by_id(&state.db, second.blob_id)
+    let second_blob = file_repo::find_blob_by_id(state.writer_db(), second.blob_id)
         .await
         .unwrap();
-    let policy = policy_repo::find_by_id(&state.db, first_blob.policy_id)
+    let policy = policy_repo::find_by_id(state.writer_db(), first_blob.policy_id)
         .await
         .unwrap();
     let driver = state.driver_registry.get_driver(&policy).unwrap();
@@ -1680,7 +1697,7 @@ async fn test_local_direct_upload_with_declared_size_avoids_global_temp_dirs_and
 
     let state = common::setup().await;
     set_default_local_content_dedup(&state, true).await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let driver_registry = state.driver_registry.clone();
     let temp_roots = vec![
         state.config.server.temp_dir.clone(),
@@ -1957,21 +1974,23 @@ async fn test_upload_session_part_upsert_updates_existing_row_without_duplicates
     )
     .await;
 
-    let first = upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-1", 5)
-        .await
-        .unwrap();
+    let first =
+        upload_session_part_repo::upsert_part(state.writer_db(), &upload_id, 1, "etag-1", 5)
+            .await
+            .unwrap();
     assert!(first.inserted);
     assert_eq!(first.model.etag, "etag-1");
     assert_eq!(first.model.size, 5);
 
-    let second = upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-2", 7)
-        .await
-        .unwrap();
+    let second =
+        upload_session_part_repo::upsert_part(state.writer_db(), &upload_id, 1, "etag-2", 7)
+            .await
+            .unwrap();
     assert!(!second.inserted);
     assert_eq!(second.model.etag, "etag-2");
     assert_eq!(second.model.size, 7);
 
-    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+    let parts = upload_session_part_repo::list_by_upload(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(parts.len(), 1);
@@ -1979,7 +1998,7 @@ async fn test_upload_session_part_upsert_updates_existing_row_without_duplicates
     assert_eq!(parts[0].etag, "etag-2");
     assert_eq!(parts[0].size, 7);
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session.received_count, 0);
@@ -2053,7 +2072,7 @@ async fn test_complete_upload_is_idempotent_after_completion() {
     assert_eq!(second.blob_id, first.blob_id);
     assert_eq!(second.name, "idempotent.txt");
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(
@@ -2102,7 +2121,7 @@ async fn test_complete_upload_marks_session_failed_after_assembly_error() {
     assert_eq!(err.code(), "E057");
     assert!(err.message().contains("open chunk 1"));
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(
@@ -2162,7 +2181,7 @@ async fn test_complete_upload_keeps_presigned_multipart_session_retryable_after_
         .unwrap_err();
     assert_eq!(err.code(), "E031");
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session.status, UploadSessionStatus::Presigned);
@@ -2173,7 +2192,7 @@ async fn test_complete_upload_keeps_presigned_multipart_session_retryable_after_
         .unwrap_err();
     assert_eq!(retry_err.code(), "E031");
 
-    let session_after_retry = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session_after_retry = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session_after_retry.status, UploadSessionStatus::Presigned);
@@ -2233,7 +2252,7 @@ async fn test_complete_upload_keeps_remote_chunked_session_retryable_after_stora
         .unwrap_err();
     assert_eq!(err.code(), "E031");
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session.status, UploadSessionStatus::Uploading);
@@ -2244,7 +2263,7 @@ async fn test_complete_upload_keeps_remote_chunked_session_retryable_after_stora
         .unwrap_err();
     assert_eq!(retry_err.code(), "E031");
 
-    let session_after_retry = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session_after_retry = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session_after_retry.status, UploadSessionStatus::Uploading);
@@ -2428,7 +2447,7 @@ async fn test_upload_service_get_progress_uses_db_parts_for_terminal_relay_multi
         let upload_id = new_test_upload_id();
         let now = Utc::now();
         upload_session_repo::create(
-            &state.db,
+            state.writer_db(),
             aster_drive::entities::upload_session::ActiveModel {
                 id: Set(upload_id.clone()),
                 user_id: Set(user.id),
@@ -2452,10 +2471,10 @@ async fn test_upload_service_get_progress_uses_db_parts_for_terminal_relay_multi
         .await
         .unwrap();
 
-        upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-1", 5)
+        upload_session_part_repo::upsert_part(state.writer_db(), &upload_id, 1, "etag-1", 5)
             .await
             .unwrap();
-        upload_session_part_repo::upsert_part(&state.db, &upload_id, 3, "etag-3", 5)
+        upload_session_part_repo::upsert_part(state.writer_db(), &upload_id, 3, "etag-3", 5)
             .await
             .unwrap();
 
@@ -2482,7 +2501,7 @@ async fn test_sqlite_reader_routes_do_not_wait_for_busy_writer_pool() {
     let database_url = format!("sqlite://{}?mode=rwc", temp_dir.join("reader.db").display());
     let state = common::setup_with_database_url(&database_url).await;
     assert!(
-        state.db_handles.sqlite_read_write_split(),
+        state.sqlite_read_write_split(),
         "file SQLite test state should enable reader/writer split"
     );
 
@@ -2507,7 +2526,7 @@ async fn test_sqlite_reader_routes_do_not_wait_for_busy_writer_pool() {
     )
     .await;
 
-    let txn = state.db.begin().await.unwrap();
+    let txn = state.writer_db().begin().await.unwrap();
     txn.execute_unprepared("UPDATE users SET updated_at = updated_at WHERE id = -1")
         .await
         .unwrap();
@@ -2693,17 +2712,17 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     let cleaned = upload_service::cleanup_expired(&state).await.unwrap();
     assert_eq!(cleaned, 1);
     assert!(
-        upload_session_repo::find_by_id(&state.db, &expired_id)
+        upload_session_repo::find_by_id(state.writer_db(), &expired_id)
             .await
             .is_err()
     );
     assert!(
-        upload_session_repo::find_by_id(&state.db, &completed_id)
+        upload_session_repo::find_by_id(state.writer_db(), &completed_id)
             .await
             .is_ok()
     );
     assert!(
-        upload_session_repo::find_by_id(&state.db, &assembling_id)
+        upload_session_repo::find_by_id(state.writer_db(), &assembling_id)
             .await
             .is_ok()
     );
@@ -2760,7 +2779,7 @@ async fn test_upload_service_cleanup_expired_keeps_remote_sessions_when_storage_
     let cleaned = upload_service::cleanup_expired(&state).await.unwrap();
     assert_eq!(cleaned, 0);
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session.status, UploadSessionStatus::Uploading);
@@ -2829,7 +2848,7 @@ async fn test_cancel_upload_aborts_presigned_multipart_session_on_rustfs() {
     assert_eq!(init.total_chunks, Some(2));
     let upload_id = init.upload_id.clone().unwrap();
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     let temp_key = session
@@ -2884,7 +2903,7 @@ async fn test_cancel_upload_aborts_presigned_multipart_session_on_rustfs() {
         .unwrap();
 
     assert!(
-        upload_session_repo::find_by_id(&state.db, &upload_id)
+        upload_session_repo::find_by_id(state.writer_db(), &upload_id)
             .await
             .is_err(),
         "canceled multipart upload session should be deleted immediately"
@@ -2956,7 +2975,7 @@ async fn test_cancel_upload_keeps_remote_session_when_object_cleanup_is_unavaila
         .unwrap();
     let cancel_completed_at = chrono::Utc::now();
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session.status, UploadSessionStatus::Failed);
@@ -3010,7 +3029,7 @@ async fn test_upload_chunk_returns_session_expired_for_failed_multipart_session(
     assert_eq!(err.code(), "E055");
     assert!(err.message().contains("canceled or failed"));
     assert!(
-        upload_session_part_repo::find_by_upload_and_part(&state.db, &upload_id, 1)
+        upload_session_part_repo::find_by_upload_and_part(state.writer_db(), &upload_id, 1)
             .await
             .unwrap()
             .is_none(),
@@ -3091,18 +3110,19 @@ async fn test_presigned_upload_s3_e2e() {
     assert_eq!(file.name, "hello.txt");
 
     // 4. 验证文件可通过 driver 读取
-    let policy = policy_repo::find_by_id(&state.db, s3_policy.id)
+    let policy = policy_repo::find_by_id(state.writer_db(), s3_policy.id)
         .await
         .unwrap();
     let driver = state.driver_registry.get_driver(&policy).unwrap();
     let completed_session =
-        aster_drive::db::repository::upload_session_repo::find_by_id(&state.db, &upload_id)
+        aster_drive::db::repository::upload_session_repo::find_by_id(state.writer_db(), &upload_id)
             .await
             .unwrap();
     let temp_key = completed_session.s3_temp_key.unwrap();
-    let blob = aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file.blob_id)
-        .await
-        .unwrap();
+    let blob =
+        aster_drive::db::repository::file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
+            .await
+            .unwrap();
     assert_ne!(
         blob.storage_path, temp_key,
         "completed presigned uploads must be copied away from the still-valid PUT key"
@@ -3137,12 +3157,14 @@ async fn test_presigned_upload_s3_e2e() {
         "S3 presigned skips dedup — each upload creates its own blob"
     );
 
-    let blob1 = aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file.blob_id)
-        .await
-        .unwrap();
-    let blob2 = aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file2.blob_id)
-        .await
-        .unwrap();
+    let blob1 =
+        aster_drive::db::repository::file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
+            .await
+            .unwrap();
+    let blob2 =
+        aster_drive::db::repository::file_repo::find_blob_by_id(state.writer_db(), file2.blob_id)
+            .await
+            .unwrap();
     assert_eq!(blob1.ref_count, 1);
     assert_eq!(blob2.ref_count, 1);
 }
@@ -3218,7 +3240,7 @@ async fn test_force_delete_policy_cleans_late_s3_presigned_put_e2e() {
     assert_eq!(init.mode, aster_drive::types::UploadMode::Presigned);
     let upload_id = init.upload_id.unwrap();
     let presigned_url = init.presigned_url.unwrap();
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     let temp_key = session
@@ -3235,9 +3257,13 @@ async fn test_force_delete_policy_cleans_late_s3_presigned_put_e2e() {
     policy_service::delete(&state, policy.id, true)
         .await
         .expect("force deleting policy with pending presigned session should succeed");
-    assert!(policy_repo::find_by_id(&state.db, policy.id).await.is_err());
     assert!(
-        upload_session_repo::find_by_id(&state.db, &upload_id)
+        policy_repo::find_by_id(state.writer_db(), policy.id)
+            .await
+            .is_err()
+    );
+    assert!(
+        upload_session_repo::find_by_id(state.writer_db(), &upload_id)
             .await
             .is_err(),
         "force delete should remove the upload session before the old URL expires"
@@ -3262,14 +3288,14 @@ async fn test_force_delete_policy_cleans_late_s3_presigned_put_e2e() {
 
     let cleanup_task = background_task::Entity::find()
         .filter(background_task::Column::Kind.eq(BackgroundTaskKind::StoragePolicyTempCleanup))
-        .one(&state.db)
+        .one(state.writer_db())
         .await
         .unwrap()
         .expect("force delete should schedule delayed cleanup");
     assert_eq!(cleanup_task.status, BackgroundTaskStatus::Pending);
     let mut due_task: background_task::ActiveModel = cleanup_task.clone().into();
     due_task.next_run_at = Set(chrono::Utc::now() - chrono::Duration::seconds(1));
-    due_task.update(&state.db).await.unwrap();
+    due_task.update(state.writer_db()).await.unwrap();
 
     let stats = task_service::dispatch_due(&state).await.unwrap();
     assert_eq!(stats.claimed, 1);
@@ -3278,7 +3304,7 @@ async fn test_force_delete_policy_cleans_late_s3_presigned_put_e2e() {
         !s3_object_exists(&s3_client, bucket, &object_key).await,
         "delayed cleanup should delete the late S3 temp object"
     );
-    let stored_task = background_task_repo::find_by_id(&state.db, cleanup_task.id)
+    let stored_task = background_task_repo::find_by_id(state.writer_db(), cleanup_task.id)
         .await
         .unwrap();
     assert_eq!(stored_task.status, BackgroundTaskStatus::Succeeded);
@@ -3404,11 +3430,11 @@ async fn test_presigned_multipart_upload_s3_e2e() {
     .unwrap();
     assert_eq!(file.name, "multipart.bin");
 
-    let policy = policy_repo::find_by_id(&state.db, s3_policy.id)
+    let policy = policy_repo::find_by_id(state.writer_db(), s3_policy.id)
         .await
         .unwrap();
     let driver = state.driver_registry.get_driver(&policy).unwrap();
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
         .await
         .unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
@@ -3455,7 +3481,7 @@ async fn test_create_empty_file_s3_no_dedup() {
         .unwrap();
     common::seed_csrf_token(&login.access_token);
 
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let driver_registry = state.driver_registry.clone();
     let app = create_test_app!(state);
 
@@ -3555,7 +3581,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
             .unwrap();
     assert_eq!(init.mode, aster_drive::types::UploadMode::Direct);
 
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let driver_registry = state.driver_registry.clone();
     let temp_roots = vec![
         state.config.server.temp_dir.clone(),
@@ -3674,7 +3700,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
         .unwrap();
     common::seed_csrf_token(&login.access_token);
 
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let sessions_before = upload_session::Entity::find()
         .filter(upload_session::Column::UserId.eq(user.id))
         .count(&db)
@@ -3863,7 +3889,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     assert_eq!(body["error"]["internal_code"], "E024");
     assert_eq!(body["error"]["subcode"], "upload.chunk_too_large");
     assert!(
-        upload_session_part_repo::list_by_upload(&state.db, &oversized_upload_id)
+        upload_session_part_repo::list_by_upload(state.writer_db(), &oversized_upload_id)
             .await
             .unwrap()
             .is_empty(),
@@ -3891,7 +3917,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         "relay_stream should not create local upload temp dir"
     );
     assert!(
-        upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+        upload_session_part_repo::list_by_upload(state.writer_db(), &upload_id)
             .await
             .unwrap()
             .is_empty()
@@ -3929,7 +3955,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         .unwrap();
     assert_eq!(progress.chunks_on_disk, vec![0]);
 
-    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+    let parts = upload_session_part_repo::list_by_upload(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(parts.len(), 1);
@@ -3958,7 +3984,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         .unwrap();
     assert_eq!(progress.chunks_on_disk, vec![0, 1]);
 
-    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+    let parts = upload_session_part_repo::list_by_upload(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(parts.len(), 2);
@@ -3968,7 +3994,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     assert_eq!(parts[1].size, part2.len() as i64);
     assert!(parts.iter().all(|part| !part.etag.is_empty()));
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(session.received_count, 2);
@@ -3982,7 +4008,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         .unwrap();
     assert_eq!(file.name, "relay-multipart.bin");
 
-    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+    let session = upload_session_repo::find_by_id(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(
@@ -3991,7 +4017,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     );
     assert_eq!(session.file_id, Some(file.id));
 
-    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
         .await
         .unwrap();
     assert_eq!(blob.hash, format!("s3-{upload_id}"));
@@ -4011,7 +4037,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     );
     assert_eq!(completed_progress.chunks_on_disk, vec![0, 1]);
 
-    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+    let parts = upload_session_part_repo::list_by_upload(state.writer_db(), &upload_id)
         .await
         .unwrap();
     assert_eq!(parts.len(), 2);

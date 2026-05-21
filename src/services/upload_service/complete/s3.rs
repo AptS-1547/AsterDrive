@@ -20,7 +20,7 @@ pub(super) async fn complete_presigned_upload(
 ) -> Result<file::Model> {
     // presigned 单文件的 complete 阶段，本质是“确认对象存在且大小正确”，
     // 然后把 temp_key 直接认领成正式 blob。
-    let db = &state.db;
+    let db = state.writer_db();
     let temp_key = session.s3_temp_key.as_deref().ok_or_else(|| {
         upload_assembly_error_with_subcode(
             ApiSubcode::UploadSessionCorrupted,
@@ -120,7 +120,7 @@ pub(super) async fn complete_s3_relay_multipart(
     session: upload_session::Model,
     actor_username: Option<&str>,
 ) -> Result<file::Model> {
-    let db = &state.db;
+    let db = state.writer_db();
     let parts = upload_session_part_repo::list_by_upload(db, &session.id).await?;
     let expected_parts =
         crate::utils::numbers::i32_to_usize(session.total_chunks, "upload session total_chunks")?;
@@ -269,7 +269,7 @@ async fn complete_s3_multipart_upload_session(
     missing_message: &str,
     actor_username: Option<&str>,
 ) -> Result<file::Model> {
-    let db = &state.db;
+    let db = state.writer_db();
     let temp_key = session.s3_temp_key.as_deref().ok_or_else(|| {
         upload_assembly_error_with_subcode(
             ApiSubcode::UploadSessionCorrupted,

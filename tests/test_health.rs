@@ -40,7 +40,7 @@ async fn test_health_ready() {
 #[actix_web::test]
 async fn test_health_ready_redacts_database_error() {
     let state = common::setup().await;
-    let db = state.db.clone();
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
 
     db.close_by_ref().await.unwrap();
@@ -60,7 +60,7 @@ async fn test_health_ready_redacts_database_error() {
 #[actix_web::test]
 async fn test_health_ready_returns_503_when_default_storage_is_unavailable() {
     let state = common::setup().await;
-    let default_policy = policy_repo::find_default(&state.db)
+    let default_policy = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
@@ -70,10 +70,14 @@ async fn test_health_ready_returns_503_when_default_storage_is_unavailable() {
     let mut active: storage_policy::ActiveModel = default_policy.clone().into();
     active.base_path = Set(blocked_base_path.to_string_lossy().into_owned());
     active.updated_at = Set(Utc::now());
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     state.driver_registry.invalidate(default_policy.id);
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 
     let app = create_test_app!(state);
 
@@ -91,7 +95,7 @@ async fn test_health_ready_returns_503_when_default_storage_is_unavailable() {
 #[actix_web::test]
 async fn test_health_ready_returns_503_when_default_storage_policy_is_missing() {
     let state = common::setup().await;
-    let default_policy = policy_repo::find_default(&state.db)
+    let default_policy = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
@@ -99,10 +103,14 @@ async fn test_health_ready_returns_503_when_default_storage_policy_is_missing() 
     let mut active: storage_policy::ActiveModel = default_policy.clone().into();
     active.is_default = Set(false);
     active.updated_at = Set(Utc::now());
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     state.driver_registry.invalidate(default_policy.id);
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 
     let app = create_test_app!(state);
 
@@ -121,7 +129,7 @@ async fn test_health_ready_returns_503_when_default_storage_policy_is_missing() 
 #[actix_web::test]
 async fn test_health_ready_does_not_probe_s3_network() {
     let state = common::setup().await;
-    let default_policy = policy_repo::find_default(&state.db)
+    let default_policy = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist");
@@ -137,10 +145,14 @@ async fn test_health_ready_does_not_probe_s3_network() {
             .to_string(),
     ));
     active.updated_at = Set(Utc::now());
-    active.update(&state.db).await.unwrap();
+    active.update(state.writer_db()).await.unwrap();
 
     state.driver_registry.invalidate(default_policy.id);
-    state.policy_snapshot.reload(&state.db).await.unwrap();
+    state
+        .policy_snapshot
+        .reload(state.writer_db())
+        .await
+        .unwrap();
 
     let app = create_test_app!(state);
 

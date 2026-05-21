@@ -427,11 +427,12 @@ async fn test_admin_team_crud() {
         .system_default_policy_group()
         .expect("default policy group should exist")
         .id;
-    let default_policy_id = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist")
-        .id;
+    let default_policy_id =
+        aster_drive::db::repository::policy_repo::find_default(state.writer_db())
+            .await
+            .unwrap()
+            .expect("default policy should exist")
+            .id;
     let alternate_group_id = aster_drive::services::policy_service::create_group(
         &state,
         aster_drive::services::policy_service::CreateStoragePolicyGroupInput {
@@ -1112,7 +1113,7 @@ async fn test_admin_policies_support_explicit_sorting() {
 #[actix_web::test]
 async fn test_admin_policy_groups_support_explicit_sorting() {
     let state = common::setup().await;
-    let default_policy_id = policy_repo::find_default(&state.db)
+    let default_policy_id = policy_repo::find_default(state.writer_db())
         .await
         .unwrap()
         .expect("default policy should exist")
@@ -1272,7 +1273,7 @@ async fn test_admin_locks_support_explicit_sorting() {
     .enumerate()
     {
         lock_repo::create(
-            &state.db,
+            state.writer_db(),
             resource_lock::ActiveModel {
                 token: Set(format!("urn:uuid:{}", uuid::Uuid::new_v4())),
                 entity_type: Set(EntityType::File),
@@ -1324,7 +1325,7 @@ async fn test_admin_tasks_support_explicit_sorting_and_id_tiebreaker() {
 
     for display_name in ["Task Sort Zeta", "Task Sort Alpha", "Task Sort Beta"] {
         let task = background_task_repo::create(
-            &state.db,
+            state.writer_db(),
             background_task::ActiveModel {
                 kind: Set(BackgroundTaskKind::SystemRuntime),
                 status: Set(BackgroundTaskStatus::Pending),
@@ -1397,7 +1398,7 @@ async fn test_admin_audit_logs_support_explicit_sorting() {
         (format!("Audit Sort {marker} Beta"), "10.0.0.2"),
     ] {
         audit_log_repo::create(
-            &state.db,
+            state.writer_db(),
             audit_log::ActiveModel {
                 user_id: Set(1),
                 action: Set(AuditAction::AdminUpdateUser),
@@ -1473,7 +1474,7 @@ async fn test_admin_audit_logs_skip_invalid_entity_type_rows() {
         ("file", format!("Audit Valid {marker}")),
     ] {
         audit_log_repo::create(
-            &state.db,
+            state.writer_db(),
             audit_log::ActiveModel {
                 user_id: Set(1),
                 action: Set(AuditAction::FileUpload),
@@ -1528,7 +1529,7 @@ async fn test_admin_overview() {
     assert_eq!(resp.status(), 201);
 
     background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::SystemRuntime),
             status: Set(BackgroundTaskStatus::Succeeded),
@@ -1562,7 +1563,7 @@ async fn test_admin_overview() {
     .expect("background task event should be inserted");
 
     background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::SystemRuntime),
             status: Set(BackgroundTaskStatus::Failed),
@@ -1761,7 +1762,7 @@ async fn test_admin_tasks_lists_all_recorded_tasks() {
     let team_id = team_body["data"]["id"].as_i64().unwrap();
 
     let system_task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::SystemRuntime),
             status: Set(BackgroundTaskStatus::Succeeded),
@@ -1795,7 +1796,7 @@ async fn test_admin_tasks_lists_all_recorded_tasks() {
     .expect("system task should be inserted");
 
     let team_task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ArchiveCompress),
             status: Set(BackgroundTaskStatus::Failed),
@@ -1830,7 +1831,7 @@ async fn test_admin_tasks_lists_all_recorded_tasks() {
     .expect("team task should be inserted");
 
     let personal_task = background_task_repo::create(
-        &state.db,
+        state.writer_db(),
         background_task::ActiveModel {
             kind: Set(BackgroundTaskKind::ArchiveExtract),
             status: Set(BackgroundTaskStatus::Processing),
@@ -1959,7 +1960,7 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
         };
 
         background_task_repo::create(
-            &state.db,
+            state.writer_db(),
             background_task::ActiveModel {
                 kind: Set(kind),
                 status: Set(status),

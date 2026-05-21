@@ -169,7 +169,7 @@ async fn defer_upload_session_cleanup(
     reason: &str,
 ) -> Result<()> {
     let expires_at = Utc::now() + Duration::seconds(DEFERRED_UPLOAD_SESSION_CLEANUP_GRACE_SECS);
-    mark_session_failed_with_expiration(&state.db, upload_id, expires_at).await?;
+    mark_session_failed_with_expiration(state.writer_db(), upload_id, expires_at).await?;
     cleanup_upload_temp_dir(state, upload_id).await;
     tracing::debug!(
         upload_id,
@@ -211,7 +211,7 @@ async fn cancel_upload_impl(state: &PrimaryAppState, session: upload_session::Mo
     }
 
     cleanup_upload_temp_dir(state, upload_id).await;
-    upload_session_repo::delete(&state.db, upload_id).await?;
+    upload_session_repo::delete(state.writer_db(), upload_id).await?;
     tracing::debug!(upload_id, "canceled upload session");
     Ok(())
 }
@@ -235,7 +235,7 @@ pub async fn force_cleanup_by_policy(
     state: &PrimaryAppState,
     policy_id: i64,
 ) -> Result<ForceCleanupByPolicyResult> {
-    let sessions = upload_session_repo::find_by_policy(&state.db, policy_id).await?;
+    let sessions = upload_session_repo::find_by_policy(state.writer_db(), policy_id).await?;
     let mut result = ForceCleanupByPolicyResult::default();
 
     for session in &sessions {
@@ -259,7 +259,7 @@ pub async fn force_cleanup_by_policy(
 
     for session in sessions {
         cleanup_upload_temp_dir(state, &session.id).await;
-        upload_session_repo::delete(&state.db, &session.id).await?;
+        upload_session_repo::delete(state.writer_db(), &session.id).await?;
         result.cleaned += 1;
     }
 
@@ -268,7 +268,7 @@ pub async fn force_cleanup_by_policy(
 
 /// 清理过期的上传 session（后台任务调用）
 pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u32> {
-    let expired = upload_session_repo::find_expired(&state.db).await?;
+    let expired = upload_session_repo::find_expired(state.writer_db()).await?;
     let mut cleaned = 0usize;
     for session in expired {
         if session.status == UploadSessionStatus::Assembling {
@@ -290,7 +290,7 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u32> {
             continue;
         }
 
-        if let Err(error) = upload_session_repo::delete(&state.db, &session.id).await {
+        if let Err(error) = upload_session_repo::delete(state.writer_db(), &session.id).await {
             tracing::warn!(
                 "failed to delete expired upload session {}: {error}",
                 session.id
