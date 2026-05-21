@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminRemoteNodesPage from "@/pages/admin/AdminRemoteNodesPage";
 
 const mockState = vi.hoisted(() => ({
+	clipboard: vi.fn(),
 	brandingSiteUrl: null as string | null,
 	handleApiError: vi.fn(),
 	reload: vi.fn(),
@@ -12,7 +13,23 @@ const mockState = vi.hoisted(() => ({
 	setSearchParams: vi.fn(),
 	setTotal: vi.fn(),
 	toastError: vi.fn(),
+	toastInfo: vi.fn(),
+	toastSuccess: vi.fn(),
 	useApiList: vi.fn(),
+}));
+
+const adminRemoteNodeServiceMocks = vi.hoisted(() => ({
+	create: vi.fn(),
+	createEnrollmentCommand: vi.fn(),
+	createIngressProfile: vi.fn(),
+	delete: vi.fn(),
+	deleteIngressProfile: vi.fn(),
+	get: vi.fn(),
+	list: vi.fn(),
+	listIngressProfiles: vi.fn(),
+	testConnection: vi.fn(),
+	update: vi.fn(),
+	updateIngressProfile: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -34,8 +51,8 @@ vi.mock("react-router-dom", () => ({
 vi.mock("sonner", () => ({
 	toast: {
 		error: (...args: unknown[]) => mockState.toastError(...args),
-		info: vi.fn(),
-		success: vi.fn(),
+		info: (...args: unknown[]) => mockState.toastInfo(...args),
+		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
 }));
 
@@ -45,27 +62,225 @@ vi.mock("@/components/admin/AdminOffsetPagination", () => ({
 
 vi.mock("@/components/admin/admin-remote-nodes-page/RemoteNodeDialog", () => ({
 	RemoteNodeDialog: ({
+		editingNode,
+		form,
+		managedIngressProfilesEnabled,
+		managedIngressProfilesError,
 		mode,
+		onCreateManagedIngressProfile,
+		onCreateBack,
+		onCreateNext,
+		createStep,
+		onDeleteManagedIngressProfile,
+		onFieldChange,
 		open,
+		onOpenChange,
+		onRunConnectionTest,
+		onSubmit,
+		onUpdateManagedIngressProfile,
 	}: {
+		editingNode: { id: number; name: string } | null;
+		form: { base_url: string; is_enabled: boolean; name: string };
+		managedIngressProfilesEnabled: boolean;
+		managedIngressProfilesError: string | null;
 		mode: "create" | "edit";
+		onCreateManagedIngressProfile: (payload: unknown) => Promise<void>;
+		onCreateBack: () => void;
+		onCreateNext: () => void;
+		createStep: number;
+		onDeleteManagedIngressProfile: (profile: {
+			profile_key: string;
+		}) => Promise<void>;
+		onFieldChange: (
+			key: "base_url" | "is_enabled" | "name",
+			value: string | boolean,
+		) => void;
+		onOpenChange: (open: boolean) => void;
+		onRunConnectionTest: () => Promise<boolean>;
+		onSubmit: () => void;
+		onUpdateManagedIngressProfile: (
+			profileKey: string,
+			payload: unknown,
+		) => Promise<void>;
 		open: boolean;
-	}) => (open ? <div data-testid="remote-node-dialog">{mode}</div> : null),
+	}) =>
+		open ? (
+			<div data-testid="remote-node-dialog">
+				<div>{mode}</div>
+				<div data-testid="remote-node-name">{form.name}</div>
+				<div data-testid="create-step">{createStep}</div>
+				<div data-testid="managed-ingress-enabled">
+					{String(managedIngressProfilesEnabled)}
+				</div>
+				<div data-testid="managed-ingress-error">
+					{managedIngressProfilesError ?? ""}
+				</div>
+				<div data-testid="editing-node-name">{editingNode?.name ?? ""}</div>
+				<button
+					type="button"
+					onClick={() => onFieldChange("name", "Edge Beta")}
+				>
+					change-name
+				</button>
+				<button
+					type="button"
+					onClick={() => onFieldChange("base_url", "https://edge.example.com")}
+				>
+					change-base-url
+				</button>
+				<button type="button" onClick={onCreateBack}>
+					create-back
+				</button>
+				<button type="button" onClick={onCreateNext}>
+					create-next
+				</button>
+				<button type="button" onClick={onSubmit}>
+					submit-node
+				</button>
+				<button type="button" onClick={() => onOpenChange(false)}>
+					close-node-dialog
+				</button>
+				<button
+					type="button"
+					onClick={() => {
+						void onRunConnectionTest();
+					}}
+				>
+					run-connection-test
+				</button>
+				<button
+					type="button"
+					onClick={() => {
+						void onCreateManagedIngressProfile({ name: "Ingress" });
+					}}
+				>
+					create-ingress
+				</button>
+				<button
+					type="button"
+					onClick={() => {
+						void onUpdateManagedIngressProfile("default", { name: "Ingress" });
+					}}
+				>
+					update-ingress
+				</button>
+				<button
+					type="button"
+					onClick={() => {
+						void onDeleteManagedIngressProfile({ profile_key: "default" });
+					}}
+				>
+					delete-ingress
+				</button>
+			</div>
+		) : null,
 }));
 
 vi.mock(
 	"@/components/admin/admin-remote-nodes-page/RemoteNodeEnrollmentDialog",
 	() => ({
-		RemoteNodeEnrollmentDialog: () => null,
+		RemoteNodeEnrollmentDialog: ({
+			canTestConnection,
+			command,
+			onCopy,
+			onOpenChange,
+			onVerifyConnection,
+			open,
+		}: {
+			canTestConnection: boolean;
+			command: { command: string; remote_node_id: number } | null;
+			onCopy: (value: string) => Promise<void>;
+			onOpenChange: (open: boolean) => void;
+			onVerifyConnection: (remoteNodeId: number) => Promise<boolean>;
+			open: boolean;
+		}) =>
+			open ? (
+				<div data-testid="enrollment-dialog">
+					<div>{command?.command}</div>
+					<div data-testid="can-test">{String(canTestConnection)}</div>
+					<button
+						type="button"
+						onClick={() => {
+							void onCopy(command?.command ?? "");
+						}}
+					>
+						copy-command
+					</button>
+					<button
+						type="button"
+						onClick={() => {
+							void onVerifyConnection(command?.remote_node_id ?? 0);
+						}}
+					>
+						verify-command
+					</button>
+					<button type="button" onClick={() => onOpenChange(false)}>
+						close-enrollment
+					</button>
+				</div>
+			) : null,
 	}),
 );
 
 vi.mock("@/components/admin/admin-remote-nodes-page/RemoteNodesTable", () => ({
-	RemoteNodesTable: () => <div data-testid="remote-nodes-table" />,
+	RemoteNodesTable: ({
+		items,
+		onEdit,
+		onGenerateEnrollmentCommand,
+		onRequestDelete,
+		onSortChange,
+	}: {
+		items: Array<{ id: number; name: string }>;
+		onEdit: (node: (typeof items)[number]) => void;
+		onGenerateEnrollmentCommand: (node: (typeof items)[number]) => void;
+		onRequestDelete: (id: number) => void;
+		onSortChange: (sortBy: "name", sortOrder: "asc") => void;
+	}) => (
+		<div data-testid="remote-nodes-table">
+			{items.map((item) => (
+				<div key={item.id}>
+					<span>{item.name}</span>
+					<button type="button" onClick={() => onEdit(item)}>
+						edit:{item.id}
+					</button>
+					<button
+						type="button"
+						onClick={() => onGenerateEnrollmentCommand(item)}
+					>
+						enroll:{item.id}
+					</button>
+					<button type="button" onClick={() => onRequestDelete(item.id)}>
+						delete:{item.id}
+					</button>
+				</div>
+			))}
+			<button type="button" onClick={() => onSortChange("name", "asc")}>
+				sort-name
+			</button>
+		</div>
+	),
 }));
 
 vi.mock("@/components/common/ConfirmDialog", () => ({
-	ConfirmDialog: () => null,
+	ConfirmDialog: ({
+		confirmLabel,
+		onConfirm,
+		open,
+		title,
+	}: {
+		confirmLabel: string;
+		onConfirm: () => void;
+		open: boolean;
+		title: string;
+	}) =>
+		open ? (
+			<div role="dialog">
+				<h2>{title}</h2>
+				<button type="button" onClick={onConfirm}>
+					{confirmLabel}
+				</button>
+			</div>
+		) : null,
 }));
 
 vi.mock("@/components/layout/AdminLayout", () => ({
@@ -164,7 +379,7 @@ vi.mock("@/hooks/usePageTitle", () => ({
 }));
 
 vi.mock("@/lib/clipboard", () => ({
-	writeTextToClipboard: vi.fn(),
+	writeTextToClipboard: (...args: unknown[]) => mockState.clipboard(...args),
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -174,19 +389,7 @@ vi.mock("@/lib/logger", () => ({
 }));
 
 vi.mock("@/services/adminService", () => ({
-	adminRemoteNodeService: {
-		create: vi.fn(),
-		createEnrollmentCommand: vi.fn(),
-		createIngressProfile: vi.fn(),
-		delete: vi.fn(),
-		deleteIngressProfile: vi.fn(),
-		get: vi.fn(),
-		list: vi.fn(),
-		listIngressProfiles: vi.fn(),
-		testConnection: vi.fn(),
-		update: vi.fn(),
-		updateIngressProfile: vi.fn(),
-	},
+	adminRemoteNodeService: adminRemoteNodeServiceMocks,
 }));
 
 vi.mock("@/stores/brandingStore", () => ({
@@ -204,6 +407,8 @@ function renderPage() {
 
 describe("AdminRemoteNodesPage", () => {
 	beforeEach(() => {
+		mockState.clipboard.mockReset();
+		mockState.clipboard.mockResolvedValue(undefined);
 		mockState.brandingSiteUrl = null;
 		mockState.handleApiError.mockReset();
 		mockState.reload.mockReset();
@@ -212,6 +417,8 @@ describe("AdminRemoteNodesPage", () => {
 		mockState.setSearchParams.mockReset();
 		mockState.setTotal.mockReset();
 		mockState.toastError.mockReset();
+		mockState.toastInfo.mockReset();
+		mockState.toastSuccess.mockReset();
 		mockState.useApiList.mockReset();
 		mockState.useApiList.mockReturnValue({
 			items: [],
@@ -221,6 +428,69 @@ describe("AdminRemoteNodesPage", () => {
 			setTotal: mockState.setTotal,
 			total: 0,
 		});
+		for (const mock of Object.values(adminRemoteNodeServiceMocks)) {
+			mock.mockReset();
+		}
+		adminRemoteNodeServiceMocks.create.mockResolvedValue({
+			base_url: "https://edge.example.com",
+			id: 9,
+			name: "Edge Beta",
+		});
+		adminRemoteNodeServiceMocks.createEnrollmentCommand.mockResolvedValue({
+			command: "asterdrive-node enroll token",
+			expires_at: "2026-05-22T00:00:00Z",
+			master_url: "https://drive.example.com",
+			remote_node_id: 9,
+			remote_node_name: "Edge Beta",
+			token: "token",
+		});
+		adminRemoteNodeServiceMocks.delete.mockResolvedValue(undefined);
+		adminRemoteNodeServiceMocks.createIngressProfile.mockResolvedValue(
+			undefined,
+		);
+		adminRemoteNodeServiceMocks.deleteIngressProfile.mockResolvedValue(
+			undefined,
+		);
+		adminRemoteNodeServiceMocks.get.mockResolvedValue({
+			base_url: "https://edge.example.com",
+			id: 7,
+			name: "Edge Alpha",
+		});
+		adminRemoteNodeServiceMocks.list.mockResolvedValue({
+			items: [],
+			total: 0,
+		});
+		adminRemoteNodeServiceMocks.listIngressProfiles.mockResolvedValue([
+			{
+				applied_revision: 1,
+				base_path: "incoming",
+				bucket: "",
+				created_at: "2026-05-01T00:00:00Z",
+				desired_revision: 1,
+				driver_type: "local",
+				endpoint: "",
+				is_default: true,
+				last_error: "",
+				max_file_size: 0,
+				name: "Default ingress",
+				profile_key: "default",
+				updated_at: "2026-05-02T00:00:00Z",
+			},
+		]);
+		adminRemoteNodeServiceMocks.testConnection.mockResolvedValue({
+			base_url: "https://edge.example.com",
+			enrollment_status: "completed",
+			id: 7,
+			name: "Edge Alpha updated",
+		});
+		adminRemoteNodeServiceMocks.update.mockResolvedValue({
+			base_url: "https://edge.example.com",
+			id: 7,
+			name: "Edge Beta",
+		});
+		adminRemoteNodeServiceMocks.updateIngressProfile.mockResolvedValue(
+			undefined,
+		);
 	});
 
 	it("blocks the create dialog when the primary public site URL is not set", () => {
@@ -245,5 +515,217 @@ describe("AdminRemoteNodesPage", () => {
 		expect(screen.getByTestId("remote-node-dialog")).toHaveTextContent(
 			"create",
 		);
+	});
+
+	it("creates a remote node, prepares enrollment, copies and verifies the command", async () => {
+		mockState.brandingSiteUrl = "https://drive.example.com";
+		mockState.useApiList.mockReturnValue({
+			items: [],
+			loading: false,
+			reload: mockState.reload,
+			setItems: mockState.setItems,
+			setTotal: mockState.setTotal,
+			total: 0,
+		});
+
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: "new_remote_node" }));
+		fireEvent.click(screen.getByRole("button", { name: "change-name" }));
+		fireEvent.click(screen.getByRole("button", { name: "create-next" }));
+		fireEvent.click(screen.getByRole("button", { name: "change-base-url" }));
+		fireEvent.click(screen.getByRole("button", { name: "create-next" }));
+		fireEvent.click(screen.getByRole("button", { name: "submit-node" }));
+
+		await screen.findByTestId("enrollment-dialog");
+		expect(adminRemoteNodeServiceMocks.create).toHaveBeenCalledWith({
+			base_url: "https://edge.example.com",
+			is_enabled: true,
+			name: "Edge Beta",
+		});
+		expect(
+			adminRemoteNodeServiceMocks.createEnrollmentCommand,
+		).toHaveBeenCalledWith(9);
+		expect(screen.getByTestId("can-test")).toHaveTextContent("true");
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"remote_node_enrollment_prepared",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "copy-command" }));
+		await waitFor(() => {
+			expect(mockState.clipboard).toHaveBeenCalledWith(
+				"asterdrive-node enroll token",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"core:copied_to_clipboard",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "verify-command" }));
+		await waitFor(() => {
+			expect(adminRemoteNodeServiceMocks.testConnection).toHaveBeenCalledWith(
+				9,
+			);
+		});
+		expect(mockState.setItems).toHaveBeenCalled();
+	});
+
+	it("opens completed nodes for editing and manages ingress profiles", async () => {
+		const node = {
+			base_url: "https://edge.example.com",
+			enrollment_status: "completed",
+			id: 7,
+			name: "Edge Alpha",
+		};
+		mockState.useApiList.mockReturnValue({
+			items: [node],
+			loading: false,
+			reload: mockState.reload,
+			setItems: mockState.setItems,
+			setTotal: mockState.setTotal,
+			total: 1,
+		});
+
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: "edit:7" }));
+
+		await waitFor(() => {
+			expect(
+				adminRemoteNodeServiceMocks.listIngressProfiles,
+			).toHaveBeenCalledWith(7);
+		});
+		expect(screen.getByTestId("remote-node-dialog")).toHaveTextContent("edit");
+		expect(screen.getByTestId("managed-ingress-enabled")).toHaveTextContent(
+			"true",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "change-name" }));
+		fireEvent.click(screen.getByRole("button", { name: "submit-node" }));
+
+		await waitFor(() => {
+			expect(adminRemoteNodeServiceMocks.update).toHaveBeenCalledWith(
+				7,
+				expect.objectContaining({
+					base_url: "https://edge.example.com",
+					name: "Edge Beta",
+				}),
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("remote_node_updated");
+
+		fireEvent.click(screen.getByRole("button", { name: "edit:7" }));
+		fireEvent.click(screen.getByRole("button", { name: "create-ingress" }));
+		await waitFor(() => {
+			expect(
+				adminRemoteNodeServiceMocks.createIngressProfile,
+			).toHaveBeenCalledWith(7, { name: "Ingress" });
+		});
+		fireEvent.click(screen.getByRole("button", { name: "update-ingress" }));
+		await waitFor(() => {
+			expect(
+				adminRemoteNodeServiceMocks.updateIngressProfile,
+			).toHaveBeenCalledWith(7, "default", { name: "Ingress" });
+		});
+		fireEvent.click(screen.getByRole("button", { name: "delete-ingress" }));
+		await waitFor(() => {
+			expect(
+				adminRemoteNodeServiceMocks.deleteIngressProfile,
+			).toHaveBeenCalledWith(7, "default");
+		});
+	});
+
+	it("surfaces managed ingress errors for nodes that cannot load profiles", async () => {
+		adminRemoteNodeServiceMocks.listIngressProfiles.mockRejectedValueOnce(
+			new Error("profile failed"),
+		);
+		mockState.useApiList.mockReturnValue({
+			items: [
+				{
+					base_url: "https://edge.example.com",
+					enrollment_status: "completed",
+					id: 7,
+					name: "Edge Alpha",
+				},
+			],
+			loading: false,
+			reload: mockState.reload,
+			setItems: mockState.setItems,
+			setTotal: mockState.setTotal,
+			total: 1,
+		});
+
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: "edit:7" }));
+
+		await waitFor(() => {
+			expect(screen.getByTestId("managed-ingress-error")).toHaveTextContent(
+				"Error: profile failed",
+			);
+		});
+		expect(mockState.handleApiError).toHaveBeenCalledWith(expect.any(Error));
+	});
+
+	it("handles enrollment generation, completed-node guard, refresh, sorting and deletion", async () => {
+		const nodes = [
+			{
+				base_url: "",
+				enrollment_status: "pending",
+				id: 7,
+				name: "Edge Alpha",
+			},
+			{
+				base_url: "https://done.example.com",
+				enrollment_status: "completed",
+				id: 8,
+				name: "Edge Done",
+			},
+		];
+		mockState.useApiList.mockReturnValue({
+			items: nodes,
+			loading: false,
+			reload: mockState.reload,
+			setItems: mockState.setItems,
+			setTotal: mockState.setTotal,
+			total: 2,
+		});
+
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: "sort-name" }));
+		expect(mockState.setSearchParams).toHaveBeenLastCalledWith(
+			expect.any(URLSearchParams),
+			{ replace: true },
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "core:refresh" }));
+		await waitFor(() => {
+			expect(adminRemoteNodeServiceMocks.list).toHaveBeenCalled();
+		});
+		expect(mockState.setItems).toHaveBeenCalledWith([]);
+		expect(mockState.setTotal).toHaveBeenCalledWith(0);
+
+		fireEvent.click(screen.getByRole("button", { name: "enroll:7" }));
+		await screen.findByTestId("enrollment-dialog");
+		expect(screen.getByTestId("can-test")).toHaveTextContent("false");
+
+		fireEvent.click(screen.getByRole("button", { name: "close-enrollment" }));
+		expect(screen.queryByTestId("enrollment-dialog")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "enroll:8" }));
+		expect(mockState.toastInfo).toHaveBeenCalledWith(
+			"remote_node_enrollment_completed_action_disabled",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "delete:7" }));
+		expect(
+			screen.getByText('delete_remote_node "Edge Alpha"?'),
+		).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+		await waitFor(() => {
+			expect(adminRemoteNodeServiceMocks.delete).toHaveBeenCalledWith(7);
+		});
+		expect(mockState.reload).toHaveBeenCalled();
 	});
 });

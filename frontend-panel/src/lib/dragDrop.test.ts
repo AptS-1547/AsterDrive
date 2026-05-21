@@ -215,4 +215,126 @@ describe("dragDrop", () => {
 		expect(drawImage).toHaveBeenCalledWith(sourceImage, 0, 0, 64, 48);
 		expect(setDragImage).toHaveBeenCalledWith(previewHost, 36, 32);
 	});
+
+	it("styles grid-card previews and adds a multi-item badge", () => {
+		document.documentElement.style.setProperty("--card", "210 40% 98%");
+		document.documentElement.style.setProperty("--muted", "210 16% 92%");
+		document.documentElement.style.setProperty("--foreground", "222 47% 11%");
+		const source = document.createElement("div");
+		source.innerHTML = `
+			<div data-drag-preview-hidden>hidden control</div>
+			<div data-drag-preview-media>preview media</div>
+			<p data-drag-preview-name>Quarterly report.pdf</p>
+		`;
+		source.getBoundingClientRect = () =>
+			({
+				width: 180,
+				height: 220,
+			}) as DOMRect;
+
+		const setDragImage = vi.fn();
+
+		setInternalDragPreview(
+			{
+				currentTarget: source,
+				dataTransfer: {
+					setDragImage,
+				},
+			} as unknown as React.DragEvent<Element>,
+			{ itemCount: 3, variant: "grid-card" },
+		);
+
+		const previewHost = document.body.lastElementChild;
+		if (!(previewHost instanceof HTMLElement)) {
+			throw new Error("preview host not found");
+		}
+		const preview = previewHost.firstElementChild;
+		if (!(preview instanceof HTMLElement)) {
+			throw new Error("preview not found");
+		}
+
+		expect(preview.style.display).toBe("flex");
+		expect(preview.style.flexDirection).toBe("column");
+		expect(preview.style.background).toBe("rgba(248, 250, 252, 0.86)");
+		expect(
+			(preview.querySelector("[data-drag-preview-hidden]") as HTMLElement).style
+				.display,
+		).toBe("none");
+		expect(
+			(preview.querySelector("[data-drag-preview-media]") as HTMLElement).style
+				.height,
+		).toBe("5rem");
+		expect(
+			(preview.querySelector("[data-drag-preview-name]") as HTMLElement).style
+				.textOverflow,
+		).toBe("ellipsis");
+		expect(preview).toHaveTextContent("3 项");
+		expect(setDragImage).toHaveBeenCalledWith(previewHost, 36, 32);
+	});
+
+	it("styles list-row previews and hides trailing cells", () => {
+		const source = document.createElement("tr");
+		source.innerHTML = `
+			<td><input type="checkbox" /></td>
+			<td><div><span>Very long file name.txt</span></div></td>
+			<td>size</td>
+			<td>date</td>
+		`;
+		source.getBoundingClientRect = () =>
+			({
+				width: 640,
+				height: 48,
+			}) as DOMRect;
+
+		const setDragImage = vi.fn();
+
+		setInternalDragPreview(
+			{
+				currentTarget: source,
+				dataTransfer: {
+					setDragImage,
+				},
+			} as unknown as React.DragEvent<Element>,
+			{ itemCount: 2, variant: "list-row" },
+			{ x: 4, y: 6 },
+		);
+
+		const previewHost = document.body.lastElementChild;
+		if (!(previewHost instanceof HTMLElement)) {
+			throw new Error("preview host not found");
+		}
+		const preview = previewHost.firstElementChild;
+		if (!(preview instanceof HTMLElement)) {
+			throw new Error("preview not found");
+		}
+		const cells = preview.querySelectorAll("td");
+		const nameCell = cells[1] as HTMLElement;
+		const label = nameCell.querySelector("span");
+		if (!(label instanceof HTMLElement)) {
+			throw new Error("name label not found");
+		}
+
+		expect(preview.style.display).toBe("flex");
+		expect(preview.style.width).toBe("396.8px");
+		expect((cells[0] as HTMLElement).style.display).toBe("none");
+		expect((cells[2] as HTMLElement).style.display).toBe("none");
+		expect(nameCell.style.flex).toBe("1 1 0%");
+		expect(label.style.textOverflow).toBe("ellipsis");
+		expect(preview).toHaveTextContent("2 项");
+		expect(setDragImage).toHaveBeenCalledWith(previewHost, 16, 18);
+	});
+
+	it("ignores non-element drag sources", () => {
+		const setDragImage = vi.fn();
+
+		setInternalDragPreview({
+			currentTarget: document.createTextNode("not an element"),
+			dataTransfer: {
+				setDragImage,
+			},
+		} as unknown as React.DragEvent<Element>);
+
+		expect(setDragImage).not.toHaveBeenCalled();
+		expect(document.body.lastElementChild).toBeNull();
+	});
 });
