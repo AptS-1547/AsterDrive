@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0-beta.3] - 2026-05-21
+
+### Release Highlights
+
+**`0.2.0` 系列继续补齐媒体元数据与错误语义。** 本版本把 blob 级媒体元数据提取接入后台任务和数据库缓存，前端文件详情页与分享页能展示更完整的 EXIF / 音视频信息，同时扩展 API subcode，并收口健康检查和国际化结构。
+
+- **Blob 级媒体元数据缓存** — 新增 `blob_media_metadata` 表、仓库和提取服务，按 blob hash 缓存图片 / 音频 / 视频元数据
+- **文件详情元数据展示** — 文件信息面板和分享页同步接入更完整的媒体信息展示，覆盖图片 EXIF、音频标签和视频基础信息
+- **API subcode 收口** — 扩展稳定机器可读错误子码，并同步 OpenAPI、前端错误映射和类型定义
+- **健康检查轻量化** — 就绪探针从写入测试改为轻量 `readiness_check`，减少健康探测副作用
+- **前端结构整理** — 多语言资源按模块拆分，媒体相关前端组件和配置文案同步收口
+
+### Added
+
+- 新增 blob 级媒体元数据迁移、仓库和提取服务
+- 新增媒体元数据后台任务，用于异步提取和缓存
+- 管理后台新增媒体元数据开关及相关配置项
+- 前端补齐媒体元数据渲染、缩略图辅助和文件详情展示逻辑
+- `ApiSubcode` 枚举和 OpenAPI 定义同步扩展
+
+### Changed
+
+- 文件信息、预览、音乐播放器和分享页的媒体展示逻辑进一步拆分和整理
+- `health_service` 的 ready 检查改为更轻量的实现
+- 前端 i18n 从单文件资源拆分为模块化目录结构
+- 媒体处理相关配置文案和页面结构同步调整
+
+### Fixed
+
+- 修复媒体元数据缓存、解析和缩略图处理中的多项边界问题
+- 修复部分媒体文件在预览和详情页中的兼容性问题
+
+### Notes
+
+- 本版本新增数据库迁移：`m20260520_000001_add_blob_media_metadata`
+- 升级前建议备份数据库与数据目录
+- 统计数据：409 files changed, 19,731 insertions(+), 7,744 deletions(-)
+- 本次范围共 20 个提交
+
 ## [v0.2.0-beta.2] - 2026-05-19
 
 ### Release Highlights
@@ -3260,7 +3299,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.2...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.3...HEAD
+[v0.2.0-beta.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.2...v0.2.0-beta.3
 [v0.2.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-beta.1...v0.2.0-beta.2
 [v0.2.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0...v0.2.0-beta.1
 [v0.1.0]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-rc.2...v0.1.0
