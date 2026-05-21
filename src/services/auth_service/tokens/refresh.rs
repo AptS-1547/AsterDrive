@@ -43,7 +43,10 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{auth_session_repo, user_repo};
 use crate::entities::auth_session;
-use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
+use crate::errors::{
+    AsterError, AuthTokenInvalidReason, Result, auth_forbidden_with_subcode,
+    auth_token_invalid_with_reason,
+};
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::types::TokenType;
@@ -543,14 +546,18 @@ async fn finish_refresh_rejection(
                 reused_jti,
                 "stale refresh token reused within rotation grace window"
             );
-            Err(AsterError::auth_token_invalid("stale refresh token"))
+            Err(auth_token_invalid_with_reason(
+                AuthTokenInvalidReason::Stale,
+                "stale refresh token",
+            ))
         }
         RefreshRejection::ReuseDetected {
             user_id,
             reused_jti,
         } => {
             record_refresh_reuse_detection(state, user_id, &reused_jti, reuse_log_message).await?;
-            Err(AsterError::auth_token_invalid(
+            Err(auth_token_invalid_with_reason(
+                AuthTokenInvalidReason::ReuseDetected,
                 "refresh token reuse detected",
             ))
         }
@@ -625,41 +632,75 @@ pub async fn refresh_tokens(
     ip_address: Option<&str>,
     user_agent: Option<&str>,
 ) -> Result<(String, String)> {
-    // Public service entrypoint used by both HTTP handlers and tests. Keep the
-    // order intact: verify JWT cheaply first, acquire the per-JTI lock second,
-    // then do all authoritative state checks in the transaction.
-    tracing::debug!("refreshing auth tokens");
-    let claims = verify_token(refresh, &state.config.auth.jwt_secret)?;
-    ensure_token_type(&claims, TokenType::Refresh)?;
-    let refresh_jti = claims
-        .jti
-        .clone()
-        .ok_or_else(|| AsterError::auth_token_invalid("refresh token missing jti"))?;
+    let result = async {
+        // Public service entrypoint used by both HTTP handlers and tests. Keep the
+        // order intact: verify JWT cheaply first, acquire the per-JTI lock second,
+        // then do all authoritative state checks in the transaction.
+        tracing::debug!("refreshing auth tokens");
+        let claims = verify_token(refresh, &state.config.auth.jwt_secret)?;
+        ensure_token_type(&claims, TokenType::Refresh)?;
+        let refresh_jti = claims
+            .jti
+            .clone()
+            .ok_or_else(|| AsterError::auth_token_invalid("refresh token missing jti"))?;
 
-    let rotation_lock = acquire_refresh_rotation_lock(&refresh_jti).await;
-    // This boolean is the only bridge between the lock layer and reuse
-    // classification. Do not infer SameProcessContention from timing, map
-    // entries, or recent timestamps alone.
-    let reuse_evidence = if rotation_lock.was_contended {
-        RefreshReuseEvidence::SameProcessContention
-    } else {
-        RefreshReuseEvidence::ClientFingerprint
+        let rotation_lock = acquire_refresh_rotation_lock(&refresh_jti).await;
+        // This boolean is the only bridge between the lock layer and reuse
+        // classification. Do not infer SameProcessContention from timing, map
+        // entries, or recent timestamps alone.
+        let reuse_evidence = if rotation_lock.was_contended {
+            RefreshReuseEvidence::SameProcessContention
+        } else {
+            RefreshReuseEvidence::ClientFingerprint
+        };
+        let outcome = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
+            rotate_refresh_in_transaction(
+                txn,
+                state,
+                &claims,
+                &refresh_jti,
+                ip_address,
+                user_agent,
+                reuse_evidence,
+            )
+            .await
+        })
+        .await?;
+
+        finish_refresh_outcome(state, &claims, &refresh_jti, outcome).await
+    }
+    .await;
+
+    record_refresh_metric(state, &result);
+    result
+}
+
+fn record_refresh_metric(state: &PrimaryAppState, result: &Result<(String, String)>) {
+    let (status, reason) = match result {
+        Ok(_) => ("success", "ok"),
+        Err(AsterError::AuthTokenExpired(_)) => ("failure", "expired"),
+        Err(error)
+            if matches!(
+                error.auth_token_invalid_reason(),
+                Some(AuthTokenInvalidReason::ReuseDetected)
+            ) =>
+        {
+            ("failure", "reuse_detected")
+        }
+        Err(error)
+            if matches!(
+                error.auth_token_invalid_reason(),
+                Some(AuthTokenInvalidReason::Stale)
+            ) =>
+        {
+            ("failure", "stale")
+        }
+        Err(AsterError::AuthTokenInvalid(_)) => ("failure", "invalid"),
+        Err(AsterError::AuthForbidden(_)) => ("failure", "forbidden"),
+        Err(AsterError::RateLimited(_)) => ("failure", "rate_limited"),
+        Err(_) => ("failure", "error"),
     };
-    let outcome = crate::db::transaction::with_transaction(state.writer_db(), async |txn| {
-        rotate_refresh_in_transaction(
-            txn,
-            state,
-            &claims,
-            &refresh_jti,
-            ip_address,
-            user_agent,
-            reuse_evidence,
-        )
-        .await
-    })
-    .await?;
-
-    finish_refresh_outcome(state, &claims, &refresh_jti, outcome).await
+    state.metrics.record_auth_event("refresh", status, reason);
 }
 
 #[cfg(debug_assertions)]

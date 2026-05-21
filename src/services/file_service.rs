@@ -9,7 +9,9 @@ mod metadata;
 mod thumbnail;
 mod transfer;
 
-use crate::errors::Result;
+use std::future::Future;
+
+use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_models::FileInfo;
@@ -204,13 +206,19 @@ pub(crate) async fn download_in_scope_with_file_and_audit(
     audit_ctx: &AuditContext,
 ) -> Result<DownloadOutcome> {
     let file_id = file.id;
-    let outcome = download_in_scope_with_range_and_file(
+    let has_range = range.is_some();
+    let outcome = record_download_result(
         state,
-        scope,
-        file_id,
-        Some(file),
-        if_none_match,
-        range,
+        "authenticated",
+        has_range,
+        download_in_scope_with_range_and_file(
+            state,
+            scope,
+            file_id,
+            Some(file),
+            if_none_match,
+            range,
+        ),
     )
     .await?;
     audit_service::log(
@@ -224,4 +232,77 @@ pub(crate) async fn download_in_scope_with_file_and_audit(
     )
     .await;
     Ok(outcome)
+}
+
+pub fn record_download_metric(
+    state: &PrimaryAppState,
+    source: &'static str,
+    outcome: &DownloadOutcome,
+) {
+    state
+        .metrics
+        .record_file_download(source, outcome.metrics_outcome(), outcome.has_range());
+}
+
+pub fn record_download_failure_metric(state: &PrimaryAppState, source: &'static str) {
+    state.metrics.record_file_download(source, "failure", false);
+}
+
+pub fn record_download_failure_metric_with_reason(
+    state: &PrimaryAppState,
+    source: &'static str,
+    reason: &'static str,
+    has_range: bool,
+) {
+    let outcome = format!("failure:{reason}");
+    state
+        .metrics
+        .record_file_download(source, outcome.as_str(), has_range);
+}
+
+pub async fn record_download_result<Fut>(
+    state: &PrimaryAppState,
+    source: &'static str,
+    has_range: bool,
+    fut: Fut,
+) -> Result<DownloadOutcome>
+where
+    Fut: Future<Output = Result<DownloadOutcome>>,
+{
+    match fut.await {
+        Ok(outcome) => {
+            record_download_metric(state, source, &outcome);
+            Ok(outcome)
+        }
+        Err(error) => {
+            record_download_failure_metric_with_reason(
+                state,
+                source,
+                download_failure_reason(&error),
+                has_range,
+            );
+            Err(error)
+        }
+    }
+}
+
+fn download_failure_reason(error: &AsterError) -> &'static str {
+    if let Some(kind) = error.storage_error_kind() {
+        return kind.as_str();
+    }
+
+    match error {
+        AsterError::FileNotFound(_)
+        | AsterError::RecordNotFound(_)
+        | AsterError::ShareNotFound(_) => "not_found",
+        AsterError::ShareExpired(_) => "expired",
+        AsterError::SharePasswordRequired(_) => "password_required",
+        AsterError::ShareDownloadLimit(_) => "download_limit",
+        AsterError::AuthForbidden(_) | AsterError::AuthPendingActivation(_) => "forbidden",
+        AsterError::AuthTokenExpired(_) => "token_expired",
+        AsterError::AuthTokenInvalid(_) => "token_invalid",
+        AsterError::ValidationError(_) => "validation",
+        AsterError::RateLimited(_) => "rate_limited",
+        _ => "error",
+    }
 }

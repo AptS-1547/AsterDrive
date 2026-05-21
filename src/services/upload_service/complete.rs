@@ -64,6 +64,7 @@ async fn complete_upload_impl_with_hints(
     let complete_started_at = Instant::now();
     let plan = determine_completion_plan(&session, parts)?;
     let plan_label = completion_plan_label(&plan);
+    let mode = upload_mode_label_from_completion_plan(&plan);
     let result = match plan {
         CompletionPlan::ReturnCompleted => find_file_by_session(state.writer_db(), &session).await,
         CompletionPlan::CompletePresigned => {
@@ -87,7 +88,26 @@ async fn complete_upload_impl_with_hints(
         success = result.is_ok(),
         "upload completion plan finished"
     );
+    record_upload_completion_metric(state, mode, result.is_ok());
     result
+}
+
+fn record_upload_completion_metric(state: &PrimaryAppState, mode: &'static str, success: bool) {
+    let status = if success { "success" } else { "failure" };
+    state
+        .metrics
+        .record_upload_session_event(mode, "complete", status);
+    state.metrics.record_file_upload(mode, status);
+}
+
+fn upload_mode_label_from_completion_plan(plan: &CompletionPlan) -> &'static str {
+    match plan {
+        CompletionPlan::CompletePresigned => "presigned",
+        CompletionPlan::CompletePresignedMultipart { .. }
+        | CompletionPlan::CompleteRelayMultipart => "presigned_multipart",
+        CompletionPlan::AssembleChunks => "chunked",
+        CompletionPlan::ReturnCompleted => "completed_retry",
+    }
 }
 
 async fn load_upload_actor_username_best_effort(
