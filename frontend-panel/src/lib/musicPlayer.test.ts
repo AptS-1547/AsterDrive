@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	backendAudioMetadataToTrackMetadata,
 	buildDirectMusicQueue,
 	buildShareFolderMusicQueue,
 	buildSingleShareMusicTrack,
@@ -22,6 +23,9 @@ const mockState = vi.hoisted(() => ({
 			: `/s/${idOrToken}/download`,
 	),
 	fetch: vi.fn(),
+	getFileMediaMetadata: vi.fn(),
+	getShareFolderFileMediaMetadata: vi.fn(),
+	getShareMediaMetadata: vi.fn(),
 	parseBlob: vi.fn(),
 	selectCover: vi.fn(),
 	thumbnailPath: vi.fn((idOrToken: number | string) =>
@@ -37,7 +41,8 @@ const mockState = vi.hoisted(() => ({
 vi.mock("@/services/fileService", () => ({
 	fileService: {
 		downloadPath: (id: number) => mockState.downloadPath(id),
-		getMediaMetadata: vi.fn(),
+		getMediaMetadata: (...args: unknown[]) =>
+			mockState.getFileMediaMetadata(...args),
 		thumbnailPath: (id: number) => mockState.thumbnailPath(id),
 	},
 }));
@@ -53,8 +58,10 @@ vi.mock("@/services/shareService", () => ({
 		downloadPath: (token: string) => mockState.downloadPath(token),
 		folderFileThumbnailPath: (...args: unknown[]) =>
 			mockState.folderFileThumbnailPath(...args),
-		getFolderFileMediaMetadata: vi.fn(),
-		getMediaMetadata: vi.fn(),
+		getFolderFileMediaMetadata: (...args: unknown[]) =>
+			mockState.getShareFolderFileMediaMetadata(...args),
+		getMediaMetadata: (...args: unknown[]) =>
+			mockState.getShareMediaMetadata(...args),
 		thumbnailPath: (token: string) => mockState.thumbnailPath(token),
 	},
 }));
@@ -72,6 +79,9 @@ describe("musicPlayer helpers", () => {
 		mockState.downloadPath.mockClear();
 		mockState.fetch.mockReset();
 		mockState.folderFileThumbnailPath.mockClear();
+		mockState.getFileMediaMetadata.mockReset();
+		mockState.getShareFolderFileMediaMetadata.mockReset();
+		mockState.getShareMediaMetadata.mockReset();
 		mockState.parseBlob.mockReset();
 		mockState.selectCover.mockReset();
 		mockState.thumbnailPath.mockClear();
@@ -138,6 +148,65 @@ describe("musicPlayer helpers", () => {
 		});
 	});
 
+	it("normalizes backend audio metadata before storing it on tracks", () => {
+		expect(
+			backendAudioMetadataToTrackMetadata({
+				kind: "audio",
+				metadata: {
+					album: " Album ",
+					artist: "Primary Artist",
+					artists: [" ", "Featured Artist"],
+					has_embedded_picture: false,
+					kind: "audio",
+					title: " Song ",
+				},
+				status: "ready",
+			} as never),
+		).toEqual({
+			album: "Album",
+			artist: "Primary Artist",
+			artists: ["Featured Artist"],
+			title: "Song",
+		});
+		expect(
+			backendAudioMetadataToTrackMetadata({
+				kind: "audio",
+				metadata: {
+					album: "Album Only",
+					artist: " ",
+					artists: null,
+					has_embedded_picture: false,
+					kind: "audio",
+					title: "",
+				},
+				status: "ready",
+			} as never),
+		).toEqual({
+			album: "Album Only",
+		});
+		expect(
+			backendAudioMetadataToTrackMetadata({
+				kind: "video",
+				metadata: { kind: "video" },
+				status: "ready",
+			} as never),
+		).toBeNull();
+		expect(
+			backendAudioMetadataToTrackMetadata({
+				kind: "audio",
+				metadata: {
+					album: " ",
+					artist: " ",
+					artists: [],
+					has_embedded_picture: false,
+					kind: "audio",
+					title: " ",
+				},
+				status: "ready",
+			} as never),
+		).toBeNull();
+	});
+
 	it("builds direct queues from only music files", () => {
 		const queue = buildDirectMusicQueue([
 			{
@@ -176,6 +245,99 @@ describe("musicPlayer helpers", () => {
 				},
 			}),
 		]);
+	});
+
+	it("loads backend metadata for direct and share tracks through the right service routes", async () => {
+		const signal = new AbortController().signal;
+		mockState.getFileMediaMetadata.mockResolvedValueOnce({
+			kind: "audio",
+			metadata: {
+				artist: "Direct Artist",
+				has_embedded_picture: false,
+				kind: "audio",
+				title: "Direct Song",
+			},
+			status: "ready",
+		});
+		mockState.getShareMediaMetadata.mockResolvedValueOnce({
+			kind: "audio",
+			metadata: {
+				artist: "Share Artist",
+				has_embedded_picture: false,
+				kind: "audio",
+				title: "Share Song",
+			},
+			status: "ready",
+		});
+		mockState.getShareFolderFileMediaMetadata.mockResolvedValueOnce({
+			kind: "audio",
+			metadata: {
+				artist: "Folder Artist",
+				has_embedded_picture: false,
+				kind: "audio",
+				title: "Folder Song",
+			},
+			status: "ready",
+		});
+
+		const [directTrack] = buildDirectMusicQueue([
+			{
+				file_category: "audio",
+				id: 11,
+				mime_type: "audio/mpeg",
+				name: "Direct.mp3",
+			},
+		]);
+		const singleShareTrack = buildSingleShareMusicTrack(
+			{
+				download_count: 0,
+				has_password: false,
+				mime_type: "audio/mpeg",
+				name: "Share.mp3",
+				shared_by: { avatar: null, name: "Alice" },
+				share_type: "file",
+				size: 128,
+			},
+			"share-token",
+		);
+		const [folderTrack] = buildShareFolderMusicQueue("share-token", [
+			{
+				file_category: "audio",
+				id: 12,
+				mime_type: "audio/mpeg",
+				name: "Folder.mp3",
+			},
+		]);
+
+		await expect(directTrack?.loadBackendMetadata?.(signal)).resolves.toEqual({
+			artist: "Direct Artist",
+			artists: ["Direct Artist"],
+			title: "Direct Song",
+		});
+		await expect(
+			singleShareTrack?.loadBackendMetadata?.(signal),
+		).resolves.toEqual({
+			artist: "Share Artist",
+			artists: ["Share Artist"],
+			title: "Share Song",
+		});
+		await expect(folderTrack?.loadBackendMetadata?.(signal)).resolves.toEqual({
+			artist: "Folder Artist",
+			artists: ["Folder Artist"],
+			title: "Folder Song",
+		});
+		expect(mockState.getFileMediaMetadata).toHaveBeenCalledWith(11, { signal });
+		expect(mockState.getShareMediaMetadata).toHaveBeenCalledWith(
+			"share-token",
+			{
+				signal,
+			},
+		);
+		expect(mockState.getShareFolderFileMediaMetadata).toHaveBeenCalledWith(
+			"share-token",
+			12,
+			{ signal },
+		);
 	});
 
 	it("builds share queues with refreshable stream sessions", async () => {
@@ -313,11 +475,30 @@ describe("musicPlayer helpers", () => {
 		).resolves.toEqual([directTrack]);
 	});
 
+	it("drops empty stream-session expirations while hydrating a track", async () => {
+		const track = {
+			id: "share:token:file",
+			mimeType: "audio/mpeg",
+			name: "Song.mp3",
+			path: "/old",
+			refreshStreamLink: vi.fn(async () => ({
+				expires_at: "",
+				path: "/new",
+			})),
+		};
+
+		await expect(hydrateMusicTrackStreamLink(track)).resolves.toEqual({
+			...track,
+			expiresAt: undefined,
+			path: "/new",
+		});
+	});
+
 	it("parses browser music metadata and turns embedded cover art into a data URL", async () => {
 		const blob = new Blob(["audio"]);
 		mockState.fetch.mockResolvedValueOnce({
 			blob: async () => blob,
-			headers: new Headers({ "Content-Range": "bytes 0-4/100" }),
+			headers: new Headers(),
 			ok: true,
 			status: 206,
 		});
@@ -413,6 +594,79 @@ describe("musicPlayer helpers", () => {
 				"Range",
 			),
 		).toBeNull();
+	});
+
+	it("parses bounded full-body metadata responses and defaults cover MIME type", async () => {
+		const blob = new Blob(["small body"]);
+		mockState.fetch.mockResolvedValueOnce({
+			blob: async () => blob,
+			headers: new Headers({ "Content-Length": "128" }),
+			ok: true,
+			status: 200,
+		});
+		mockState.parseBlob.mockResolvedValueOnce({
+			common: {
+				album: null,
+				artist: " Parsed Artist ",
+				artists: null,
+				picture: [{ data: new Uint8Array([4, 5, 6]), format: "" }],
+				title: "",
+			},
+		});
+		mockState.selectCover.mockReturnValueOnce({
+			data: new Uint8Array([4, 5, 6]),
+			format: "",
+		});
+
+		await expect(
+			parseMusicMetadataFromSource({
+				mimeType: "audio/ogg",
+				name: "Original File.ogg",
+				source: "/api/v1/files/2/download",
+			}),
+		).resolves.toEqual({
+			album: undefined,
+			artist: "Parsed Artist",
+			artists: ["Parsed Artist"],
+			artworkUrl: "data:image/jpeg;base64,BAUG",
+			title: "Original File",
+		});
+		expect(mockState.parseBlob).toHaveBeenCalledWith(blob, expect.any(Object));
+	});
+
+	it("accepts a content-range header even when status is 200", async () => {
+		const blob = new Blob(["partial body"]);
+		mockState.fetch.mockResolvedValueOnce({
+			blob: async () => blob,
+			headers: new Headers({ "Content-Range": "bytes 0-4/100" }),
+			ok: true,
+			status: 200,
+		});
+		mockState.parseBlob.mockResolvedValueOnce({
+			common: {
+				album: null,
+				artist: null,
+				artists: null,
+				picture: [],
+				title: "Range Header Song",
+			},
+		});
+		mockState.selectCover.mockReturnValueOnce(null);
+
+		await expect(
+			parseMusicMetadataFromSource({
+				mimeType: "audio/mpeg",
+				name: "fallback.mp3",
+				source: "/api/v1/files/3/download",
+			}),
+		).resolves.toEqual({
+			album: undefined,
+			artist: undefined,
+			artists: null,
+			artworkUrl: null,
+			title: "Range Header Song",
+		});
+		expect(mockState.parseBlob).toHaveBeenCalledWith(blob, expect.any(Object));
 	});
 
 	it("skips parsing when a ranged metadata request returns an unbounded full body", async () => {

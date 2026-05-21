@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FileInfoDialog } from "@/components/files/FileInfoDialog";
+import { ApiPendingError } from "@/services/http";
 
 const mockState = vi.hoisted(() => ({
 	getFile: vi.fn(),
@@ -545,6 +546,71 @@ describe("FileInfoDialog", () => {
 		expect(screen.getByText("2024/4/1 05:44:11")).toBeInTheDocument();
 		expect(screen.getByText("info_media_container")).toBeInTheDocument();
 		expect(screen.getByText("MP4 / QuickTime")).toBeInTheDocument();
+	});
+
+	it("keeps metadata loading visible while pending and retries with server delay", async () => {
+		vi.useFakeTimers();
+		mockState.getMediaMetadata
+			.mockRejectedValueOnce(new ApiPendingError("processing", 3))
+			.mockResolvedValueOnce({
+				blob_hash: "hash",
+				blob_id: 88,
+				error: null,
+				kind: "audio",
+				metadata: {
+					artist: "Retry Artist",
+					has_embedded_picture: false,
+					kind: "audio",
+					title: "Retry Song",
+				},
+				parser: "lofty",
+				parser_version: "1",
+				status: "ready",
+				updated_at: "2026-01-01T00:00:00Z",
+			});
+
+		render(
+			<FileInfoDialog
+				open
+				onOpenChange={vi.fn()}
+				file={
+					{
+						blob_id: 88,
+						created_at: "2026-01-01T00:00:00Z",
+						file_category: "audio",
+						id: 1,
+						is_locked: false,
+						mime_type: "audio/mpeg",
+						name: "Retry Artist - Retry Song.mp3",
+						size: 512,
+						updated_at: "2026-01-02T00:00:00Z",
+					} as never
+				}
+			/>,
+		);
+
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(screen.getByText("info_media_metadata_audio")).toBeInTheDocument();
+		expect(screen.getAllByText("loading").length).toBeGreaterThan(0);
+		expect(mockState.getMediaMetadata).toHaveBeenCalledTimes(1);
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(2_999);
+		});
+		expect(mockState.getMediaMetadata).toHaveBeenCalledTimes(1);
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(1);
+		});
+
+		expect(mockState.getMediaMetadata).toHaveBeenCalledTimes(2);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(screen.getByText("Retry Song")).toBeInTheDocument();
+		expect(screen.getByText("Retry Artist")).toBeInTheDocument();
 	});
 
 	it("renders a desktop inspector without quick actions and with close control", () => {

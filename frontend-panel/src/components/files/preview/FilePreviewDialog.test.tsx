@@ -4,6 +4,7 @@ import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog"
 
 const mockState = vi.hoisted(() => ({
 	downloadPath: vi.fn((fileId: number) => `/files/${fileId}/download`),
+	getMediaMetadata: vi.fn(),
 	imagePreviewPath: vi.fn((fileId: number) => `/files/${fileId}/image-preview`),
 	thumbnailPath: vi.fn((fileId: number) => `/files/${fileId}/thumbnail`),
 	profile: {
@@ -127,6 +128,8 @@ vi.mock("@/lib/format", () => ({
 vi.mock("@/services/fileService", () => ({
 	fileService: {
 		downloadPath: (...args: unknown[]) => mockState.downloadPath(...args),
+		getMediaMetadata: (...args: unknown[]) =>
+			mockState.getMediaMetadata(...args),
 		imagePreviewPath: (...args: unknown[]) =>
 			mockState.imagePreviewPath(...args),
 		thumbnailPath: (...args: unknown[]) => mockState.thumbnailPath(...args),
@@ -162,20 +165,31 @@ vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 
 vi.mock("@/components/files/preview/MusicPreview", () => ({
 	MusicPreview: ({
+		loadBackendMetadata,
 		mediaStreamLinkFactory,
 		path,
 		thumbnailPath,
 	}: {
+		loadBackendMetadata?: (signal?: AbortSignal) => Promise<unknown>;
 		mediaStreamLinkFactory?: () => Promise<unknown>;
 		path: string;
 		thumbnailPath?: string;
 	}) => (
-		<div
-			data-has-media-stream-link-factory={String(
-				Boolean(mediaStreamLinkFactory),
-			)}
-			data-thumbnail-path={thumbnailPath ?? ""}
-		>{`music:${path}`}</div>
+		<div>
+			<div
+				data-has-media-stream-link-factory={String(
+					Boolean(mediaStreamLinkFactory),
+				)}
+				data-has-load-backend-metadata={String(Boolean(loadBackendMetadata))}
+				data-thumbnail-path={thumbnailPath ?? ""}
+			>{`music:${path}`}</div>
+			<button
+				type="button"
+				onClick={() => void loadBackendMetadata?.(new AbortController().signal)}
+			>
+				load-backend-metadata
+			</button>
+		</div>
 	),
 }));
 
@@ -367,6 +381,7 @@ async function chooseOpenMethod(name: string) {
 describe("FilePreviewDialog", () => {
 	beforeEach(() => {
 		mockState.downloadPath.mockClear();
+		mockState.getMediaMetadata.mockReset();
 		mockState.imagePreviewPath.mockClear();
 		mockState.thumbnailPath.mockClear();
 		mockState.previewAppStore.load.mockReset();
@@ -394,6 +409,16 @@ describe("FilePreviewDialog", () => {
 		mockState.previewAppStore.config = null;
 		mockState.previewAppStore.isLoaded = true;
 		mockState.videoBrowserOption = null;
+		mockState.getMediaMetadata.mockResolvedValue({
+			kind: "audio",
+			metadata: {
+				artist: "Backend Artist",
+				has_embedded_picture: false,
+				kind: "audio",
+				title: "Backend Title",
+			},
+			status: "ready",
+		});
 	});
 
 	it("uses the default open method and the default download path", async () => {
@@ -734,9 +759,21 @@ describe("FilePreviewDialog", () => {
 			"true",
 		);
 		expect(screen.getByText("music:/files/8/download")).toHaveAttribute(
+			"data-has-load-backend-metadata",
+			"true",
+		);
+		expect(screen.getByText("music:/files/8/download")).toHaveAttribute(
 			"data-thumbnail-path",
 			"/files/8/thumbnail",
 		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "load-backend-metadata" }),
+		);
+		await waitFor(() => {
+			expect(mockState.getMediaMetadata).toHaveBeenCalledWith(8, {
+				signal: expect.any(AbortSignal),
+			});
+		});
 		expect(
 			screen.getByTestId("dialog-content").className.split(/\s+/),
 		).not.toContain("h-[90vh]");

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	formatMediaProcessingDelimitedInput,
 	getMediaProcessingConfigIssues,
 	getMediaProcessingConfigIssuesFromString,
 	MEDIA_PROCESSING_DEFAULT_FFMPEG_EXTENSIONS,
@@ -7,6 +8,7 @@ import {
 	MEDIA_PROCESSING_DEFAULT_LOFTY_EXTENSIONS,
 	MEDIA_PROCESSING_DEFAULT_VIPS_EXTENSIONS,
 	parseMediaProcessingConfig,
+	parseMediaProcessingDelimitedInput,
 	serializeMediaProcessingConfig,
 } from "@/components/admin/mediaProcessingConfigEditorShared";
 
@@ -241,6 +243,63 @@ describe("mediaProcessingConfigEditorShared", () => {
 					key: "media_processing_error_no_enabled_processors",
 				},
 			]),
+		);
+	});
+
+	it("normalizes malformed processors and delimited extension input", () => {
+		const draft = parseMediaProcessingConfig(`{
+			"version": 2,
+			"processors": [
+				null,
+				{
+					"kind": "unknown",
+					"enabled": true
+				},
+				{
+					"kind": "ffmpeg_cli",
+					"enabled": true,
+					"config": {
+						"command": "   "
+					},
+					"extensions": "mp4",
+					"uses": "thumbnail:video"
+				},
+				{
+					"kind": "images",
+					"enabled": false,
+					"extensions": [".png"],
+					"uses": ["metadata:image", "bogus", "metadata:image"]
+				}
+			]
+		}`);
+
+		expect(draft.processors[1]).toEqual({
+			config: {
+				command: "ffmpeg",
+			},
+			enabled: true,
+			extensions: [],
+			kind: "ffmpeg_cli",
+			uses: ["thumbnail:video"],
+		});
+		expect(draft.processors[4]).toEqual({
+			config: {
+				command: "",
+			},
+			enabled: false,
+			extensions: [],
+			kind: "images",
+			uses: ["metadata:image", "thumbnail:image"],
+		});
+		expect(parseMediaProcessingDelimitedInput(" .MP4, mp4, , .WebM ")).toEqual([
+			"mp4",
+			"webm",
+		]);
+		expect(formatMediaProcessingDelimitedInput(["mp4", "webm"])).toBe(
+			"mp4, webm",
+		);
+		expect(() => parseMediaProcessingConfig("[]")).toThrow(
+			"media processing config must be an object",
 		);
 	});
 });

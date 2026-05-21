@@ -1205,6 +1205,89 @@ describe("MusicPlayerHost", () => {
 		expect(style).toContain("var(--color-muted)) 75%");
 	});
 
+	it("updates duration and buffered progress from durationchange events", () => {
+		setQueue();
+		mockState.state.isPanelOpen = true;
+
+		render(<MusicPlayerHost />);
+
+		const audio = document.querySelector("audio");
+		if (!audio) {
+			throw new Error("audio element not found");
+		}
+		Object.defineProperty(audio, "duration", {
+			configurable: true,
+			value: 90,
+		});
+		Object.defineProperty(audio, "currentTime", {
+			configurable: true,
+			writable: true,
+			value: 9,
+		});
+		Object.defineProperty(audio, "buffered", {
+			configurable: true,
+			value: {
+				start: vi.fn(() => 0),
+				end: vi.fn(() => 45),
+				length: 1,
+			},
+		});
+
+		fireEvent.durationChange(audio);
+		fireEvent.timeUpdate(audio);
+
+		const seek = screen.getByRole("slider", { name: "music_player_seek" });
+		const style = seek.getAttribute("style") ?? "";
+		expect(screen.getAllByText("1:30").length).toBeGreaterThan(0);
+		expect(seek).toHaveValue("10");
+		expect(style).toContain("var(--color-muted)) 50%");
+	});
+
+	it("pauses while scrubbing and resumes when the pointer seek ends", () => {
+		setQueue();
+		mockState.state.isPanelOpen = true;
+		mockState.state.isPlaying = true;
+		mockState.state.playRequested = true;
+
+		render(<MusicPlayerHost />);
+
+		const audio = document.querySelector("audio");
+		if (!audio) {
+			throw new Error("audio element not found");
+		}
+		Object.defineProperty(audio, "duration", {
+			configurable: true,
+			value: 120,
+		});
+		fireEvent.loadedMetadata(audio);
+
+		const seek = screen.getByRole("slider", { name: "music_player_seek" });
+		fireEvent.pointerDown(seek);
+		fireEvent.pointerUp(seek);
+
+		expect(HTMLMediaElement.prototype.pause).toHaveBeenCalledTimes(1);
+		expect(mockState.setPlaybackRequested).toHaveBeenCalledWith(false);
+		expect(mockState.requestPlayback).toHaveBeenCalledTimes(1);
+	});
+
+	it("clamps volume changes and switches the volume icon at zero", () => {
+		setQueue();
+		mockState.state.isPanelOpen = true;
+
+		render(<MusicPlayerHost />);
+
+		const volume = screen.getByRole("slider", { name: "music_player_volume" });
+		expect(volume).toHaveValue("85");
+
+		fireEvent.change(volume, { target: { value: "-25" } });
+
+		expect(volume).toHaveValue("0");
+
+		fireEvent.change(volume, { target: { value: "125" } });
+
+		expect(volume).toHaveValue("100");
+	});
+
 	it("uses the buffered range nearest the playhead instead of later ranges", () => {
 		setQueue();
 		mockState.state.isPanelOpen = true;
@@ -1243,6 +1326,60 @@ describe("MusicPlayerHost", () => {
 		expect(style).toContain("var(--color-primary) 30%");
 		expect(style).toContain("var(--color-muted)) 30%");
 		expect(style).not.toContain("var(--color-muted)) 100%");
+	});
+
+	it("falls back from pending backend metadata to browser parsing and then updates when backend metadata becomes ready", async () => {
+		vi.useFakeTimers();
+		const loadBackendMetadata = vi
+			.fn()
+			.mockRejectedValueOnce(new ApiPendingError("processing", 1))
+			.mockResolvedValueOnce({
+				artist: "Backend Artist",
+				title: "Backend Title",
+			});
+		mockState.parseMusicMetadataFromSource.mockResolvedValueOnce({
+			artist: "Parsed Artist",
+			title: "Parsed Title",
+		});
+		mockState.state.activeTrackId = "track-1";
+		mockState.state.queue = [
+			{
+				id: "track-1",
+				loadBackendMetadata,
+				metadata: { title: "Fallback Title" },
+				mimeType: "audio/mpeg",
+				name: "track.mp3",
+				path: "/files/7/download",
+			},
+		];
+
+		render(<MusicPlayerHost />);
+
+		await flushAsyncEffects();
+
+		expect(mockState.parseMusicMetadataFromSource).toHaveBeenCalledWith(
+			expect.objectContaining({
+				fallbackMetadata: { title: "Fallback Title" },
+				source: "/api/v1/files/7/download",
+			}),
+		);
+		expect(mockState.updateTrackMetadata).toHaveBeenCalledWith("track-1", {
+			artist: "Parsed Artist",
+			title: "Parsed Title",
+		});
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(1_000);
+		});
+
+		expect(loadBackendMetadata).toHaveBeenCalledTimes(2);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(mockState.updateTrackMetadata).toHaveBeenCalledWith("track-1", {
+			artist: "Backend Artist",
+			title: "Backend Title",
+		});
 	});
 
 	it("does not show stale buffered progress ahead of the playhead", () => {
