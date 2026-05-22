@@ -28,6 +28,16 @@ const sharePageParams = {
 	file_limit: SHARE_PAGE_SIZE,
 };
 
+type FileCursor = NonNullable<FolderContents["next_file_cursor"]>;
+
+function loadMoreCursorKey(
+	token: string,
+	folderId: number | null,
+	cursor: FileCursor,
+) {
+	return `${token}:${folderId ?? "root"}:${cursor.value}:${cursor.id}`;
+}
+
 interface ShareViewState {
 	breadcrumb: ShareBreadcrumbItem[];
 	error: string | null;
@@ -104,7 +114,10 @@ function shareViewReducer(
 				folderContents: action.folderContents,
 				info: action.info,
 				loading: false,
+				loadingMore: false,
 				needsPassword: action.info.has_password,
+				password: "",
+				passwordVerified: false,
 			};
 		case "loadError":
 			return {
@@ -232,7 +245,24 @@ export function useShareViewPageController({
 	const playTracks = useMusicPlayerStore((state) => state.playTracks);
 	const [state, dispatch] = useReducer(shareViewReducer, initialShareViewState);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
+	const loadingMoreCursorKeyRef = useRef<string | null>(null);
+	const currentFolderId =
+		state.breadcrumb[state.breadcrumb.length - 1]?.id ?? null;
+	const nextFileCursor = state.folderContents?.next_file_cursor ?? null;
+	const nextFileCursorKey =
+		token && nextFileCursor
+			? loadMoreCursorKey(token, currentFolderId, nextFileCursor)
+			: null;
 	const hasMoreFiles = state.folderContents?.next_file_cursor != null;
+
+	useEffect(() => {
+		if (
+			!nextFileCursorKey ||
+			loadingMoreCursorKeyRef.current !== nextFileCursorKey
+		) {
+			loadingMoreCursorKeyRef.current = null;
+		}
+	}, [nextFileCursorKey]);
 
 	const loadInfo = useCallback(async () => {
 		if (!token) return;
@@ -293,54 +323,61 @@ export function useShareViewPageController({
 	);
 
 	const loadMoreShareFiles = useCallback(async () => {
-		if (
-			!token ||
-			!state.folderContents ||
-			state.loadingMore ||
-			!state.folderContents.next_file_cursor
-		) {
+		if (!token || state.loadingMore || !nextFileCursor || !nextFileCursorKey) {
 			return;
 		}
+		if (loadingMoreCursorKeyRef.current === nextFileCursorKey) return;
+		loadingMoreCursorKeyRef.current = nextFileCursorKey;
 		dispatch({ type: "loadMoreStart" });
 		try {
-			const currentId =
-				state.breadcrumb[state.breadcrumb.length - 1]?.id ?? null;
-			const cursor = state.folderContents.next_file_cursor;
 			const contents =
-				currentId === null
+				currentFolderId === null
 					? await shareService.listContent(token, {
 							folder_limit: 0,
 							file_limit: SHARE_PAGE_SIZE,
-							file_after_value: cursor.value,
-							file_after_id: cursor.id,
+							file_after_value: nextFileCursor.value,
+							file_after_id: nextFileCursor.id,
 						})
-					: await shareService.listSubfolderContent(token, currentId, {
+					: await shareService.listSubfolderContent(token, currentFolderId, {
 							folder_limit: 0,
 							file_limit: SHARE_PAGE_SIZE,
-							file_after_value: cursor.value,
-							file_after_id: cursor.id,
+							file_after_value: nextFileCursor.value,
+							file_after_id: nextFileCursor.id,
 						});
 			dispatch({ type: "loadMoreSuccess", folderContents: contents });
 		} catch (error) {
+			if (loadingMoreCursorKeyRef.current === nextFileCursorKey) {
+				loadingMoreCursorKeyRef.current = null;
+			}
 			handleApiError(error);
 			dispatch({ type: "loadMoreEnd" });
 		}
-	}, [state.breadcrumb, state.folderContents, state.loadingMore, token]);
+	}, [
+		currentFolderId,
+		nextFileCursor,
+		nextFileCursorKey,
+		state.loadingMore,
+		token,
+	]);
 
 	useEffect(() => {
-		if (!hasMoreFiles || state.loadingMore) return;
+		if (!hasMoreFiles || state.loadingMore || !nextFileCursorKey) return;
 		const el = sentinelRef.current;
 		if (!el) return;
 		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0].isIntersecting)
+				if (
+					entries[0].isIntersecting &&
+					loadingMoreCursorKeyRef.current !== nextFileCursorKey
+				) {
 					void loadMoreShareFiles().catch(() => {});
+				}
 			},
 			{ rootMargin: "200px" },
 		);
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, [hasMoreFiles, state.loadingMore, loadMoreShareFiles]);
+	}, [hasMoreFiles, state.loadingMore, nextFileCursorKey, loadMoreShareFiles]);
 
 	const handleVerifyPassword = useCallback(
 		async (event: FormEvent) => {

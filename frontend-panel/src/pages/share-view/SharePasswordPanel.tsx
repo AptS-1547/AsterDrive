@@ -28,7 +28,11 @@ export function SharePasswordPanel({
 			<div className="space-y-4">
 				<ShareOwnerBanner owner={info.shared_by} text={shareOwnerText} />
 				<form onSubmit={onSubmit} className="space-y-3">
+					<label htmlFor="share-password" className="sr-only">
+						{t("core:password")}
+					</label>
 					<Input
+						id="share-password"
 						type="password"
 						placeholder={t("core:password")}
 						value={password}

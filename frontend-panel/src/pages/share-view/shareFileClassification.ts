@@ -159,7 +159,9 @@ const CODE_EXTENSIONS = new Set([
 export function extensionFromName(name: string) {
 	const trimmed = name.trim();
 	const dot = trimmed.lastIndexOf(".");
-	if (dot <= 0 || dot + 1 >= trimmed.length) return "";
+	if (dot === -1) return trimmed.toLowerCase();
+	if (dot === 0) return trimmed.slice(1).toLowerCase();
+	if (dot + 1 >= trimmed.length) return "";
 	return trimmed.slice(dot + 1).toLowerCase();
 }
 
@@ -182,11 +184,11 @@ export function classifySharedFile(
 	if (compoundExtension || ARCHIVE_EXTENSIONS.has(extension)) return "archive";
 	if (SPREADSHEET_EXTENSIONS.has(extension)) return "spreadsheet";
 	if (PRESENTATION_EXTENSIONS.has(extension)) return "presentation";
+	if (CODE_EXTENSIONS.has(extension)) return "code";
 	if (IMAGE_EXTENSIONS.has(extension)) return "image";
 	if (VIDEO_EXTENSIONS.has(extension)) return "video";
 	if (AUDIO_EXTENSIONS.has(extension)) return "audio";
 	if (DOCUMENT_EXTENSIONS.has(extension)) return "document";
-	if (CODE_EXTENSIONS.has(extension)) return "code";
 	if (mime.startsWith("image/")) return "image";
 	if (mime.startsWith("video/")) return "video";
 	if (mime.startsWith("audio/")) return "audio";
