@@ -1,15 +1,49 @@
-import { useEffect, useState } from "react";
+import { useEffect, useReducer } from "react";
 
 const DESKTOP_PANEL_EXIT_MS = 220;
 
+interface DesktopInfoPanelMountState {
+	desktopMounted: boolean;
+	desktopVisible: boolean;
+}
+
+type DesktopInfoPanelMountAction =
+	| { type: "sync"; open: boolean }
+	| { type: "mount" }
+	| { type: "show" }
+	| { type: "hide" }
+	| { type: "unmount" };
+
+function desktopInfoPanelMountReducer(
+	state: DesktopInfoPanelMountState,
+	action: DesktopInfoPanelMountAction,
+): DesktopInfoPanelMountState {
+	switch (action.type) {
+		case "sync":
+			return {
+				desktopMounted: action.open,
+				desktopVisible: action.open,
+			};
+		case "mount":
+			return state.desktopMounted ? state : { ...state, desktopMounted: true };
+		case "show":
+			return state.desktopVisible ? state : { ...state, desktopVisible: true };
+		case "hide":
+			return state.desktopVisible ? { ...state, desktopVisible: false } : state;
+		case "unmount":
+			return state.desktopMounted ? { ...state, desktopMounted: false } : state;
+	}
+}
+
 export function useDesktopInfoPanelMount(open: boolean, isDesktop: boolean) {
-	const [desktopMounted, setDesktopMounted] = useState(open);
-	const [desktopVisible, setDesktopVisible] = useState(open);
+	const [state, dispatch] = useReducer(desktopInfoPanelMountReducer, {
+		desktopMounted: open,
+		desktopVisible: open,
+	});
 
 	useEffect(() => {
 		if (!isDesktop) {
-			setDesktopMounted(open);
-			setDesktopVisible(open);
+			dispatch({ type: "sync", open });
 			return;
 		}
 
@@ -17,14 +51,14 @@ export function useDesktopInfoPanelMount(open: boolean, isDesktop: boolean) {
 		let exitTimeout: number | null = null;
 
 		if (open) {
-			setDesktopMounted(true);
+			dispatch({ type: "mount" });
 			enterTimeout = window.setTimeout(() => {
-				setDesktopVisible(true);
+				dispatch({ type: "show" });
 			}, 0);
 		} else {
-			setDesktopVisible(false);
+			dispatch({ type: "hide" });
 			exitTimeout = window.setTimeout(() => {
-				setDesktopMounted(false);
+				dispatch({ type: "unmount" });
 			}, DESKTOP_PANEL_EXIT_MS);
 		}
 
@@ -38,8 +72,5 @@ export function useDesktopInfoPanelMount(open: boolean, isDesktop: boolean) {
 		};
 	}, [isDesktop, open]);
 
-	return {
-		desktopMounted,
-		desktopVisible,
-	};
+	return state;
 }
