@@ -1,5 +1,6 @@
 //! API 路由：`share_public`。
 
+use crate::api::dto::files::ArchivePreviewQuery;
 use crate::api::dto::share_public::DirectLinkQuery;
 pub use crate::api::dto::share_public::VerifyPasswordReq;
 use crate::api::middleware::rate_limit;
@@ -282,7 +283,7 @@ pub async fn create_preview_link(
     path = "/api/v1/s/{token}/archive-preview",
     tag = "shares",
     operation_id = "get_shared_file_archive_preview",
-    params(("token" = String, Path, description = "Share token")),
+    params(("token" = String, Path, description = "Share token"), ArchivePreviewQuery),
     responses(
         (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
         (status = 202, description = "ZIP archive preview generation has been queued"),
@@ -296,12 +297,15 @@ pub async fn archive_preview(
     state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
     req: actix_web::HttpRequest,
+    query: web::Query<ArchivePreviewQuery>,
 ) -> Result<HttpResponse> {
     let token = path.into_inner();
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    match archive_preview_service::preview_shared_file(&state, &token).await? {
+    match archive_preview_service::preview_shared_file(&state, &token, query.filename_encoding)
+        .await?
+    {
         archive_preview_service::ArchivePreviewManifestLookup::Ready(manifest) => {
             files::archive_preview_manifest_response(
                 manifest,
@@ -582,7 +586,8 @@ pub async fn create_folder_file_preview_link(
     operation_id = "get_shared_folder_file_archive_preview",
     params(
         ("token" = String, Path, description = "Share token"),
-        ("file_id" = i64, Path, description = "File ID inside shared folder")
+        ("file_id" = i64, Path, description = "File ID inside shared folder"),
+        ArchivePreviewQuery
     ),
     responses(
         (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
@@ -597,12 +602,20 @@ pub async fn folder_file_archive_preview(
     state: web::Data<PrimaryAppState>,
     path: web::Path<(String, i64)>,
     req: actix_web::HttpRequest,
+    query: web::Query<ArchivePreviewQuery>,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    match archive_preview_service::preview_shared_folder_file(&state, &token, file_id).await? {
+    match archive_preview_service::preview_shared_folder_file(
+        &state,
+        &token,
+        file_id,
+        query.filename_encoding,
+    )
+    .await?
+    {
         archive_preview_service::ArchivePreviewManifestLookup::Ready(manifest) => {
             files::archive_preview_manifest_response(
                 manifest,

@@ -35,6 +35,79 @@ fn create_stored_zip_bytes(entries: &[(&str, Option<&[u8]>)]) -> Vec<u8> {
     zip.finish().expect("zip writer should finish").into_inner()
 }
 
+fn create_stored_zip_bytes_with_raw_name(
+    placeholder_name: &str,
+    raw_name: &[u8],
+    content: &[u8],
+) -> Vec<u8> {
+    assert_eq!(
+        placeholder_name.len(),
+        raw_name.len(),
+        "test helper patches ZIP names in place"
+    );
+    let mut bytes = create_stored_zip_bytes(&[(placeholder_name, Some(content))]);
+    patch_zip_entry_raw_name(&mut bytes, placeholder_name.as_bytes(), raw_name);
+    bytes
+}
+
+fn patch_zip_entry_raw_name(bytes: &mut [u8], placeholder_name: &[u8], raw_name: &[u8]) {
+    patch_zip_entry_raw_name_in_header(
+        bytes,
+        &[0x50, 0x4b, 0x03, 0x04],
+        6,
+        26,
+        30,
+        placeholder_name,
+        raw_name,
+    );
+    patch_zip_entry_raw_name_in_header(
+        bytes,
+        &[0x50, 0x4b, 0x01, 0x02],
+        8,
+        28,
+        46,
+        placeholder_name,
+        raw_name,
+    );
+}
+
+fn patch_zip_entry_raw_name_in_header(
+    bytes: &mut [u8],
+    signature: &[u8; 4],
+    flag_offset: usize,
+    name_len_offset: usize,
+    name_offset: usize,
+    placeholder_name: &[u8],
+    raw_name: &[u8],
+) {
+    let mut patched = false;
+    for index in 0..bytes.len().saturating_sub(signature.len()) {
+        if !bytes[index..].starts_with(signature) || index + name_offset > bytes.len() {
+            continue;
+        }
+        let name_len = u16::from_le_bytes([
+            bytes[index + name_len_offset],
+            bytes[index + name_len_offset + 1],
+        ]) as usize;
+        let name_start = index + name_offset;
+        let name_end = name_start + name_len;
+        if name_end > bytes.len() || &bytes[name_start..name_end] != placeholder_name {
+            continue;
+        }
+
+        assert_eq!(name_len, raw_name.len());
+        bytes[name_start..name_end].copy_from_slice(raw_name);
+        let flags =
+            u16::from_le_bytes([bytes[index + flag_offset], bytes[index + flag_offset + 1]]);
+        bytes[index + flag_offset..index + flag_offset + 2]
+            .copy_from_slice(&(flags & !0x0800).to_le_bytes());
+        patched = true;
+        break;
+    }
+
+    assert!(patched, "ZIP entry header should be patched");
+}
+
 fn create_many_entry_zip_bytes(count: usize) -> Vec<u8> {
     let cursor = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(cursor);
@@ -184,8 +257,29 @@ where
             Error = actix_web::Error,
         >,
 {
+    request_personal_archive_preview_with_encoding(app, token, file_id, None).await
+}
+
+async fn request_personal_archive_preview_with_encoding<S>(
+    app: &S,
+    token: &str,
+    file_id: i64,
+    filename_encoding: Option<&str>,
+) -> actix_web::dev::ServiceResponse
+where
+    S: actix_web::dev::Service<
+            actix_http::Request,
+            Response = actix_web::dev::ServiceResponse,
+            Error = actix_web::Error,
+        >,
+{
+    let uri = filename_encoding
+        .map(|encoding| {
+            format!("/api/v1/files/{file_id}/archive-preview?filename_encoding={encoding}")
+        })
+        .unwrap_or_else(|| format!("/api/v1/files/{file_id}/archive-preview"));
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
+        .uri(&uri)
         .insert_header(("Cookie", common::access_cookie_header(token)))
         .insert_header(common::csrf_header_for(token))
         .to_request();
@@ -385,7 +479,7 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_manifest.v1",
+        "zip_manifest.v2",
     )
     .await
     .expect("cache lookup should succeed");
@@ -440,6 +534,61 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
     );
     let second_body: Value = test::read_body_json(resp).await;
     assert_eq!(second_body["data"]["entries"], data["entries"]);
+}
+
+#[actix_web::test]
+async fn test_archive_preview_decodes_gb18030_names_and_separates_encoding_cache() {
+    let state = common::setup().await;
+    enable_archive_preview(&state, true, false).await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_bytes(
+        &app,
+        &token,
+        "legacy-gbk.zip",
+        "application/zip",
+        create_stored_zip_bytes_with_raw_name(
+            "aaaaaaaaa.txt",
+            b"\xb2\xe2\xca\xd4/\xce\xc4\xbc\xfe.txt",
+            b"legacy payload",
+        ),
+    )
+    .await;
+
+    let resp =
+        request_personal_archive_preview_with_encoding(&app, &token, file_id, Some("auto")).await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+
+    let resp =
+        request_personal_archive_preview_with_encoding(&app, &token, file_id, Some("auto")).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    let entries = body["data"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["path"], "测试/文件.txt");
+    assert_eq!(entries[0]["name"], "文件.txt");
+    assert_eq!(entries[0]["parent"], "测试");
+    assert_eq!(archive_preview_tasks(&state).await.len(), 1);
+
+    let resp =
+        request_personal_archive_preview_with_encoding(&app, &token, file_id, Some("cp437")).await;
+    assert_eq!(
+        resp.status(),
+        StatusCode::ACCEPTED,
+        "a preview generated with one filename encoding must not be reused for another"
+    );
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("archive preview task should drain");
+    let resp =
+        request_personal_archive_preview_with_encoding(&app, &token, file_id, Some("cp437")).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = test::read_body_json(resp).await;
+    assert_ne!(body["data"]["entries"][0]["path"], "测试/文件.txt");
+    assert_eq!(archive_preview_tasks(&state).await.len(), 2);
 }
 
 #[actix_web::test]
@@ -800,7 +949,7 @@ async fn test_archive_preview_caps_high_manifest_limit_to_cache_storage_limit() 
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_manifest.v1",
+        "zip_manifest.v2",
     )
     .await
     .expect("cache lookup should succeed")

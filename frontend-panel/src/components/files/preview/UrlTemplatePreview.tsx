@@ -4,7 +4,11 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { PreviewLinkInfo } from "@/types/api";
-import { EmbeddedWebAppPreview } from "./EmbeddedWebAppPreview";
+import {
+	EmbeddedWebAppPreview,
+	EXTERNAL_WEB_APP_IFRAME_SANDBOX,
+	EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX,
+} from "./EmbeddedWebAppPreview";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import {
 	type ResolvedVideoBrowserTarget,
@@ -17,14 +21,21 @@ interface UrlTemplatePreviewProps {
 	downloadPath: string;
 	file: VideoBrowserFileContext;
 	label: string;
+	optionKey?: string;
 	rawConfig: Record<string, unknown> | null | undefined;
 }
+
+const SAME_ORIGIN_SANDBOX_URL_TEMPLATE_KEYS = new Set([
+	"builtin.office_google",
+	"builtin.office_microsoft",
+]);
 
 export function UrlTemplatePreview({
 	createPreviewLink,
 	downloadPath,
 	file,
 	label,
+	optionKey,
 	rawConfig,
 }: UrlTemplatePreviewProps) {
 	const { t } = useTranslation("files");
@@ -114,6 +125,11 @@ export function UrlTemplatePreview({
 			}
 			iframeAllow="autoplay; fullscreen; picture-in-picture"
 			iframeReferrerPolicy="same-origin"
+			iframeSandbox={
+				optionKey && SAME_ORIGIN_SANDBOX_URL_TEMPLATE_KEYS.has(optionKey)
+					? EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX
+					: EXTERNAL_WEB_APP_IFRAME_SANDBOX
+			}
 		/>
 	);
 }

@@ -4,7 +4,10 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import type { PreviewOpenMode, WopiLaunchSession } from "@/types/api";
-import { EmbeddedWebAppPreview } from "./EmbeddedWebAppPreview";
+import {
+	EmbeddedWebAppPreview,
+	EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX,
+} from "./EmbeddedWebAppPreview";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 
 interface WopiPreviewProps {
@@ -216,6 +219,7 @@ export function WopiPreview({
 				}}
 				iframeHidden={!isFrameLoaded}
 				iframeReferrerPolicy="no-referrer"
+				iframeSandbox={EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX}
 				actions={
 					<Button variant="outline" size="sm" onClick={openExternally}>
 						<Icon name="ArrowSquareOut" className="mr-2 h-4 w-4" />

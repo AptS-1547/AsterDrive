@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { normalizeTablePreviewDelimiter } from "@/lib/tablePreview";
 import type { MusicPlayerTrack } from "@/stores/musicPlayerStore";
 import type {
+	ArchiveFilenameEncoding,
 	ArchivePreviewManifest,
 	FileInfo,
 	FileListItem,
@@ -69,6 +70,7 @@ interface FilePreviewBodyProps {
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
+		filenameEncoding?: ArchiveFilenameEncoding;
 	}) => Promise<ArchivePreviewManifest>;
 	loadMusicBackendMetadata?: MusicPlayerTrack["loadBackendMetadata"];
 	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
@@ -162,6 +164,7 @@ export function FilePreviewBody({
 				file={file}
 				downloadPath={downloadPath}
 				label={getOptionLabel(activeOption)}
+				optionKey={activeOption.key}
 				rawConfig={activeOption.config ?? null}
 				createPreviewLink={previewLinkFactory}
 			/>

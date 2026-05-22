@@ -53,6 +53,55 @@ vi.mock("@/components/ui/input", () => ({
 	},
 }));
 
+vi.mock("@/components/ui/label", () => ({
+	Label: (props: React.LabelHTMLAttributes<HTMLLabelElement>) => (
+		<span {...props} />
+	),
+}));
+
+vi.mock("@/components/ui/select", () => ({
+	Select: ({
+		children,
+		disabled,
+		onValueChange,
+		value,
+	}: {
+		children: React.ReactNode;
+		disabled?: boolean;
+		onValueChange?: (value: string) => void;
+		value?: string;
+	}) => (
+		<div data-disabled={disabled} data-value={value}>
+			{children}
+			<button type="button" onClick={() => onValueChange?.("gb18030")}>
+				select-gb18030
+			</button>
+		</div>
+	),
+	SelectContent: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	SelectItem: ({
+		children,
+		value,
+	}: {
+		children: React.ReactNode;
+		value: string;
+	}) => <div data-value={value}>{children}</div>,
+	SelectTrigger: ({
+		children,
+		id,
+	}: {
+		children: React.ReactNode;
+		id?: string;
+	}) => (
+		<button type="button" id={id}>
+			{children}
+		</button>
+	),
+	SelectValue: () => <span>select-value</span>,
+}));
+
 vi.mock("@/hooks/useApiError", () => ({
 	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
 }));
@@ -110,7 +159,27 @@ describe("ArchiveTaskNameDialog", () => {
 		fireEvent.click(screen.getByText("tasks:archive_extract_submit"));
 
 		await waitFor(() => {
-			expect(mockState.onSubmit).toHaveBeenCalledWith(undefined);
+			expect(mockState.onSubmit).toHaveBeenCalledWith(undefined, "auto");
+		});
+		expect(mockState.onOpenChange).toHaveBeenCalledWith(false);
+	});
+
+	it("submits the selected filename encoding for extract tasks", async () => {
+		render(
+			<ArchiveTaskNameDialog
+				open
+				onOpenChange={mockState.onOpenChange}
+				mode="extract"
+				initialName="bundle"
+				onSubmit={mockState.onSubmit}
+			/>,
+		);
+
+		fireEvent.click(screen.getByText("select-gb18030"));
+		fireEvent.click(screen.getByText("tasks:archive_extract_submit"));
+
+		await waitFor(() => {
+			expect(mockState.onSubmit).toHaveBeenCalledWith("bundle", "gb18030");
 		});
 		expect(mockState.onOpenChange).toHaveBeenCalledWith(false);
 	});

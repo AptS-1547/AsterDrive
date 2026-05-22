@@ -9,7 +9,8 @@ use crate::entities::background_task;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::user_service;
 use crate::types::{
-    BackgroundTaskKind, BackgroundTaskStatus, DriverType, StoredTaskPayload, StoredTaskResult,
+    ArchiveFilenameEncoding, BackgroundTaskKind, BackgroundTaskStatus, DriverType,
+    StoredTaskPayload, StoredTaskResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,6 +62,7 @@ pub struct CreateArchiveCompressTaskParams {
 pub struct CreateArchiveExtractTaskParams {
     pub target_folder_id: Option<i64>,
     pub output_folder_name: Option<String>,
+    pub filename_encoding: ArchiveFilenameEncoding,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,6 +81,8 @@ pub struct ArchiveExtractTaskPayload {
     pub source_file_name: String,
     pub target_folder_id: Option<i64>,
     pub output_folder_name: String,
+    #[serde(default)]
+    pub filename_encoding: ArchiveFilenameEncoding,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,6 +93,8 @@ pub struct ArchivePreviewTaskPayload {
     pub source_blob_id: i64,
     pub source_hash: String,
     pub limit_signature: String,
+    #[serde(default)]
+    pub filename_encoding: ArchiveFilenameEncoding,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -176,12 +176,22 @@
 
 这条接口为 ZIP 文件返回只读清单，不解压、不写入工作空间：
 
+可选查询参数 `filename_encoding` 控制 ZIP entry name 的解码方式：
+`auto`（默认）、`utf8`、`gb18030`、`cp437`、`cp850`、`shift_jis`、
+`big5`、`euc_kr`、`windows_1252`。例如：
+`GET /files/{id}/archive-preview?filename_encoding=gb18030`。显式设置后会覆盖
+自动检测，并且可能命中不同缓存，因为归档预览缓存键包含
+`filename_encoding` 和 `schema_version`。这个参数只改变文件名解码行为，不改变
+其他限制或生成语义；设置为 `cp437`、`cp850`、`gb18030`、`shift_jis`、
+`big5`、`euc_kr` 或 `windows_1252` 时会强制走对应兼容解码路径。这些
+兼容编码只在显式选择时使用，默认 `auto` 不会无限尝试所有编码。
+
 ```json
 {
   "code": 0,
   "msg": "",
   "data": {
-    "schema_version": 1,
+    "schema_version": 2,
     "format": "zip",
     "source_blob_id": 42,
     "source_hash": "abc...",
@@ -211,7 +221,7 @@
 - 只支持 `.zip` 或 ZIP MIME 类型；其他格式返回带 `archive_preview.unsupported_type` 子码的 `400`
 - 默认关闭，需要同时打开 `archive_preview_enabled` 和 `archive_preview_user_enabled`
 - 首次请求如果没有可用缓存，会创建或复用 `archive_preview_generate` 后台任务，返回 `202`、`Retry-After: 2` 和空成功响应
-- 任务完成后，清单缓存在 `entity_properties` 的 `system.archive_preview / zip_manifest.v1`
+- 任务完成后，清单缓存在 `entity_properties` 的 `system.archive_preview / zip_manifest.v2`
 - 成功响应带 `ETag`，支持 `If-None-Match` 命中返回 `304`
 - 限制由 `archive_preview_max_source_bytes`、`archive_preview_max_entries`、`archive_preview_max_manifest_bytes`、`archive_preview_max_duration_secs` 以及归档解压相关上限共同控制
 - 对支持 Range 的存储驱动，生成任务会优先用范围读取扫描 ZIP central directory；必要时才下载到临时文件扫描

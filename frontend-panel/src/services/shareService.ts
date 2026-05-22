@@ -17,6 +17,10 @@ import type {
 	ShareStreamSessionInfo,
 	ShareTarget,
 } from "@/types/api";
+import {
+	type ArchivePreviewRequestOptions,
+	archivePreviewRequestConfig,
+} from "./archivePreviewRequestConfig";
 import { type ApiRequestConfig, api } from "./http";
 
 type ServiceRequestOptions = Pick<ApiRequestConfig, "signal">;
@@ -76,8 +80,14 @@ export function createShareService(workspace: Workspace) {
 		createPreviewLink: (token: string) =>
 			api.post<PreviewLinkInfo>(`/s/${token}/preview-link`),
 
-		getArchivePreview: (token: string, options?: ServiceRequestOptions) =>
-			api.get<ArchivePreviewManifest>(`/s/${token}/archive-preview`, options),
+		getArchivePreview: (
+			token: string,
+			options?: ArchivePreviewRequestOptions,
+		) =>
+			api.get<ArchivePreviewManifest>(
+				`/s/${token}/archive-preview`,
+				archivePreviewRequestConfig(options),
+			),
 
 		getMediaMetadata: (token: string, options?: ServiceRequestOptions) =>
 			api.get<MediaMetadataInfo>(`/s/${token}/media-metadata`, options),
@@ -104,11 +114,11 @@ export function createShareService(workspace: Workspace) {
 		getFolderFileArchivePreview: (
 			token: string,
 			fileId: number,
-			options?: ServiceRequestOptions,
+			options?: ArchivePreviewRequestOptions,
 		) =>
 			api.get<ArchivePreviewManifest>(
 				`/s/${token}/files/${fileId}/archive-preview`,
-				options,
+				archivePreviewRequestConfig(options),
 			),
 
 		getFolderFileMediaMetadata: (

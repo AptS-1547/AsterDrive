@@ -1,5 +1,6 @@
 //! 共享领域类型定义。
 
+mod archive;
 mod audit;
 mod auth;
 mod config;
@@ -15,6 +16,7 @@ mod task;
 mod team;
 mod user;
 
+pub use archive::ArchiveFilenameEncoding;
 pub use audit::{AuditAction, AuditEntityType};
 pub use auth::{
     ExternalAuthProtocol, ExternalAuthProviderKind, TokenType, VerificationChannel,

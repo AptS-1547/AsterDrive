@@ -17,6 +17,7 @@ use crate::services::archive_service::zip_scan::{
 use crate::services::task_service::TaskStepInfo;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::storage::PolicySnapshot;
+use crate::types::ArchiveFilenameEncoding;
 
 use super::super::super::TaskLeaseGuard;
 use super::super::super::steps::{
@@ -69,6 +70,7 @@ pub(super) struct ArchiveExtractStageOptions {
     pub(super) source_archive_size: i64,
     pub(super) max_staging_bytes: i64,
     pub(super) limits: ArchiveExtractLimits,
+    pub(super) filename_encoding: ArchiveFilenameEncoding,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -202,6 +204,7 @@ pub(super) fn stage_zip_archive_for_extract(
         &mut archive,
         options.limits.scan_limits(),
         deadline,
+        options.filename_encoding,
         |entry_size| {
             options
                 .policy_resolver

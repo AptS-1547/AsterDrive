@@ -84,7 +84,7 @@ async fn test_entity_properties() {
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
             "namespace": "system.archive_preview",
-            "name": "zip_manifest.v1",
+            "name": "zip_manifest.v2",
             "value": "{}"
         }))
         .to_request();
@@ -96,7 +96,7 @@ async fn test_entity_properties() {
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_manifest.v1",
+        "zip_manifest.v2",
         Some("{}"),
     )
     .await

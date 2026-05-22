@@ -27,7 +27,7 @@ pub use self::upload::{
 };
 pub use self::versions::{delete_version, list_versions, restore_version};
 // DTO types that need explicit import (not re-exported from submodules)
-pub use crate::api::dto::files::{OpenWopiRequest, VersionPath};
+pub use crate::api::dto::files::{ArchivePreviewQuery, OpenWopiRequest, VersionPath};
 
 pub(crate) use self::access::{
     archive_preview_manifest_response, archive_preview_pending_response, image_preview_response,

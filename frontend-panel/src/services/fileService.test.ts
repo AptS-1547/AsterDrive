@@ -215,6 +215,10 @@ describe("fileService", () => {
 		createFileService({ kind: "team", teamId: 9 }).getArchivePreview(8, {
 			signal: controller.signal,
 		});
+		fileService.getArchivePreview(8, {
+			filenameEncoding: "gb18030",
+			signal: controller.signal,
+		});
 
 		expect(mockState.get).toHaveBeenNthCalledWith(
 			1,
@@ -225,6 +229,53 @@ describe("fileService", () => {
 			2,
 			"/teams/9/files/8/archive-preview",
 			{ signal: controller.signal },
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			3,
+			"/files/8/archive-preview",
+			{
+				params: { filename_encoding: "gb18030" },
+				signal: controller.signal,
+			},
+		);
+	});
+
+	it("forwards filename encoding for archive preview and extract requests", async () => {
+		const { createFileService, fileService } = await import(
+			"@/services/fileService"
+		);
+
+		fileService.getArchivePreview(8, { filenameEncoding: "gb18030" });
+		createFileService({ kind: "team", teamId: 9 }).getArchivePreview(8, {
+			filenameEncoding: "cp437",
+		});
+		fileService.createArchiveExtractTask(8, 7, "bundle", "gb18030");
+		createFileService({ kind: "team", teamId: 9 }).createArchiveExtractTask(
+			8,
+			undefined,
+			undefined,
+			"cp437",
+		);
+
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			1,
+			"/files/8/archive-preview",
+			{ params: { filename_encoding: "gb18030" } },
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			2,
+			"/teams/9/files/8/archive-preview",
+			{ params: { filename_encoding: "cp437" } },
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(1, "/files/8/extract", {
+			target_folder_id: 7,
+			output_folder_name: "bundle",
+			filename_encoding: "gb18030",
+		});
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			2,
+			"/teams/9/files/8/extract",
+			{ filename_encoding: "cp437" },
 		);
 	});
 

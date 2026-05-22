@@ -21,6 +21,7 @@ import type {
 } from "@/pages/file-browser/types";
 import { fileService } from "@/services/fileService";
 import type { BreadcrumbItem } from "@/stores/fileStore";
+import type { ArchiveFilenameEncoding } from "@/types/api";
 
 interface FileBrowserDialogsProps {
 	archiveTaskTarget: FileBrowserArchiveTaskTarget | null;
@@ -35,7 +36,10 @@ interface FileBrowserDialogsProps {
 	shareTarget: FileBrowserShareTarget | null;
 	versionTarget: FileBrowserVersionTarget | null;
 	onArchiveTaskClose: () => void;
-	onArchiveTaskSubmit: (name: string | undefined) => Promise<void>;
+	onArchiveTaskSubmit: (
+		name: string | undefined,
+		filenameEncoding?: ArchiveFilenameEncoding,
+	) => Promise<void>;
 	onCopyClose: () => void;
 	onCopyConfirm: (targetFolderId: number | null) => Promise<void>;
 	onCreateFileOpenChange: (open: boolean) => void;

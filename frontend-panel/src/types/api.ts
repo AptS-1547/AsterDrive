@@ -111,6 +111,8 @@ export type ArchivePreviewEntryKind =
 	components["schemas"]["ArchivePreviewEntryKind"];
 export type ArchivePreviewManifest =
 	components["schemas"]["ArchivePreviewManifest"];
+export type ArchiveFilenameEncoding =
+	components["schemas"]["ArchiveFilenameEncoding"];
 export type PurgedCountResponse = components["schemas"]["PurgedCountResponse"];
 export type TrashContents = components["schemas"]["TrashContents"];
 export type TrashFileItem = components["schemas"]["TrashFileItem"];

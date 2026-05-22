@@ -3791,6 +3791,7 @@ export interface components {
         ArchiveExtractTaskPayload: {
             /** Format: int64 */
             file_id: number;
+            filename_encoding?: components["schemas"]["ArchiveFilenameEncoding"];
             output_folder_name: string;
             source_file_name: string;
             /** Format: int64 */
@@ -3806,6 +3807,11 @@ export interface components {
             target_folder_name: string;
             target_path: string;
         };
+        /**
+         * @description ZIP entry filename decoding strategy.
+         * @enum {string}
+         */
+        ArchiveFilenameEncoding: "auto" | "utf8" | "gb18030" | "cp437" | "cp850" | "shift_jis" | "big5" | "euc_kr" | "windows_1252";
         ArchivePreviewEntry: {
             /** Format: int64 */
             compressed_size: number;
@@ -3841,6 +3847,7 @@ export interface components {
         ArchivePreviewTaskPayload: {
             /** Format: int64 */
             file_id: number;
+            filename_encoding?: components["schemas"]["ArchiveFilenameEncoding"];
             limit_signature: string;
             /** Format: int64 */
             source_blob_id: number;
@@ -4307,6 +4314,7 @@ export interface components {
         };
         /** @description Extract an archive file. */
         ExtractArchiveRequest: {
+            filename_encoding?: components["schemas"]["ArchiveFilenameEncoding"];
             output_folder_name?: string | null;
             /** Format: int64 */
             target_folder_id?: number | null;
@@ -13030,7 +13038,9 @@ export interface operations {
     };
     get_file_archive_preview: {
         parameters: {
-            query?: never;
+            query?: {
+                filename_encoding?: components["schemas"]["ArchiveFilenameEncoding"];
+            };
             header?: never;
             path: {
                 /** @description File ID */
@@ -14805,7 +14815,9 @@ export interface operations {
     };
     get_shared_file_archive_preview: {
         parameters: {
-            query?: never;
+            query?: {
+                filename_encoding?: components["schemas"]["ArchiveFilenameEncoding"];
+            };
             header?: never;
             path: {
                 /** @description Share token */
@@ -15030,7 +15042,9 @@ export interface operations {
     };
     get_shared_folder_file_archive_preview: {
         parameters: {
-            query?: never;
+            query?: {
+                filename_encoding?: components["schemas"]["ArchiveFilenameEncoding"];
+            };
             header?: never;
             path: {
                 /** @description Share token */
@@ -18286,7 +18300,9 @@ export interface operations {
     };
     get_team_file_archive_preview: {
         parameters: {
-            query?: never;
+            query?: {
+                filename_encoding?: components["schemas"]["ArchiveFilenameEncoding"];
+            };
             header?: never;
             path: {
                 /** @description Team ID */

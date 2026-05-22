@@ -94,6 +94,11 @@ describe("WopiPreview", () => {
 
 		expect(form.action).toBe("https://office.example.com/wopi/edit");
 		expect(form.target).toBe(frame.getAttribute("name"));
+		expect(frame).toHaveAttribute(
+			"sandbox",
+			"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin",
+		);
+		expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
 		expect(form).toHaveFormValues({
 			access_token: "token-1",
 			access_token_ttl: "3600",
