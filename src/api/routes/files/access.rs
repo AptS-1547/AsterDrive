@@ -1,6 +1,6 @@
 //! 文件 API 路由：`access`。
 
-use crate::api::dto::files::OpenWopiRequest;
+use crate::api::dto::files::{ArchivePreviewQuery, OpenWopiRequest};
 use crate::api::response::ApiResponse;
 use crate::api::routes::team_scope;
 use crate::errors::Result;
@@ -55,7 +55,7 @@ pub async fn get_file(
     path = "/api/v1/files/{id}/archive-preview",
     tag = "files",
     operation_id = "get_file_archive_preview",
-    params(("id" = i64, Path, description = "File ID")),
+    params(("id" = i64, Path, description = "File ID"), ArchivePreviewQuery),
     responses(
         (status = 200, description = "ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
         (status = 202, description = "ZIP archive preview generation has been queued"),
@@ -72,6 +72,7 @@ pub async fn get_archive_preview(
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<i64>,
+    query: web::Query<ArchivePreviewQuery>,
 ) -> Result<HttpResponse> {
     archive_preview_response(
         &state,
@@ -80,6 +81,7 @@ pub async fn get_archive_preview(
             user_id: claims.user_id,
         },
         *path,
+        query.filename_encoding,
     )
     .await
 }
@@ -343,7 +345,8 @@ pub(crate) async fn team_get_file(
     operation_id = "get_team_file_archive_preview",
     params(
         ("team_id" = i64, Path, description = "Team ID"),
-        ("id" = i64, Path, description = "File ID")
+        ("id" = i64, Path, description = "File ID"),
+        ArchivePreviewQuery
     ),
     responses(
         (status = 200, description = "Team ZIP archive preview manifest", body = inline(ApiResponse<archive_preview_service::ArchivePreviewManifest>)),
@@ -361,9 +364,17 @@ pub(crate) async fn team_get_archive_preview(
     claims: web::ReqData<Claims>,
     req: HttpRequest,
     path: web::Path<(i64, i64)>,
+    query: web::Query<ArchivePreviewQuery>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    archive_preview_response(&state, &req, team_scope(team_id, claims.user_id), file_id).await
+    archive_preview_response(
+        &state,
+        &req,
+        team_scope(team_id, claims.user_id),
+        file_id,
+        query.filename_encoding,
+    )
+    .await
 }
 
 #[api_docs_macros::path(
@@ -610,12 +621,15 @@ pub(crate) async fn archive_preview_response(
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
+    filename_encoding: crate::types::ArchiveFilenameEncoding,
 ) -> Result<HttpResponse> {
     let if_none_match = req
         .headers()
         .get(header::IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok());
-    match archive_preview_service::preview_file_in_scope(state, scope, file_id).await? {
+    match archive_preview_service::preview_file_in_scope(state, scope, file_id, filename_encoding)
+        .await?
+    {
         archive_preview_service::ArchivePreviewManifestLookup::Ready(manifest) => {
             archive_preview_manifest_response(
                 manifest,

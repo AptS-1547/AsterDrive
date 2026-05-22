@@ -22,6 +22,19 @@ pub struct CreateEmptyRequest {
 pub struct ExtractArchiveRequest {
     pub target_folder_id: Option<i64>,
     pub output_folder_name: Option<String>,
+    #[serde(default)]
+    pub filename_encoding: crate::types::ArchiveFilenameEncoding,
+}
+
+/// Query parameters for archive preview.
+#[derive(Deserialize)]
+#[cfg_attr(
+    all(debug_assertions, feature = "openapi"),
+    derive(IntoParams, ToSchema)
+)]
+pub struct ArchivePreviewQuery {
+    #[serde(default)]
+    pub filename_encoding: crate::types::ArchiveFilenameEncoding,
 }
 
 /// Patch (partial update) a file.

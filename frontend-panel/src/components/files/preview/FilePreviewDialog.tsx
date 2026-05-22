@@ -5,6 +5,7 @@ import { fileService } from "@/services/fileService";
 import type { MusicPlayerTrack } from "@/stores/musicPlayerStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import type {
+	ArchiveFilenameEncoding,
 	ArchivePreviewManifest,
 	FileInfo,
 	FileListItem,
@@ -39,6 +40,7 @@ interface FilePreviewDialogProps {
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
+		filenameEncoding?: ArchiveFilenameEncoding;
 	}) => Promise<ArchivePreviewManifest>;
 	loadMusicBackendMetadata?: MusicPlayerTrack["loadBackendMetadata"];
 	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
@@ -236,7 +238,10 @@ export function FilePreviewDialog({
 		return wopiSessionFactory(activeOption.key);
 	}, [activeOption, wopiSessionFactory]);
 	const stableArchivePreviewFactory = useCallback(
-		(options?: { signal?: AbortSignal }) => {
+		(options?: {
+			signal?: AbortSignal;
+			filenameEncoding?: ArchiveFilenameEncoding;
+		}) => {
 			const factory = archivePreviewFactoryRef.current;
 			if (!factory) {
 				return Promise.reject(new Error("archive preview factory unavailable"));

@@ -1,6 +1,7 @@
 import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog";
 import type { MusicPlayerTrack } from "@/stores/musicPlayerStore";
 import type {
+	ArchiveFilenameEncoding,
 	ArchivePreviewManifest,
 	FileInfo,
 	FileListItem,
@@ -21,6 +22,7 @@ interface FilePreviewProps {
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
 	archivePreviewFactory?: (options?: {
 		signal?: AbortSignal;
+		filenameEncoding?: ArchiveFilenameEncoding;
 	}) => Promise<ArchivePreviewManifest>;
 	loadMusicBackendMetadata?: MusicPlayerTrack["loadBackendMetadata"];
 	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;

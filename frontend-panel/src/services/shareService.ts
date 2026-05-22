@@ -4,6 +4,7 @@ import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
+	ArchiveFilenameEncoding,
 	ArchivePreviewManifest,
 	BatchResult,
 	FolderContents,
@@ -20,6 +21,23 @@ import type {
 import { type ApiRequestConfig, api } from "./http";
 
 type ServiceRequestOptions = Pick<ApiRequestConfig, "signal">;
+type ArchivePreviewRequestOptions = ServiceRequestOptions & {
+	filenameEncoding?: ArchiveFilenameEncoding;
+};
+
+function archivePreviewRequestConfig(
+	options?: ArchivePreviewRequestOptions,
+): ApiRequestConfig | undefined {
+	if (!options?.signal && !options?.filenameEncoding) {
+		return undefined;
+	}
+	return {
+		...(options.signal ? { signal: options.signal } : {}),
+		...(options.filenameEncoding
+			? { params: { filename_encoding: options.filenameEncoding } }
+			: {}),
+	};
+}
 
 function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");
@@ -76,8 +94,14 @@ export function createShareService(workspace: Workspace) {
 		createPreviewLink: (token: string) =>
 			api.post<PreviewLinkInfo>(`/s/${token}/preview-link`),
 
-		getArchivePreview: (token: string, options?: ServiceRequestOptions) =>
-			api.get<ArchivePreviewManifest>(`/s/${token}/archive-preview`, options),
+		getArchivePreview: (
+			token: string,
+			options?: ArchivePreviewRequestOptions,
+		) =>
+			api.get<ArchivePreviewManifest>(
+				`/s/${token}/archive-preview`,
+				archivePreviewRequestConfig(options),
+			),
 
 		getMediaMetadata: (token: string, options?: ServiceRequestOptions) =>
 			api.get<MediaMetadataInfo>(`/s/${token}/media-metadata`, options),
@@ -104,11 +128,11 @@ export function createShareService(workspace: Workspace) {
 		getFolderFileArchivePreview: (
 			token: string,
 			fileId: number,
-			options?: ServiceRequestOptions,
+			options?: ArchivePreviewRequestOptions,
 		) =>
 			api.get<ArchivePreviewManifest>(
 				`/s/${token}/files/${fileId}/archive-preview`,
-				options,
+				archivePreviewRequestConfig(options),
 			),
 
 		getFolderFileMediaMetadata: (

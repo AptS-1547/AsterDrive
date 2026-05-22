@@ -537,6 +537,7 @@ pub(crate) async fn extract_archive_response(
         crate::services::task_service::CreateArchiveExtractTaskParams {
             target_folder_id: body.target_folder_id,
             output_folder_name: body.output_folder_name.clone(),
+            filename_encoding: body.filename_encoding,
         },
     )
     .await?;

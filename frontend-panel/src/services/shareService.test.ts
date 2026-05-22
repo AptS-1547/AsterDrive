@@ -199,6 +199,22 @@ describe("shareService", () => {
 		);
 	});
 
+	it("forwards filename encoding for public archive preview requests", () => {
+		shareService.getArchivePreview("token-1", { filenameEncoding: "gb18030" });
+		shareService.getFolderFileArchivePreview("token-1", 42, {
+			filenameEncoding: "cp437",
+		});
+
+		expect(apiGet).toHaveBeenNthCalledWith(1, "/s/token-1/archive-preview", {
+			params: { filename_encoding: "gb18030" },
+		});
+		expect(apiGet).toHaveBeenNthCalledWith(
+			2,
+			"/s/token-1/files/42/archive-preview",
+			{ params: { filename_encoding: "cp437" } },
+		);
+	});
+
 	it("normalizes trailing slashes when building public download URLs", async () => {
 		vi.resetModules();
 		vi.doMock("@/config/app", () => ({

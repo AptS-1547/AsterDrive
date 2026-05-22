@@ -9,14 +9,44 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { handleApiError } from "@/hooks/useApiError";
+import type { ArchiveFilenameEncoding } from "@/types/api";
 
 interface ArchiveTaskNameDialogProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	mode: "compress" | "extract";
 	initialName: string;
-	onSubmit: (name: string | undefined) => Promise<void>;
+	onSubmit: (
+		name: string | undefined,
+		filenameEncoding?: ArchiveFilenameEncoding,
+	) => Promise<void>;
+}
+
+const archiveFilenameEncodingOptions: ArchiveFilenameEncoding[] = [
+	"auto",
+	"utf8",
+	"gb18030",
+	"cp437",
+];
+
+function isArchiveFilenameEncoding(
+	value: string | null,
+): value is ArchiveFilenameEncoding {
+	return (
+		value === "auto" ||
+		value === "utf8" ||
+		value === "gb18030" ||
+		value === "cp437"
+	);
 }
 
 export function ArchiveTaskNameDialog({
@@ -28,11 +58,14 @@ export function ArchiveTaskNameDialog({
 }: ArchiveTaskNameDialogProps) {
 	const { t } = useTranslation(["core", "tasks"]);
 	const [name, setName] = useState(initialName);
+	const [filenameEncoding, setFilenameEncoding] =
+		useState<ArchiveFilenameEncoding>("auto");
 	const [submitting, setSubmitting] = useState(false);
 
 	useEffect(() => {
 		if (open) {
 			setName(initialName);
+			setFilenameEncoding("auto");
 		}
 	}, [initialName, open]);
 
@@ -41,7 +74,11 @@ export function ArchiveTaskNameDialog({
 		try {
 			setSubmitting(true);
 			const trimmed = name.trim();
-			await onSubmit(trimmed ? trimmed : undefined);
+			if (mode === "extract") {
+				await onSubmit(trimmed ? trimmed : undefined, filenameEncoding);
+			} else {
+				await onSubmit(trimmed ? trimmed : undefined);
+			}
 			onOpenChange(false);
 		} catch (error) {
 			handleApiError(error);
@@ -101,6 +138,33 @@ export function ArchiveTaskNameDialog({
 							event.target.select();
 						}}
 					/>
+					{mode === "extract" ? (
+						<div className="space-y-2">
+							<Label htmlFor="archive-filename-encoding">
+								{t("tasks:archive_filename_encoding_label")}
+							</Label>
+							<Select
+								value={filenameEncoding}
+								onValueChange={(value) => {
+									if (isArchiveFilenameEncoding(value)) {
+										setFilenameEncoding(value);
+									}
+								}}
+								disabled={submitting}
+							>
+								<SelectTrigger id="archive-filename-encoding">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{archiveFilenameEncodingOptions.map((value) => (
+										<SelectItem key={value} value={value}>
+											{t(`tasks:archive_filename_encoding_${value}`)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					) : null}
 					<p className="text-sm text-muted-foreground">{hint}</p>
 					<div className="flex gap-2">
 						<Button

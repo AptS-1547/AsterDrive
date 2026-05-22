@@ -6,7 +6,11 @@ import { ArchiveTaskNameDialog } from "@/pages/file-browser/fileBrowserLazy";
 import type { FileBrowserArchiveTaskTarget } from "@/pages/file-browser/types";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
-import type { FileListItem, FolderListItem } from "@/types/api";
+import type {
+	ArchiveFilenameEncoding,
+	FileListItem,
+	FolderListItem,
+} from "@/types/api";
 
 function buildArchiveTimestamp() {
 	const now = new Date();
@@ -148,7 +152,10 @@ export function useFileBrowserArchiveActions({
 	);
 
 	const submitArchiveTask = useCallback(
-		async (name: string | undefined) => {
+		async (
+			name: string | undefined,
+			filenameEncoding?: ArchiveFilenameEncoding,
+		) => {
 			if (!archiveTaskTarget) {
 				return;
 			}
@@ -170,6 +177,7 @@ export function useFileBrowserArchiveActions({
 				archiveTaskTarget.fileId,
 				undefined,
 				name,
+				filenameEncoding,
 			);
 			notifyTaskQueued(task.display_name);
 		},

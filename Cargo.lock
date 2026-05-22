@@ -704,6 +704,7 @@ dependencies = [
  "config",
  "dashmap",
  "dotenvy",
+ "encoding_rs",
  "fs2",
  "futures",
  "governor",

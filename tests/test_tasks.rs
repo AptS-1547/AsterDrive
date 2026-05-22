@@ -113,6 +113,37 @@ fn read_zip_entry_text(bytes: &[u8], name: &str) -> String {
     content
 }
 
+fn zip_central_entry_flags(bytes: &[u8]) -> Vec<(String, u16)> {
+    let central_signature = [0x50, 0x4B, 0x01, 0x02];
+    let mut entries = Vec::new();
+    let mut index = 0;
+
+    while index + 46 <= bytes.len() {
+        if !bytes[index..].starts_with(&central_signature) {
+            index += 1;
+            continue;
+        }
+
+        let flags = u16::from_le_bytes([bytes[index + 8], bytes[index + 9]]);
+        let name_len = u16::from_le_bytes([bytes[index + 28], bytes[index + 29]]) as usize;
+        let extra_len = u16::from_le_bytes([bytes[index + 30], bytes[index + 31]]) as usize;
+        let comment_len = u16::from_le_bytes([bytes[index + 32], bytes[index + 33]]) as usize;
+        let name_start = index + 46;
+        let name_end = name_start + name_len;
+        if name_end > bytes.len() {
+            break;
+        }
+
+        entries.push((
+            String::from_utf8_lossy(&bytes[name_start..name_end]).to_string(),
+            flags,
+        ));
+        index = name_end + extra_len + comment_len;
+    }
+
+    entries
+}
+
 fn read_archive_download_path(body: &Value) -> String {
     body["data"]["token"]
         .as_str()
@@ -228,6 +259,79 @@ fn create_stored_zip_bytes(entries: &[(&str, Option<&[u8]>)]) -> Vec<u8> {
     }
 
     zip.finish().expect("zip writer should finish").into_inner()
+}
+
+fn create_stored_zip_bytes_with_raw_name(
+    placeholder_name: &str,
+    raw_name: &[u8],
+    content: &[u8],
+) -> Vec<u8> {
+    assert_eq!(
+        placeholder_name.len(),
+        raw_name.len(),
+        "test helper patches ZIP names in place"
+    );
+    let mut bytes = create_stored_zip_bytes(&[(placeholder_name, Some(content))]);
+    patch_zip_entry_raw_name(&mut bytes, placeholder_name.as_bytes(), raw_name);
+    bytes
+}
+
+fn patch_zip_entry_raw_name(bytes: &mut [u8], placeholder_name: &[u8], raw_name: &[u8]) {
+    patch_zip_entry_raw_name_in_header(
+        bytes,
+        &[0x50, 0x4b, 0x03, 0x04],
+        6,
+        26,
+        30,
+        placeholder_name,
+        raw_name,
+    );
+    patch_zip_entry_raw_name_in_header(
+        bytes,
+        &[0x50, 0x4b, 0x01, 0x02],
+        8,
+        28,
+        46,
+        placeholder_name,
+        raw_name,
+    );
+}
+
+fn patch_zip_entry_raw_name_in_header(
+    bytes: &mut [u8],
+    signature: &[u8; 4],
+    flag_offset: usize,
+    name_len_offset: usize,
+    name_offset: usize,
+    placeholder_name: &[u8],
+    raw_name: &[u8],
+) {
+    let mut patched = false;
+    for index in 0..bytes.len().saturating_sub(signature.len()) {
+        if !bytes[index..].starts_with(signature) || index + name_offset > bytes.len() {
+            continue;
+        }
+        let name_len = u16::from_le_bytes([
+            bytes[index + name_len_offset],
+            bytes[index + name_len_offset + 1],
+        ]) as usize;
+        let name_start = index + name_offset;
+        let name_end = name_start + name_len;
+        if name_end > bytes.len() || &bytes[name_start..name_end] != placeholder_name {
+            continue;
+        }
+
+        assert_eq!(name_len, raw_name.len());
+        bytes[name_start..name_end].copy_from_slice(raw_name);
+        let flags =
+            u16::from_le_bytes([bytes[index + flag_offset], bytes[index + flag_offset + 1]]);
+        bytes[index + flag_offset..index + flag_offset + 2]
+            .copy_from_slice(&(flags & !0x0800).to_le_bytes());
+        patched = true;
+        break;
+    }
+
+    assert!(patched, "ZIP entry header should be patched");
 }
 
 fn patch_zip_central_external_attrs(bytes: &mut [u8], path: &str, external_attrs: u32) {
@@ -1499,6 +1603,95 @@ async fn test_personal_archive_stream_preserves_empty_folders() {
 }
 
 #[actix_web::test]
+async fn test_personal_archive_stream_marks_chinese_names_as_utf8() {
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    let mail_sender = state.mail_sender.clone();
+    let state = web::Data::new(state);
+    let app = test::init_service(
+        App::new()
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::clone(&state))
+            .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db)),
+    )
+    .await;
+
+    register_user!(
+        app,
+        state.writer_db().clone(),
+        mail_sender,
+        "utf8zip",
+        "utf8zip@example.com",
+        "password123"
+    );
+    let token = login_user!(app, "utf8zip", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "资料", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = multipart_request!(
+        &format!("/api/v1/files/upload?folder_id={folder_id}"),
+        &token,
+        "说明.txt",
+        "中文 archive payload",
+    );
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/archive-download")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "file_ids": [],
+            "folder_ids": [folder_id],
+            "archive_name": "中文导出"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let download_path = read_archive_download_path(&body);
+
+    let req = test::TestRequest::get()
+        .uri(&download_path)
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = assert_response_status(
+        test::call_service(&app, req).await,
+        actix_web::http::StatusCode::OK,
+    )
+    .await;
+    let zip_bytes = test::read_body(resp).await;
+    let names = zip_entry_names(&zip_bytes);
+    assert_eq!(names, vec!["资料/", "资料/说明.txt"]);
+    assert_eq!(
+        read_zip_entry_text(&zip_bytes, "资料/说明.txt"),
+        "中文 archive payload"
+    );
+
+    let flags = zip_central_entry_flags(&zip_bytes);
+    assert_eq!(flags.len(), 2);
+    for (name, flag) in flags {
+        assert_ne!(
+            flag & 0x0800,
+            0,
+            "ZIP entry {name} should set the UTF-8 filename flag"
+        );
+    }
+}
+
+#[actix_web::test]
 async fn test_team_archive_stream_is_scoped_to_team_routes() {
     let state = common::setup().await;
     let db = state.writer_db().clone();
@@ -2383,6 +2576,92 @@ async fn test_archive_extract_task_publishes_single_storage_change_event() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["storage_used"], archive_size + 11);
+}
+
+#[actix_web::test]
+async fn test_archive_extract_decodes_gb18030_names_by_default() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/new")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "legacy-gbk.zip", "folder_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let archive_file_id = body["data"]["id"].as_i64().unwrap();
+
+    let archive_bytes = create_stored_zip_bytes_with_raw_name(
+        "aaaaaaaaa.txt",
+        b"\xb2\xe2\xca\xd4/\xce\xc4\xbc\xfe.txt",
+        b"legacy payload",
+    );
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/{archive_file_id}/content"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(archive_bytes)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/{archive_file_id}/extract"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let task_id = body["data"]["id"].as_i64().unwrap();
+
+    let stats = aster_drive::services::task_service::drain(&state)
+        .await
+        .expect("task drain should succeed");
+    assert_eq!(stats.succeeded, 1);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/tasks/{task_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let extracted_root_id = body["data"]["result"]["target_folder_id"].as_i64().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{extracted_root_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let folders = body["data"]["folders"].as_array().unwrap();
+    let decoded_folder = folders
+        .iter()
+        .find(|folder| folder["name"] == "测试")
+        .expect("decoded Chinese folder should exist");
+    let decoded_folder_id = decoded_folder["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{decoded_folder_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["name"], "文件.txt");
 }
 
 #[actix_web::test]

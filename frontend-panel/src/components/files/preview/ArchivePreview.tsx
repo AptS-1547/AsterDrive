@@ -16,6 +16,13 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import {
 	Table,
 	TableBody,
 	TableCell,
@@ -26,7 +33,10 @@ import {
 import { formatBytes, formatDateTime, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ApiError, ApiPendingError, isRequestCanceled } from "@/services/http";
-import type { ArchivePreviewManifest } from "@/types/api";
+import type {
+	ArchiveFilenameEncoding,
+	ArchivePreviewManifest,
+} from "@/types/api";
 import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
@@ -35,6 +45,7 @@ import { PreviewUnavailable } from "./PreviewUnavailable";
 interface ArchivePreviewProps {
 	loadManifest?: (options?: {
 		signal?: AbortSignal;
+		filenameEncoding?: ArchiveFilenameEncoding;
 	}) => Promise<ArchivePreviewManifest>;
 }
 
@@ -73,6 +84,24 @@ const archivePreviewRejectedSubcodes = new Set<string>([
 	ApiSubcode.ArchivePreviewManifestTooLarge,
 	ApiSubcode.ArchivePreviewSourceSizeMismatch,
 ]);
+
+const archiveFilenameEncodingOptions: ArchiveFilenameEncoding[] = [
+	"auto",
+	"utf8",
+	"gb18030",
+	"cp437",
+];
+
+function isArchiveFilenameEncoding(
+	value: string | null,
+): value is ArchiveFilenameEncoding {
+	return (
+		value === "auto" ||
+		value === "utf8" ||
+		value === "gb18030" ||
+		value === "cp437"
+	);
+}
 
 function classifyArchivePreviewError(error: unknown): ArchivePreviewErrorKind {
 	if (!(error instanceof ApiError)) {
@@ -336,6 +365,8 @@ export function ArchivePreview({ loadManifest }: ArchivePreviewProps) {
 	const [pending, setPending] = useState(false);
 	const [error, setError] = useState<ArchivePreviewErrorKind | null>(null);
 	const [reloadKey, setReloadKey] = useState(0);
+	const [filenameEncoding, setFilenameEncoding] =
+		useState<ArchiveFilenameEncoding>("auto");
 
 	useEffect(() => {
 		void reloadKey;
@@ -351,7 +382,7 @@ export function ArchivePreview({ loadManifest }: ArchivePreviewProps) {
 		const controller = new AbortController();
 		setLoading(true);
 		setError(null);
-		loadManifest({ signal: controller.signal })
+		loadManifest({ signal: controller.signal, filenameEncoding })
 			.then((nextManifest) => {
 				if (!cancelled) {
 					setManifest(nextManifest);
@@ -387,7 +418,7 @@ export function ArchivePreview({ loadManifest }: ArchivePreviewProps) {
 			}
 			controller.abort();
 		};
-	}, [loadManifest, reloadKey]);
+	}, [filenameEncoding, loadManifest, reloadKey]);
 
 	const directoryEntries = useMemo(() => {
 		if (!manifest) return new Map<string, ArchiveDirectoryEntry>();
@@ -436,6 +467,15 @@ export function ArchivePreview({ loadManifest }: ArchivePreviewProps) {
 	const openArchiveDirectory = (path: string) => {
 		setCurrentFolder(path);
 		setQuery("");
+	};
+	const handleFilenameEncodingChange = (value: string | null) => {
+		if (!isArchiveFilenameEncoding(value)) return;
+		setFilenameEncoding(value);
+		setManifest(null);
+		setPending(false);
+		setQuery("");
+		setCurrentFolder(null);
+		setReloadKey((current) => current + 1);
 	};
 
 	if (!loadManifest) {
@@ -498,6 +538,29 @@ export function ArchivePreview({ loadManifest }: ArchivePreviewProps) {
 							<Icon name="X" className="h-3.5 w-3.5" />
 						</Button>
 					) : null}
+				</div>
+				<div className="flex items-center gap-2">
+					<span className="text-muted-foreground text-xs">
+						{t("archive_preview_filename_encoding")}
+					</span>
+					<Select
+						value={filenameEncoding}
+						onValueChange={handleFilenameEncodingChange}
+					>
+						<SelectTrigger
+							aria-label={t("archive_preview_filename_encoding")}
+							className="h-7 w-[7.75rem] border-border/60 bg-background/70 text-xs shadow-none dark:bg-background/25"
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{archiveFilenameEncodingOptions.map((value) => (
+								<SelectItem key={value} value={value}>
+									{t(`archive_preview_encoding_${value}`)}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				</div>
 				<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
 					<ArchiveSummaryItem

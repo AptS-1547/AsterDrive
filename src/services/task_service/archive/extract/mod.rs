@@ -64,6 +64,7 @@ pub(crate) async fn create_archive_extract_task_in_scope(
             params.output_folder_name.as_ref(),
             &source_file.name,
         )?,
+        filename_encoding: params.filename_encoding,
     };
     let display_name = format!("Extract {}", source_file.name);
     let task = create_task_record(
@@ -152,6 +153,7 @@ pub(super) async fn process_archive_extract_task(
             source_archive_size: source_file.size,
             max_staging_bytes,
             limits: extract_limits,
+            filename_encoding: payload.filename_encoding,
         };
         let (staged, mut steps) = tokio::task::spawn_blocking(move || {
             let mut steps = steps_for_worker;

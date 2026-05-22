@@ -4,6 +4,7 @@ import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
+	ArchiveFilenameEncoding,
 	ArchivePreviewManifest,
 	DirectLinkTokenInfo,
 	ErrorCode,
@@ -22,6 +23,23 @@ import { isApiSubcode } from "@/types/api-helpers";
 import { ApiError, type ApiRequestConfig, api } from "./http";
 
 type ServiceRequestOptions = Pick<ApiRequestConfig, "signal">;
+type ArchivePreviewRequestOptions = ServiceRequestOptions & {
+	filenameEncoding?: ArchiveFilenameEncoding;
+};
+
+function archivePreviewRequestConfig(
+	options?: ArchivePreviewRequestOptions,
+): ApiRequestConfig | undefined {
+	if (!options?.signal && !options?.filenameEncoding) {
+		return undefined;
+	}
+	return {
+		...(options.signal ? { signal: options.signal } : {}),
+		...(options.filenameEncoding
+			? { params: { filename_encoding: options.filenameEncoding } }
+			: {}),
+	};
+}
 
 function encodeFileName(fileName: string) {
 	return encodeURIComponent(fileName);
@@ -76,10 +94,10 @@ export function createFileService(workspace: Workspace) {
 				buildWorkspacePath(workspace, `/files/${id}/direct-link`),
 			),
 
-		getArchivePreview: (id: number, options?: ServiceRequestOptions) =>
+		getArchivePreview: (id: number, options?: ArchivePreviewRequestOptions) =>
 			api.get<ArchivePreviewManifest>(
 				buildWorkspacePath(workspace, `/files/${id}/archive-preview`),
-				options,
+				archivePreviewRequestConfig(options),
 			),
 
 		getMediaMetadata: (id: number, options?: ServiceRequestOptions) =>
@@ -164,6 +182,7 @@ export function createFileService(workspace: Workspace) {
 			id: number,
 			targetFolderId?: number | null,
 			outputFolderName?: string,
+			filenameEncoding?: ArchiveFilenameEncoding,
 		) =>
 			api.post<TaskInfo>(
 				buildWorkspacePath(workspace, `/files/${id}/extract`),
@@ -174,6 +193,9 @@ export function createFileService(workspace: Workspace) {
 					...(outputFolderName === undefined
 						? {}
 						: { output_folder_name: outputFolderName }),
+					...(filenameEncoding === undefined
+						? {}
+						: { filename_encoding: filenameEncoding }),
 				},
 			),
 

@@ -6,7 +6,7 @@ use crate::entities::{background_task, file, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{archive_preview_service, workspace_storage_service::WorkspaceStorageScope};
-use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
+use crate::types::{ArchiveFilenameEncoding, BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::super::steps::{
     TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_PERSIST_MANIFEST, TASK_STEP_SCAN_ARCHIVE,
@@ -25,6 +25,7 @@ pub(crate) async fn ensure_archive_preview_task(
     source_file: &file::Model,
     blob: &file_blob::Model,
     limit_signature: &str,
+    filename_encoding: ArchiveFilenameEncoding,
 ) -> Result<()> {
     let display_name =
         archive_preview_task_display_name(source_file.id, blob.id, &blob.hash, limit_signature);
@@ -58,6 +59,7 @@ pub(crate) async fn ensure_archive_preview_task(
         source_blob_id: blob.id,
         source_hash: blob.hash.clone(),
         limit_signature: limit_signature.to_string(),
+        filename_encoding,
     };
     let scope = archive_preview_task_scope(source_file)?;
     create_task_record(
@@ -126,6 +128,7 @@ pub(super) async fn process_archive_preview_task(
         archive_preview_service::ensure_archive_preview_source_supported(&source_file)?;
         let limits = archive_preview_service::ArchivePreviewLimits::from_runtime_config(
             &state.runtime_config,
+            payload.filename_encoding,
         )?;
         if limits.signature != payload.limit_signature {
             return Err(archive_preview_service::archive_preview_validation_error(

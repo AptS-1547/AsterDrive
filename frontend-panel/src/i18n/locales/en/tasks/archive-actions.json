@@ -9,5 +9,10 @@
 	"archive_extract_dialog_title": "Output folder name",
 	"archive_extract_name_placeholder": "Enter the extracted folder name",
 	"archive_extract_dialog_hint": "You can change the destination folder name here.",
-	"archive_extract_submit": "Create extract task"
+	"archive_extract_submit": "Create extract task",
+	"archive_filename_encoding_label": "Filename encoding",
+	"archive_filename_encoding_auto": "Auto",
+	"archive_filename_encoding_utf8": "UTF-8",
+	"archive_filename_encoding_gb18030": "GB18030",
+	"archive_filename_encoding_cp437": "CP437"
 }

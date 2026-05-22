@@ -25,7 +25,7 @@ use crate::services::archive_service::zip_scan::{
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::services::{share_service, task_service, workspace_storage_service};
 use crate::storage::StorageDriver;
-use crate::types::EntityType;
+use crate::types::{ArchiveFilenameEncoding, EntityType};
 
 const CACHE_SCHEMA_VERSION: u32 = 1;
 const FORMAT_ZIP: &str = "zip";
@@ -98,6 +98,8 @@ struct CachedArchivePreviewManifest {
     source_blob_id: i64,
     source_hash: String,
     limit_signature: String,
+    #[serde(default)]
+    filename_encoding: ArchiveFilenameEncoding,
     manifest: ArchivePreviewManifest,
 }
 
@@ -107,6 +109,7 @@ struct CachedArchivePreviewManifestRef<'a> {
     source_blob_id: i64,
     source_hash: &'a str,
     limit_signature: &'a str,
+    filename_encoding: ArchiveFilenameEncoding,
     manifest: &'a ArchivePreviewManifest,
 }
 
@@ -117,6 +120,7 @@ pub(crate) struct ArchivePreviewLimits {
     pub(crate) max_duration_secs: u64,
     pub(crate) scan_limits: ZipScanLimits,
     pub(crate) signature: String,
+    pub(crate) filename_encoding: ArchiveFilenameEncoding,
 }
 
 #[derive(Debug, Clone)]
@@ -129,33 +133,36 @@ pub(crate) async fn preview_file_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
+    filename_encoding: ArchiveFilenameEncoding,
 ) -> Result<ArchivePreviewManifestLookup> {
     ensure_user_preview_enabled(state)?;
     workspace_storage_service::require_scope_access(state, scope).await?;
     let source_file =
         workspace_storage_service::verify_file_access_for_read(state, scope, file_id).await?;
     workspace_storage_service::ensure_active_file_scope(&source_file, scope)?;
-    preview_verified_file(state, &source_file).await
+    preview_verified_file(state, &source_file, filename_encoding).await
 }
 
 pub(crate) async fn preview_shared_file(
     state: &PrimaryAppState,
     token: &str,
+    filename_encoding: ArchiveFilenameEncoding,
 ) -> Result<ArchivePreviewManifestLookup> {
     ensure_share_preview_enabled(state)?;
     let (_, source_file) = share_service::load_preview_shared_file(state, token).await?;
-    preview_verified_file(state, &source_file).await
+    preview_verified_file(state, &source_file, filename_encoding).await
 }
 
 pub(crate) async fn preview_shared_folder_file(
     state: &PrimaryAppState,
     token: &str,
     file_id: i64,
+    filename_encoding: ArchiveFilenameEncoding,
 ) -> Result<ArchivePreviewManifestLookup> {
     ensure_share_preview_enabled(state)?;
     let (_, source_file) =
         share_service::load_preview_shared_folder_file(state, token, file_id).await?;
-    preview_verified_file(state, &source_file).await
+    preview_verified_file(state, &source_file, filename_encoding).await
 }
 
 fn ensure_user_preview_enabled(state: &PrimaryAppState) -> Result<()> {
@@ -193,14 +200,16 @@ fn ensure_preview_master_enabled(state: &PrimaryAppState) -> Result<()> {
 async fn preview_verified_file(
     state: &PrimaryAppState,
     source_file: &file::Model,
+    filename_encoding: ArchiveFilenameEncoding,
 ) -> Result<ArchivePreviewManifestLookup> {
     ensure_archive_preview_source_supported(source_file)?;
     let blob = file_repo::find_blob_by_id(state.reader_db(), source_file.blob_id).await?;
-    if let Some(cached) = load_cached_manifest(state, source_file, &blob).await? {
+    let limits =
+        ArchivePreviewLimits::from_runtime_config(&state.runtime_config, filename_encoding)?;
+    if let Some(cached) = load_cached_manifest(state, source_file, &blob, &limits).await? {
         return Ok(ArchivePreviewManifestLookup::Ready(cached));
     }
 
-    let limits = ArchivePreviewLimits::from_runtime_config(&state.runtime_config)?;
     if source_file.size > limits.max_source_bytes {
         return Err(archive_preview_validation_error(
             ApiSubcode::ArchivePreviewSourceTooLarge,
@@ -211,13 +220,21 @@ async fn preview_verified_file(
         ));
     }
 
-    task_service::ensure_archive_preview_task(state, source_file, &blob, &limits.signature).await?;
+    task_service::ensure_archive_preview_task(
+        state,
+        source_file,
+        &blob,
+        &limits.signature,
+        filename_encoding,
+    )
+    .await?;
     Ok(ArchivePreviewManifestLookup::Pending)
 }
 
 impl ArchivePreviewLimits {
     pub(crate) fn from_runtime_config(
         runtime_config: &crate::config::RuntimeConfig,
+        filename_encoding: ArchiveFilenameEncoding,
     ) -> Result<Self> {
         let preview_max_entries = operations::archive_preview_max_entries(runtime_config);
         let scan_limits = ZipScanLimits {
@@ -247,7 +264,7 @@ impl ArchivePreviewLimits {
             configured_max_manifest_bytes.min(ARCHIVE_PREVIEW_MAX_CACHEABLE_MANIFEST_BYTES);
         let max_source_bytes = operations::archive_preview_max_source_bytes(runtime_config);
         let signature = format!(
-            "source={};manifest={};entries={};files={};dirs={};uncompressed={};depth={};path={};ratio={};entry_ratio={}",
+            "source={};manifest={};entries={};files={};dirs={};uncompressed={};depth={};path={};ratio={};entry_ratio={};filename_encoding={}",
             max_source_bytes,
             max_manifest_bytes,
             scan_limits.max_entries,
@@ -257,7 +274,8 @@ impl ArchivePreviewLimits {
             scan_limits.max_depth,
             scan_limits.max_path_bytes,
             scan_limits.max_compression_ratio,
-            scan_limits.max_entry_compression_ratio
+            scan_limits.max_entry_compression_ratio,
+            filename_encoding.as_str()
         );
 
         Ok(Self {
@@ -266,6 +284,7 @@ impl ArchivePreviewLimits {
             max_duration_secs: operations::archive_preview_max_duration_secs(runtime_config),
             scan_limits,
             signature,
+            filename_encoding,
         })
     }
 }
@@ -274,6 +293,7 @@ async fn load_cached_manifest(
     state: &PrimaryAppState,
     source_file: &file::Model,
     blob: &file_blob::Model,
+    limits: &ArchivePreviewLimits,
 ) -> Result<Option<ArchivePreviewManifest>> {
     let Some(prop) = property_repo::find_by_key(
         state.reader_db(),
@@ -305,6 +325,7 @@ async fn load_cached_manifest(
     if cached.schema_version == CACHE_SCHEMA_VERSION
         && cached.source_blob_id == blob.id
         && cached.source_hash == blob.hash
+        && cached.filename_encoding == limits.filename_encoding
         && cached.manifest.schema_version == CACHE_SCHEMA_VERSION
         && cached.manifest.format == FORMAT_ZIP
     {
@@ -323,7 +344,13 @@ pub(crate) async fn store_cached_manifest(
     limits: &ArchivePreviewLimits,
     manifest: &ArchivePreviewManifest,
 ) -> Result<()> {
-    let serialized = serialize_cached_manifest(blob.id, &blob.hash, &limits.signature, manifest)?;
+    let serialized = serialize_cached_manifest(
+        blob.id,
+        &blob.hash,
+        &limits.signature,
+        limits.filename_encoding,
+        manifest,
+    )?;
     if serialized.len() > ENTITY_PROPERTY_VALUE_MAX_BYTES {
         return Err(archive_preview_validation_error(
             ApiSubcode::ArchivePreviewManifestTooLarge,
@@ -434,6 +461,7 @@ where
     F: FnOnce() -> Result<R> + Send + 'static,
 {
     let scan_limits = limits.scan_limits;
+    let filename_encoding = limits.filename_encoding;
     let deadline =
         Instant::now().checked_add(std::time::Duration::from_secs(limits.max_duration_secs));
     let generated_at = Utc::now().to_rfc3339();
@@ -442,8 +470,14 @@ where
     let manifest = tokio::task::spawn_blocking(move || {
         let reader = make_reader()?;
         let mut archive = zip::ZipArchive::new(reader).map_err(map_archive_open_error)?;
-        let scanned = scan_zip_archive(&mut archive, scan_limits, deadline, |_| Ok(()))
-            .map_err(map_archive_preview_scan_error)?;
+        let scanned = scan_zip_archive(
+            &mut archive,
+            scan_limits,
+            deadline,
+            filename_encoding,
+            |_| Ok(()),
+        )
+        .map_err(map_archive_preview_scan_error)?;
         let entries = scanned
             .entries
             .into_iter()
@@ -494,6 +528,7 @@ where
         source_blob_id,
         &source_hash,
         &limits.signature,
+        limits.filename_encoding,
         manifest,
         limits.max_manifest_bytes,
     )
@@ -504,6 +539,7 @@ fn fit_manifest_to_limit(
     source_blob_id: i64,
     source_hash: &str,
     limit_signature: &str,
+    filename_encoding: ArchiveFilenameEncoding,
     manifest: ArchivePreviewManifest,
     max_manifest_bytes: usize,
 ) -> Result<ArchivePreviewManifest> {
@@ -511,6 +547,7 @@ fn fit_manifest_to_limit(
         source_blob_id,
         source_hash,
         limit_signature,
+        filename_encoding,
         &manifest,
         max_manifest_bytes,
     )? {
@@ -533,6 +570,7 @@ fn fit_manifest_to_limit(
             source_blob_id,
             source_hash,
             limit_signature,
+            filename_encoding,
             &candidate,
             max_manifest_bytes,
         )? {
@@ -562,16 +600,20 @@ fn manifest_fits_limits(
     source_blob_id: i64,
     source_hash: &str,
     limit_signature: &str,
+    filename_encoding: ArchiveFilenameEncoding,
     manifest: &ArchivePreviewManifest,
     max_manifest_bytes: usize,
 ) -> Result<bool> {
     if serialized_manifest_len(manifest)? > max_manifest_bytes {
         return Ok(false);
     }
-    Ok(
-        serialized_cached_manifest_len(source_blob_id, source_hash, limit_signature, manifest)?
-            <= ENTITY_PROPERTY_VALUE_MAX_BYTES,
-    )
+    Ok(serialized_cached_manifest_len(
+        source_blob_id,
+        source_hash,
+        limit_signature,
+        filename_encoding,
+        manifest,
+    )? <= ENTITY_PROPERTY_VALUE_MAX_BYTES)
 }
 
 fn serialized_manifest_len(manifest: &ArchivePreviewManifest) -> Result<usize> {
@@ -587,6 +629,7 @@ fn serialized_cached_manifest_len(
     source_blob_id: i64,
     source_hash: &str,
     limit_signature: &str,
+    filename_encoding: ArchiveFilenameEncoding,
     manifest: &ArchivePreviewManifest,
 ) -> Result<usize> {
     serde_json::to_vec(&CachedArchivePreviewManifestRef {
@@ -594,6 +637,7 @@ fn serialized_cached_manifest_len(
         source_blob_id,
         source_hash,
         limit_signature,
+        filename_encoding,
         manifest,
     })
     .map(|bytes| bytes.len())
@@ -607,6 +651,7 @@ fn serialize_cached_manifest(
     source_blob_id: i64,
     source_hash: &str,
     limit_signature: &str,
+    filename_encoding: ArchiveFilenameEncoding,
     manifest: &ArchivePreviewManifest,
 ) -> Result<String> {
     serde_json::to_string(&CachedArchivePreviewManifestRef {
@@ -614,6 +659,7 @@ fn serialize_cached_manifest(
         source_blob_id,
         source_hash,
         limit_signature,
+        filename_encoding,
         manifest,
     })
     .map_aster_err_ctx(
@@ -933,6 +979,7 @@ mod tests {
                 max_entry_compression_ratio: 100,
             },
             signature: "test".to_string(),
+            filename_encoding: ArchiveFilenameEncoding::Auto,
         }
     }
 

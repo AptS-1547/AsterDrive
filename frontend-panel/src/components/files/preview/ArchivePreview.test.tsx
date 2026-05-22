@@ -25,6 +25,47 @@ vi.mock("react-i18next", () => ({
 	}),
 }));
 
+vi.mock("@/components/ui/select", () => ({
+	Select: ({
+		children,
+		onValueChange,
+		value,
+	}: {
+		children: React.ReactNode;
+		onValueChange?: (value: string) => void;
+		value?: string;
+	}) => (
+		<div data-value={value}>
+			{children}
+			<button type="button" onClick={() => onValueChange?.("gb18030")}>
+				select-gb18030
+			</button>
+		</div>
+	),
+	SelectContent: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	SelectItem: ({
+		children,
+		value,
+	}: {
+		children: React.ReactNode;
+		value: string;
+	}) => <div data-value={value}>{children}</div>,
+	SelectTrigger: ({
+		"aria-label": ariaLabel,
+		children,
+	}: {
+		"aria-label"?: string;
+		children: React.ReactNode;
+	}) => (
+		<button type="button" aria-label={ariaLabel}>
+			{children}
+		</button>
+	),
+	SelectValue: () => <span>select-value</span>,
+}));
+
 const manifest: ArchivePreviewManifest = {
 	schema_version: 1,
 	format: "zip",
@@ -80,6 +121,9 @@ describe("ArchivePreview", () => {
 		render(<ArchivePreview loadManifest={loadManifest} />);
 
 		expect(await screen.findByText("docs")).toBeInTheDocument();
+		expect(loadManifest).toHaveBeenCalledWith(
+			expect.objectContaining({ filenameEncoding: "auto" }),
+		);
 		expect(screen.getByText("archive_preview_truncated")).toBeInTheDocument();
 		const itemSummary = screen.getByText("archive_preview_items").parentElement;
 		expect(itemSummary).not.toBeNull();
@@ -211,7 +255,12 @@ describe("ArchivePreview", () => {
 
 	it("retries loading after a generic failure", async () => {
 		const loadManifest = vi
-			.fn<() => Promise<ArchivePreviewManifest>>()
+			.fn<
+				(options?: {
+					signal?: AbortSignal;
+					filenameEncoding?: "auto" | "utf8" | "gb18030" | "cp437";
+				}) => Promise<ArchivePreviewManifest>
+			>()
 			.mockRejectedValueOnce(new Error("boom"))
 			.mockResolvedValueOnce(manifest);
 		render(<ArchivePreview loadManifest={loadManifest} />);
@@ -227,7 +276,12 @@ describe("ArchivePreview", () => {
 	it("keeps loading and polls while archive preview is being generated", async () => {
 		vi.useFakeTimers();
 		const loadManifest = vi
-			.fn<() => Promise<ArchivePreviewManifest>>()
+			.fn<
+				(options?: {
+					signal?: AbortSignal;
+					filenameEncoding?: "auto" | "utf8" | "gb18030" | "cp437";
+				}) => Promise<ArchivePreviewManifest>
+			>()
 			.mockRejectedValueOnce(
 				new ApiPendingError("Request is still processing", 1),
 			)
@@ -257,10 +311,30 @@ describe("ArchivePreview", () => {
 		}
 	});
 
+	it("reloads the manifest when filename encoding changes", async () => {
+		const loadManifest = vi.fn(async () => manifest);
+		render(<ArchivePreview loadManifest={loadManifest} />);
+
+		expect(await screen.findByText("docs")).toBeInTheDocument();
+		fireEvent.click(screen.getByText("select-gb18030"));
+
+		await waitFor(() => {
+			expect(loadManifest).toHaveBeenCalledWith(
+				expect.objectContaining({ filenameEncoding: "gb18030" }),
+			);
+		});
+		expect(loadManifest).toHaveBeenCalledTimes(2);
+	});
+
 	it("passes an abort signal to the loader and aborts it on unmount", async () => {
 		let capturedSignal: AbortSignal | undefined;
 		const loadManifest = vi.fn(
-			({ signal }: { signal?: AbortSignal } = {}) =>
+			({
+				signal,
+			}: {
+				signal?: AbortSignal;
+				filenameEncoding?: "auto" | "utf8" | "gb18030" | "cp437";
+			} = {}) =>
 				new Promise<ArchivePreviewManifest>(() => {
 					capturedSignal = signal;
 				}),

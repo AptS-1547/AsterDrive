@@ -2,14 +2,16 @@
 
 use std::collections::HashSet;
 use std::io::{Read, Seek};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use encoding_rs::GB18030;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::types::ArchiveFilenameEncoding;
 
 const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
 const UNIX_REGULAR_FILE_MODE: u32 = 0o100000;
@@ -67,6 +69,7 @@ pub(crate) fn scan_zip_archive<R, F>(
     archive: &mut zip::ZipArchive<R>,
     limits: ZipScanLimits,
     deadline: Option<Instant>,
+    filename_encoding: ArchiveFilenameEncoding,
     mut ensure_file_size_allowed: F,
 ) -> Result<ZipScanResult>
 where
@@ -92,14 +95,9 @@ where
     for index in 0..archive.len() {
         ensure_zip_scan_deadline(deadline)?;
         let entry = archive.by_index_raw(index).map_err(map_zip_entry_error)?;
-        validate_zip_entry_supported(&entry)?;
-        let enclosed_path = entry.enclosed_name().ok_or_else(|| {
-            AsterError::validation_error(format!(
-                "archive entry '{}' contains unsafe path",
-                entry.name()
-            ))
-        })?;
-        let relative_path = normalize_archive_entry_path(&enclosed_path)?;
+        let decoded_name = decode_zip_entry_name(&entry, filename_encoding)?;
+        validate_zip_entry_supported(&entry, &decoded_name)?;
+        let relative_path = normalize_archive_entry_path(&decoded_name)?;
         validate_archive_entry_path_limits(&relative_path, limits)?;
         ensure_archive_entry_path_not_conflicting(
             &relative_path,
@@ -254,17 +252,20 @@ fn format_zip_datetime(datetime: zip::DateTime) -> Option<String> {
     })
 }
 
-fn validate_zip_entry_supported<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> Result<()> {
+fn validate_zip_entry_supported<R: Read>(
+    entry: &zip::read::ZipFile<'_, R>,
+    entry_name: &str,
+) -> Result<()> {
     if entry.encrypted() {
         return Err(AsterError::validation_error(format!(
             "archive entry '{}' is encrypted; encrypted ZIP entries are not supported",
-            entry.name()
+            entry_name
         )));
     }
     if entry.is_symlink() {
         return Err(AsterError::validation_error(format!(
             "archive entry '{}' is a symbolic link; symbolic links are not supported",
-            entry.name()
+            entry_name
         )));
     }
     if let Some(mode) = entry.unix_mode() {
@@ -273,23 +274,84 @@ fn validate_zip_entry_supported<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> R
         {
             return Err(AsterError::validation_error(format!(
                 "archive entry '{}' is a special file; only regular files and directories are supported",
-                entry.name()
+                entry_name
             )));
         }
     }
     if !entry.is_file() && !entry.is_dir() {
         return Err(AsterError::validation_error(format!(
             "archive entry '{}' is not a regular file or directory",
-            entry.name()
+            entry_name
         )));
     }
     match entry.compression() {
         zip::CompressionMethod::Stored | zip::CompressionMethod::Deflated => Ok(()),
         method => Err(AsterError::validation_error(format!(
             "archive entry '{}' uses unsupported compression method {method:?}",
-            entry.name()
+            entry_name
         ))),
     }
+}
+
+fn decode_zip_entry_name<R: Read>(
+    entry: &zip::read::ZipFile<'_, R>,
+    filename_encoding: ArchiveFilenameEncoding,
+) -> Result<String> {
+    let raw = entry.name_raw();
+    match filename_encoding {
+        ArchiveFilenameEncoding::Auto => decode_zip_entry_name_auto(entry),
+        ArchiveFilenameEncoding::Utf8 => std::str::from_utf8(raw)
+            .map(|value| value.to_string())
+            .map_err(|_| {
+                AsterError::validation_error(format!(
+                    "archive entry '{}' filename is not valid UTF-8",
+                    entry.name()
+                ))
+            }),
+        ArchiveFilenameEncoding::Gb18030 => decode_gb18030(raw).ok_or_else(|| {
+            AsterError::validation_error(format!(
+                "archive entry '{}' filename is not valid GB18030",
+                entry.name()
+            ))
+        }),
+        ArchiveFilenameEncoding::Cp437 => Ok(entry.name().to_string()),
+    }
+}
+
+fn decode_zip_entry_name_auto<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> Result<String> {
+    let raw = entry.name_raw();
+    if let Ok(name) = std::str::from_utf8(raw) {
+        return Ok(name.to_string());
+    }
+
+    if raw.iter().any(|byte| *byte >= 0x80)
+        && let Some(name) = decode_gb18030(raw)
+        && contains_gb18030_cjk_signal(&name)
+    {
+        return Ok(name);
+    }
+
+    Ok(entry.name().to_string())
+}
+
+fn decode_gb18030(raw: &[u8]) -> Option<String> {
+    GB18030
+        .decode_without_bom_handling_and_without_replacement(raw)
+        .map(|value| value.into_owned())
+}
+
+fn contains_gb18030_cjk_signal(value: &str) -> bool {
+    value.chars().any(|ch| {
+        matches!(
+            ch,
+            '\u{2e80}'..='\u{2eff}'
+                | '\u{3000}'..='\u{303f}'
+                | '\u{3400}'..='\u{4dbf}'
+                | '\u{4e00}'..='\u{9fff}'
+                | '\u{f900}'..='\u{faff}'
+                | '\u{ff00}'..='\u{ffef}'
+        )
+    })
 }
 
 fn validate_archive_entry_path_limits(relative_path: &Path, limits: ZipScanLimits) -> Result<()> {
@@ -388,7 +450,7 @@ fn insert_directory_path_with_limit(
 ) -> Result<()> {
     let mut current = PathBuf::new();
     for component in path.components() {
-        if let Component::Normal(name) = component {
+        if let std::path::Component::Normal(name) = component {
             current.push(name);
             if directory_paths.insert(current.clone()) {
                 let count = crate::utils::numbers::usize_to_u64(
@@ -468,22 +530,29 @@ fn compression_ratio_exceeds(
     Ok(u128::from(uncompressed_size) > allowed)
 }
 
-fn normalize_archive_entry_path(path: &Path) -> Result<PathBuf> {
+fn normalize_archive_entry_path(path: &str) -> Result<PathBuf> {
+    if path.contains('\0') || path.starts_with('/') || path.starts_with('\\') {
+        return Err(AsterError::validation_error(format!(
+            "archive entry '{}' contains unsafe path",
+            path
+        )));
+    }
+
     let mut normalized = PathBuf::new();
-    for component in path.components() {
+    for component in path.split(['/', '\\']) {
         match component {
-            Component::Normal(name) => {
-                let name = name.to_str().ok_or_else(|| {
-                    AsterError::validation_error("archive entry name must be valid UTF-8")
-                })?;
+            "" | "." => {}
+            ".." => {
+                if !normalized.pop() {
+                    return Err(AsterError::validation_error(format!(
+                        "archive entry '{}' contains unsafe path",
+                        path
+                    )));
+                }
+            }
+            name => {
                 let name = crate::utils::normalize_validate_name(name)?;
                 normalized.push(name);
-            }
-            _ => {
-                return Err(AsterError::validation_error(format!(
-                    "archive entry '{}' contains invalid path component",
-                    path.display()
-                )));
             }
         }
     }
@@ -538,15 +607,107 @@ mod tests {
         zip.finish().expect("zip writer should finish").into_inner()
     }
 
+    fn create_stored_zip_bytes_with_raw_name(
+        decoded_name: &str,
+        raw_name: &[u8],
+        content: &[u8],
+    ) -> Vec<u8> {
+        assert_eq!(
+            decoded_name.len(),
+            raw_name.len(),
+            "test helper patches names in place and requires equal byte lengths"
+        );
+        let mut bytes = create_stored_zip_bytes(&[(decoded_name, Some(content))]);
+        patch_zip_entry_raw_name(&mut bytes, decoded_name.as_bytes(), raw_name);
+        bytes
+    }
+
+    fn patch_zip_entry_raw_name(bytes: &mut [u8], placeholder_name: &[u8], raw_name: &[u8]) {
+        patch_zip_entry_raw_name_in_header(
+            bytes,
+            &[0x50, 0x4b, 0x03, 0x04],
+            6,
+            26,
+            30,
+            placeholder_name,
+            raw_name,
+        );
+        patch_zip_entry_raw_name_in_header(
+            bytes,
+            &[0x50, 0x4b, 0x01, 0x02],
+            8,
+            28,
+            46,
+            placeholder_name,
+            raw_name,
+        );
+    }
+
+    fn patch_zip_entry_raw_name_in_header(
+        bytes: &mut [u8],
+        signature: &[u8; 4],
+        flag_offset: usize,
+        name_len_offset: usize,
+        name_offset: usize,
+        placeholder_name: &[u8],
+        raw_name: &[u8],
+    ) {
+        let mut patched = false;
+        for index in 0..bytes.len().saturating_sub(signature.len()) {
+            if !bytes[index..].starts_with(signature) || index + name_offset > bytes.len() {
+                continue;
+            }
+            let name_len = u16::from_le_bytes([
+                bytes[index + name_len_offset],
+                bytes[index + name_len_offset + 1],
+            ]) as usize;
+            let name_start = index + name_offset;
+            let name_end = name_start + name_len;
+            if name_end > bytes.len() || &bytes[name_start..name_end] != placeholder_name {
+                continue;
+            }
+
+            assert_eq!(name_len, raw_name.len());
+            bytes[name_start..name_end].copy_from_slice(raw_name);
+            let flags =
+                u16::from_le_bytes([bytes[index + flag_offset], bytes[index + flag_offset + 1]]);
+            bytes[index + flag_offset..index + flag_offset + 2]
+                .copy_from_slice(&(flags & !0x0800).to_le_bytes());
+            patched = true;
+            break;
+        }
+
+        assert!(patched, "zip entry header should be patched");
+    }
+
+    fn scan_entries_with_encoding(
+        bytes: Vec<u8>,
+        filename_encoding: ArchiveFilenameEncoding,
+    ) -> Result<Vec<ZipScanEntry>> {
+        let cursor = Cursor::new(bytes);
+        let mut archive = zip::ZipArchive::new(cursor).expect("zip should open");
+
+        scan_zip_archive(&mut archive, scan_limits(), None, filename_encoding, |_| {
+            Ok(())
+        })
+        .map(|result| result.entries)
+    }
+
     fn scan_error_for(entries: &[(&str, Option<&[u8]>)]) -> String {
         let bytes = create_stored_zip_bytes(entries);
         let cursor = Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(cursor).expect("zip should open");
 
-        scan_zip_archive(&mut archive, scan_limits(), None, |_| Ok(()))
-            .expect_err("scan should reject archive")
-            .message()
-            .to_string()
+        scan_zip_archive(
+            &mut archive,
+            scan_limits(),
+            None,
+            ArchiveFilenameEncoding::Auto,
+            |_| Ok(()),
+        )
+        .expect_err("scan should reject archive")
+        .message()
+        .to_string()
     }
 
     #[test]
@@ -558,12 +719,77 @@ mod tests {
         let cursor = Cursor::new(bytes);
         let mut archive = zip::ZipArchive::new(cursor).expect("zip should open");
 
-        let result = scan_zip_archive(&mut archive, scan_limits(), None, |_| Ok(()))
-            .expect("parent directory after child file should be valid");
+        let result = scan_zip_archive(
+            &mut archive,
+            scan_limits(),
+            None,
+            ArchiveFilenameEncoding::Auto,
+            |_| Ok(()),
+        )
+        .expect("parent directory after child file should be valid");
 
         assert_eq!(result.file_count, 1);
         assert_eq!(result.directory_count, 1);
         assert_eq!(result.entries.len(), 2);
+    }
+
+    #[test]
+    fn scan_decodes_utf8_chinese_paths() {
+        let entries = scan_entries_with_encoding(
+            create_stored_zip_bytes(&[("测试/文件.txt", Some(b"payload".as_slice()))]),
+            ArchiveFilenameEncoding::Auto,
+        )
+        .expect("UTF-8 Chinese path should scan");
+
+        assert_eq!(entries[0].path, "测试/文件.txt");
+        assert_eq!(entries[0].name, "文件.txt");
+        assert_eq!(entries[0].parent.as_deref(), Some("测试"));
+    }
+
+    #[test]
+    fn scan_auto_decodes_gb18030_chinese_paths_without_utf8_flag() {
+        let bytes = create_stored_zip_bytes_with_raw_name(
+            "aaaaaaaaa.txt",
+            b"\xb2\xe2\xca\xd4/\xce\xc4\xbc\xfe.txt",
+            b"payload",
+        );
+        let entries = scan_entries_with_encoding(bytes, ArchiveFilenameEncoding::Auto)
+            .expect("GB18030 Chinese path should scan in auto mode");
+
+        assert_eq!(entries[0].path, "测试/文件.txt");
+        assert_eq!(entries[0].name, "文件.txt");
+        assert_eq!(entries[0].parent.as_deref(), Some("测试"));
+    }
+
+    #[test]
+    fn scan_forced_gb18030_decodes_legacy_chinese_paths() {
+        let bytes = create_stored_zip_bytes_with_raw_name(
+            "aaaaaaaaa.txt",
+            b"\xb2\xe2\xca\xd4/\xce\xc4\xbc\xfe.txt",
+            b"payload",
+        );
+        let entries = scan_entries_with_encoding(bytes, ArchiveFilenameEncoding::Gb18030)
+            .expect("GB18030 Chinese path should scan when forced");
+
+        assert_eq!(entries[0].path, "测试/文件.txt");
+    }
+
+    #[test]
+    fn scan_forced_cp437_keeps_zip_default_decoding() {
+        let bytes = create_stored_zip_bytes_with_raw_name("aaaa.txt", b"\x82ber.txt", b"payload");
+        let entries = scan_entries_with_encoding(bytes, ArchiveFilenameEncoding::Cp437)
+            .expect("CP437 path should scan when forced");
+
+        assert_eq!(entries[0].path, "éber.txt");
+    }
+
+    #[test]
+    fn scan_forced_utf8_rejects_invalid_raw_names() {
+        let bytes = create_stored_zip_bytes_with_raw_name("aaaa.txt", b"\x82ber.txt", b"payload");
+        let error = scan_entries_with_encoding(bytes, ArchiveFilenameEncoding::Utf8)
+            .expect_err("invalid UTF-8 raw path should be rejected");
+
+        assert!(error.message().contains("filename is not valid UTF-8"));
     }
 
     #[test]
@@ -610,8 +836,14 @@ mod tests {
         let mut limits = scan_limits();
         limits.max_directories = 1;
 
-        let error = scan_zip_archive(&mut archive, limits, None, |_| Ok(()))
-            .expect_err("implicit directories should count toward directory limit");
+        let error = scan_zip_archive(
+            &mut archive,
+            limits,
+            None,
+            ArchiveFilenameEncoding::Auto,
+            |_| Ok(()),
+        )
+        .expect_err("implicit directories should count toward directory limit");
 
         assert!(
             error
