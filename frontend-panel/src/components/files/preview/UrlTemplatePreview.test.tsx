@@ -134,7 +134,7 @@ describe("UrlTemplatePreview", () => {
 		);
 		expect(iframe).toHaveAttribute(
 			"sandbox",
-			"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin",
+			"allow-scripts allow-forms allow-popups allow-downloads",
 		);
 		expect(iframe).toHaveAttribute(
 			"allow",
@@ -144,5 +144,26 @@ describe("UrlTemplatePreview", () => {
 		expect(
 			screen.getByRole("button", { name: /url_template_open/i }),
 		).toBeInTheDocument();
+	});
+
+	it("keeps same-origin sandbox only for known office URL template providers", async () => {
+		render(
+			<UrlTemplatePreview
+				file={file}
+				downloadPath="/files/7/download"
+				label="Microsoft Viewer"
+				optionKey="builtin.office_microsoft"
+				rawConfig={{
+					allowed_origins: ["https://view.officeapps.live.com"],
+					mode: "iframe",
+					url_template: "https://view.officeapps.live.com/open?id={{file_id}}",
+				}}
+			/>,
+		);
+
+		expect(await screen.findByTitle("Microsoft Viewer")).toHaveAttribute(
+			"sandbox",
+			"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin",
+		);
 	});
 });

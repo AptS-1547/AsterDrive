@@ -27,10 +27,10 @@ use crate::services::{share_service, task_service, workspace_storage_service};
 use crate::storage::StorageDriver;
 use crate::types::{ArchiveFilenameEncoding, EntityType};
 
-const CACHE_SCHEMA_VERSION: u32 = 1;
+const CACHE_SCHEMA_VERSION: u32 = 2;
 const FORMAT_ZIP: &str = "zip";
 const CACHE_NAMESPACE: &str = "system.archive_preview";
-const ZIP_MANIFEST_CACHE_NAME: &str = "zip_manifest.v1";
+const ZIP_MANIFEST_CACHE_NAME: &str = "zip_manifest.v2";
 const ENTITY_PROPERTY_VALUE_MAX_BYTES: usize = 65_536;
 const ARCHIVE_PREVIEW_CACHE_WRAPPER_RESERVED_BYTES: usize = 1024;
 const ARCHIVE_PREVIEW_MAX_CACHEABLE_MANIFEST_BYTES: usize =
@@ -1023,6 +1023,30 @@ mod tests {
         }
     }
 
+    fn preview_test_manifest() -> ArchivePreviewManifest {
+        ArchivePreviewManifest {
+            schema_version: CACHE_SCHEMA_VERSION,
+            format: FORMAT_ZIP.to_string(),
+            source_blob_id: 9,
+            source_hash: "hash".to_string(),
+            generated_at: "2026-01-02T03:04:05Z".to_string(),
+            entry_count: 1,
+            file_count: 1,
+            directory_count: 0,
+            total_uncompressed_size: 5,
+            truncated: false,
+            entries: vec![ArchivePreviewEntry {
+                path: "readme.txt".to_string(),
+                name: "readme.txt".to_string(),
+                parent: None,
+                kind: ArchivePreviewEntryKind::File,
+                size: 5,
+                compressed_size: 5,
+                modified_at: None,
+            }],
+        }
+    }
+
     #[test]
     fn map_failed_task_error_reads_persisted_subcode_without_text_matching() {
         let stored = crate::errors::encode_api_error_subcode_message(
@@ -1037,6 +1061,26 @@ mod tests {
             Some(ApiSubcode::ArchivePreviewInvalidZip)
         );
         assert_eq!(error.message(), "invalid zip archive");
+    }
+
+    #[test]
+    fn serialized_cache_uses_current_schema_and_filename_encoding() {
+        let serialized = serialize_cached_manifest(
+            9,
+            "hash",
+            "limits",
+            ArchiveFilenameEncoding::Gb18030,
+            &preview_test_manifest(),
+        )
+        .expect("cache should serialize");
+        let value: serde_json::Value =
+            serde_json::from_str(&serialized).expect("cache should parse as JSON");
+
+        assert_eq!(CACHE_SCHEMA_VERSION, 2);
+        assert_eq!(ZIP_MANIFEST_CACHE_NAME, "zip_manifest.v2");
+        assert_eq!(value["schema_version"], 2);
+        assert_eq!(value["filename_encoding"], "gb18030");
+        assert_eq!(value["manifest"]["schema_version"], 2);
     }
 
     #[test]

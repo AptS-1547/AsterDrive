@@ -164,6 +164,7 @@ export function FilePreviewBody({
 				file={file}
 				downloadPath={downloadPath}
 				label={getOptionLabel(activeOption)}
+				optionKey={activeOption.key}
 				rawConfig={activeOption.config ?? null}
 				createPreviewLink={previewLinkFactory}
 			/>

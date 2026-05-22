@@ -20,26 +20,13 @@ import type {
 	WopiLaunchSession,
 } from "@/types/api";
 import { isApiSubcode } from "@/types/api-helpers";
+import {
+	type ArchivePreviewRequestOptions,
+	archivePreviewRequestConfig,
+} from "./archivePreviewRequestConfig";
 import { ApiError, type ApiRequestConfig, api } from "./http";
 
 type ServiceRequestOptions = Pick<ApiRequestConfig, "signal">;
-type ArchivePreviewRequestOptions = ServiceRequestOptions & {
-	filenameEncoding?: ArchiveFilenameEncoding;
-};
-
-function archivePreviewRequestConfig(
-	options?: ArchivePreviewRequestOptions,
-): ApiRequestConfig | undefined {
-	if (!options?.signal && !options?.filenameEncoding) {
-		return undefined;
-	}
-	return {
-		...(options.signal ? { signal: options.signal } : {}),
-		...(options.filenameEncoding
-			? { params: { filename_encoding: options.filenameEncoding } }
-			: {}),
-	};
-}
 
 function encodeFileName(fileName: string) {
 	return encodeURIComponent(fileName);

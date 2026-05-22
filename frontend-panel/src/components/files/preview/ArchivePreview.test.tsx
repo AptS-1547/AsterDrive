@@ -67,7 +67,7 @@ vi.mock("@/components/ui/select", () => ({
 }));
 
 const manifest: ArchivePreviewManifest = {
-	schema_version: 1,
+	schema_version: 2,
 	format: "zip",
 	source_blob_id: 10,
 	source_hash: "hash",
@@ -318,6 +318,7 @@ describe("ArchivePreview", () => {
 		expect(await screen.findByText("docs")).toBeInTheDocument();
 		fireEvent.click(screen.getByText("select-gb18030"));
 
+		expect(screen.getByText("archive_preview_generating")).toBeInTheDocument();
 		await waitFor(() => {
 			expect(loadManifest).toHaveBeenCalledWith(
 				expect.objectContaining({ filenameEncoding: "gb18030" }),

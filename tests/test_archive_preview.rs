@@ -479,7 +479,7 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_manifest.v1",
+        "zip_manifest.v2",
     )
     .await
     .expect("cache lookup should succeed");
@@ -949,7 +949,7 @@ async fn test_archive_preview_caps_high_manifest_limit_to_cache_storage_limit() 
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_manifest.v1",
+        "zip_manifest.v2",
     )
     .await
     .expect("cache lookup should succeed")

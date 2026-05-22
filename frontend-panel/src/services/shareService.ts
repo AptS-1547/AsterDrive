@@ -4,7 +4,6 @@ import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
-	ArchiveFilenameEncoding,
 	ArchivePreviewManifest,
 	BatchResult,
 	FolderContents,
@@ -18,26 +17,13 @@ import type {
 	ShareStreamSessionInfo,
 	ShareTarget,
 } from "@/types/api";
+import {
+	type ArchivePreviewRequestOptions,
+	archivePreviewRequestConfig,
+} from "./archivePreviewRequestConfig";
 import { type ApiRequestConfig, api } from "./http";
 
 type ServiceRequestOptions = Pick<ApiRequestConfig, "signal">;
-type ArchivePreviewRequestOptions = ServiceRequestOptions & {
-	filenameEncoding?: ArchiveFilenameEncoding;
-};
-
-function archivePreviewRequestConfig(
-	options?: ArchivePreviewRequestOptions,
-): ApiRequestConfig | undefined {
-	if (!options?.signal && !options?.filenameEncoding) {
-		return undefined;
-	}
-	return {
-		...(options.signal ? { signal: options.signal } : {}),
-		...(options.filenameEncoding
-			? { params: { filename_encoding: options.filenameEncoding } }
-			: {}),
-	};
-}
 
 function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");

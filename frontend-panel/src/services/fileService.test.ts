@@ -215,6 +215,10 @@ describe("fileService", () => {
 		createFileService({ kind: "team", teamId: 9 }).getArchivePreview(8, {
 			signal: controller.signal,
 		});
+		fileService.getArchivePreview(8, {
+			filenameEncoding: "gb18030",
+			signal: controller.signal,
+		});
 
 		expect(mockState.get).toHaveBeenNthCalledWith(
 			1,
@@ -225,6 +229,14 @@ describe("fileService", () => {
 			2,
 			"/teams/9/files/8/archive-preview",
 			{ signal: controller.signal },
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			3,
+			"/files/8/archive-preview",
+			{
+				params: { filename_encoding: "gb18030" },
+				signal: controller.signal,
+			},
 		);
 	});
 

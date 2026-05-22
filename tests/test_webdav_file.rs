@@ -211,7 +211,7 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
         EntityType::File,
         stored_file.id,
         "system.archive_preview",
-        "zip_manifest.v1",
+        "zip_manifest.v2",
         Some("cached"),
     )
     .await

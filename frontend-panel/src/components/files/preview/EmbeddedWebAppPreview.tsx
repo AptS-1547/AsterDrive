@@ -2,7 +2,8 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export const EXTERNAL_WEB_APP_IFRAME_SANDBOX =
-	"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin";
+	"allow-scripts allow-forms allow-popups allow-downloads";
+export const EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX = `${EXTERNAL_WEB_APP_IFRAME_SANDBOX} allow-same-origin`;
 
 interface EmbeddedWebAppPreviewProps {
 	actions?: ReactNode;

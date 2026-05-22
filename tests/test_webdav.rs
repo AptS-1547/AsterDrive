@@ -1436,7 +1436,7 @@ async fn test_webdav_hides_and_rejects_system_property_namespace() {
         EntityType::File,
         file.id,
         "system.archive_preview",
-        "zip_manifest.v1",
+        "zip_manifest.v2",
         Some("cached"),
     )
     .await
@@ -1445,7 +1445,7 @@ async fn test_webdav_hides_and_rejects_system_property_namespace() {
     let propfind_body = r#"<?xml version="1.0" encoding="utf-8" ?>
 <D:propfind xmlns:D="DAV:" xmlns:S="system.archive_preview">
   <D:prop>
-    <S:zip_manifest.v1 />
+    <S:zip_manifest.v2 />
   </D:prop>
 </D:propfind>"#;
     let req = test::TestRequest::with_uri("/webdav/system-props.zip")
@@ -1460,7 +1460,7 @@ async fn test_webdav_hides_and_rejects_system_property_namespace() {
     let body = test::read_body(resp).await;
     let xml = String::from_utf8_lossy(&body);
     assert!(
-        !xml.contains("cached") && xml.contains("zip_manifest.v1") && xml.contains("404"),
+        !xml.contains("cached") && xml.contains("zip_manifest.v2") && xml.contains("404"),
         "requested system properties must be reported as missing without exposing values: {xml}"
     );
 
@@ -1468,7 +1468,7 @@ async fn test_webdav_hides_and_rejects_system_property_namespace() {
 <D:propertyupdate xmlns:D="DAV:" xmlns:S="system.archive_preview">
   <D:set>
     <D:prop>
-      <S:zip_manifest.v1>tampered</S:zip_manifest.v1>
+      <S:zip_manifest.v2>tampered</S:zip_manifest.v2>
     </D:prop>
   </D:set>
 </D:propertyupdate>"#;
@@ -1492,7 +1492,7 @@ async fn test_webdav_hides_and_rejects_system_property_namespace() {
         EntityType::File,
         file.id,
         "system.archive_preview",
-        "zip_manifest.v1",
+        "zip_manifest.v2",
     )
     .await
     .expect("system property lookup should succeed")

@@ -9,6 +9,7 @@ use encoding_rs::GB18030;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+use zip::HasZipMetadata;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::types::ArchiveFilenameEncoding;
@@ -300,14 +301,7 @@ fn decode_zip_entry_name<R: Read>(
     let raw = entry.name_raw();
     match filename_encoding {
         ArchiveFilenameEncoding::Auto => decode_zip_entry_name_auto(entry),
-        ArchiveFilenameEncoding::Utf8 => std::str::from_utf8(raw)
-            .map(|value| value.to_string())
-            .map_err(|_| {
-                AsterError::validation_error(format!(
-                    "archive entry '{}' filename is not valid UTF-8",
-                    entry.name()
-                ))
-            }),
+        ArchiveFilenameEncoding::Utf8 => decode_zip_entry_name_utf8(raw, entry.name()),
         ArchiveFilenameEncoding::Gb18030 => decode_gb18030(raw).ok_or_else(|| {
             AsterError::validation_error(format!(
                 "archive entry '{}' filename is not valid GB18030",
@@ -318,8 +312,14 @@ fn decode_zip_entry_name<R: Read>(
     }
 }
 
-fn decode_zip_entry_name_auto<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> Result<String> {
+fn decode_zip_entry_name_auto<R: Read + ?Sized>(
+    entry: &zip::read::ZipFile<'_, R>,
+) -> Result<String> {
     let raw = entry.name_raw();
+    if entry.get_metadata().is_utf8 {
+        return decode_zip_entry_name_utf8(raw, entry.name());
+    }
+
     if let Ok(name) = std::str::from_utf8(raw) {
         return Ok(name.to_string());
     }
@@ -332,6 +332,17 @@ fn decode_zip_entry_name_auto<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> Res
     }
 
     Ok(entry.name().to_string())
+}
+
+fn decode_zip_entry_name_utf8(raw: &[u8], display_name: &str) -> Result<String> {
+    std::str::from_utf8(raw)
+        .map(|value| value.to_string())
+        .map_err(|_| {
+            AsterError::validation_error(format!(
+                "archive entry '{}' filename is not valid UTF-8",
+                display_name
+            ))
+        })
 }
 
 fn decode_gb18030(raw: &[u8]) -> Option<String> {
@@ -531,7 +542,11 @@ fn compression_ratio_exceeds(
 }
 
 fn normalize_archive_entry_path(path: &str) -> Result<PathBuf> {
-    if path.contains('\0') || path.starts_with('/') || path.starts_with('\\') {
+    if path.contains('\0')
+        || path.starts_with('/')
+        || path.starts_with('\\')
+        || has_windows_drive_prefix(path)
+    {
         return Err(AsterError::validation_error(format!(
             "archive entry '{}' contains unsafe path",
             path
@@ -565,11 +580,20 @@ fn normalize_archive_entry_path(path: &str) -> Result<PathBuf> {
     Ok(normalized)
 }
 
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Cursor, Write};
 
     use super::*;
+    use zip::HasZipMetadata;
+
+    const ZIP_UTF8_NAME_FLAG: u16 = 0x0800;
+    const ZIP_UNICODE_PATH_EXTRA_FIELD: u16 = 0x7075;
 
     fn scan_limits() -> ZipScanLimits {
         ZipScanLimits {
@@ -618,11 +642,145 @@ mod tests {
             "test helper patches names in place and requires equal byte lengths"
         );
         let mut bytes = create_stored_zip_bytes(&[(decoded_name, Some(content))]);
-        patch_zip_entry_raw_name(&mut bytes, decoded_name.as_bytes(), raw_name);
+        patch_zip_entry_raw_name(&mut bytes, decoded_name.as_bytes(), raw_name, false);
         bytes
     }
 
-    fn patch_zip_entry_raw_name(bytes: &mut [u8], placeholder_name: &[u8], raw_name: &[u8]) {
+    fn create_stored_zip_bytes_with_raw_name_and_utf8_flag(
+        decoded_name: &str,
+        raw_name: &[u8],
+        content: &[u8],
+    ) -> Vec<u8> {
+        assert_eq!(
+            decoded_name.len(),
+            raw_name.len(),
+            "test helper patches names in place and requires equal byte lengths"
+        );
+        let mut bytes = create_stored_zip_bytes(&[(decoded_name, Some(content))]);
+        patch_zip_entry_raw_name(&mut bytes, decoded_name.as_bytes(), raw_name, true);
+        bytes
+    }
+
+    fn create_stored_zip_bytes_with_unicode_path_extra_field(
+        raw_name: &[u8],
+        unicode_name: &str,
+        content: &[u8],
+    ) -> Vec<u8> {
+        let extra = zip_extra_field(
+            ZIP_UNICODE_PATH_EXTRA_FIELD,
+            &unicode_path_extra_field_payload(raw_name, unicode_name.as_bytes()),
+        );
+        let content_crc = crc32(content);
+        let compressed_size: u32 = content.len().try_into().expect("test content fits u32");
+        let uncompressed_size = compressed_size;
+        let name_len: u16 = raw_name.len().try_into().expect("test filename fits u16");
+        let extra_len: u16 = extra.len().try_into().expect("test extra field fits u16");
+
+        let mut bytes = Vec::new();
+        push_u32(&mut bytes, 0x0403_4b50);
+        push_u16(&mut bytes, 10);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u32(&mut bytes, content_crc);
+        push_u32(&mut bytes, compressed_size);
+        push_u32(&mut bytes, uncompressed_size);
+        push_u16(&mut bytes, name_len);
+        push_u16(&mut bytes, extra_len);
+        bytes.extend_from_slice(raw_name);
+        bytes.extend_from_slice(&extra);
+        bytes.extend_from_slice(content);
+
+        let central_directory_offset: u32 = bytes
+            .len()
+            .try_into()
+            .expect("test central directory offset fits u32");
+        push_u32(&mut bytes, 0x0201_4b50);
+        push_u16(&mut bytes, 20);
+        push_u16(&mut bytes, 10);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u32(&mut bytes, content_crc);
+        push_u32(&mut bytes, compressed_size);
+        push_u32(&mut bytes, uncompressed_size);
+        push_u16(&mut bytes, name_len);
+        push_u16(&mut bytes, extra_len);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        bytes.extend_from_slice(raw_name);
+        bytes.extend_from_slice(&extra);
+
+        let central_directory_size: u32 = (bytes.len()
+            - usize::try_from(central_directory_offset)
+                .expect("test central directory offset fits usize"))
+        .try_into()
+        .expect("test central directory size fits u32");
+        push_u32(&mut bytes, 0x0605_4b50);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 1);
+        push_u16(&mut bytes, 1);
+        push_u32(&mut bytes, central_directory_size);
+        push_u32(&mut bytes, central_directory_offset);
+        push_u16(&mut bytes, 0);
+
+        bytes
+    }
+
+    fn unicode_path_extra_field_payload(original_raw_name: &[u8], unicode_name: &[u8]) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(1 + 4 + unicode_name.len());
+        payload.push(1);
+        payload.extend_from_slice(&crc32(original_raw_name).to_le_bytes());
+        payload.extend_from_slice(unicode_name);
+        payload
+    }
+
+    fn zip_extra_field(field_id: u16, payload: &[u8]) -> Vec<u8> {
+        let mut extra = Vec::with_capacity(4 + payload.len());
+        push_u16(&mut extra, field_id);
+        push_u16(
+            &mut extra,
+            payload
+                .len()
+                .try_into()
+                .expect("test extra field payload fits u16"),
+        );
+        extra.extend_from_slice(payload);
+        extra
+    }
+
+    fn push_u16(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = 0xffff_ffff_u32;
+        for byte in bytes {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                let mask = 0_u32.wrapping_sub(crc & 1);
+                crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+            }
+        }
+        !crc
+    }
+
+    fn patch_zip_entry_raw_name(
+        bytes: &mut [u8],
+        placeholder_name: &[u8],
+        raw_name: &[u8],
+        set_utf8_flag: bool,
+    ) {
         patch_zip_entry_raw_name_in_header(
             bytes,
             &[0x50, 0x4b, 0x03, 0x04],
@@ -631,6 +789,7 @@ mod tests {
             30,
             placeholder_name,
             raw_name,
+            set_utf8_flag,
         );
         patch_zip_entry_raw_name_in_header(
             bytes,
@@ -640,6 +799,7 @@ mod tests {
             46,
             placeholder_name,
             raw_name,
+            set_utf8_flag,
         );
     }
 
@@ -651,6 +811,7 @@ mod tests {
         name_offset: usize,
         placeholder_name: &[u8],
         raw_name: &[u8],
+        set_utf8_flag: bool,
     ) {
         let mut patched = false;
         for index in 0..bytes.len().saturating_sub(signature.len()) {
@@ -671,13 +832,28 @@ mod tests {
             bytes[name_start..name_end].copy_from_slice(raw_name);
             let flags =
                 u16::from_le_bytes([bytes[index + flag_offset], bytes[index + flag_offset + 1]]);
+            let flags = if set_utf8_flag {
+                flags | ZIP_UTF8_NAME_FLAG
+            } else {
+                flags & !ZIP_UTF8_NAME_FLAG
+            };
             bytes[index + flag_offset..index + flag_offset + 2]
-                .copy_from_slice(&(flags & !0x0800).to_le_bytes());
+                .copy_from_slice(&flags.to_le_bytes());
             patched = true;
             break;
         }
 
         assert!(patched, "zip entry header should be patched");
+    }
+
+    fn scan_error_with_encoding(
+        bytes: Vec<u8>,
+        filename_encoding: ArchiveFilenameEncoding,
+    ) -> String {
+        scan_entries_with_encoding(bytes, filename_encoding)
+            .expect_err("scan should reject archive")
+            .message()
+            .to_string()
     }
 
     fn scan_entries_with_encoding(
@@ -747,6 +923,42 @@ mod tests {
     }
 
     #[test]
+    fn scan_auto_rejects_invalid_raw_utf8_when_zip_utf8_flag_is_set() {
+        let bytes = create_stored_zip_bytes_with_raw_name_and_utf8_flag(
+            "aaaa.txt",
+            b"\x82ber.txt",
+            b"payload",
+        );
+        let error = scan_error_with_encoding(bytes, ArchiveFilenameEncoding::Auto);
+
+        assert!(error.contains("filename is not valid UTF-8"));
+    }
+
+    #[test]
+    fn scan_auto_uses_zip_unicode_path_extra_field_before_heuristics() {
+        let bytes = create_stored_zip_bytes_with_unicode_path_extra_field(
+            b"rawname.txt",
+            "测试/文件.txt",
+            b"payload",
+        );
+        let entries = scan_entries_with_encoding(bytes.clone(), ArchiveFilenameEncoding::Auto)
+            .expect("Unicode path extra field should scan in auto mode");
+
+        assert_eq!(entries[0].path, "测试/文件.txt");
+        assert_eq!(entries[0].name, "文件.txt");
+        assert_eq!(entries[0].parent.as_deref(), Some("测试"));
+
+        let mut archive =
+            zip::ZipArchive::new(Cursor::new(bytes)).expect("zip with Unicode path should open");
+        let entry = archive.by_index_raw(0).expect("zip entry should open");
+        assert!(
+            entry.get_metadata().is_utf8,
+            "zip crate should mark names from Unicode path extra fields as UTF-8"
+        );
+        assert_eq!(entry.name_raw(), "测试/文件.txt".as_bytes());
+    }
+
+    #[test]
     fn scan_auto_decodes_gb18030_chinese_paths_without_utf8_flag() {
         let bytes = create_stored_zip_bytes_with_raw_name(
             "aaaaaaaaa.txt",
@@ -790,6 +1002,47 @@ mod tests {
             .expect_err("invalid UTF-8 raw path should be rejected");
 
         assert!(error.message().contains("filename is not valid UTF-8"));
+    }
+
+    #[test]
+    fn normalize_archive_entry_path_rejects_unsafe_boundaries() {
+        for path in [
+            "/absolute.txt",
+            "\\absolute.txt",
+            "C:/absolute.txt",
+            "C:\\absolute.txt",
+            "c:relative.txt",
+            "safe\0bad.txt",
+            "../escape.txt",
+            "a/../../escape.txt",
+        ] {
+            let error = normalize_archive_entry_path(path)
+                .expect_err("unsafe archive path should be rejected");
+            assert!(
+                error.message().contains("unsafe path"),
+                "path {path:?} should use the archive unsafe path error, got: {}",
+                error.message()
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_archive_entry_path_keeps_valid_relative_boundaries() {
+        assert_eq!(
+            normalize_archive_entry_path("folder/C/file.txt")
+                .expect("plain relative path should be valid"),
+            PathBuf::from("folder").join("C").join("file.txt")
+        );
+        assert_eq!(
+            normalize_archive_entry_path("folder/../safe.txt")
+                .expect("contained parent traversal should normalize safely"),
+            PathBuf::from("safe.txt")
+        );
+        assert_eq!(
+            normalize_archive_entry_path("./folder//file.txt")
+                .expect("current and empty path components should be ignored"),
+            PathBuf::from("folder").join("file.txt")
+        );
     }
 
     #[test]
