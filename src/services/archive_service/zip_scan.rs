@@ -312,32 +312,24 @@ fn decode_zip_entry_name<R: Read>(
                 entry.name()
             ))
         }),
-        ArchiveFilenameEncoding::Cp437 => Ok(decode_string_complete_table(
-            raw,
-            &DECODING_TABLE_CP437,
-        )),
-        ArchiveFilenameEncoding::Cp850 => Ok(decode_string_complete_table(
-            raw,
-            &DECODING_TABLE_CP850,
-        )),
-        ArchiveFilenameEncoding::ShiftJis => decode_zip_entry_name_legacy_encoding(
-            raw,
-            entry.name(),
-            SHIFT_JIS,
-            "Shift_JIS",
-        ),
+        ArchiveFilenameEncoding::Cp437 => {
+            Ok(decode_string_complete_table(raw, &DECODING_TABLE_CP437))
+        }
+        ArchiveFilenameEncoding::Cp850 => {
+            Ok(decode_string_complete_table(raw, &DECODING_TABLE_CP850))
+        }
+        ArchiveFilenameEncoding::ShiftJis => {
+            decode_zip_entry_name_legacy_encoding(raw, entry.name(), SHIFT_JIS, "Shift_JIS")
+        }
         ArchiveFilenameEncoding::Big5 => {
             decode_zip_entry_name_legacy_encoding(raw, entry.name(), BIG5, "Big5")
         }
         ArchiveFilenameEncoding::EucKr => {
             decode_zip_entry_name_legacy_encoding(raw, entry.name(), EUC_KR, "EUC-KR")
         }
-        ArchiveFilenameEncoding::Windows1252 => decode_zip_entry_name_legacy_encoding(
-            raw,
-            entry.name(),
-            WINDOWS_1252,
-            "Windows-1252",
-        ),
+        ArchiveFilenameEncoding::Windows1252 => {
+            decode_zip_entry_name_legacy_encoding(raw, entry.name(), WINDOWS_1252, "Windows-1252")
+        }
     }
 }
 
@@ -893,46 +885,56 @@ mod tests {
     ) {
         patch_zip_entry_raw_name_in_header(
             bytes,
-            &[0x50, 0x4b, 0x03, 0x04],
-            6,
-            26,
-            30,
+            ZipHeaderNameLayout {
+                signature: &[0x50, 0x4b, 0x03, 0x04],
+                flag_offset: 6,
+                name_len_offset: 26,
+                name_offset: 30,
+            },
             placeholder_name,
             raw_name,
             set_utf8_flag,
         );
         patch_zip_entry_raw_name_in_header(
             bytes,
-            &[0x50, 0x4b, 0x01, 0x02],
-            8,
-            28,
-            46,
+            ZipHeaderNameLayout {
+                signature: &[0x50, 0x4b, 0x01, 0x02],
+                flag_offset: 8,
+                name_len_offset: 28,
+                name_offset: 46,
+            },
             placeholder_name,
             raw_name,
             set_utf8_flag,
         );
     }
 
-    fn patch_zip_entry_raw_name_in_header(
-        bytes: &mut [u8],
-        signature: &[u8; 4],
+    struct ZipHeaderNameLayout {
+        signature: &'static [u8; 4],
         flag_offset: usize,
         name_len_offset: usize,
         name_offset: usize,
+    }
+
+    fn patch_zip_entry_raw_name_in_header(
+        bytes: &mut [u8],
+        layout: ZipHeaderNameLayout,
         placeholder_name: &[u8],
         raw_name: &[u8],
         set_utf8_flag: bool,
     ) {
         let mut patched = false;
-        for index in 0..bytes.len().saturating_sub(signature.len()) {
-            if !bytes[index..].starts_with(signature) || index + name_offset > bytes.len() {
+        for index in 0..bytes.len().saturating_sub(layout.signature.len()) {
+            if !bytes[index..].starts_with(layout.signature)
+                || index + layout.name_offset > bytes.len()
+            {
                 continue;
             }
             let name_len = u16::from_le_bytes([
-                bytes[index + name_len_offset],
-                bytes[index + name_len_offset + 1],
+                bytes[index + layout.name_len_offset],
+                bytes[index + layout.name_len_offset + 1],
             ]) as usize;
-            let name_start = index + name_offset;
+            let name_start = index + layout.name_offset;
             let name_end = name_start + name_len;
             if name_end > bytes.len() || &bytes[name_start..name_end] != placeholder_name {
                 continue;
@@ -940,14 +942,16 @@ mod tests {
 
             assert_eq!(name_len, raw_name.len());
             bytes[name_start..name_end].copy_from_slice(raw_name);
-            let flags =
-                u16::from_le_bytes([bytes[index + flag_offset], bytes[index + flag_offset + 1]]);
+            let flags = u16::from_le_bytes([
+                bytes[index + layout.flag_offset],
+                bytes[index + layout.flag_offset + 1],
+            ]);
             let flags = if set_utf8_flag {
                 flags | ZIP_UTF8_NAME_FLAG
             } else {
                 flags & !ZIP_UTF8_NAME_FLAG
             };
-            bytes[index + flag_offset..index + flag_offset + 2]
+            bytes[index + layout.flag_offset..index + layout.flag_offset + 2]
                 .copy_from_slice(&flags.to_le_bytes());
             patched = true;
             break;

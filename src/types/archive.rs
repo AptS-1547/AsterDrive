@@ -17,7 +17,10 @@ pub enum ArchiveFilenameEncoding {
     Big5,
     EucKr,
     #[serde(rename = "windows_1252")]
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(rename = "windows_1252"))]
+    #[cfg_attr(
+        all(debug_assertions, feature = "openapi"),
+        schema(rename = "windows_1252")
+    )]
     Windows1252,
 }
 

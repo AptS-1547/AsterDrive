@@ -842,15 +842,11 @@ fn apply_tiff_entry(
     height: &mut Option<u32>,
 ) {
     match entry.tag {
-        TIFF_TAG_IMAGE_WIDTH | TIFF_TAG_EXIF_IMAGE_WIDTH => {
-            if width.is_none() {
-                *width = entry.value.first_u32();
-            }
+        TIFF_TAG_IMAGE_WIDTH | TIFF_TAG_EXIF_IMAGE_WIDTH if width.is_none() => {
+            *width = entry.value.first_u32();
         }
-        TIFF_TAG_IMAGE_LENGTH | TIFF_TAG_EXIF_IMAGE_HEIGHT => {
-            if height.is_none() {
-                *height = entry.value.first_u32();
-            }
+        TIFF_TAG_IMAGE_LENGTH | TIFF_TAG_EXIF_IMAGE_HEIGHT if height.is_none() => {
+            *height = entry.value.first_u32();
         }
         TIFF_TAG_MAKE => fill_missing(&mut metadata.camera_make, entry.value.string()),
         TIFF_TAG_MODEL => fill_missing(&mut metadata.camera_model, entry.value.string()),
