@@ -16,6 +16,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { FOLDER_LIMIT } from "@/lib/constants";
+import { supportsAudioMediaData } from "@/lib/mediaDataSupport";
 import {
 	backendAudioMetadataToTrackMetadata,
 	buildShareFolderMusicQueue,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/musicPlayer";
 import { ApiError } from "@/services/http";
 import { shareService } from "@/services/shareService";
+import { useMediaDataSupportStore } from "@/stores/mediaDataSupportStore";
 import { useMusicPlayerStore } from "@/stores/musicPlayerStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import type {
@@ -270,6 +272,11 @@ export default function ShareViewPage() {
 	const { token } = useParams<{ token: string }>();
 	const previewAppsLoaded = usePreviewAppStore((state) => state.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((state) => state.load);
+	const mediaDataSupport = useMediaDataSupportStore((state) => state.config);
+	const mediaDataSupportLoaded = useMediaDataSupportStore(
+		(state) => state.isLoaded,
+	);
+	const loadMediaDataSupport = useMediaDataSupportStore((state) => state.load);
 	const playTracks = useMusicPlayerStore((state) => state.playTracks);
 	const [info, setInfo] = useState<SharePublicInfo | null>(null);
 	const [needsPassword, setNeedsPassword] = useState(false);
@@ -293,6 +300,12 @@ export default function ShareViewPage() {
 	const [loadingMore, setLoadingMore] = useState(false);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 	usePageTitle(info?.name ?? t("share:share_mode_page"));
+
+	useEffect(() => {
+		if (!mediaDataSupportLoaded) {
+			void loadMediaDataSupport();
+		}
+	}, [loadMediaDataSupport, mediaDataSupportLoaded]);
 
 	const hasMoreFiles = folderContents?.next_file_cursor != null;
 
@@ -556,20 +569,28 @@ export default function ShareViewPage() {
 									options,
 								)
 					}
-					loadMusicBackendMetadata={(signal) =>
-						info?.share_type === "file"
-							? shareService
-									.getMediaMetadata(token, { signal })
-									.then((metadata) =>
-										backendAudioMetadataToTrackMetadata(metadata),
-									)
-							: shareService
-									.getFolderFileMediaMetadata(token, retainedPreviewFile.id, {
-										signal,
-									})
-									.then((metadata) =>
-										backendAudioMetadataToTrackMetadata(metadata),
-									)
+					loadMusicBackendMetadata={
+						mediaDataSupportLoaded &&
+						supportsAudioMediaData(retainedPreviewFile, mediaDataSupport)
+							? (signal) =>
+									info?.share_type === "file"
+										? shareService
+												.getMediaMetadata(token, { signal })
+												.then((metadata) =>
+													backendAudioMetadataToTrackMetadata(metadata),
+												)
+										: shareService
+												.getFolderFileMediaMetadata(
+													token,
+													retainedPreviewFile.id,
+													{
+														signal,
+													},
+												)
+												.then((metadata) =>
+													backendAudioMetadataToTrackMetadata(metadata),
+												)
+							: undefined
 					}
 					mediaStreamLinkFactory={createMediaStreamLink}
 				/>

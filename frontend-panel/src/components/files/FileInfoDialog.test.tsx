@@ -14,6 +14,28 @@ const mockState = vi.hoisted(() => ({
 	getFolderInfo: vi.fn(),
 	getMediaMetadata: vi.fn(),
 	listFolder: vi.fn(),
+	mediaDataSupportStore: {
+		config: {
+			enabled: true,
+			kinds: {
+				audio: {
+					enabled: true,
+					extensions: ["mp3", "flac"],
+					match: "extensions",
+				},
+				image: {
+					enabled: true,
+					extensions: ["jpg", "jpeg"],
+					match: "extensions",
+				},
+				video: { enabled: true, extensions: ["mp4"], match: "extensions" },
+			},
+			max_source_bytes: 1024 * 1024 * 1024,
+			version: 1,
+		},
+		isLoaded: true,
+		load: vi.fn(async () => {}),
+	},
 }));
 
 function setDesktopMode(matches: boolean) {
@@ -53,6 +75,12 @@ vi.mock("react-i18next", () => ({
 			return key;
 		},
 	}),
+}));
+
+vi.mock("@/stores/mediaDataSupportStore", () => ({
+	useMediaDataSupportStore: (
+		selector: (state: typeof mockState.mediaDataSupportStore) => unknown,
+	) => selector(mockState.mediaDataSupportStore),
 }));
 
 vi.mock("@/components/files/FileItemStatusIndicators", () => ({
@@ -131,6 +159,8 @@ describe("FileInfoDialog", () => {
 		mockState.getFolderInfo.mockReset();
 		mockState.getMediaMetadata.mockReset();
 		mockState.listFolder.mockReset();
+		mockState.mediaDataSupportStore.isLoaded = true;
+		mockState.mediaDataSupportStore.load.mockReset();
 	});
 
 	it("renders file overview rows without requesting folder counts", () => {

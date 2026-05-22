@@ -28,6 +28,22 @@ const mockState = vi.hoisted(() => ({
 	getShareMediaMetadata: vi.fn(),
 	parseBlob: vi.fn(),
 	selectCover: vi.fn(),
+	mediaDataSupportStore: {
+		config: {
+			enabled: true,
+			kinds: {
+				audio: {
+					enabled: true,
+					extensions: ["mp3", "flac"],
+					match: "extensions",
+				},
+				image: { enabled: true, extensions: ["jpg"], match: "extensions" },
+				video: { enabled: false, extensions: [], match: "extensions" },
+			},
+			max_source_bytes: 1024 * 1024 * 1024,
+			version: 1,
+		},
+	},
 	thumbnailPath: vi.fn((idOrToken: number | string) =>
 		typeof idOrToken === "number"
 			? `/files/${idOrToken}/thumbnail`
@@ -36,6 +52,12 @@ const mockState = vi.hoisted(() => ({
 	folderFileThumbnailPath: vi.fn(
 		(token: string, fileId: number) => `/s/${token}/files/${fileId}/thumbnail`,
 	),
+}));
+
+vi.mock("@/stores/mediaDataSupportStore", () => ({
+	useMediaDataSupportStore: {
+		getState: () => mockState.mediaDataSupportStore,
+	},
 }));
 
 vi.mock("@/services/fileService", () => ({
@@ -84,6 +106,20 @@ describe("musicPlayer helpers", () => {
 		mockState.getShareMediaMetadata.mockReset();
 		mockState.parseBlob.mockReset();
 		mockState.selectCover.mockReset();
+		mockState.mediaDataSupportStore.config = {
+			enabled: true,
+			kinds: {
+				audio: {
+					enabled: true,
+					extensions: ["mp3", "flac"],
+					match: "extensions",
+				},
+				image: { enabled: true, extensions: ["jpg"], match: "extensions" },
+				video: { enabled: false, extensions: [], match: "extensions" },
+			},
+			max_source_bytes: 1024 * 1024 * 1024,
+			version: 1,
+		};
 		mockState.thumbnailPath.mockClear();
 		vi.stubGlobal("fetch", mockState.fetch);
 		vi.stubGlobal("btoa", (value: string) =>
@@ -245,6 +281,41 @@ describe("musicPlayer helpers", () => {
 				},
 			}),
 		]);
+	});
+
+	it("omits backend metadata loaders when media data support rejects the file", () => {
+		mockState.mediaDataSupportStore.config = {
+			enabled: true,
+			kinds: {
+				audio: { enabled: true, extensions: ["flac"], match: "extensions" },
+				image: { enabled: true, extensions: ["jpg"], match: "extensions" },
+				video: { enabled: false, extensions: [], match: "extensions" },
+			},
+			max_source_bytes: 100,
+			version: 1,
+		};
+
+		const [unsupportedExtensionTrack] = buildDirectMusicQueue([
+			{
+				file_category: "audio",
+				id: 11,
+				mime_type: "audio/mpeg",
+				name: "Direct.mp3",
+				size: 10,
+			},
+		]);
+		const [oversizedTrack] = buildDirectMusicQueue([
+			{
+				file_category: "audio",
+				id: 12,
+				mime_type: "audio/flac",
+				name: "Large.flac",
+				size: 101,
+			},
+		]);
+
+		expect(unsupportedExtensionTrack?.loadBackendMetadata).toBeUndefined();
+		expect(oversizedTrack?.loadBackendMetadata).toBeUndefined();
 	});
 
 	it("loads backend metadata for direct and share tracks through the right service routes", async () => {

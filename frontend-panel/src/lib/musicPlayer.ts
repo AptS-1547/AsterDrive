@@ -1,5 +1,7 @@
+import { supportsAudioMediaData } from "@/lib/mediaDataSupport";
 import { fileService } from "@/services/fileService";
 import { shareService } from "@/services/shareService";
+import { useMediaDataSupportStore } from "@/stores/mediaDataSupportStore";
 import type {
 	MusicPlayerTrack,
 	MusicTrackMetadata,
@@ -107,13 +109,23 @@ export function inferMusicMetadata(file: MusicFileLike): MusicTrackMetadata {
 	};
 }
 
+function audioBackendMetadataLoader(
+	file: MusicFileLike,
+	loader: MusicPlayerTrack["loadBackendMetadata"],
+): MusicPlayerTrack["loadBackendMetadata"] | undefined {
+	const support = useMediaDataSupportStore.getState().config;
+	if (!supportsAudioMediaData(file, support)) return undefined;
+	return loader;
+}
+
 export function buildDirectMusicTrack(file: MusicFileLike): MusicPlayerTrack {
 	return {
 		id: `file:${file.id}`,
-		loadBackendMetadata: async (signal) =>
+		loadBackendMetadata: audioBackendMetadataLoader(file, async (signal) =>
 			backendAudioMetadataToTrackMetadata(
 				await fileService.getMediaMetadata(file.id, { signal }),
 			),
+		),
 		metadata: inferMusicMetadata(file),
 		mimeType: file.mime_type,
 		name: file.name,
@@ -150,10 +162,11 @@ export function buildSingleShareMusicTrack(
 
 	return {
 		id: `share:${token}:file`,
-		loadBackendMetadata: async (signal) =>
+		loadBackendMetadata: audioBackendMetadataLoader(file, async (signal) =>
 			backendAudioMetadataToTrackMetadata(
 				await shareService.getMediaMetadata(token, { signal }),
 			),
+		),
 		metadata: inferMusicMetadata(file),
 		mimeType: file.mime_type,
 		name: file.name,
@@ -178,12 +191,13 @@ export function buildShareFolderMusicTrack(
 ): MusicPlayerTrack {
 	return {
 		id: `share:${token}:file:${file.id}`,
-		loadBackendMetadata: async (signal) =>
+		loadBackendMetadata: audioBackendMetadataLoader(file, async (signal) =>
 			backendAudioMetadataToTrackMetadata(
 				await shareService.getFolderFileMediaMetadata(token, file.id, {
 					signal,
 				}),
 			),
+		),
 		metadata: inferMusicMetadata(file),
 		mimeType: file.mime_type,
 		name: file.name,

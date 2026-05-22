@@ -79,6 +79,24 @@ const mockState = vi.hoisted(() => ({
 	listContent: vi.fn(),
 	listSubfolderContent: vi.fn(),
 	musicPlayTracks: vi.fn(),
+	mediaDataSupportStore: {
+		config: {
+			enabled: true,
+			kinds: {
+				audio: {
+					enabled: true,
+					extensions: ["mp3", "flac"],
+					match: "extensions",
+				},
+				image: { enabled: true, extensions: ["jpg"], match: "extensions" },
+				video: { enabled: false, extensions: [], match: "extensions" },
+			},
+			max_source_bytes: 1024 * 1024 * 1024,
+			version: 1,
+		},
+		isLoaded: true,
+		load: vi.fn(async () => {}),
+	},
 	openWindow: vi.fn(),
 	params: { token: "share-token" as string | undefined },
 	previewAppStore: {
@@ -117,6 +135,18 @@ vi.mock("sonner", () => ({
 		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
 }));
+
+vi.mock("@/stores/mediaDataSupportStore", () => {
+	const useMediaDataSupportStore = Object.assign(
+		(selector: (state: typeof mockState.mediaDataSupportStore) => unknown) =>
+			selector(mockState.mediaDataSupportStore),
+		{
+			getState: () => mockState.mediaDataSupportStore,
+		},
+	);
+
+	return { useMediaDataSupportStore };
+});
 
 vi.mock("@/stores/previewAppStore", () => ({
 	usePreviewAppStore: (
@@ -640,11 +670,9 @@ describe("ShareViewPage", () => {
 
 		await waitFor(() => {
 			expect(mockState.createPreviewLink).toHaveBeenCalledWith("share-token");
-			expect(mockState.getMediaMetadata).toHaveBeenCalledWith("share-token", {
-				signal: expect.any(AbortSignal),
-			});
 			expect(mockState.createStreamSession).toHaveBeenCalledWith("share-token");
 		});
+		expect(mockState.getMediaMetadata).not.toHaveBeenCalled();
 
 		fireEvent.click(screen.getByRole("button", { name: /files:download/i }));
 
@@ -780,16 +808,12 @@ describe("ShareViewPage", () => {
 				"share-token",
 				5,
 			);
-			expect(mockState.getFolderFileMediaMetadata).toHaveBeenCalledWith(
-				"share-token",
-				5,
-				{ signal: expect.any(AbortSignal) },
-			);
 			expect(mockState.createFolderFileStreamSession).toHaveBeenCalledWith(
 				"share-token",
 				5,
 			);
 		});
+		expect(mockState.getFolderFileMediaMetadata).not.toHaveBeenCalled();
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "download:nested.txt" }),

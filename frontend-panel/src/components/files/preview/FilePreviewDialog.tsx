@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { supportsAudioMediaData } from "@/lib/mediaDataSupport";
 import { fileService } from "@/services/fileService";
+import { useMediaDataSupportStore } from "@/stores/mediaDataSupportStore";
 import type { MusicPlayerTrack } from "@/stores/musicPlayerStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import type {
@@ -79,21 +81,38 @@ export function FilePreviewDialog({
 	const previewApps = usePreviewAppStore((state) => state.config);
 	const previewAppsLoaded = usePreviewAppStore((state) => state.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((state) => state.load);
+	const mediaDataSupport = useMediaDataSupportStore((state) => state.config);
+	const mediaDataSupportLoaded = useMediaDataSupportStore(
+		(state) => state.isLoaded,
+	);
+	const loadMediaDataSupport = useMediaDataSupportStore((state) => state.load);
 	const resolvedDownloadPath =
 		downloadPath ?? fileService.downloadPath(file.id);
 	const resolvedImagePreviewPath =
 		imagePreviewPath ?? fileService.imagePreviewPath(file.id);
 	const resolvedThumbnailPath =
 		thumbnailPath ?? fileService.thumbnailPath(file.id);
+	const canRequestAudioMetadata =
+		mediaDataSupportLoaded && supportsAudioMediaData(file, mediaDataSupport);
 	const resolvedLoadMusicBackendMetadata =
 		loadMusicBackendMetadata ??
-		((signal?: AbortSignal) =>
-			import("@/lib/musicPlayer").then(
-				({ backendAudioMetadataToTrackMetadata }) =>
-					fileService
-						.getMediaMetadata(file.id, { signal })
-						.then((metadata) => backendAudioMetadataToTrackMetadata(metadata)),
-			));
+		(canRequestAudioMetadata
+			? (signal?: AbortSignal) =>
+					import("@/lib/musicPlayer").then(
+						({ backendAudioMetadataToTrackMetadata }) =>
+							fileService
+								.getMediaMetadata(file.id, { signal })
+								.then((metadata) =>
+									backendAudioMetadataToTrackMetadata(metadata),
+								),
+					)
+			: undefined);
+
+	useEffect(() => {
+		if (!mediaDataSupportLoaded) {
+			void loadMediaDataSupport();
+		}
+	}, [loadMediaDataSupport, mediaDataSupportLoaded]);
 
 	useEffect(() => {
 		if (previewAppsLoaded) return;

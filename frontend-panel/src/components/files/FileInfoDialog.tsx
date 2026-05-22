@@ -9,9 +9,11 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
+import { supportsMediaData } from "@/lib/mediaDataSupport";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import { ApiPendingError } from "@/services/http";
+import { useMediaDataSupportStore } from "@/stores/mediaDataSupportStore";
 import type {
 	FileInfo,
 	FileListItem,
@@ -102,6 +104,11 @@ export function FileInfoDialog({
 		null,
 	);
 	const [mediaMetadataLoading, setMediaMetadataLoading] = useState(false);
+	const mediaDataSupport = useMediaDataSupportStore((state) => state.config);
+	const mediaDataSupportLoaded = useMediaDataSupportStore(
+		(state) => state.isLoaded,
+	);
+	const loadMediaDataSupport = useMediaDataSupportStore((state) => state.load);
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
 	const [desktopMounted, setDesktopMounted] = useState(open);
 	const [desktopVisible, setDesktopVisible] = useState(open);
@@ -110,6 +117,16 @@ export function FileInfoDialog({
 	const renderedMediaMetadataKind = renderedFile
 		? mediaMetadataKindForFile(renderedFile)
 		: null;
+	const canRequestMediaMetadata =
+		mediaDataSupportLoaded &&
+		renderedFile != null &&
+		supportsMediaData(renderedFile, mediaDataSupport);
+
+	useEffect(() => {
+		if (!mediaDataSupportLoaded) {
+			void loadMediaDataSupport();
+		}
+	}, [loadMediaDataSupport, mediaDataSupportLoaded]);
 
 	useEffect(() => {
 		if (!open || !file) {
@@ -217,7 +234,12 @@ export function FileInfoDialog({
 	}, [open, folder]);
 
 	useEffect(() => {
-		if (!open || !renderedFile || !renderedMediaMetadataKind) {
+		if (
+			!open ||
+			!renderedFile ||
+			!renderedMediaMetadataKind ||
+			!canRequestMediaMetadata
+		) {
 			setMediaMetadata(null);
 			setMediaMetadataLoading(false);
 			return;
@@ -264,7 +286,7 @@ export function FileInfoDialog({
 				window.clearTimeout(retryTimer);
 			}
 		};
-	}, [open, renderedFile, renderedMediaMetadataKind]);
+	}, [open, renderedFile, renderedMediaMetadataKind, canRequestMediaMetadata]);
 
 	useEffect(() => {
 		if (!isDesktop) {
@@ -412,7 +434,7 @@ export function FileInfoDialog({
 		},
 	];
 	const metadataRows =
-		renderedMediaMetadataKind != null
+		renderedMediaMetadataKind != null && canRequestMediaMetadata
 			? buildMediaMetadataRows({
 					kind: renderedMediaMetadataKind,
 					loading: mediaMetadataLoading,
