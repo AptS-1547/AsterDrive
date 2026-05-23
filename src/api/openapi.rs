@@ -404,6 +404,8 @@ use utoipa::{Modify, OpenApi};
             crate::services::archive_preview_service::ArchivePreviewManifest,
             crate::services::archive_preview_service::ArchivePreviewEntry,
             crate::services::archive_preview_service::ArchivePreviewEntryKind,
+            crate::services::archive_preview_service::ArchivePreviewExtractCompatibility,
+            crate::services::archive_preview_service::ArchivePreviewExtractUnsupportedReason,
 
             // services::folder_service / entities::{file,folder,file_version}：个人空间文件树、文件实体和版本信息模型。
             crate::services::folder_service::FolderContents,

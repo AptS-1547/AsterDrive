@@ -55,7 +55,14 @@ pub async fn connect_reader_for_writer_with_metrics(
         return Ok(DbHandles::single(writer));
     }
 
-    let reader = connect_sqlite_reader_once(cfg, &url, metrics).await?;
+    let retry_config = crate::db::retry::RetryConfig {
+        max_retries: cfg.retry_count,
+        ..Default::default()
+    };
+    let reader = crate::db::retry::with_retry(&retry_config, || {
+        connect_sqlite_reader_once(cfg, &url, metrics.clone())
+    })
+    .await?;
     Ok(DbHandles {
         writer,
         reader,

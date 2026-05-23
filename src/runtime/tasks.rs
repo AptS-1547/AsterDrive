@@ -898,11 +898,9 @@ mod tests {
         .await
         .unwrap();
         Migrator::up(&db, None).await.unwrap();
-        crate::db::repository::config_repo::ensure_defaults_with_env(&db, &|name| {
-            std::env::var(name).ok()
-        })
-        .await
-        .unwrap();
+        crate::db::repository::config_repo::ensure_defaults_with_env(&db, &|_| None)
+            .await
+            .unwrap();
 
         let cache = crate::cache::create_cache(&crate::config::CacheConfig {
             enabled: false,

@@ -479,7 +479,7 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_manifest.v2",
+        "zip_raw_manifest.v1",
     )
     .await
     .expect("cache lookup should succeed");
@@ -576,7 +576,7 @@ async fn test_archive_preview_allows_display_only_names_that_extract_rejects() {
 }
 
 #[actix_web::test]
-async fn test_archive_preview_decodes_gb18030_names_and_separates_encoding_cache() {
+async fn test_archive_preview_decodes_gb18030_names_and_reuses_raw_cache() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
     let app = create_test_app!(state.clone());
@@ -616,18 +616,12 @@ async fn test_archive_preview_decodes_gb18030_names_and_separates_encoding_cache
         request_personal_archive_preview_with_encoding(&app, &token, file_id, Some("cp437")).await;
     assert_eq!(
         resp.status(),
-        StatusCode::ACCEPTED,
-        "a preview generated with one filename encoding must not be reused for another"
+        StatusCode::OK,
+        "a generated raw preview should be re-decoded without another build task"
     );
-    aster_drive::services::task_service::drain(&state)
-        .await
-        .expect("archive preview task should drain");
-    let resp =
-        request_personal_archive_preview_with_encoding(&app, &token, file_id, Some("cp437")).await;
-    assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = test::read_body_json(resp).await;
     assert_ne!(body["data"]["entries"][0]["path"], "测试/文件.txt");
-    assert_eq!(archive_preview_tasks(&state).await.len(), 2);
+    assert_eq!(archive_preview_tasks(&state).await.len(), 1);
 }
 
 #[actix_web::test]
@@ -988,7 +982,7 @@ async fn test_archive_preview_caps_high_manifest_limit_to_cache_storage_limit() 
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_manifest.v2",
+        "zip_raw_manifest.v1",
     )
     .await
     .expect("cache lookup should succeed")

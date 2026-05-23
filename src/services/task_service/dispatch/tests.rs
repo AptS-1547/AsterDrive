@@ -37,7 +37,7 @@ async fn build_dispatch_test_db() -> sea_orm::DatabaseConnection {
     Migrator::up(&db, None)
         .await
         .expect("dispatch test migrations should succeed");
-    config_repo::ensure_defaults_with_env(&db, &|name| std::env::var(name).ok())
+    config_repo::ensure_defaults_with_env(&db, &|_| None)
         .await
         .expect("dispatch test config defaults should exist");
     db

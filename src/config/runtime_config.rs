@@ -119,7 +119,7 @@ mod tests {
         .await
         .unwrap();
         Migrator::up(&db, None).await.unwrap();
-        config_repo::ensure_defaults_with_env(&db, &|name| std::env::var(name).ok())
+        config_repo::ensure_defaults_with_env(&db, &|_| None)
             .await
             .unwrap();
         db

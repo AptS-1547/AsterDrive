@@ -1079,11 +1079,9 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
     .await
     .unwrap();
 
-    aster_drive::db::repository::config_repo::ensure_defaults_with_env(&db, &|name| {
-        std::env::var(name).ok()
-    })
-    .await
-    .unwrap();
+    aster_drive::db::repository::config_repo::ensure_defaults_with_env(&db, &|_| None)
+        .await
+        .unwrap();
     aster_drive::db::repository::config_repo::upsert(
         &db,
         aster_drive::config::avatar::AVATAR_DIR_KEY,
