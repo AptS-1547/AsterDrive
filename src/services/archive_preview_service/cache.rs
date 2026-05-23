@@ -15,7 +15,7 @@ pub(super) async fn load_cached_raw_manifest(
     state: &PrimaryAppState,
     source_file: &file::Model,
     blob: &file_blob::Model,
-    _limits: &ArchivePreviewLimits,
+    limits: &ArchivePreviewLimits,
 ) -> Result<Option<ArchiveRawManifest>> {
     let Some(prop) = property_repo::find_by_key(
         state.reader_db(),
@@ -47,11 +47,10 @@ pub(super) async fn load_cached_raw_manifest(
     if cached.schema_version == RAW_CACHE_SCHEMA_VERSION
         && cached.source_blob_id == blob.id
         && cached.source_hash == blob.hash
+        && cached.limit_signature == limits.raw_signature
         && cached.manifest.schema_version == RAW_CACHE_SCHEMA_VERSION
         && cached.manifest.format == FORMAT_ZIP
     {
-        // Raw manifests are source-bound. Display limits and filename encoding are applied
-        // when deriving the response, so changing them must not enqueue another build task.
         return Ok(Some(cached.manifest));
     }
 

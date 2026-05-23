@@ -14,7 +14,6 @@ use crate::services::archive_service::zip_scan::{
     build_zip_scan_result_from_raw_entries, scan_zip_archive_raw,
 };
 use crate::storage::StorageDriver;
-use crate::types::ArchiveFilenameEncoding;
 
 use super::cache::fit_raw_manifest_to_cache_limit;
 use super::model::{
@@ -253,15 +252,7 @@ pub(super) fn build_manifest_from_raw(
         entries,
     };
 
-    fit_manifest_to_limit(
-        source_file_id,
-        raw_manifest.source_blob_id,
-        &raw_manifest.source_hash,
-        &limits.signature,
-        limits.filename_encoding,
-        manifest,
-        limits.max_manifest_bytes,
-    )
+    fit_manifest_to_limit(source_file_id, manifest, limits.max_manifest_bytes)
 }
 
 fn cached_raw_display_scan_limits(
@@ -301,21 +292,10 @@ fn max_i64_u64_count(stored: i64, scanned: u64, value_name: &str) -> Result<i64>
 
 fn fit_manifest_to_limit(
     file_id: i64,
-    source_blob_id: i64,
-    source_hash: &str,
-    limit_signature: &str,
-    filename_encoding: ArchiveFilenameEncoding,
     manifest: ArchivePreviewManifest,
     max_manifest_bytes: usize,
 ) -> Result<ArchivePreviewManifest> {
-    if manifest_fits_limits(
-        source_blob_id,
-        source_hash,
-        limit_signature,
-        filename_encoding,
-        &manifest,
-        max_manifest_bytes,
-    )? {
+    if manifest_fits_limits(&manifest, max_manifest_bytes)? {
         return Ok(manifest);
     }
 
@@ -331,14 +311,7 @@ fn fit_manifest_to_limit(
         let mut candidate = base.clone();
         candidate.entries = original_entries[..mid].to_vec();
 
-        if manifest_fits_limits(
-            source_blob_id,
-            source_hash,
-            limit_signature,
-            filename_encoding,
-            &candidate,
-            max_manifest_bytes,
-        )? {
+        if manifest_fits_limits(&candidate, max_manifest_bytes)? {
             best_entry_count = Some(mid);
             low = mid.saturating_add(1);
         } else if mid == 0 {
@@ -362,22 +335,12 @@ fn fit_manifest_to_limit(
 }
 
 fn manifest_fits_limits(
-    source_blob_id: i64,
-    source_hash: &str,
-    limit_signature: &str,
-    filename_encoding: ArchiveFilenameEncoding,
     manifest: &ArchivePreviewManifest,
     max_manifest_bytes: usize,
 ) -> Result<bool> {
     if serialized_manifest_len(manifest)? > max_manifest_bytes {
         return Ok(false);
     }
-    let _ = (
-        source_blob_id,
-        source_hash,
-        limit_signature,
-        filename_encoding,
-    );
     Ok(true)
 }
 

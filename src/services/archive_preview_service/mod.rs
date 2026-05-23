@@ -67,8 +67,8 @@ pub(crate) struct ArchivePreviewLimits {
     pub(crate) max_manifest_bytes: usize,
     pub(crate) max_duration_secs: u64,
     pub(crate) scan_limits: ZipScanLimits,
-    pub(crate) signature: String,
     pub(crate) raw_signature: String,
+    pub(crate) task_signature: String,
     pub(crate) filename_encoding: ArchiveFilenameEncoding,
 }
 
@@ -171,7 +171,7 @@ async fn preview_verified_file(
         ));
     }
 
-    task_service::ensure_archive_preview_task(state, source_file, &blob, &limits.raw_signature)
+    task_service::ensure_archive_preview_task(state, source_file, &blob, &limits.task_signature)
         .await?;
     Ok(ArchivePreviewManifestLookup::Pending)
 }
@@ -209,31 +209,26 @@ impl ArchivePreviewLimits {
             configured_max_manifest_bytes.min(ARCHIVE_PREVIEW_MAX_CACHEABLE_MANIFEST_BYTES);
         let max_source_bytes = operations::archive_preview_max_source_bytes(runtime_config);
         let raw_signature = format!(
-            "source={};entries={};files={};dirs={};uncompressed={};ratio={};entry_ratio={};raw-manifest-v1",
+            "source={};uncompressed={};ratio={};entry_ratio={};raw-manifest-v1",
             max_source_bytes,
-            scan_limits.max_entries,
-            scan_limits.max_files,
-            scan_limits.max_directories,
             scan_limits.max_uncompressed_bytes,
             scan_limits.max_compression_ratio,
             scan_limits.max_entry_compression_ratio
         );
-        let signature = format!(
-            "{};manifest={};depth={};path={};filename_encoding={};name_policy=preview-display-v1",
+        let task_signature = format!(
+            "{};entries={};files={};dirs={}",
             raw_signature,
-            max_manifest_bytes,
-            scan_limits.max_depth,
-            scan_limits.max_path_bytes,
-            filename_encoding.as_str(),
+            scan_limits.max_entries,
+            scan_limits.max_files,
+            scan_limits.max_directories,
         );
-
         Ok(Self {
             max_source_bytes,
             max_manifest_bytes,
             max_duration_secs: operations::archive_preview_max_duration_secs(runtime_config),
             scan_limits,
-            signature,
             raw_signature,
+            task_signature,
             filename_encoding,
         })
     }

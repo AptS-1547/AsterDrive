@@ -10,8 +10,11 @@ use super::cache::{fit_raw_manifest_to_cache_limit, serialize_cached_raw_manifes
 use super::model::{ArchiveRawEntry, ArchiveRawManifest};
 use super::scan::build_manifest_from_raw;
 use super::*;
+use crate::entities::system_config;
+use crate::services::archive_service::test_utils::create_single_file_zip_with_raw_name;
 use crate::storage::BlobMetadata;
 use crate::storage::StorageDriver;
+use crate::types::{SystemConfigSource, SystemConfigValueType};
 
 struct PreviewMemoryRangeDriver {
     data: Vec<u8>,
@@ -118,8 +121,8 @@ fn preview_test_limits() -> ArchivePreviewLimits {
             max_compression_ratio: 100,
             max_entry_compression_ratio: 100,
         },
-        signature: format!("{raw_signature};encoding=auto"),
-        raw_signature,
+        raw_signature: raw_signature.clone(),
+        task_signature: format!("{raw_signature};entries=100;files=100;dirs=100"),
         filename_encoding: ArchiveFilenameEncoding::Auto,
     }
 }
@@ -128,11 +131,6 @@ fn preview_test_limits_with_encoding(
     filename_encoding: ArchiveFilenameEncoding,
 ) -> ArchivePreviewLimits {
     let mut limits = preview_test_limits();
-    limits.signature = format!(
-        "{};encoding={}",
-        limits.raw_signature,
-        filename_encoding.as_str()
-    );
     limits.filename_encoding = filename_encoding;
     limits
 }
@@ -175,6 +173,27 @@ fn preview_test_blob(size: i64) -> file_blob::Model {
         created_at: now,
         updated_at: now,
     }
+}
+
+fn apply_runtime_config_value(
+    runtime_config: &crate::config::RuntimeConfig,
+    key: &str,
+    value: &str,
+) {
+    runtime_config.apply(system_config::Model {
+        id: 1,
+        key: key.to_string(),
+        value: value.to_string(),
+        value_type: SystemConfigValueType::String,
+        requires_restart: false,
+        is_sensitive: false,
+        source: SystemConfigSource::System,
+        namespace: String::new(),
+        category: "test".to_string(),
+        description: "test".to_string(),
+        updated_at: Utc::now(),
+        updated_by: Some(1),
+    });
 }
 
 fn preview_test_raw_manifest() -> ArchiveRawManifest {
@@ -238,7 +257,7 @@ fn serialized_cache_uses_current_raw_schema_and_signature() {
 }
 
 #[test]
-fn raw_signature_ignores_display_encoding_while_manifest_signature_tracks_it() {
+fn raw_signature_ignores_display_encoding() {
     let runtime_config = crate::config::RuntimeConfig::default();
     let auto =
         ArchivePreviewLimits::from_runtime_config(&runtime_config, ArchiveFilenameEncoding::Auto)
@@ -250,9 +269,36 @@ fn raw_signature_ignores_display_encoding_while_manifest_signature_tracks_it() {
     .expect("GB18030 limits should build");
 
     assert_eq!(auto.raw_signature, gb18030.raw_signature);
-    assert_ne!(auto.signature, gb18030.signature);
     assert!(!auto.raw_signature.contains("filename_encoding"));
-    assert!(gb18030.signature.contains("filename_encoding=gb18030"));
+}
+
+#[test]
+fn raw_signature_ignores_display_count_limits_but_tracks_source_safety_limits() {
+    let runtime_config = crate::config::RuntimeConfig::default();
+    let baseline =
+        ArchivePreviewLimits::from_runtime_config(&runtime_config, ArchiveFilenameEncoding::Auto)
+            .expect("baseline limits should build");
+
+    apply_runtime_config_value(
+        &runtime_config,
+        crate::config::definitions::ARCHIVE_PREVIEW_MAX_ENTRIES_KEY,
+        "1",
+    );
+    let reduced_count =
+        ArchivePreviewLimits::from_runtime_config(&runtime_config, ArchiveFilenameEncoding::Auto)
+            .expect("reduced count limits should build");
+    assert_eq!(baseline.raw_signature, reduced_count.raw_signature);
+    assert_ne!(baseline.task_signature, reduced_count.task_signature);
+
+    apply_runtime_config_value(
+        &runtime_config,
+        crate::config::definitions::ARCHIVE_PREVIEW_MAX_SOURCE_BYTES_KEY,
+        "1",
+    );
+    let reduced_source =
+        ArchivePreviewLimits::from_runtime_config(&runtime_config, ArchiveFilenameEncoding::Auto)
+            .expect("reduced source limits should build");
+    assert_ne!(baseline.raw_signature, reduced_source.raw_signature);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -438,86 +484,6 @@ fn manifest_from_truncated_raw_cache_keeps_totals_and_marks_truncated() {
             ArchivePreviewExtractUnsupportedReason::UnsupportedEntryNames,
         )
     );
-}
-
-fn create_single_file_zip_with_raw_name(raw_name: &[u8], content: &[u8]) -> Vec<u8> {
-    let content_crc = crc32(content);
-    let compressed_size: u32 = content.len().try_into().expect("test content fits u32");
-    let uncompressed_size = compressed_size;
-    let name_len: u16 = raw_name.len().try_into().expect("test filename fits u16");
-
-    let mut bytes = Vec::new();
-    push_u32(&mut bytes, 0x0403_4b50);
-    push_u16(&mut bytes, 10);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u32(&mut bytes, content_crc);
-    push_u32(&mut bytes, compressed_size);
-    push_u32(&mut bytes, uncompressed_size);
-    push_u16(&mut bytes, name_len);
-    push_u16(&mut bytes, 0);
-    bytes.extend_from_slice(raw_name);
-    bytes.extend_from_slice(content);
-
-    let central_directory_offset: u32 = bytes
-        .len()
-        .try_into()
-        .expect("test central directory offset fits u32");
-    push_u32(&mut bytes, 0x0201_4b50);
-    push_u16(&mut bytes, 20);
-    push_u16(&mut bytes, 10);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u32(&mut bytes, content_crc);
-    push_u32(&mut bytes, compressed_size);
-    push_u32(&mut bytes, uncompressed_size);
-    push_u16(&mut bytes, name_len);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u32(&mut bytes, 0);
-    push_u32(&mut bytes, 0);
-    bytes.extend_from_slice(raw_name);
-
-    let central_directory_size: u32 = (bytes.len()
-        - usize::try_from(central_directory_offset)
-            .expect("test central directory offset fits usize"))
-    .try_into()
-    .expect("test central directory size fits u32");
-    push_u32(&mut bytes, 0x0605_4b50);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 0);
-    push_u16(&mut bytes, 1);
-    push_u16(&mut bytes, 1);
-    push_u32(&mut bytes, central_directory_size);
-    push_u32(&mut bytes, central_directory_offset);
-    push_u16(&mut bytes, 0);
-    bytes
-}
-
-fn push_u16(bytes: &mut Vec<u8>, value: u16) {
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-
-fn push_u32(bytes: &mut Vec<u8>, value: u32) {
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = 0xffff_ffff_u32;
-    for byte in bytes {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            let mask = 0_u32.wrapping_sub(crc & 1);
-            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
-        }
-    }
-    !crc
 }
 
 #[test]

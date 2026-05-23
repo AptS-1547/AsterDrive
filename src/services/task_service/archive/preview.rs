@@ -128,7 +128,7 @@ pub(super) async fn process_archive_preview_task(
             &state.runtime_config,
             crate::types::ArchiveFilenameEncoding::Auto,
         )?;
-        if limits.raw_signature != payload.limit_signature {
+        if limits.task_signature != payload.limit_signature {
             return Err(archive_preview_service::archive_preview_validation_error(
                 ApiSubcode::ArchivePreviewRejected,
                 "archive preview limits changed before generation completed",
