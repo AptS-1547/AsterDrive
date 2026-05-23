@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { handleApiError } from "@/hooks/useApiError";
 import { isTeamManager, isTeamOwner } from "@/lib/team";
 import { teamService } from "@/services/teamService";
@@ -57,7 +57,7 @@ export function useTeamManageData({
 	const canArchiveTeam = isTeamOwner(viewerRole);
 	const detailRequestStarted = detailRequestIdRef.current > 0;
 
-	const loadTeamDetail = useEffectEvent(async (nextTeamId: number) => {
+	const loadTeamDetail = useCallback(async (nextTeamId: number) => {
 		const requestId = ++detailRequestIdRef.current;
 		setDetailLoading(true);
 		try {
@@ -79,9 +79,9 @@ export function useTeamManageData({
 				setDetailLoading(false);
 			}
 		}
-	});
+	}, []);
 
-	const loadMembers = useEffectEvent(
+	const loadMembers = useCallback(
 		async (
 			nextTeamId: number,
 			nextOffset = memberOffset,
@@ -121,9 +121,10 @@ export function useTeamManageData({
 				}
 			}
 		},
+		[memberFilters, memberOffset],
 	);
 
-	const loadAuditEntries = useEffectEvent(
+	const loadAuditEntries = useCallback(
 		async (nextTeamId: number, nextOffset = auditOffset) => {
 			const requestId = ++auditRequestIdRef.current;
 			setAuditLoading(true);
@@ -152,6 +153,7 @@ export function useTeamManageData({
 				}
 			}
 		},
+		[auditOffset],
 	);
 
 	useEffect(() => {
@@ -163,7 +165,7 @@ export function useTeamManageData({
 		}
 
 		void loadTeamDetail(teamId);
-	}, [open, teamId]);
+	}, [loadTeamDetail, open, teamId]);
 
 	useEffect(() => {
 		if (!open || teamId == null || !canManageTeam) {
@@ -175,7 +177,7 @@ export function useTeamManageData({
 		}
 
 		void loadAuditEntries(teamId, auditOffset);
-	}, [auditOffset, canManageTeam, open, teamId]);
+	}, [auditOffset, canManageTeam, loadAuditEntries, open, teamId]);
 
 	useEffect(() => {
 		if (!open || teamId == null) {
@@ -189,7 +191,7 @@ export function useTeamManageData({
 		}
 
 		void loadMembers(teamId, memberOffset, memberFilters);
-	}, [memberFilters, memberOffset, open, teamId]);
+	}, [loadMembers, memberFilters, memberOffset, open, teamId]);
 
 	return {
 		auditEntries,

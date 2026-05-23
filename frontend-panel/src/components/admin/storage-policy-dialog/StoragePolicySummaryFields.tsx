@@ -26,7 +26,7 @@ export function StorageDriverVisual({
 	) : (
 		<Icon
 			name={option.iconName ?? "Globe"}
-			className={cn("h-8 w-8 text-amber-600 dark:text-amber-300", className)}
+			className={cn("size-8 text-amber-600 dark:text-amber-300", className)}
 		/>
 	);
 }
@@ -65,7 +65,7 @@ export function PolicySummaryCard({
 			className="rounded-3xl border border-border/70 bg-muted/20 p-5"
 		>
 			<div className="flex items-center gap-3">
-				<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+				<div className="flex size-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
 					<StorageDriverVisual option={currentStorageOption} />
 				</div>
 				<div>

@@ -204,7 +204,7 @@ function StringArrayConfigControl({
 						updateRows([...rows, currentOrigin]);
 					}}
 				>
-					<Icon name="Plus" className="h-3.5 w-3.5" />
+					<Icon name="Plus" className="size-3.5" />
 					{addCurrentOriginLabel}
 				</Button>
 			) : null}
@@ -243,7 +243,7 @@ function StringArrayConfigControl({
 								updateRows(nextRows);
 							}}
 						>
-							<Icon name="Plus" className="h-4 w-4" />
+							<Icon name="Plus" className="size-4" />
 						</Button>
 						<Button
 							type="button"
@@ -260,7 +260,7 @@ function StringArrayConfigControl({
 								updateRows(rows.filter((_, rowIndex) => rowIndex !== index));
 							}}
 						>
-							<Icon name="Trash" className="h-4 w-4" />
+							<Icon name="Trash" className="size-4" />
 						</Button>
 					</div>
 				);

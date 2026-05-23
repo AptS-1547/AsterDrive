@@ -33,7 +33,7 @@ export function TrashBatchActionBar({
 				<Button size="sm" variant="outline" onClick={onRestore} disabled={busy}>
 					<Icon
 						name={restoring ? "Spinner" : "ArrowCounterClockwise"}
-						className={`mr-1 h-3.5 w-3.5 ${restoring ? "animate-spin" : ""}`}
+						className={`mr-1 size-3.5 ${restoring ? "animate-spin" : ""}`}
 					/>
 					{restoring
 						? t("files:trash_restoring")
@@ -47,7 +47,7 @@ export function TrashBatchActionBar({
 				>
 					<Icon
 						name={purging ? "Spinner" : "Trash"}
-						className={`mr-1 h-3.5 w-3.5 ${purging ? "animate-spin" : ""}`}
+						className={`mr-1 size-3.5 ${purging ? "animate-spin" : ""}`}
 					/>
 					{purging
 						? t("files:trash_purging")
@@ -60,7 +60,7 @@ export function TrashBatchActionBar({
 				onClick={onClearSelection}
 				disabled={busy}
 			>
-				<Icon name="X" className="h-3.5 w-3.5" />
+				<Icon name="X" className="size-3.5" />
 			</Button>
 		</div>
 	);

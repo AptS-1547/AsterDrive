@@ -354,7 +354,7 @@ export function UserDetailDialog({
 								disabled={savingProfile}
 							>
 								{savingProfile ? (
-									<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+									<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 								) : null}
 								{t("save_changes")}
 							</Button>

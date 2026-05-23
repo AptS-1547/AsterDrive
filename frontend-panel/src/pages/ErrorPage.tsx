@@ -187,10 +187,10 @@ export default function ErrorPage() {
 					<CardHeader className="border-b">
 						<div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
 							<div className="flex items-start gap-4">
-								<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border bg-muted/40">
+								<div className="flex size-14 shrink-0 items-center justify-center rounded-2xl border bg-muted/40">
 									<Icon
 										name="CircleAlert"
-										className="h-7 w-7 text-muted-foreground"
+										className="size-7 text-muted-foreground"
 									/>
 								</div>
 
@@ -316,11 +316,11 @@ export default function ErrorPage() {
 					<CardFooter className="justify-end">
 						<div className="flex flex-col gap-3 sm:flex-row">
 							<Button variant="outline" onClick={handleGoBack}>
-								<Icon name="Undo" className="mr-2 h-4 w-4" />
+								<Icon name="Undo" className="mr-2 size-4" />
 								{t("error_page_go_back")}
 							</Button>
 							<Button onClick={() => navigate("/")}>
-								<Icon name="House" className="mr-2 h-4 w-4" />
+								<Icon name="House" className="mr-2 size-4" />
 								{t("error_page_go_home")}
 							</Button>
 						</div>

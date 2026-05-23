@@ -162,7 +162,7 @@ export function OverviewBackgroundTasksSection({
 				</Table>
 			) : (
 				<EmptyState
-					icon={<Icon name="Clock" className="h-10 w-10" />}
+					icon={<Icon name="Clock" className="size-10" />}
 					title={t("overview_background_tasks_empty")}
 					description={t("overview_background_tasks_empty_desc")}
 				/>

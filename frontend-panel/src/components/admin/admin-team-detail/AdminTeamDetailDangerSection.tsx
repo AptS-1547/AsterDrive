@@ -82,9 +82,9 @@ export function AdminTeamDetailDangerSection({
 								onClick={() => void onRestore()}
 							>
 								{restoring ? (
-									<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+									<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 								) : (
-									<Icon name="ArrowCounterClockwise" className="mr-1 h-4 w-4" />
+									<Icon name="ArrowCounterClockwise" className="mr-1 size-4" />
 								)}
 								{t("restore")}
 							</Button>
@@ -121,9 +121,9 @@ export function AdminTeamDetailDangerSection({
 								onClick={() => setArchiveDialogOpen(true)}
 							>
 								{archiving ? (
-									<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+									<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 								) : (
-									<Icon name="Trash" className="mr-1 h-4 w-4" />
+									<Icon name="Trash" className="mr-1 size-4" />
 								)}
 								{t("delete_team")}
 							</Button>

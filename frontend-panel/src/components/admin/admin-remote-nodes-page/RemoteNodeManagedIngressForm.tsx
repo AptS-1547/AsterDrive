@@ -310,7 +310,7 @@ export function RemoteNodeManagedIngressForm({
 				>
 					<Icon
 						name={submitting ? "Spinner" : "FloppyDisk"}
-						className={`mr-1 h-4 w-4 ${submitting ? "animate-spin" : ""}`}
+						className={`mr-1 size-4 ${submitting ? "animate-spin" : ""}`}
 					/>
 					{draftMode === "create" ? t("core:create") : t("save_changes")}
 				</Button>

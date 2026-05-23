@@ -117,8 +117,8 @@ export function ShareFolderView({
 				>
 					<div className="mx-auto flex w-full max-w-7xl flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
 						<div className="flex min-w-0 items-center gap-3">
-							<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-amber-500/12 text-amber-600 dark:text-amber-300">
-								<Icon name="Folder" className="h-6 w-6" />
+							<div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-amber-500/12 text-amber-600 dark:text-amber-300">
+								<Icon name="Folder" className="size-6" />
 							</div>
 							<div className="min-w-0">
 								<h1 className="truncate text-lg font-semibold leading-tight sm:text-xl">
@@ -129,7 +129,7 @@ export function ShareFolderView({
 										avatar={info.shared_by.avatar}
 										name={info.shared_by.name}
 										size="sm"
-										className="h-5 w-5 rounded-md text-[10px]"
+										className="size-5 rounded-md text-[10px]"
 									/>
 									<ShareMetaLine
 										items={[
@@ -153,7 +153,7 @@ export function ShareFolderView({
 								<div className="flex min-w-0 items-center gap-2">
 									<Icon
 										name="FolderOpen"
-										className="h-5 w-5 shrink-0 text-amber-500"
+										className="size-5 shrink-0 text-amber-500"
 									/>
 									<div className="min-w-0 flex-1">{breadcrumbElement}</div>
 								</div>
@@ -182,7 +182,7 @@ export function ShareFolderView({
 									{hasMoreFiles && (
 										<div ref={sentinelRef} className="flex justify-center py-4">
 											{loadingMore && (
-												<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+												<div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
 											)}
 										</div>
 									)}

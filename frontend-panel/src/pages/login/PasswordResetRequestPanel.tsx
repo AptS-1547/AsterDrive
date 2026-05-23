@@ -32,7 +32,7 @@ export function PasswordResetRequestPanel({
 		<div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
 			<div className="flex items-start gap-3">
 				<div className="rounded-xl bg-primary/10 p-2 text-primary">
-					<Icon name="EnvelopeSimple" className="h-5 w-5" />
+					<Icon name="EnvelopeSimple" className="size-5" />
 				</div>
 				<div className="space-y-1">
 					<p className="text-sm font-medium">{t("forgot_password_title")}</p>
@@ -81,9 +81,9 @@ export function PasswordResetRequestPanel({
 					onClick={onSubmit}
 				>
 					{requestingPasswordReset ? (
-						<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+						<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 					) : (
-						<Icon name="EnvelopeSimple" className="mr-2 h-4 w-4" />
+						<Icon name="EnvelopeSimple" className="mr-2 size-4" />
 					)}
 					{requestingPasswordReset
 						? t("sending_password_reset")
@@ -95,7 +95,7 @@ export function PasswordResetRequestPanel({
 					className="h-10"
 					onClick={onBack}
 				>
-					<Icon name="ArrowLeft" className="mr-2 h-4 w-4" />
+					<Icon name="ArrowLeft" className="mr-2 size-4" />
 					{t("back_to_sign_in")}
 				</Button>
 			</div>

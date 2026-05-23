@@ -66,7 +66,7 @@ interface MembersSectionProps {
 	roleLabel: (role: TeamMemberRole) => string;
 	roleOptions: TeamMemberRole[];
 	setMemberIdentifier: (value: string) => void;
-	setMemberOffset: (offset: number) => void;
+	setMemberOffset: (offset: number | ((offset: number) => number)) => void;
 	setMemberQuery: (value: string) => void;
 	setMemberRole: (role: TeamMemberRole) => void;
 	setMemberRoleFilter: (value: "__all__" | TeamMemberRole) => void;
@@ -95,7 +95,6 @@ export function AdminTeamDetailMembersSection({
 	memberIdentifier,
 	memberLoading,
 	memberMutating,
-	memberOffset,
 	memberQuery,
 	memberRole,
 	memberRoleFilter,
@@ -286,7 +285,7 @@ export function AdminTeamDetailMembersSection({
 				<SkeletonTable columns={6} rows={5} />
 			) : memberTotal === 0 ? (
 				<EmptyState
-					icon={<Icon name="ListBullets" className="h-10 w-10" />}
+					icon={<Icon name="ListBullets" className="size-10" />}
 					title={
 						hasMemberFilters
 							? t("team_member_filtered_empty")
@@ -461,19 +460,23 @@ export function AdminTeamDetailMembersSection({
 									size="sm"
 									disabled={prevMemberPageDisabled || memberLoading}
 									onClick={() =>
-										setMemberOffset(Math.max(0, memberOffset - 10))
+										setMemberOffset((currentOffset) =>
+											Math.max(0, currentOffset - 10),
+										)
 									}
 								>
-									<Icon name="CaretLeft" className="h-4 w-4" />
+									<Icon name="CaretLeft" className="size-4" />
 								</Button>
 								<Button
 									type="button"
 									variant="outline"
 									size="sm"
 									disabled={nextMemberPageDisabled || memberLoading}
-									onClick={() => setMemberOffset(memberOffset + 10)}
+									onClick={() =>
+										setMemberOffset((currentOffset) => currentOffset + 10)
+									}
 								>
-									<Icon name="CaretRight" className="h-4 w-4" />
+									<Icon name="CaretRight" className="size-4" />
 								</Button>
 							</div>
 						</div>

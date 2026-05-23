@@ -44,9 +44,7 @@ export function ShareTopBar() {
 							>
 								<Icon
 									name={musicIsPlaying ? "MusicNotes" : "VinylRecord"}
-									className={
-										musicIsPlaying ? "h-4 w-4 text-primary" : "h-4 w-4"
-									}
+									className={musicIsPlaying ? "size-4 text-primary" : "size-4"}
 								/>
 							</TooltipTrigger>
 							<TooltipContent>{t("files:music_player_open")}</TooltipContent>

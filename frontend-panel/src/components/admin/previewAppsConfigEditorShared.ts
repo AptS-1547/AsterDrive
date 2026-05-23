@@ -117,11 +117,17 @@ function readStringList(value: unknown) {
 		return [];
 	}
 
-	return value
-		.map((item) => readString(item).trim())
-		.filter(
-			(item, index, items) => item.length > 0 && items.indexOf(item) === index,
-		);
+	const items: string[] = [];
+	const seen = new Set<string>();
+	for (const valueItem of value) {
+		const item = readString(valueItem).trim();
+		if (item.length === 0 || seen.has(item)) {
+			continue;
+		}
+		seen.add(item);
+		items.push(item);
+	}
+	return items;
 }
 
 function readStringMap(value: unknown) {
@@ -284,16 +290,21 @@ function protectedBuiltinLabels(key: string): Record<string, string> {
 function restoreMissingProtectedBuiltinPreviewApps(
 	apps: PreviewAppsEditorApp[],
 ) {
-	const existingKeys = new Set(
-		apps.map((app) => app.key.trim()).filter((key) => key.length > 0),
-	);
+	const existingKeys = new Set<string>();
+	for (const app of apps) {
+		const key = app.key.trim();
+		if (key.length > 0) {
+			existingKeys.add(key);
+		}
+	}
 
-	return [
-		...apps,
-		...PREVIEW_APP_PROTECTED_BUILTIN_KEYS.filter(
-			(key) => !existingKeys.has(key),
-		).map(createProtectedBuiltinPreviewAppDraft),
-	];
+	const restored = [...apps];
+	for (const key of PREVIEW_APP_PROTECTED_BUILTIN_KEYS) {
+		if (!existingKeys.has(key)) {
+			restored.push(createProtectedBuiltinPreviewAppDraft(key));
+		}
+	}
+	return restored;
 }
 
 function pruneConfigValue(value: unknown): unknown {
@@ -303,9 +314,13 @@ function pruneConfigValue(value: unknown): unknown {
 	}
 
 	if (Array.isArray(value)) {
-		const items = value
-			.map((item) => pruneConfigValue(item))
-			.filter((item) => item !== undefined);
+		const items: unknown[] = [];
+		for (const item of value) {
+			const pruned = pruneConfigValue(item);
+			if (pruned !== undefined) {
+				items.push(pruned);
+			}
+		}
 		return items.length > 0 ? items : undefined;
 	}
 
@@ -345,12 +360,17 @@ function pruneStringMap(values: Record<string, string>) {
 }
 
 export function parsePreviewAppsDelimitedInput(value: string) {
-	return value
-		.split(",")
-		.map((item) => item.trim())
-		.filter(
-			(item, index, items) => item.length > 0 && items.indexOf(item) === index,
-		);
+	const items: string[] = [];
+	const seen = new Set<string>();
+	for (const rawItem of value.split(",")) {
+		const item = rawItem.trim();
+		if (item.length === 0 || seen.has(item)) {
+			continue;
+		}
+		seen.add(item);
+		items.push(item);
+	}
+	return items;
 }
 
 export function formatPreviewAppsDelimitedInput(values: string[]) {
@@ -431,12 +451,16 @@ export function serializePreviewAppsConfig(config: PreviewAppsEditorConfig) {
 					app.provider,
 				);
 				const nextLabels = pruneStringMap(app.labels);
-				const extensions = app.extensions
-					.map((extension) => extension.trim())
-					.filter(
-						(extension, index, items) =>
-							extension.length > 0 && items.indexOf(extension) === index,
-					);
+				const extensions: string[] = [];
+				const seenExtensions = new Set<string>();
+				for (const rawExtension of app.extensions) {
+					const extension = rawExtension.trim();
+					if (extension.length === 0 || seenExtensions.has(extension)) {
+						continue;
+					}
+					seenExtensions.add(extension);
+					extensions.push(extension);
+				}
 
 				return {
 					...(Object.keys(nextConfig).length > 0 ? { config: nextConfig } : {}),
@@ -572,8 +596,9 @@ export function getPreviewAppsConfigIssuesFromString(value: string) {
 function getNextCustomKey(existingKeys: string[]) {
 	let index = 1;
 	let candidate = `custom.app_${index}`;
+	const existingKeySet = new Set(existingKeys);
 
-	while (existingKeys.includes(candidate)) {
+	while (existingKeySet.has(candidate)) {
 		index += 1;
 		candidate = `custom.app_${index}`;
 	}

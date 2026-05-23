@@ -86,7 +86,7 @@ export function AdminOffsetPagination({
 								/>
 							}
 						>
-							<Icon name="CaretLeft" className="h-4 w-4" />
+							<Icon name="CaretLeft" className="size-4" />
 						</TooltipTrigger>
 						{prevDisabled ? (
 							<TooltipContent>{t("pagination_prev_disabled")}</TooltipContent>
@@ -103,7 +103,7 @@ export function AdminOffsetPagination({
 								/>
 							}
 						>
-							<Icon name="CaretRight" className="h-4 w-4" />
+							<Icon name="CaretRight" className="size-4" />
 						</TooltipTrigger>
 						{nextDisabled ? (
 							<TooltipContent>{t("pagination_next_disabled")}</TooltipContent>

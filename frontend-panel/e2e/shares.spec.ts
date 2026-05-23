@@ -45,10 +45,11 @@ test.describe
 			});
 
 			await navigateToRoot(page);
+			const clientStatePromise = captureClientState(page);
 			const shareUrl = await createPageShare(page, sharedFolder, {
 				password: sharePassword,
 			});
-			const clientState = await captureClientState(page);
+			const clientState = await clientStatePromise;
 
 			await expectProtectedFolderSharePreview(
 				browser,

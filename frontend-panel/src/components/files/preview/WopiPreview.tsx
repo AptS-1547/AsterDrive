@@ -165,7 +165,7 @@ export function WopiPreview({
 	if (!session) {
 		return (
 			<EmptyState
-				icon={<Icon name="Globe" className="h-10 w-10" />}
+				icon={<Icon name="Globe" className="size-10" />}
 				title={t("wopi_unavailable")}
 				description={t("wopi_unavailable_desc")}
 			/>
@@ -190,12 +190,12 @@ export function WopiPreview({
 			<>
 				{form}
 				<EmptyState
-					icon={<Icon name="ArrowSquareOut" className="h-10 w-10" />}
+					icon={<Icon name="ArrowSquareOut" className="size-10" />}
 					title={label}
 					description={t("wopi_external_desc", { label })}
 					action={
 						<Button variant="outline" onClick={openExternally}>
-							<Icon name="ArrowSquareOut" className="mr-2 h-4 w-4" />
+							<Icon name="ArrowSquareOut" className="mr-2 size-4" />
 							{t("wopi_open", { label })}
 						</Button>
 					}
@@ -222,7 +222,7 @@ export function WopiPreview({
 				iframeSandbox={EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX}
 				actions={
 					<Button variant="outline" size="sm" onClick={openExternally}>
-						<Icon name="ArrowSquareOut" className="mr-2 h-4 w-4" />
+						<Icon name="ArrowSquareOut" className="mr-2 size-4" />
 						{t("wopi_open", { label })}
 					</Button>
 				}

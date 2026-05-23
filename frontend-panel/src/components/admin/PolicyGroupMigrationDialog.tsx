@@ -118,9 +118,9 @@ export function PolicyGroupMigrationDialog({
 						disabled={targetSelectionDisabled}
 					>
 						{submitting ? (
-							<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+							<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 						) : (
-							<Icon name="ArrowsClockwise" className="mr-1 h-4 w-4" />
+							<Icon name="ArrowsClockwise" className="mr-1 size-4" />
 						)}
 						{t("policy_group_migration_confirm")}
 					</Button>

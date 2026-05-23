@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
@@ -29,7 +29,7 @@ export function SecurityExternalAuthLinksSection() {
 	const [busyIds, setBusyIds] = useState<Set<number>>(() => new Set());
 	const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
 
-	const loadLinks = useEffectEvent(async (options?: { force?: boolean }) => {
+	const loadLinks = useCallback(async (options?: { force?: boolean }) => {
 		try {
 			setLoading(true);
 			setLinks(await authService.listExternalAuthLinks(options));
@@ -38,11 +38,11 @@ export function SecurityExternalAuthLinksSection() {
 		} finally {
 			setLoading(false);
 		}
-	});
+	}, []);
 
 	useEffect(() => {
 		void loadLinks();
-	}, []);
+	}, [loadLinks]);
 
 	const handleDelete = async (id: number) => {
 		try {
@@ -94,9 +94,9 @@ export function SecurityExternalAuthLinksSection() {
 					onClick={() => void loadLinks({ force: true })}
 				>
 					{loading ? (
-						<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+						<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 					) : (
-						<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
+						<Icon name="ArrowClockwise" className="mr-2 size-4" />
 					)}
 					{t("core:refresh")}
 				</Button>
@@ -131,7 +131,7 @@ export function SecurityExternalAuthLinksSection() {
 									<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 										<div className="flex min-w-0 items-center gap-2">
 											<div className="rounded-lg border bg-background p-2 text-primary">
-												<Icon name="Globe" className="h-4 w-4" />
+												<Icon name="Globe" className="size-4" />
 											</div>
 											<div className="min-w-0 flex-1 space-y-1">
 												<p className="truncate text-sm font-semibold">
@@ -167,10 +167,10 @@ export function SecurityExternalAuthLinksSection() {
 												{busy ? (
 													<Icon
 														name="Spinner"
-														className="mr-2 h-4 w-4 animate-spin"
+														className="mr-2 size-4 animate-spin"
 													/>
 												) : (
-													<Icon name="Trash" className="mr-2 h-4 w-4" />
+													<Icon name="Trash" className="mr-2 size-4" />
 												)}
 												{t("settings:settings_external_auth_links_delete")}
 											</Button>

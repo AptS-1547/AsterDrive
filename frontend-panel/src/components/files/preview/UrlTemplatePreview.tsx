@@ -30,6 +30,11 @@ const SAME_ORIGIN_SANDBOX_URL_TEMPLATE_KEYS = new Set([
 	"builtin.office_microsoft",
 ]);
 
+interface UrlTemplatePreviewState {
+	isLoading: boolean;
+	target: ResolvedVideoBrowserTarget | null;
+}
+
 export function UrlTemplatePreview({
 	createPreviewLink,
 	downloadPath,
@@ -39,14 +44,16 @@ export function UrlTemplatePreview({
 	rawConfig,
 }: UrlTemplatePreviewProps) {
 	const { t } = useTranslation("files");
-	const [isLoading, setIsLoading] = useState(true);
-	const [target, setTarget] = useState<ResolvedVideoBrowserTarget | null>(null);
+	const [{ isLoading, target }, setPreviewState] =
+		useState<UrlTemplatePreviewState>({
+			isLoading: true,
+			target: null,
+		});
 
 	useEffect(() => {
 		let cancelled = false;
 
-		setIsLoading(true);
-		setTarget(null);
+		setPreviewState({ isLoading: true, target: null });
 
 		void resolveUrlTemplateTarget(
 			file,
@@ -57,15 +64,11 @@ export function UrlTemplatePreview({
 		)
 			.then((resolvedTarget) => {
 				if (cancelled) return;
-				setTarget(resolvedTarget);
+				setPreviewState({ isLoading: false, target: resolvedTarget });
 			})
 			.catch(() => {
 				if (cancelled) return;
-				setTarget(null);
-			})
-			.finally(() => {
-				if (cancelled) return;
-				setIsLoading(false);
+				setPreviewState({ isLoading: false, target: null });
 			});
 
 		return () => {
@@ -90,7 +93,7 @@ export function UrlTemplatePreview({
 	if (!target) {
 		return (
 			<EmptyState
-				icon={<Icon name="Globe" className="h-10 w-10" />}
+				icon={<Icon name="Globe" className="size-10" />}
 				title={t("url_template_unavailable")}
 				description={t("url_template_unavailable_desc")}
 			/>
@@ -100,12 +103,12 @@ export function UrlTemplatePreview({
 	if (target.mode === "new_tab") {
 		return (
 			<EmptyState
-				icon={<Icon name="ArrowSquareOut" className="h-10 w-10" />}
+				icon={<Icon name="ArrowSquareOut" className="size-10" />}
 				title={target.label}
 				description={t("url_template_external_desc", { label: target.label })}
 				action={
 					<Button variant="outline" onClick={openTarget}>
-						<Icon name="ArrowSquareOut" className="mr-2 h-4 w-4" />
+						<Icon name="ArrowSquareOut" className="mr-2 size-4" />
 						{t("url_template_open", { label: target.label })}
 					</Button>
 				}
@@ -119,7 +122,7 @@ export function UrlTemplatePreview({
 			src={target.url}
 			actions={
 				<Button variant="outline" size="sm" onClick={openTarget}>
-					<Icon name="ArrowSquareOut" className="mr-2 h-4 w-4" />
+					<Icon name="ArrowSquareOut" className="mr-2 size-4" />
 					{t("url_template_open", { label: target.label })}
 				</Button>
 			}

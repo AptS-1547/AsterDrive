@@ -82,12 +82,12 @@ export function TrashGrid({
 								<div className="flex items-center gap-3">
 									<div className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted/70">
 										{item.entity_type === "folder" ? (
-											<Icon name="Folder" className="h-6 w-6 text-amber-500" />
+											<Icon name="Folder" className="size-6 text-amber-500" />
 										) : (
 											<FileTypeIcon
 												mimeType={item.mime_type}
 												fileName={item.name}
-												className="h-6 w-6"
+												className="size-6"
 											/>
 										)}
 									</div>
@@ -149,7 +149,7 @@ export function TrashGrid({
 							>
 								<Icon
 									name={restorePending ? "Spinner" : "ArrowCounterClockwise"}
-									className={`mr-1 h-3.5 w-3.5 ${restorePending ? "animate-spin" : ""}`}
+									className={`mr-1 size-3.5 ${restorePending ? "animate-spin" : ""}`}
 								/>
 								{restoreLabel}
 							</Button>
@@ -165,7 +165,7 @@ export function TrashGrid({
 							>
 								<Icon
 									name={purgePending ? "Spinner" : "Trash"}
-									className={`mr-1 h-3.5 w-3.5 ${purgePending ? "animate-spin" : ""}`}
+									className={`mr-1 size-3.5 ${purgePending ? "animate-spin" : ""}`}
 								/>
 								{purgeLabel}
 							</Button>

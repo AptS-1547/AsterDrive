@@ -108,7 +108,7 @@ export function EditShareDialog({
 			<DialogContent className="max-w-md">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
-						<Icon name="PencilSimple" className="h-4 w-4" />
+						<Icon name="PencilSimple" className="size-4" />
 						{t("share:my_shares_edit_title", { name: share.resource_name })}
 					</DialogTitle>
 					<DialogDescription>

@@ -213,7 +213,7 @@ export function RemoteNodeManagedIngressSection({
 						onClick={startCreate}
 						disabled={loading || Boolean(errorMessage)}
 					>
-						<Icon name="Plus" className="mr-1 h-4 w-4" />
+						<Icon name="Plus" className="mr-1 size-4" />
 						{t("remote_node_ingress_profiles_create")}
 					</Button>
 				) : null}

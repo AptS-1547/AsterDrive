@@ -115,12 +115,12 @@ export function TrashTable({
 							<TableCell>
 								<div className="flex items-center gap-2">
 									{item.entity_type === "folder" ? (
-										<Icon name="Folder" className="h-4 w-4 text-amber-500" />
+										<Icon name="Folder" className="size-4 text-amber-500" />
 									) : (
 										<FileTypeIcon
 											mimeType={item.mime_type}
 											fileName={item.name}
-											className="h-4 w-4"
+											className="size-4"
 										/>
 									)}
 									<div className="min-w-0">
@@ -162,7 +162,7 @@ export function TrashTable({
 											name={
 												restorePending ? "Spinner" : "ArrowCounterClockwise"
 											}
-											className={`h-4 w-4 ${restorePending ? "animate-spin" : ""}`}
+											className={`size-4 ${restorePending ? "animate-spin" : ""}`}
 										/>
 									</Button>
 									<Button
@@ -179,7 +179,7 @@ export function TrashTable({
 									>
 										<Icon
 											name={purgePending ? "Spinner" : "Trash"}
-											className={`h-4 w-4 ${purgePending ? "animate-spin" : ""}`}
+											className={`size-4 ${purgePending ? "animate-spin" : ""}`}
 										/>
 									</Button>
 								</div>

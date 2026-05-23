@@ -1,10 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { UserStatusBadge } from "@/components/common/UserStatusBadge";
 import {
 	getRoleBadgeClass,
 	getStatusBadgeClass,
-	UserStatusBadge,
-} from "@/components/common/UserStatusBadge";
+} from "@/components/common/userBadgeClasses";
 
 vi.mock("@/components/ui/badge", () => ({
 	Badge: ({

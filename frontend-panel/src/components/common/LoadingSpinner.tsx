@@ -18,7 +18,7 @@ export function LoadingSpinner({ text, className }: LoadingSpinnerProps) {
 		>
 			<Icon
 				name="Spinner"
-				className="h-6 w-6 animate-spin text-muted-foreground"
+				className="size-6 animate-spin text-muted-foreground"
 			/>
 			{text && <p className="mt-2 text-sm text-muted-foreground">{text}</p>}
 		</div>

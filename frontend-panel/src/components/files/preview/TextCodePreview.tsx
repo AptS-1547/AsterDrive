@@ -23,7 +23,7 @@ interface TextCodePreviewProps {
 }
 
 function useIsDark() {
-	const [dark, setDark] = useState(
+	const [dark, setDark] = useState(() =>
 		document.documentElement.classList.contains("dark"),
 	);
 
@@ -116,14 +116,14 @@ export function TextCodePreview({
 		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs dark:shadow-none">
 			<div className="flex items-center gap-2 border-b border-border/60 bg-muted/25 px-4 py-2 dark:bg-muted/15">
 				<div className="flex items-center gap-2">
-					<Icon name="FileCode" className="h-4 w-4 text-muted-foreground" />
+					<Icon name="FileCode" className="size-4 text-muted-foreground" />
 					<span className="text-sm font-medium">{file.name}</span>
 				</div>
 				<div className="ml-auto flex items-center gap-2">
 					{!editing ? (
 						editable ? (
 							<Button variant="outline" size="sm" onClick={startEditing}>
-								<Icon name="PencilSimple" className="mr-1 h-3.5 w-3.5" />
+								<Icon name="PencilSimple" className="mr-1 size-3.5" />
 								{t("core:edit")}
 							</Button>
 						) : null
@@ -135,11 +135,11 @@ export function TextCodePreview({
 								onClick={save}
 								disabled={saving}
 							>
-								<Icon name="FloppyDisk" className="mr-1 h-3.5 w-3.5" />
+								<Icon name="FloppyDisk" className="mr-1 size-3.5" />
 								{saving ? t("files:saving") : t("core:save")}
 							</Button>
 							<Button variant="outline" size="sm" onClick={cancelEditing}>
-								<Icon name="Undo" className="mr-1 h-3.5 w-3.5" />
+								<Icon name="Undo" className="mr-1 size-3.5" />
 								{t("core:cancel")}
 							</Button>
 						</>

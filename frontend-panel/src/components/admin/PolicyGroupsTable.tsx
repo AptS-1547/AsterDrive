@@ -115,7 +115,7 @@ export function PolicyGroupsTable({
 				items={groups}
 				columns={6}
 				rows={5}
-				emptyIcon={<Icon name="ListBullets" className="h-6 w-6" />}
+				emptyIcon={<Icon name="ListBullets" className="size-6" />}
 				emptyTitle={t("no_policy_groups")}
 				emptyDescription={t("no_policy_groups_desc")}
 				headerRow={
@@ -276,10 +276,7 @@ export function PolicyGroupsTable({
 														title={t("migrate_policy_group_users")}
 														disabled={total <= 1 || isDeleting}
 													>
-														<Icon
-															name="ArrowsClockwise"
-															className="h-3.5 w-3.5"
-														/>
+														<Icon name="ArrowsClockwise" className="size-3.5" />
 													</Button>
 												</div>
 											</TooltipTrigger>
@@ -298,7 +295,7 @@ export function PolicyGroupsTable({
 											title={t("edit_policy_group")}
 											disabled={isDeleting}
 										>
-											<Icon name="PencilSimple" className="h-3.5 w-3.5" />
+											<Icon name="PencilSimple" className="size-3.5" />
 										</Button>
 										<Tooltip>
 											<TooltipTrigger>
@@ -314,7 +311,7 @@ export function PolicyGroupsTable({
 													>
 														<Icon
 															name={isDeleting ? "Spinner" : "Trash"}
-															className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+															className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
 														/>
 													</Button>
 												</div>
@@ -373,7 +370,7 @@ export function PolicyGroupsTable({
 										/>
 									}
 								>
-									<Icon name="CaretLeft" className="h-4 w-4" />
+									<Icon name="CaretLeft" className="size-4" />
 								</TooltipTrigger>
 								{prevPageDisabled ? (
 									<TooltipContent>
@@ -392,7 +389,7 @@ export function PolicyGroupsTable({
 										/>
 									}
 								>
-									<Icon name="CaretRight" className="h-4 w-4" />
+									<Icon name="CaretRight" className="size-4" />
 								</TooltipTrigger>
 								{nextPageDisabled ? (
 									<TooltipContent>

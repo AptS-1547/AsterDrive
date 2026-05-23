@@ -1,5 +1,6 @@
 import type { MutableRefObject, ReactNode, RefObject } from "react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/buttonVariants";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -73,7 +74,7 @@ function renderCategoryMenuItems({
 					value={summary.category}
 					className="gap-2 pr-10"
 				>
-					<Icon name={summary.icon} className="h-4 w-4 text-muted-foreground" />
+					<Icon name={summary.icon} className="size-4 text-muted-foreground" />
 					<span className="min-w-0 flex-1 truncate">{summary.label}</span>
 				</DropdownMenuRadioItem>
 			))}
@@ -96,7 +97,7 @@ function CompactNavigationTabContent({
 					: COMPACT_NAV_TAB_CONTENT_CLASS
 			}
 		>
-			<Icon name={summary.icon} className="h-4 w-4" />
+			<Icon name={summary.icon} className="size-4" />
 			<span>{summary.label}</span>
 		</span>
 	);
@@ -117,11 +118,11 @@ function DesktopNavigation({
 					<TabsTrigger
 						key={summary.category}
 						value={summary.category}
-						className="group h-auto w-full justify-start rounded-2xl border-0 px-0 py-0 text-left whitespace-normal text-foreground/75 after:hidden hover:text-foreground data-active:bg-transparent data-active:text-foreground"
+						className="group h-auto w-full justify-start rounded-2xl border-0 p-0 text-left whitespace-normal text-foreground/75 after:hidden hover:text-foreground data-active:bg-transparent data-active:text-foreground"
 					>
 						<div className="flex w-full items-start gap-3 rounded-2xl px-4 py-3 transition-colors duration-200 group-hover:bg-muted/40 group-data-[active]:bg-muted/55">
-							<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted/80 text-muted-foreground transition-colors duration-200 group-data-[active]:bg-background group-data-[active]:text-foreground">
-								<Icon name={summary.icon} className="h-4 w-4" />
+							<div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/80 text-muted-foreground transition-colors duration-200 group-data-[active]:bg-background group-data-[active]:text-foreground">
+								<Icon name={summary.icon} className="size-4" />
 							</div>
 							<div className="min-w-0 flex-1 space-y-1">
 								<p className="break-words text-sm font-medium leading-5">
@@ -189,7 +190,7 @@ function CompactNavigation({
 							>
 								<Icon
 									name={compactOverflowActiveSummary?.icon ?? "DotsThree"}
-									className="h-4 w-4"
+									className="size-4"
 								/>
 								<span>
 									{compactOverflowActiveSummary?.label ?? t("core:more")}
@@ -255,7 +256,7 @@ function CompactNavigationMeasurements({
 				type="button"
 				className={COMPACT_NAV_OVERFLOW_TRIGGER_CLASS}
 			>
-				<Icon name="DotsThree" className="h-4 w-4" />
+				<Icon name="DotsThree" className="size-4" />
 				<span>{t("core:more")}</span>
 			</button>
 			{compactOrderedSummaries.map((summary) => (
@@ -267,7 +268,7 @@ function CompactNavigationMeasurements({
 					type="button"
 					className={COMPACT_NAV_OVERFLOW_TRIGGER_CLASS}
 				>
-					<Icon name={summary.icon} className="h-4 w-4" />
+					<Icon name={summary.icon} className="size-4" />
 					<span>{summary.label}</span>
 				</button>
 			))}
@@ -305,8 +306,8 @@ function MobileNavigation({
 							className="h-auto w-full justify-between rounded-2xl px-4 py-3"
 						>
 							<span className="flex min-w-0 items-center gap-3">
-								<span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-									<Icon name={activeCategorySummary.icon} className="h-4 w-4" />
+								<span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+									<Icon name={activeCategorySummary.icon} className="size-4" />
 								</span>
 								<span className="min-w-0 text-left">
 									<span className="block truncate text-sm font-medium">
@@ -320,7 +321,7 @@ function MobileNavigation({
 							<span className="ml-3 flex shrink-0 items-center gap-2">
 								<Icon
 									name="CaretDown"
-									className="h-4 w-4 text-muted-foreground"
+									className="size-4 text-muted-foreground"
 								/>
 							</span>
 						</Button>

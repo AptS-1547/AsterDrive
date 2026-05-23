@@ -106,7 +106,7 @@ export function HeaderControls({
 							/>
 						}
 					>
-						<Icon name="Warning" className="h-3.5 w-3.5" />
+						<Icon name="Warning" className="size-3.5" />
 						<span>{t("offline:offline_status_short")}</span>
 					</TooltipTrigger>
 					<TooltipContent className="max-w-64 text-left leading-relaxed">
@@ -124,7 +124,7 @@ export function HeaderControls({
 					className="hidden md:inline-flex"
 					onClick={() => handleRouteNavigation("/")}
 				>
-					<Icon name="House" className="mr-1.5 h-4 w-4" />
+					<Icon name="House" className="mr-1.5 size-4" />
 					{homeLabel ?? t("back")}
 				</Button>
 			) : null}
@@ -145,7 +145,7 @@ export function HeaderControls({
 					>
 						<Icon
 							name={musicIsPlaying ? "MusicNotes" : "VinylRecord"}
-							className={musicIsPlaying ? "h-4 w-4 text-primary" : "h-4 w-4"}
+							className={musicIsPlaying ? "size-4 text-primary" : "size-4"}
 						/>
 					</TooltipTrigger>
 					<TooltipContent>{t("files:music_player_open")}</TooltipContent>
@@ -184,7 +184,7 @@ export function HeaderControls({
 					</div>
 					<Icon
 						name="CaretDown"
-						className="hidden h-3.5 w-3.5 text-muted-foreground md:block"
+						className="hidden size-3.5 text-muted-foreground md:block"
 					/>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent
@@ -234,7 +234,7 @@ export function HeaderControls({
 								}}
 								className={menuItemClass}
 							>
-								<Icon name="Gear" className="mr-2 h-4 w-4" />
+								<Icon name="Gear" className="mr-2 size-4" />
 								{t("settings")}
 							</DropdownMenuItem>
 
@@ -243,7 +243,7 @@ export function HeaderControls({
 									onClick={() => handleRouteNavigation("/admin")}
 									className={menuItemClass}
 								>
-									<Icon name="Shield" className="mr-2 h-4 w-4" />
+									<Icon name="Shield" className="mr-2 size-4" />
 									{t("admin_panel")}
 								</DropdownMenuItem>
 							) : null}
@@ -253,7 +253,7 @@ export function HeaderControls({
 									onClick={() => handleRouteNavigation("/")}
 									className={menuItemClass}
 								>
-									<Icon name="House" className="mr-2 h-4 w-4" />
+									<Icon name="House" className="mr-2 size-4" />
 									{homeLabel ?? t("back")}
 								</DropdownMenuItem>
 							) : null}
@@ -341,7 +341,7 @@ export function HeaderControls({
 								onClick={() => void handleLogout()}
 								disabled={loggingOut}
 							>
-								<Icon name="SignOut" className="mr-2 h-4 w-4 shrink-0" />
+								<Icon name="SignOut" className="mr-2 size-4 shrink-0" />
 								{loggingOut ? t("loading") : t("logout")}
 							</button>
 						</div>

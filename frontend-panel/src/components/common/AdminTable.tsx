@@ -153,7 +153,7 @@ export function AdminSortableTableHead<SortBy extends string>({
 				<Icon
 					name={sortOrder === "asc" ? "SortAscending" : "SortDescending"}
 					className={cn(
-						"ml-1.5 h-3.5 w-3.5 shrink-0 transition-opacity",
+						"ml-1.5 size-3.5 shrink-0 transition-opacity",
 						active ? "opacity-100" : "opacity-30",
 					)}
 				/>

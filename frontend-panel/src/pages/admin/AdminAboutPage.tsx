@@ -5,7 +5,7 @@ import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/buttonVariants";
 import {
 	Card,
 	CardContent,
@@ -180,12 +180,12 @@ export default function AdminAboutPage() {
 										)}
 									>
 										<span className="inline-flex items-center gap-2">
-											<Icon name={link.icon} className="h-4 w-4" />
+											<Icon name={link.icon} className="size-4" />
 											{link.label}
 										</span>
 										<Icon
 											name="ArrowSquareOut"
-											className="h-3.5 w-3.5 text-muted-foreground"
+											className="size-3.5 text-muted-foreground"
 										/>
 									</a>
 								))}

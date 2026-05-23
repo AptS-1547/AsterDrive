@@ -56,7 +56,7 @@ export function ExternalAuthCreateProgress({
 						disabled={index > createStep}
 						onClick={() => onCreateStepChange(index)}
 						className={cn(
-							"flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition",
+							"flex items-center gap-3 rounded-2xl border p-3 text-left transition",
 							index === createStep
 								? "border-primary bg-primary/5"
 								: index < createStep
@@ -64,7 +64,7 @@ export function ExternalAuthCreateProgress({
 									: "border-border/60 bg-background/70 text-muted-foreground",
 						)}
 					>
-						<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/80 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground">
+						<span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/80 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground">
 							{index + 1}
 						</span>
 						<span className="text-sm font-medium leading-5">{step.title}</span>

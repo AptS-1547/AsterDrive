@@ -43,7 +43,7 @@ export function ArchiveTaskNameDialog({
 	onSubmit,
 }: ArchiveTaskNameDialogProps) {
 	const { t } = useTranslation(["core", "tasks"]);
-	const [name, setName] = useState(initialName);
+	const [name, setName] = useState("");
 	const [filenameEncoding, setFilenameEncoding] =
 		useState<ArchiveFilenameEncoding>("auto");
 	const [submitting, setSubmitting] = useState(false);

@@ -57,7 +57,7 @@ function ExternalAuthProviderIcon({
 				src={iconUrl}
 				alt=""
 				aria-hidden="true"
-				className="mr-2 h-4 w-4 object-contain"
+				className="mr-2 size-4 object-contain"
 				onError={(event) => {
 					fallbackExternalAuthIcon(
 						event.currentTarget,
@@ -69,7 +69,7 @@ function ExternalAuthProviderIcon({
 		);
 	}
 
-	return <Icon name="Globe" className="mr-2 h-4 w-4" />;
+	return <Icon name="Globe" className="mr-2 size-4" />;
 }
 
 interface LoginAuthFormProps {
@@ -172,7 +172,7 @@ export function LoginAuthForm({
 							{checking ? (
 								<Icon
 									name="Spinner"
-									className="h-3 w-3 animate-spin text-muted-foreground"
+									className="size-3 animate-spin text-muted-foreground"
 								/>
 							) : (
 								<span className="w-0" />
@@ -254,9 +254,9 @@ export function LoginAuthForm({
 						}
 					>
 						{showPassword ? (
-							<Icon name="EyeSlash" className="h-4 w-4" />
+							<Icon name="EyeSlash" className="size-4" />
 						) : (
-							<Icon name="Eye" className="h-4 w-4" />
+							<Icon name="Eye" className="size-4" />
 						)}
 					</button>
 				</div>
@@ -281,7 +281,7 @@ export function LoginAuthForm({
 				disabled={isSubmitDisabled}
 			>
 				{submitting ? (
-					<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+					<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 				) : null}
 				{submitLabel}
 			</Button>
@@ -296,9 +296,9 @@ export function LoginAuthForm({
 						onClick={onPasskeyLogin}
 					>
 						{passkeySubmitting ? (
-							<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+							<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 						) : (
-							<Icon name="Shield" className="mr-2 h-4 w-4" />
+							<Icon name="Shield" className="mr-2 size-4" />
 						)}
 						{passkeySubmitting ? t("passkey_signing_in") : t("passkey_sign_in")}
 					</Button>
@@ -309,7 +309,7 @@ export function LoginAuthForm({
 					)}
 					{externalAuthLoading ? (
 						<div className="flex h-10 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-							<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+							<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 							{t("external_auth_loading_providers")}
 						</div>
 					) : null}
@@ -325,7 +325,7 @@ export function LoginAuthForm({
 								onClick={() => onExternalAuthLogin(provider)}
 							>
 								{busy ? (
-									<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+									<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 								) : (
 									<ExternalAuthProviderIcon provider={provider} />
 								)}

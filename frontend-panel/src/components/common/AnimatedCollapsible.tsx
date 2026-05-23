@@ -10,6 +10,31 @@ import { cn } from "@/lib/utils";
 const EXPAND_DURATION_MS = 220;
 const COLLAPSE_DURATION_MS = 160;
 
+function setContainerStyle(
+	element: HTMLDivElement,
+	values: {
+		maxHeight: string;
+		opacity: string;
+		transform: string;
+		transitionDuration?: string;
+		transitionTimingFunction?: string;
+	},
+) {
+	element.style.cssText = [
+		"overflow: hidden",
+		"transition-property: max-height, opacity, transform",
+		`transition-duration: ${
+			values.transitionDuration ?? element.style.transitionDuration
+		}`,
+		`transition-timing-function: ${
+			values.transitionTimingFunction ?? element.style.transitionTimingFunction
+		}`,
+		`max-height: ${values.maxHeight}`,
+		`opacity: ${values.opacity}`,
+		`transform: ${values.transform}`,
+	].join(";");
+}
+
 export function AnimatedCollapsible({
 	children,
 	className,
@@ -23,11 +48,12 @@ export function AnimatedCollapsible({
 }) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const contentRef = useRef<HTMLDivElement | null>(null);
-	const [mounted, setMounted] = useState(open);
+	const [mounted, setMounted] = useState(false);
+
+	const shouldRender = open || mounted;
 
 	useEffect(() => {
 		if (typeof window === "undefined") {
-			setMounted(open);
 			return;
 		}
 
@@ -37,7 +63,7 @@ export function AnimatedCollapsible({
 	}, [open]);
 
 	useLayoutEffect(() => {
-		if (typeof window === "undefined" || !mounted) {
+		if (typeof window === "undefined" || !shouldRender) {
 			return;
 		}
 
@@ -60,37 +86,49 @@ export function AnimatedCollapsible({
 		let timer: number | null = null;
 		const fullHeight = `${content.scrollHeight}px`;
 
-		container.style.overflow = "hidden";
-		container.style.transitionProperty = "max-height, opacity, transform";
-		container.style.transitionDuration = `${duration}ms`;
-		container.style.transitionTimingFunction = open
-			? "cubic-bezier(0.22, 1, 0.36, 1)"
-			: "cubic-bezier(0.4, 0, 1, 1)";
+		const baseStyle = {
+			transitionDuration: `${duration}ms`,
+			transitionTimingFunction: open
+				? "cubic-bezier(0.22, 1, 0.36, 1)"
+				: "cubic-bezier(0.4, 0, 1, 1)",
+		};
 
 		if (open) {
-			container.style.maxHeight = "0px";
-			container.style.opacity = "0";
-			container.style.transform = "translateY(-4px)";
+			setContainerStyle(container, {
+				...baseStyle,
+				maxHeight: "0px",
+				opacity: "0",
+				transform: "translateY(-4px)",
+			});
 			frameA = window.requestAnimationFrame(() => {
 				frameB = window.requestAnimationFrame(() => {
-					container.style.maxHeight = fullHeight;
-					container.style.opacity = "1";
-					container.style.transform = "translateY(0)";
+					setContainerStyle(container, {
+						maxHeight: fullHeight,
+						opacity: "1",
+						transform: "translateY(0)",
+					});
 				});
 			});
 			timer = window.setTimeout(() => {
-				container.style.maxHeight = "none";
-				container.style.opacity = "1";
-				container.style.transform = "translateY(0)";
+				setContainerStyle(container, {
+					maxHeight: "none",
+					opacity: "1",
+					transform: "translateY(0)",
+				});
 			}, duration);
 		} else {
-			container.style.maxHeight = fullHeight;
-			container.style.opacity = "1";
-			container.style.transform = "translateY(0)";
+			setContainerStyle(container, {
+				...baseStyle,
+				maxHeight: fullHeight,
+				opacity: "1",
+				transform: "translateY(0)",
+			});
 			frameA = window.requestAnimationFrame(() => {
-				container.style.maxHeight = "0px";
-				container.style.opacity = "0";
-				container.style.transform = "translateY(-4px)";
+				setContainerStyle(container, {
+					maxHeight: "0px",
+					opacity: "0",
+					transform: "translateY(-4px)",
+				});
 			});
 			timer = window.setTimeout(() => {
 				setMounted(false);
@@ -108,9 +146,9 @@ export function AnimatedCollapsible({
 				window.clearTimeout(timer);
 			}
 		};
-	}, [mounted, open]);
+	}, [open, shouldRender]);
 
-	if (!mounted) {
+	if (!shouldRender) {
 		return null;
 	}
 

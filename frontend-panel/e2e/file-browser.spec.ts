@@ -52,11 +52,13 @@ test.describe
 			await uploadViaPicker(page, [IMAGE_FILE, PDF_FILE]);
 			await uploadViaDragDrop(page, [CODE_FILE]);
 
-			for (const fileName of [IMAGE_FILE.name, PDF_FILE.name, CODE_FILE.name]) {
-				await expect(fileNameCell(page, fileName)).toBeVisible({
-					timeout: 30_000,
-				});
-			}
+			await Promise.all(
+				[IMAGE_FILE.name, PDF_FILE.name, CODE_FILE.name].map((fileName) =>
+					expect(fileNameCell(page, fileName)).toBeVisible({
+						timeout: 30_000,
+					}),
+				),
+			);
 
 			await expectImagePreview(page, IMAGE_FILE.name);
 			await closeActiveDialog(page);
@@ -74,8 +76,9 @@ test.describe
 				testInfo.outputDir,
 			);
 
+			const clientStatePromise = captureClientState(page);
 			const shareUrl = await createPageShare(page, IMAGE_FILE.name);
-			const clientState = await captureClientState(page);
+			const clientState = await clientStatePromise;
 			await expectAnonymousSharePreview(
 				browser,
 				shareUrl,

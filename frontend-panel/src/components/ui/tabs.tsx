@@ -1,6 +1,7 @@
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
-import { cva, type VariantProps } from "class-variance-authority";
+import type { VariantProps } from "class-variance-authority";
 
+import { tabsListVariants } from "@/components/ui/tabsVariants";
 import { cn } from "@/lib/utils";
 
 function Tabs({
@@ -20,21 +21,6 @@ function Tabs({
 		/>
 	);
 }
-
-const tabsListVariants = cva(
-	"group/tabs-list items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
-	{
-		variants: {
-			variant: {
-				default: "inline-flex w-fit bg-muted",
-				line: "flex min-w-0 w-full max-w-full gap-1 bg-transparent",
-			},
-		},
-		defaultVariants: {
-			variant: "default",
-		},
-	},
-);
 
 function TabsList({
 	className,
@@ -79,4 +65,4 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
 	);
 }
 
-export { Tabs, TabsContent, TabsList, TabsTrigger, tabsListVariants };
+export { Tabs, TabsContent, TabsList, TabsTrigger };

@@ -35,7 +35,7 @@ export function ShareLoadingSkeleton() {
 					className={`border-b border-border/65 bg-card/55 ${PAGE_SECTION_PADDING_CLASS}`}
 				>
 					<div className="mx-auto flex w-full max-w-7xl items-center gap-3 py-3">
-						<Skeleton className="h-12 w-12 rounded-lg" />
+						<Skeleton className="size-12 rounded-lg" />
 						<div className="min-w-0 flex-1 space-y-2">
 							<Skeleton className="h-5 w-3/5 max-w-lg" />
 							<Skeleton className="h-3 w-72 max-w-full" />
@@ -65,7 +65,7 @@ export function ShareFolderContentSkeleton({
 					<Skeleton className="h-4 w-24" />
 					<Skeleton className="h-4 w-14" />
 					<Skeleton className="h-4 w-20" />
-					<Skeleton className="h-4 w-4" />
+					<Skeleton className="size-4" />
 				</div>
 				{SHARE_TABLE_SKELETON_WIDTHS.map((width) => (
 					<div
@@ -73,12 +73,12 @@ export function ShareFolderContentSkeleton({
 						className="grid grid-cols-[minmax(0,1fr)_6rem_8rem_2rem] items-center gap-3 px-4 py-3"
 					>
 						<div className="flex min-w-0 items-center gap-2">
-							<Skeleton className="h-8 w-8 rounded-lg" />
+							<Skeleton className="size-8 rounded-lg" />
 							<Skeleton className="h-4" style={{ width }} />
 						</div>
 						<Skeleton className="h-4 w-14" />
 						<Skeleton className="h-4 w-20" />
-						<Skeleton className="h-7 w-7 rounded-lg" />
+						<Skeleton className="size-7 rounded-lg" />
 					</div>
 				))}
 			</div>

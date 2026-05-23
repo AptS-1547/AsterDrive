@@ -1122,7 +1122,7 @@ export function MusicPlayerHost() {
 					<div className="border-b border-border/65 px-4 py-3">
 						<div className="flex items-center justify-between gap-3">
 							<div className="flex min-w-0 items-center gap-2 font-heading text-base leading-none font-medium">
-								<Icon name="MusicNotes" className="h-4 w-4 text-primary" />
+								<Icon name="MusicNotes" className="size-4 text-primary" />
 								<span className="truncate">{t("music_player_title")}</span>
 							</div>
 							<div className="flex items-center gap-1">
@@ -1131,13 +1131,13 @@ export function MusicPlayerHost() {
 										label={t("music_player_close")}
 										onClick={clear}
 									>
-										<Icon name="X" className="h-4 w-4" />
+										<Icon name="X" className="size-4" />
 									</PlayerIconButton>
 									<PlayerIconButton
 										label={t("music_player_collapse")}
 										onClick={closePanel}
 									>
-										<Icon name="CaretUp" className="h-4 w-4" />
+										<Icon name="CaretUp" className="size-4" />
 									</PlayerIconButton>
 								</TooltipProvider>
 							</div>
@@ -1145,14 +1145,14 @@ export function MusicPlayerHost() {
 					</div>
 
 					<div className="max-h-[calc(100vh-6.5rem)] overflow-y-auto overscroll-contain">
-						<div className="px-4 py-4">
+						<div className="p-4">
 							<div className="flex min-w-0 gap-3">
 								<MediaThumbnail
 									file={track?.thumbnail?.file}
 									thumbnailPath={track?.thumbnail?.path}
 									artworkUrl={track?.metadata?.artworkUrl}
 									className="h-20 w-20 shrink-0 rounded-lg sm:h-24 sm:w-24"
-									iconClassName="h-12 w-12"
+									iconClassName="size-12"
 									imageClassName="h-full w-full object-cover"
 								/>
 								<div className="flex min-w-0 flex-1 flex-col justify-center">
@@ -1218,14 +1218,14 @@ export function MusicPlayerHost() {
 									>
 										<Icon
 											name={playbackModeIcon(playbackMode)}
-											className="h-4 w-4"
+											className="size-4"
 										/>
 									</PlayerIconButton>
 									<PlayerIconButton
 										label={t("music_player_previous")}
 										onClick={playPreviousTrack}
 									>
-										<Icon name="SkipBack" className="h-4 w-4" />
+										<Icon name="SkipBack" className="size-4" />
 									</PlayerIconButton>
 									<Button
 										type="button"
@@ -1241,19 +1241,19 @@ export function MusicPlayerHost() {
 									>
 										<Icon
 											name={isPlaying ? "Pause" : "Play"}
-											className="h-5 w-5"
+											className="size-5"
 										/>
 									</Button>
 									<PlayerIconButton
 										label={t("music_player_next")}
 										onClick={playNextTrack}
 									>
-										<Icon name="SkipForward" className="h-4 w-4" />
+										<Icon name="SkipForward" className="size-4" />
 									</PlayerIconButton>
 									<div className="flex h-8 items-center gap-1 rounded-md px-1">
 										<Icon
 											name={volume === 0 ? "SpeakerSlash" : "SpeakerHigh"}
-											className="h-4 w-4 text-muted-foreground"
+											className="size-4 text-muted-foreground"
 										/>
 										<input
 											type="range"
@@ -1285,13 +1285,13 @@ export function MusicPlayerHost() {
 									onClick={() => setQueueOpen((open) => !open)}
 								>
 									<span className="flex min-w-0 items-center gap-2">
-										<Icon name="Queue" className="h-4 w-4 text-primary" />
+										<Icon name="Queue" className="size-4 text-primary" />
 										<span className="truncate">{t("music_player_queue")}</span>
 										<Badge variant="outline">{queue.length}</Badge>
 									</span>
 									<Icon
 										name={queueOpen ? "CaretUp" : "CaretDown"}
-										className="h-4 w-4 text-muted-foreground"
+										className="size-4 text-muted-foreground"
 									/>
 								</button>
 								<AnimatedCollapsible open={queueOpen}>
@@ -1318,7 +1318,7 @@ export function MusicPlayerHost() {
 														>
 															<div
 																className={cn(
-																	"flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs tabular-nums text-muted-foreground",
+																	"flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs tabular-nums text-muted-foreground",
 																	active && "bg-primary/15 text-primary",
 																)}
 															>
@@ -1328,11 +1328,11 @@ export function MusicPlayerHost() {
 																		thumbnailPath={queueTrack.thumbnail.path}
 																		artworkUrl={queueTrack.metadata?.artworkUrl}
 																		className="h-full w-full rounded-md border-0 bg-transparent shadow-none"
-																		iconClassName="h-4 w-4"
+																		iconClassName="size-4"
 																		imageClassName="h-full w-full object-cover"
 																	/>
 																) : active && isPlaying ? (
-																	<Icon name="MusicNotes" className="h-4 w-4" />
+																	<Icon name="MusicNotes" className="size-4" />
 																) : (
 																	index + 1
 																)}
@@ -1381,14 +1381,14 @@ export function MusicPlayerHost() {
 									onClick={() => setDetailsOpen((open) => !open)}
 								>
 									<span className="flex min-w-0 items-center gap-2">
-										<Icon name="Info" className="h-4 w-4 text-primary" />
+										<Icon name="Info" className="size-4 text-primary" />
 										<span className="truncate">
 											{t("music_player_details")}
 										</span>
 									</span>
 									<Icon
 										name={detailsOpen ? "CaretUp" : "CaretDown"}
-										className="h-4 w-4 text-muted-foreground"
+										className="size-4 text-muted-foreground"
 									/>
 								</button>
 								<AnimatedCollapsible open={detailsOpen}>

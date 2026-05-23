@@ -164,7 +164,7 @@ export function VideoPreview({
 	if (playerFailed) {
 		return (
 			<div
-				className="mx-auto w-full overflow-hidden rounded-xl bg-black"
+				className="mx-auto w-full overflow-hidden rounded-xl bg-zinc-950"
 				style={previewFrameStyle}
 			>
 				{/* biome-ignore lint/a11y/useMediaCaption: user-uploaded media may not have captions available */}
@@ -181,7 +181,7 @@ export function VideoPreview({
 
 	return (
 		<div
-			className="mx-auto w-full overflow-hidden rounded-xl bg-black"
+			className="mx-auto w-full overflow-hidden rounded-xl bg-zinc-950"
 			style={previewFrameStyle}
 		>
 			<div ref={containerRef} className="h-full w-full" />

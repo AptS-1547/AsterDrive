@@ -21,6 +21,8 @@ interface UploadTaskItemProps {
 	actions?: UploadTaskAction[];
 }
 
+const EMPTY_UPLOAD_TASK_ACTIONS: UploadTaskAction[] = [];
+
 export function UploadTaskItem({
 	title,
 	status,
@@ -29,7 +31,7 @@ export function UploadTaskItem({
 	detail,
 	speed,
 	completed = false,
-	actions = [],
+	actions = EMPTY_UPLOAD_TASK_ACTIONS,
 }: UploadTaskItemProps) {
 	const failed =
 		!completed && actions.some((action) => action.icon === "ArrowsClockwise");
@@ -52,7 +54,7 @@ export function UploadTaskItem({
 			<div className="flex items-start gap-2">
 				<div
 					className={cn(
-						"mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+						"mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full",
 						completed && "bg-emerald-500/10 text-emerald-600",
 						failed && "bg-destructive/10 text-destructive",
 						waitingForFile && "bg-primary/10 text-primary",
@@ -69,7 +71,7 @@ export function UploadTaskItem({
 										? "Upload"
 										: "Spinner"
 						}
-						className={cn("h-3.5 w-3.5", showProgress && "animate-spin")}
+						className={cn("size-3.5", showProgress && "animate-spin")}
 					/>
 				</div>
 				<div className="min-w-0 flex-1 space-y-0.5">
@@ -101,7 +103,7 @@ export function UploadTaskItem({
 								onClick={action.onClick}
 								title={action.label}
 							>
-								<Icon name={action.icon} className="h-3 w-3" />
+								<Icon name={action.icon} className="size-3" />
 							</Button>
 						))}
 					</div>

@@ -113,11 +113,11 @@ export function ExternalAuthProvidersTable({
 								</TableCell>
 								<TableCell>
 									<div className={ADMIN_TABLE_TEXT_CELL_CLASS}>
-										<div className="mr-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white shadow-xs ring-1 ring-black/5 dark:bg-slate-950 dark:ring-white/10">
+										<div className="mr-3 flex size-8 shrink-0 items-center justify-center rounded-lg bg-white shadow-xs ring-1 ring-black/5 dark:bg-zinc-950 dark:ring-white/10">
 											<ExternalAuthProviderIcon
 												kind={provider.provider_kind}
 												iconUrl={provider.icon_url}
-												className="h-5 w-5"
+												className="size-5"
 											/>
 										</div>
 										<div className={ADMIN_TABLE_STACKED_CELL_CLASS}>
@@ -209,7 +209,7 @@ export function ExternalAuthProvidersTable({
 											aria-label={t("external_auth_provider_copy_callback_url")}
 											title={t("external_auth_provider_copy_callback_url")}
 										>
-											<Icon name="Copy" className="h-3.5 w-3.5" />
+											<Icon name="Copy" className="size-3.5" />
 										</Button>
 										<Button
 											variant="ghost"
@@ -222,7 +222,7 @@ export function ExternalAuthProvidersTable({
 										>
 											<Icon
 												name={testing ? "Spinner" : "WifiHigh"}
-												className={cn("h-3.5 w-3.5", testing && "animate-spin")}
+												className={cn("size-3.5", testing && "animate-spin")}
 											/>
 										</Button>
 										<Button
@@ -236,10 +236,7 @@ export function ExternalAuthProvidersTable({
 										>
 											<Icon
 												name={deleting ? "Spinner" : "Trash"}
-												className={cn(
-													"h-3.5 w-3.5",
-													deleting && "animate-spin",
-												)}
+												className={cn("size-3.5", deleting && "animate-spin")}
 											/>
 										</Button>
 									</div>

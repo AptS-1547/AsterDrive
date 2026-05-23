@@ -149,9 +149,9 @@ export function AdminTaskCleanupDialog({
 							disabled={submitDisabled}
 						>
 							{submitting ? (
-								<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 							) : (
-								<Icon name="Trash" className="mr-1 h-4 w-4" />
+								<Icon name="Trash" className="mr-1 size-4" />
 							)}
 							{t("admin:cleanup_completed_tasks")}
 						</Button>

@@ -81,7 +81,7 @@ export function ReadOnlyFileGrid({
 											onFileDownload(file);
 										}}
 									>
-										<Icon name="Download" className="h-4 w-4" />
+										<Icon name="Download" className="size-4" />
 										<span className="sr-only">{t("download")}</span>
 									</button>
 								)}

@@ -83,7 +83,7 @@ export function ReadOnlyFileTable({
 											onFileDownload(file);
 										}}
 									>
-										<Icon name="Download" className="h-4 w-4" />
+										<Icon name="Download" className="size-4" />
 									</Button>
 								) : null}
 							</TableCell>

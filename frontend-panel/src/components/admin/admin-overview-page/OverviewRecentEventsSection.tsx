@@ -96,7 +96,7 @@ export function OverviewRecentEventsSection({
 				</Table>
 			) : (
 				<EmptyState
-					icon={<Icon name="Scroll" className="h-10 w-10" />}
+					icon={<Icon name="Scroll" className="size-10" />}
 					title={t("overview_recent_events_empty")}
 					description={t("overview_recent_events_empty_desc")}
 				/>

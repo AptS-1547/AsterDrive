@@ -41,12 +41,12 @@ export function TopBarShell({
 					<Button
 						variant="ghost"
 						size="icon"
-						className="relative h-8 w-8 shrink-0 overflow-hidden md:hidden"
+						className="relative size-8 shrink-0 overflow-hidden md:hidden"
 						onClick={onSidebarToggle}
 						aria-label={sidebarToggleLabel}
 						aria-expanded={sidebarOpen}
 					>
-						<span className="relative inline-flex h-4 w-4 items-center justify-center">
+						<span className="relative inline-flex size-4 items-center justify-center">
 							<span
 								className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ease-out motion-reduce:transition-none ${
 									sidebarOpen
@@ -54,7 +54,7 @@ export function TopBarShell({
 										: "rotate-0 scale-100 opacity-100"
 								}`}
 							>
-								<Icon name="List" className="h-4 w-4" />
+								<Icon name="List" className="size-4" />
 							</span>
 							<span
 								className={`absolute inset-0 flex items-center justify-center transition-all duration-200 ease-out motion-reduce:transition-none ${
@@ -63,7 +63,7 @@ export function TopBarShell({
 										: "rotate-90 scale-75 opacity-0"
 								}`}
 							>
-								<Icon name="X" className="h-4 w-4" />
+								<Icon name="X" className="size-4" />
 							</span>
 						</span>
 					</Button>

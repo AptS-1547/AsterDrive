@@ -68,7 +68,7 @@ export function PreviewAppsHeader({
 					</p>
 				</div>
 				<Button variant="outline" size="sm" onClick={onAddApp}>
-					<Icon name="Plus" className="h-4 w-4" />
+					<Icon name="Plus" className="size-4" />
 					{t("preview_apps_add_app")}
 				</Button>
 			</div>

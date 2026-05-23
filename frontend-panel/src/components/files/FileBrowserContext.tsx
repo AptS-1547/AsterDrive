@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, use } from "react";
 import type { BrowserOpenMode } from "@/stores/fileStore";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
@@ -71,7 +71,7 @@ export function FileBrowserProvider({
 }
 
 export function useFileBrowserContext() {
-	const context = useContext(FileBrowserContext);
+	const context = use(FileBrowserContext);
 
 	if (context == null) {
 		throw new Error(

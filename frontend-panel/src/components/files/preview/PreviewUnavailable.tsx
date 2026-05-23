@@ -7,7 +7,7 @@ export function PreviewUnavailable() {
 
 	return (
 		<EmptyState
-			icon={<Icon name="EyeSlash" className="h-10 w-10" />}
+			icon={<Icon name="EyeSlash" className="size-10" />}
 			title={t("preview_not_available")}
 			description={t("preview_not_available_desc")}
 		/>

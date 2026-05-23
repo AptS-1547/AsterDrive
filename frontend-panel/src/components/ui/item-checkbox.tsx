@@ -32,7 +32,7 @@ export function ItemCheckbox({
 			aria-pressed={checked}
 			tabIndex={-1}
 		>
-			{checked && <Icon name="Check" className="h-3.5 w-3.5 text-current" />}
+			{checked && <Icon name="Check" className="size-3.5 text-current" />}
 		</button>
 	);
 }

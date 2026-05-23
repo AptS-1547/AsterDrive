@@ -13,8 +13,8 @@ interface UserIdentityProps {
 }
 
 const AVATAR_SIZE_CLASS = {
-	sm: "h-7 w-7 rounded-xl text-[10px]",
-	md: "h-8 w-8 rounded-xl text-xs",
+	sm: "size-7 rounded-xl text-[10px]",
+	md: "size-8 rounded-xl text-xs",
 } as const;
 
 export function UserIdentity({

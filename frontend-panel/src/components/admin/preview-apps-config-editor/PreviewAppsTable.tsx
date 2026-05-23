@@ -91,7 +91,7 @@ export function PreviewAppsTable({
 										<PreviewAppIcon
 											icon={app.icon}
 											fallback={getProviderDefaultIcon(app.key, app.provider)}
-											className="h-4 w-4"
+											className="size-4"
 										/>
 									</div>
 								</TableCell>
@@ -140,7 +140,7 @@ export function PreviewAppsTable({
 											aria-label={t("preview_apps_move_up")}
 											onClick={() => onMoveApp(index, -1)}
 										>
-											<Icon name="ArrowUp" className="h-4 w-4" />
+											<Icon name="ArrowUp" className="size-4" />
 										</Button>
 										<Button
 											variant="ghost"
@@ -149,7 +149,7 @@ export function PreviewAppsTable({
 											aria-label={t("preview_apps_move_down")}
 											onClick={() => onMoveApp(index, 1)}
 										>
-											<Icon name="ArrowDown" className="h-4 w-4" />
+											<Icon name="ArrowDown" className="size-4" />
 										</Button>
 										<Button
 											variant="ghost"
@@ -157,7 +157,7 @@ export function PreviewAppsTable({
 											aria-label={t("preview_apps_edit")}
 											onClick={() => onEditApp(index)}
 										>
-											<Icon name="PencilSimple" className="h-4 w-4" />
+											<Icon name="PencilSimple" className="size-4" />
 										</Button>
 										<Button
 											variant="ghost"
@@ -175,7 +175,7 @@ export function PreviewAppsTable({
 												}
 											}}
 										>
-											<Icon name="Trash" className="h-4 w-4" />
+											<Icon name="Trash" className="size-4" />
 										</Button>
 									</div>
 								</TableCell>

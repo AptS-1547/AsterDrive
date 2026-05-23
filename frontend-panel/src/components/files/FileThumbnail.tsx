@@ -64,7 +64,7 @@ export function FileThumbnail({
 			<div
 				ref={ref}
 				className={cn(
-					"flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/50 bg-muted/35 shadow-xs dark:bg-muted/25 dark:shadow-none",
+					"flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/50 bg-muted/35 shadow-xs dark:bg-muted/25 dark:shadow-none",
 					className,
 				)}
 			>
@@ -72,7 +72,7 @@ export function FileThumbnail({
 					<Icon
 						name="Spinner"
 						className={cn(
-							"h-3.5 w-3.5 animate-spin text-muted-foreground",
+							"size-3.5 animate-spin text-muted-foreground",
 							iconClassName,
 						)}
 						data-testid="thumbnail-loading"
@@ -82,7 +82,7 @@ export function FileThumbnail({
 						mimeType={file.mime_type}
 						fileName={file.name}
 						fileCategory={file.file_category}
-						className={cn("h-4 w-4", iconClassName)}
+						className={cn("size-4", iconClassName)}
 					/>
 				) : (
 					<img
@@ -110,7 +110,7 @@ export function FileThumbnail({
 				>
 					<Icon
 						name="Spinner"
-						className={cn("h-4 w-4 animate-spin", iconClassName)}
+						className={cn("size-4 animate-spin", iconClassName)}
 						data-testid="thumbnail-loading"
 					/>
 				</div>
@@ -130,7 +130,7 @@ export function FileThumbnail({
 						mimeType={file.mime_type}
 						fileName={file.name}
 						fileCategory={file.file_category}
-						className={cn("h-5 w-5", iconClassName)}
+						className={cn("size-5", iconClassName)}
 					/>
 				</div>
 			);
@@ -167,7 +167,7 @@ export function FileThumbnail({
 			>
 				<Icon
 					name="Spinner"
-					className={cn("h-5 w-5 animate-spin", iconClassName)}
+					className={cn("size-5 animate-spin", iconClassName)}
 					data-testid="thumbnail-loading"
 				/>
 			</div>
@@ -187,7 +187,7 @@ export function FileThumbnail({
 					mimeType={file.mime_type}
 					fileName={file.name}
 					fileCategory={file.file_category}
-					className={cn("h-12 w-12", iconClassName)}
+					className={cn("size-12", iconClassName)}
 				/>
 			</div>
 		);

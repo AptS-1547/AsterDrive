@@ -151,7 +151,7 @@ export function VersionHistoryDialog({
 								<FileTypeIcon
 									mimeType={mimeType}
 									fileName={fileName}
-									className="mt-0.5 h-5 w-5 shrink-0"
+									className="mt-0.5 size-5 shrink-0"
 								/>
 							) : null}
 							<div className="min-w-0">
@@ -213,7 +213,7 @@ export function VersionHistoryDialog({
 												<Button
 													variant="ghost"
 													size="icon"
-													className="h-7 w-7"
+													className="size-7"
 													title={
 														restoringVersionId === v.id
 															? t("version_restoring")
@@ -231,13 +231,13 @@ export function VersionHistoryDialog({
 																? "Spinner"
 																: "ArrowCounterClockwise"
 														}
-														className={`h-3.5 w-3.5 ${restoringVersionId === v.id ? "animate-spin" : ""}`}
+														className={`size-3.5 ${restoringVersionId === v.id ? "animate-spin" : ""}`}
 													/>
 												</Button>
 												<Button
 													variant="ghost"
 													size="icon"
-													className="h-7 w-7 text-destructive"
+													className="size-7 text-destructive"
 													title={
 														deletingVersionId === v.id
 															? t("version_deleting")
@@ -253,7 +253,7 @@ export function VersionHistoryDialog({
 														name={
 															deletingVersionId === v.id ? "Spinner" : "Trash"
 														}
-														className={`h-3.5 w-3.5 ${deletingVersionId === v.id ? "animate-spin" : ""}`}
+														className={`size-3.5 ${deletingVersionId === v.id ? "animate-spin" : ""}`}
 													/>
 												</Button>
 											</div>

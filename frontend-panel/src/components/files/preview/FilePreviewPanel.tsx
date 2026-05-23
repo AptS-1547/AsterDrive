@@ -49,11 +49,11 @@ export function FilePreviewPanel({
 		<>
 			<DialogHeader className="gap-0 border-b px-4 py-3">
 				<div className="flex items-center gap-3">
-					<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground dark:bg-muted/35">
+					<div className="flex size-9 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground dark:bg-muted/35">
 						<FileTypeIcon
 							mimeType={file.mime_type}
 							fileName={file.name}
-							className="h-5 w-5"
+							className="size-5"
 						/>
 					</div>
 					<div className="min-w-0 flex-1">
@@ -86,7 +86,7 @@ export function FilePreviewPanel({
 						>
 							<Icon
 								name={isExpanded ? "ArrowsInCardinal" : "ArrowsOutCardinal"}
-								className="h-4 w-4"
+								className="size-4"
 							/>
 							<span className="sr-only">{fullscreenLabel}</span>
 						</Button>
@@ -97,7 +97,7 @@ export function FilePreviewPanel({
 							aria-label={closeLabel}
 							title={closeLabel}
 						>
-							<Icon name="X" className="h-4 w-4" />
+							<Icon name="X" className="size-4" />
 						</Button>
 					</div>
 				</div>

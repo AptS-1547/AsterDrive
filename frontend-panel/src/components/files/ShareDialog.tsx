@@ -137,7 +137,7 @@ export function ShareDialog({
 			<DialogContent keepMounted className="max-w-md">
 				<DialogHeader className="min-w-0 pr-8">
 					<DialogTitle className="flex max-w-full min-w-0 items-start gap-2 leading-snug">
-						<Icon name="Link" className="mt-0.5 h-4 w-4 shrink-0" />
+						<Icon name="Link" className="mt-0.5 size-4 shrink-0" />
 						<span className="min-w-0 flex-1 overflow-hidden break-words">
 							{t("share:share_dialog_title", { name })}
 						</span>
@@ -159,9 +159,9 @@ export function ShareDialog({
 								onClick={() => void handleCopy(createdLinks.primaryUrl)}
 							>
 								{copied ? (
-									<Icon name="Check" className="h-4 w-4 text-green-500" />
+									<Icon name="Check" className="size-4 text-green-500" />
 								) : (
-									<Icon name="Copy" className="h-4 w-4" />
+									<Icon name="Copy" className="size-4" />
 								)}
 							</Button>
 						</div>
@@ -183,9 +183,9 @@ export function ShareDialog({
 										}
 									>
 										{copied ? (
-											<Icon name="Check" className="h-4 w-4 text-green-500" />
+											<Icon name="Check" className="size-4 text-green-500" />
 										) : (
-											<Icon name="Copy" className="h-4 w-4" />
+											<Icon name="Copy" className="size-4" />
 										)}
 									</Button>
 								</div>

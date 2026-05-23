@@ -143,32 +143,32 @@ export function BatchActionBar({
 						variant="destructive"
 						onClick={() => requestDeleteConfirm(true)}
 					>
-						<Icon name="Trash" className="h-3.5 w-3.5 mr-1" />
+						<Icon name="Trash" className="size-3.5 mr-1" />
 						{t("core:delete")}
 					</Button>
 					<Button size="sm" variant="outline" onClick={handleMove}>
-						<Icon name="ArrowsOutCardinal" className="h-3.5 w-3.5 mr-1" />
+						<Icon name="ArrowsOutCardinal" className="size-3.5 mr-1" />
 						{t("move")}
 					</Button>
 					<Button size="sm" variant="outline" onClick={handleCopy}>
-						<Icon name="Copy" className="h-3.5 w-3.5 mr-1" />
+						<Icon name="Copy" className="size-3.5 mr-1" />
 						{t("copy")}
 					</Button>
 					{onArchiveCompress ? (
 						<Button size="sm" variant="outline" onClick={handleArchiveCompress}>
-							<Icon name="FileZip" className="h-3.5 w-3.5 mr-1" />
+							<Icon name="FileZip" className="size-3.5 mr-1" />
 							{t("tasks:archive_compress_action")}
 						</Button>
 					) : null}
 					{onArchiveDownload ? (
 						<Button size="sm" variant="outline" onClick={handleArchiveDownload}>
-							<Icon name="Download" className="h-3.5 w-3.5 mr-1" />
+							<Icon name="Download" className="size-3.5 mr-1" />
 							{t("tasks:archive_download_action")}
 						</Button>
 					) : null}
 				</div>
 				<Button size="sm" variant="ghost" onClick={clearSelection}>
-					<Icon name="X" className="h-3.5 w-3.5" />
+					<Icon name="X" className="size-3.5" />
 				</Button>
 			</div>
 

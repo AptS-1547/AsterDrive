@@ -514,7 +514,7 @@ export default function AdminTasksPage() {
 								onClick={() => setCleanupDialogOpen(true)}
 								disabled={cleanupSubmitting}
 							>
-								<Icon name="Trash" className="mr-1 h-3.5 w-3.5" />
+								<Icon name="Trash" className="mr-1 size-3.5" />
 								{t("admin:task_cleanup_action")}
 							</Button>
 							<Button
@@ -526,7 +526,7 @@ export default function AdminTasksPage() {
 							>
 								<Icon
 									name={loading ? "Spinner" : "ArrowsClockwise"}
-									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+									className={`mr-1 size-3.5 ${loading ? "animate-spin" : ""}`}
 								/>
 								{t("core:refresh")}
 							</Button>
@@ -552,7 +552,7 @@ export default function AdminTasksPage() {
 				) : items.length === 0 ? (
 					hasServerFilters ? (
 						<EmptyState
-							icon={<Icon name="Clock" className="h-10 w-10" />}
+							icon={<Icon name="Clock" className="size-10" />}
 							title={t("admin:no_filtered_tasks")}
 							description={t("admin:no_filtered_tasks_desc")}
 							action={
@@ -563,7 +563,7 @@ export default function AdminTasksPage() {
 						/>
 					) : (
 						<EmptyState
-							icon={<Icon name="Clock" className="h-10 w-10" />}
+							icon={<Icon name="Clock" className="size-10" />}
 							title={t("admin:no_tasks")}
 							description={t("admin:no_tasks_desc")}
 						/>

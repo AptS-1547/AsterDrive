@@ -29,6 +29,8 @@ import {
 	TestConnectionButton,
 } from "./shared";
 
+const EMPTY_MANAGED_INGRESS_PROFILES: RemoteIngressProfileInfo[] = [];
+
 interface RemoteNodeDialogProps {
 	createStep: number;
 	createStepTouched: boolean;
@@ -68,7 +70,7 @@ export function RemoteNodeDialog({
 	createStepTouched,
 	editingNode,
 	form,
-	managedIngressProfiles = [],
+	managedIngressProfiles = EMPTY_MANAGED_INGRESS_PROFILES,
 	managedIngressProfilesEnabled = false,
 	managedIngressProfilesError = null,
 	managedIngressProfilesLoading = false,

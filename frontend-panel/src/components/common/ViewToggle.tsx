@@ -25,14 +25,14 @@ export function ViewToggle({ value, onChange }: ViewToggleProps) {
 							variant="ghost"
 							size="icon"
 							className={cn(
-								"h-7 w-7 rounded-r-sm sm:h-8 sm:w-8",
+								"size-7 rounded-r-sm sm:h-8 sm:w-8",
 								value === "list" && "bg-accent",
 							)}
 							onClick={() => onChange("list")}
 						/>
 					}
 				>
-					<Icon name="ListBullets" className="h-4 w-4" />
+					<Icon name="ListBullets" className="size-4" />
 				</TooltipTrigger>
 				<TooltipContent>{t("list_view")}</TooltipContent>
 			</Tooltip>
@@ -43,14 +43,14 @@ export function ViewToggle({ value, onChange }: ViewToggleProps) {
 							variant="ghost"
 							size="icon"
 							className={cn(
-								"h-7 w-7 rounded-l-sm sm:h-8 sm:w-8",
+								"size-7 rounded-l-sm sm:h-8 sm:w-8",
 								value === "grid" && "bg-accent",
 							)}
 							onClick={() => onChange("grid")}
 						/>
 					}
 				>
-					<Icon name="Grid" className="h-4 w-4" />
+					<Icon name="Grid" className="size-4" />
 				</TooltipTrigger>
 				<TooltipContent>{t("grid_view")}</TooltipContent>
 			</Tooltip>

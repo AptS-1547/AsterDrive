@@ -69,7 +69,7 @@ function mergeCompletedParts(
 	for (const part of localParts) {
 		parts.set(part.part_number, part);
 	}
-	return [...parts.values()].sort(
+	return Array.from(parts.values()).toSorted(
 		(left, right) => left.part_number - right.part_number,
 	);
 }

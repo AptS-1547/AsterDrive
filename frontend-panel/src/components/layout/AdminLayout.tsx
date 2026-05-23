@@ -61,7 +61,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 							onClick={handleMobileClose}
 							className={({ isActive }) => sidebarNavItemClass(isActive)}
 						>
-							<Icon name={item.icon} className="h-4 w-4 shrink-0" />
+							<Icon name={item.icon} className="size-4 shrink-0" />
 							{item.label}
 						</NavLink>
 					))}
@@ -76,7 +76,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 							onClick={handleMobileClose}
 							className={({ isActive }) => sidebarNavItemClass(isActive)}
 						>
-							<Icon name={item.icon} className="h-4 w-4 shrink-0" />
+							<Icon name={item.icon} className="size-4 shrink-0" />
 							{item.label}
 						</NavLink>
 					))}

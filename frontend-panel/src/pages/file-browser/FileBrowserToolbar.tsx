@@ -249,11 +249,8 @@ export function FileBrowserToolbar({
 	};
 	const defaultLeft = (
 		<>
-			<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/55 text-accent-foreground sm:h-8 sm:w-8">
-				<Icon
-					name={isRootFolder ? "House" : "FolderOpen"}
-					className="h-4 w-4"
-				/>
+			<span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent/55 text-accent-foreground sm:h-8 sm:w-8">
+				<Icon name={isRootFolder ? "House" : "FolderOpen"} className="size-4" />
 			</span>
 			<div className="min-w-0 flex-1">
 				{isSearching ? (
@@ -281,7 +278,7 @@ export function FileBrowserToolbar({
 													render={
 														<button
 															type="button"
-															className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground sm:h-7 sm:w-7"
+															className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground sm:h-7 sm:w-7"
 															aria-label={t("core:more")}
 														>
 															<BreadcrumbEllipsis />
@@ -304,7 +301,7 @@ export function FileBrowserToolbar({
 														>
 															<Icon
 																name="FolderOpen"
-																className="h-4 w-4 text-muted-foreground"
+																className="size-4 text-muted-foreground"
 															/>
 															<span className="truncate">
 																{hiddenItem.name}
@@ -363,12 +360,12 @@ export function FileBrowserToolbar({
 			</div>
 			<button
 				type="button"
-				className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/55 hover:text-accent-foreground sm:h-8 sm:w-8"
+				className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/55 hover:text-accent-foreground sm:h-8 sm:w-8"
 				onClick={() => void onRefresh()}
 				aria-label={t("core:refresh")}
 				title={t("core:refresh")}
 			>
-				<Icon name="ArrowsClockwise" className="h-4 w-4" />
+				<Icon name="ArrowsClockwise" className="size-4" />
 			</button>
 		</>
 	);
@@ -403,12 +400,12 @@ export function FileBrowserToolbar({
 						type="button"
 						variant="ghost"
 						size="icon-sm"
-						className="h-7 w-7 shrink-0 sm:h-8 sm:w-8"
+						className="size-7 shrink-0 sm:h-8 sm:w-8"
 						onClick={renderedSelectionToolbar.onClearSelection}
 						aria-label={t("selection_clear")}
 						title={t("selection_clear")}
 					>
-						<Icon name="X" className="h-4 w-4" />
+						<Icon name="X" className="size-4" />
 					</Button>
 					<div className="flex min-w-0 flex-1 items-center gap-2">
 						<span className="truncate text-sm font-semibold text-foreground">
@@ -443,7 +440,7 @@ export function FileBrowserToolbar({
 							className="hidden md:inline-flex"
 							onClick={renderedSelectionToolbar.downloadAction.onClick}
 						>
-							<Icon name="Download" className="h-3.5 w-3.5" />
+							<Icon name="Download" className="size-3.5" />
 							<span>{selectionDownloadLabel}</span>
 						</Button>
 					) : null}
@@ -455,7 +452,7 @@ export function FileBrowserToolbar({
 						aria-label={t("move")}
 						title={t("move")}
 					>
-						<Icon name="ArrowsOutCardinal" className="h-3.5 w-3.5" />
+						<Icon name="ArrowsOutCardinal" className="size-3.5" />
 						<span className="hidden min-[420px]:inline">{t("move")}</span>
 					</Button>
 					<Button
@@ -465,7 +462,7 @@ export function FileBrowserToolbar({
 						className="hidden sm:inline-flex"
 						onClick={renderedSelectionToolbar.onCopy}
 					>
-						<Icon name="Copy" className="h-3.5 w-3.5" />
+						<Icon name="Copy" className="size-3.5" />
 						<span>{t("copy")}</span>
 					</Button>
 					<DropdownMenu>
@@ -478,7 +475,7 @@ export function FileBrowserToolbar({
 									aria-label={t("selection_more_actions")}
 									title={t("selection_more_actions")}
 								>
-									<Icon name="DotsThree" className="h-4 w-4" />
+									<Icon name="DotsThree" className="size-4" />
 								</Button>
 							}
 						/>
@@ -488,7 +485,7 @@ export function FileBrowserToolbar({
 								disabled={!renderedSelectionToolbar.hasDisplayedItems}
 								onClick={renderedSelectionToolbar.onToggleDisplayedSelection}
 							>
-								<Icon name="Check" className="h-4 w-4 text-muted-foreground" />
+								<Icon name="Check" className="size-4 text-muted-foreground" />
 								{selectDisplayedLabel}
 							</DropdownMenuItem>
 							{renderedSelectionToolbar.downloadAction ? (
@@ -498,7 +495,7 @@ export function FileBrowserToolbar({
 								>
 									<Icon
 										name="Download"
-										className="h-4 w-4 text-muted-foreground"
+										className="size-4 text-muted-foreground"
 									/>
 									{selectionDownloadLabel}
 								</DropdownMenuItem>
@@ -507,7 +504,7 @@ export function FileBrowserToolbar({
 								className="sm:hidden"
 								onClick={renderedSelectionToolbar.onCopy}
 							>
-								<Icon name="Copy" className="h-4 w-4 text-muted-foreground" />
+								<Icon name="Copy" className="size-4 text-muted-foreground" />
 								{t("copy")}
 							</DropdownMenuItem>
 							{renderedSelectionToolbar.onArchiveCompress ? (
@@ -516,7 +513,7 @@ export function FileBrowserToolbar({
 								>
 									<Icon
 										name="FileZip"
-										className="h-4 w-4 text-muted-foreground"
+										className="size-4 text-muted-foreground"
 									/>
 									{t("tasks:archive_compress_action")}
 								</DropdownMenuItem>
@@ -526,7 +523,7 @@ export function FileBrowserToolbar({
 								variant="destructive"
 								onClick={renderedSelectionToolbar.onDelete}
 							>
-								<Icon name="Trash" className="h-4 w-4" />
+								<Icon name="Trash" className="size-4" />
 								{t("core:delete")}
 							</DropdownMenuItem>
 						</DropdownMenuContent>

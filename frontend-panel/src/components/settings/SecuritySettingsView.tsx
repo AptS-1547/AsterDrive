@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useEffectEvent, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -104,7 +104,7 @@ export function SecuritySettingsView() {
 		);
 	}, [hash, pathname, search, navigate, t]);
 
-	const loadSessions = useEffectEvent(async () => {
+	const loadSessions = useCallback(async () => {
 		try {
 			setSessionsLoading(true);
 			setSessions(await authService.listSessions());
@@ -113,11 +113,11 @@ export function SecuritySettingsView() {
 		} finally {
 			setSessionsLoading(false);
 		}
-	});
+	}, []);
 
 	useEffect(() => {
 		void loadSessions();
-	}, []);
+	}, [loadSessions]);
 
 	const canSubmitPassword =
 		!passwordBusy &&
@@ -282,25 +282,25 @@ export function SecuritySettingsView() {
 				>
 					<TabsList className="grid !h-11 w-full grid-cols-4 gap-1 p-1">
 						<TabsTrigger value="account" className="h-full min-w-0 px-3 py-0">
-							<Icon name="Lock" className="h-4 w-4" />
+							<Icon name="Lock" className="size-4" />
 							<span className="truncate">
 								{t("settings:settings_security_tab_account")}
 							</span>
 						</TabsTrigger>
 						<TabsTrigger value="passkeys" className="h-full min-w-0 px-3 py-0">
-							<Icon name="Shield" className="h-4 w-4" />
+							<Icon name="Shield" className="size-4" />
 							<span className="truncate">
 								{t("settings:settings_security_tab_passkeys")}
 							</span>
 						</TabsTrigger>
 						<TabsTrigger value="external" className="h-full min-w-0 px-3 py-0">
-							<Icon name="Globe" className="h-4 w-4" />
+							<Icon name="Globe" className="size-4" />
 							<span className="truncate">
 								{t("settings:settings_security_tab_external")}
 							</span>
 						</TabsTrigger>
 						<TabsTrigger value="sessions" className="h-full min-w-0 px-3 py-0">
-							<Icon name="Monitor" className="h-4 w-4" />
+							<Icon name="Monitor" className="size-4" />
 							<span className="truncate">
 								{t("settings:settings_security_tab_sessions")}
 							</span>

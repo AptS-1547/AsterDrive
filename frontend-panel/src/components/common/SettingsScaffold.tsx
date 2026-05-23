@@ -129,7 +129,7 @@ export function SettingsChoiceGroup<T extends string>({
 						)}
 					>
 						{option.icon ? (
-							<Icon name={option.icon} className="h-4 w-4" />
+							<Icon name={option.icon} className="size-4" />
 						) : null}
 						<span>{option.label}</span>
 					</button>

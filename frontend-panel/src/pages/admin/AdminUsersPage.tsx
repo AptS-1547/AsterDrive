@@ -523,7 +523,7 @@ export default function AdminUsersPage() {
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
 								onClick={() => setCreateDialogOpen(true)}
 							>
-								<Icon name="Plus" className="mr-1 h-4 w-4" />
+								<Icon name="Plus" className="mr-1 size-4" />
 								{t("new_user")}
 							</Button>
 							<Button
@@ -535,7 +535,7 @@ export default function AdminUsersPage() {
 							>
 								<Icon
 									name={loading ? "Spinner" : "ArrowsClockwise"}
-									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+									className={`mr-1 size-3.5 ${loading ? "animate-spin" : ""}`}
 								/>
 								{t("core:refresh")}
 							</Button>
@@ -562,7 +562,7 @@ export default function AdminUsersPage() {
 				) : users.length === 0 ? (
 					hasServerFilters ? (
 						<EmptyState
-							icon={<Icon name="ListBullets" className="h-10 w-10" />}
+							icon={<Icon name="ListBullets" className="size-10" />}
 							title={t("no_filtered_users")}
 							description={t("no_filtered_users_desc")}
 							action={

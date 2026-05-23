@@ -118,7 +118,7 @@ export function StoragePolicyCreateWizard({
 							)}
 						>
 							<div className="flex items-center gap-2">
-								<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/80 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground">
+								<span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/80 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground">
 									{index + 1}
 								</span>
 								<span className="text-sm font-medium leading-5">
@@ -238,7 +238,7 @@ export function StoragePolicyCreateWizard({
 								</div>
 								<div className="rounded-3xl border border-border/70 bg-muted/20 p-5">
 									<div className="flex items-center gap-3">
-										<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+										<div className="flex size-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
 											<StorageDriverVisual option={currentStorageOption} />
 										</div>
 										<div>

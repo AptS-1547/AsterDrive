@@ -138,7 +138,7 @@ export default function SettingsPage({
 								value="profile"
 								className="h-10 min-w-0 rounded-none px-0"
 							>
-								<Icon name="PencilSimple" className="h-4 w-4" />
+								<Icon name="PencilSimple" className="size-4" />
 								<span className="truncate">
 									{t("settings:settings_profile")}
 								</span>
@@ -147,7 +147,7 @@ export default function SettingsPage({
 								value="interface"
 								className="h-10 min-w-0 rounded-none px-0"
 							>
-								<Icon name="Monitor" className="h-4 w-4" />
+								<Icon name="Monitor" className="size-4" />
 								<span className="truncate">
 									{t("settings:settings_interface")}
 								</span>
@@ -156,7 +156,7 @@ export default function SettingsPage({
 								value="security"
 								className="h-10 min-w-0 rounded-none px-0"
 							>
-								<Icon name="Shield" className="h-4 w-4" />
+								<Icon name="Shield" className="size-4" />
 								<span className="truncate">
 									{t("settings:settings_security")}
 								</span>
@@ -165,7 +165,7 @@ export default function SettingsPage({
 								value="teams"
 								className="h-10 min-w-0 rounded-none px-0"
 							>
-								<Icon name="Cloud" className="h-4 w-4" />
+								<Icon name="Cloud" className="size-4" />
 								<span className="truncate">{t("settings:settings_teams")}</span>
 							</TabsTrigger>
 						</TabsList>

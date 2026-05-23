@@ -367,7 +367,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			<div className="border-b border-border/60 bg-muted/20 px-2.5 py-2 dark:bg-muted/15">
 				<div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
 					<div className="flex items-center gap-1.5">
-						<Icon name="FileText" className="h-3.5 w-3.5" />
+						<Icon name="FileText" className="size-3.5" />
 						<span>{t("pdf_label")}</span>
 						{numPages !== null && (
 							<>
@@ -396,7 +396,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_previous_page")}
 							aria-label={t("pdf_previous_page")}
 						>
-							<Icon name="CaretLeft" className="h-4 w-4" />
+							<Icon name="CaretLeft" className="size-4" />
 						</Button>
 						<Input
 							value={pageInputValue}
@@ -436,7 +436,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_next_page")}
 							aria-label={t("pdf_next_page")}
 						>
-							<Icon name="CaretRight" className="h-4 w-4" />
+							<Icon name="CaretRight" className="size-4" />
 						</Button>
 					</div>
 
@@ -449,7 +449,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_zoom_out")}
 							aria-label={t("pdf_zoom_out")}
 						>
-							<Icon name="Minus" className="h-4 w-4" />
+							<Icon name="Minus" className="size-4" />
 						</Button>
 						<Button
 							variant="ghost"
@@ -469,7 +469,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_zoom_in")}
 							aria-label={t("pdf_zoom_in")}
 						>
-							<Icon name="Plus" className="h-4 w-4" />
+							<Icon name="Plus" className="size-4" />
 						</Button>
 						<Button
 							variant={fitWidth ? "secondary" : "ghost"}
@@ -488,7 +488,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_rotate_left")}
 							aria-label={t("pdf_rotate_left")}
 						>
-							<Icon name="ArrowCounterClockwise" className="h-4 w-4" />
+							<Icon name="ArrowCounterClockwise" className="size-4" />
 						</Button>
 						<Button
 							variant="ghost"
@@ -497,7 +497,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_rotate_right")}
 							aria-label={t("pdf_rotate_right")}
 						>
-							<Icon name="ArrowClockwise" className="h-4 w-4" />
+							<Icon name="ArrowClockwise" className="size-4" />
 						</Button>
 					</div>
 
@@ -509,7 +509,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_open_new_tab")}
 							aria-label={t("pdf_open_new_tab")}
 						>
-							<Icon name="ArrowSquareOut" className="h-4 w-4" />
+							<Icon name="ArrowSquareOut" className="size-4" />
 						</Button>
 						<Button
 							variant="ghost"
@@ -518,7 +518,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_download")}
 							aria-label={t("pdf_download")}
 						>
-							<Icon name="Download" className="h-4 w-4" />
+							<Icon name="Download" className="size-4" />
 						</Button>
 					</div>
 				</div>
@@ -526,7 +526,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			<div
 				ref={scrollContainerRef}
 				onScroll={schedulePageSync}
-				className="min-h-0 flex-1 overflow-auto bg-background/80 px-3 py-3 dark:bg-background/25"
+				className="min-h-0 flex-1 overflow-auto bg-background/80 p-3 dark:bg-background/25"
 			>
 				<Document
 					key={`${documentUrl}:${reloadKey}`}

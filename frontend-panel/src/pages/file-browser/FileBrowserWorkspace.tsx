@@ -128,8 +128,8 @@ export function FileBrowserWorkspace({
 				{contentDragOver && (
 					<div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/35 backdrop-blur-[2px]">
 						<div className="flex items-center gap-3 rounded-2xl bg-card/90 px-4 py-3 shadow-lg shadow-black/8 ring-1 ring-border/60 backdrop-blur-md dark:shadow-none">
-							<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-								<Icon name="FolderOpen" className="h-5 w-5" />
+							<div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+								<Icon name="FolderOpen" className="size-5" />
 							</div>
 							<div className="space-y-0.5">
 								<div className="text-sm font-semibold text-foreground">
@@ -153,13 +153,13 @@ export function FileBrowserWorkspace({
 								)
 							) : error ? (
 								<EmptyState
-									icon={<Icon name="Warning" className="h-12 w-12" />}
+									icon={<Icon name="Warning" className="size-12" />}
 									title={t("core:error")}
 									description={error}
 								/>
 							) : isEmpty ? (
 								<EmptyState
-									icon={<Icon name="FolderOpen" className="h-12 w-12" />}
+									icon={<Icon name="FolderOpen" className="size-12" />}
 									title={t("folder_empty")}
 									description={t("folder_empty_desc")}
 								/>
@@ -175,7 +175,7 @@ export function FileBrowserWorkspace({
 							{!isSearching && hasMoreFiles && (
 								<div ref={sentinelRef} className="flex justify-center py-4">
 									{loadingMore && (
-										<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+										<div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
 									)}
 								</div>
 							)}
@@ -186,28 +186,28 @@ export function FileBrowserWorkspace({
 							disabled={!uploadReady}
 							onClick={onTriggerFileUpload}
 						>
-							<Icon name="Upload" className="mr-2 h-4 w-4" />
+							<Icon name="Upload" className="mr-2 size-4" />
 							{t("upload_file")}
 						</ContextMenuItem>
 						<ContextMenuItem
 							disabled={!uploadReady}
 							onClick={onTriggerFolderUpload}
 						>
-							<Icon name="FolderOpen" className="mr-2 h-4 w-4" />
+							<Icon name="FolderOpen" className="mr-2 size-4" />
 							{t("upload_folder")}
 						</ContextMenuItem>
 						<ContextMenuSeparator />
 						<ContextMenuItem onClick={onCreateFolder}>
-							<Icon name="FolderPlus" className="mr-2 h-4 w-4" />
+							<Icon name="FolderPlus" className="mr-2 size-4" />
 							{t("new_folder")}
 						</ContextMenuItem>
 						<ContextMenuItem onClick={onCreateFile}>
-							<Icon name="FilePlus" className="mr-2 h-4 w-4" />
+							<Icon name="FilePlus" className="mr-2 size-4" />
 							{t("new_file")}
 						</ContextMenuItem>
 						<ContextMenuSeparator />
 						<ContextMenuItem onClick={() => void onRefresh()}>
-							<Icon name="ArrowsClockwise" className="mr-2 h-4 w-4" />
+							<Icon name="ArrowsClockwise" className="mr-2 size-4" />
 							{t("core:refresh")}
 						</ContextMenuItem>
 					</ContextMenuContent>

@@ -221,7 +221,7 @@ export function PoliciesTable({
 								>
 									<Icon
 										name={isDeleting ? "Spinner" : "Trash"}
-										className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+										className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
 									/>
 								</Button>
 							</div>

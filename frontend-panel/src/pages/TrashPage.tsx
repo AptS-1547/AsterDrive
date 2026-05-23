@@ -350,11 +350,11 @@ export default function TrashPage() {
 			actions={<ViewToggle value={viewMode} onChange={handleViewModeChange} />}
 		>
 			<div className="flex flex-1 flex-col gap-4 overflow-hidden p-4">
-				<div className="rounded-xl border bg-muted/20 px-4 py-4">
+				<div className="rounded-xl border bg-muted/20 p-4">
 					<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 						<div className="flex items-center gap-3">
 							<div className="flex h-11 w-11 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
-								<Icon name="Trash" className="h-5 w-5" />
+								<Icon name="Trash" className="size-5" />
 							</div>
 							<div className="min-w-0">
 								<h1 className="text-lg font-semibold">{t("trash")}</h1>
@@ -373,7 +373,7 @@ export default function TrashPage() {
 							>
 								<Icon
 									name={pendingOperation === "purge-all" ? "Spinner" : "Trash"}
-									className={`mr-1 h-4 w-4 ${pendingOperation === "purge-all" ? "animate-spin" : ""}`}
+									className={`mr-1 size-4 ${pendingOperation === "purge-all" ? "animate-spin" : ""}`}
 								/>
 								{pendingOperation === "purge-all"
 									? t("files:trash_purging")
@@ -413,7 +413,7 @@ export default function TrashPage() {
 						)
 					) : isEmpty ? (
 						<EmptyState
-							icon={<Icon name="Trash" className="h-10 w-10" />}
+							icon={<Icon name="Trash" className="size-10" />}
 							title={t("files:trash_empty_title")}
 							description={t("files:trash_empty_desc")}
 						/>
@@ -451,7 +451,7 @@ export default function TrashPage() {
 							{hasMore && (
 								<div ref={sentinelRef} className="flex justify-center py-4">
 									{loadingMore && (
-										<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+										<div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
 									)}
 								</div>
 							)}

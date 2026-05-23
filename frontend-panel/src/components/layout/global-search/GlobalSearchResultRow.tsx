@@ -39,12 +39,12 @@ export function GlobalSearchResultRow({
 		>
 			<div
 				className={cn(
-					"flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-background/80",
+					"flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-background/80",
 					active && "border-primary/25 bg-primary/10 text-primary",
 				)}
 			>
 				{entry.kind === "folder" ? (
-					<Icon name="FolderOpen" className="h-4 w-4 text-amber-500" />
+					<Icon name="FolderOpen" className="size-4 text-amber-500" />
 				) : (
 					<FileThumbnail file={entry.item} size="md" />
 				)}
@@ -57,7 +57,7 @@ export function GlobalSearchResultRow({
 					{entry.item.is_locked ? (
 						<Icon
 							name="Lock"
-							className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+							className="size-3.5 shrink-0 text-muted-foreground"
 						/>
 					) : null}
 				</div>
@@ -79,9 +79,9 @@ export function GlobalSearchResultRow({
 			</div>
 			<div className="flex shrink-0 items-center gap-2 text-muted-foreground">
 				{opening ? (
-					<Icon name="Spinner" className="h-4 w-4 animate-spin" />
+					<Icon name="Spinner" className="size-4 animate-spin" />
 				) : (
-					<Icon name="ArrowSquareOut" className="h-4 w-4" />
+					<Icon name="ArrowSquareOut" className="size-4" />
 				)}
 			</div>
 		</button>

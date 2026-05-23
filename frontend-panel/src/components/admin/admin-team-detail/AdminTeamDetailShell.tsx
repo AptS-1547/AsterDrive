@@ -118,7 +118,7 @@ export function AdminTeamDetailShell({
 						</p>
 					</div>
 					<Button type="button" variant="outline" onClick={onPageBack}>
-						<Icon name="CaretLeft" className="mr-1 h-4 w-4" />
+						<Icon name="CaretLeft" className="mr-1 size-4" />
 						{t("core:back")}
 					</Button>
 				</div>
@@ -141,9 +141,9 @@ export function AdminTeamDetailShell({
 						onScroll={onSidebarScroll}
 					>
 						<div className="space-y-5 p-6 max-lg:space-y-4 max-lg:p-4">
-							<div className="space-y-3 max-lg:flex max-lg:items-start max-lg:gap-3 max-lg:space-y-0">
+							<div className="flex flex-col gap-y-3 max-lg:flex-row max-lg:items-start max-lg:gap-3">
 								<div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary max-lg:size-12 max-lg:rounded-xl">
-									<Icon name="Cloud" className="h-7 w-7" />
+									<Icon name="Cloud" className="size-7" />
 								</div>
 								<div className="space-y-3 max-lg:min-w-0 max-lg:flex-1">
 									<div className="space-y-1">
@@ -171,7 +171,7 @@ export function AdminTeamDetailShell({
 								</div>
 							</div>
 
-							<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:grid max-lg:grid-cols-2 max-lg:gap-3 max-lg:space-y-0 max-lg:p-3">
+							<div className="grid gap-y-3 rounded-xl border bg-background/60 p-4 max-lg:grid-cols-2 max-lg:gap-3 max-lg:p-3">
 								<div className="space-y-1">
 									<p className="text-xs uppercase tracking-wide text-muted-foreground">
 										ID

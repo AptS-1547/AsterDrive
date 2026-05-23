@@ -193,7 +193,7 @@ export default function AdminSharesPage() {
 					items={shares}
 					columns={8}
 					rows={6}
-					emptyIcon={<Icon name="LinkSimple" className="h-10 w-10" />}
+					emptyIcon={<Icon name="LinkSimple" className="size-10" />}
 					emptyTitle={t("no_shares")}
 					emptyDescription={t("no_shares_desc")}
 					headerRow={
@@ -272,7 +272,7 @@ export default function AdminSharesPage() {
 										className="font-mono text-xs text-primary hover:underline inline-flex items-center gap-1"
 									>
 										{s.token}
-										<Icon name="ArrowSquareOut" className="h-3 w-3" />
+										<Icon name="ArrowSquareOut" className="size-3" />
 									</a>
 								</TableCell>
 								<TableCell>
@@ -328,7 +328,7 @@ export default function AdminSharesPage() {
 									>
 										<Icon
 											name={isDeleting ? "Spinner" : "Trash"}
-											className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+											className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
 										/>
 									</Button>
 								</TableCell>

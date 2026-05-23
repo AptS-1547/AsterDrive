@@ -177,7 +177,7 @@ export function PreviewAppsConfigEditor({
 		return (
 			<div className="space-y-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
 				<div className="flex items-start gap-3">
-					<Icon name="Warning" className="mt-0.5 h-4 w-4 text-destructive" />
+					<Icon name="Warning" className="mt-0.5 size-4 text-destructive" />
 					<div className="space-y-1">
 						<p className="text-sm font-medium text-destructive">
 							{t("preview_apps_validation_error")}
@@ -188,7 +188,7 @@ export function PreviewAppsConfigEditor({
 					</div>
 				</div>
 				<Button variant="outline" size="sm" onClick={recoverDraft}>
-					<Icon name="ArrowCounterClockwise" className="h-4 w-4" />
+					<Icon name="ArrowCounterClockwise" className="size-4" />
 					{t("preview_apps_recover")}
 				</Button>
 			</div>

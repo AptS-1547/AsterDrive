@@ -217,7 +217,7 @@ export function RemoteNodesTable({
 																: "ClipboardText"
 														}
 														className={cn(
-															"h-3.5 w-3.5",
+															"size-3.5",
 															generatingEnrollmentId === node.id &&
 																"animate-spin",
 														)}
@@ -245,7 +245,7 @@ export function RemoteNodesTable({
 												>
 													<Icon
 														name={isDeleting ? "Spinner" : "Trash"}
-														className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+														className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
 													/>
 												</Button>
 											</div>

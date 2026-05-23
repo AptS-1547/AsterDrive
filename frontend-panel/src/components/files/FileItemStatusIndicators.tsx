@@ -33,7 +33,7 @@ export function FileItemStatusIndicators({
 						title={t("share")}
 					>
 						<span className="sr-only">{t("share")}</span>
-						<Icon name="LinkSimple" className="h-3 w-3" />
+						<Icon name="LinkSimple" className="size-3" />
 					</span>
 				) : null}
 				{isLocked ? (
@@ -42,7 +42,7 @@ export function FileItemStatusIndicators({
 						title={t("lock")}
 					>
 						<span className="sr-only">{t("lock")}</span>
-						<Icon name="Lock" className="h-3 w-3" />
+						<Icon name="Lock" className="size-3" />
 					</span>
 				) : null}
 			</span>
@@ -62,7 +62,7 @@ export function FileItemStatusIndicators({
 					)}
 					title={t("share")}
 				>
-					<Icon name="LinkSimple" className="h-3 w-3" />
+					<Icon name="LinkSimple" className="size-3" />
 					<span>{t("share")}</span>
 				</Badge>
 			) : null}
@@ -75,7 +75,7 @@ export function FileItemStatusIndicators({
 					)}
 					title={t("lock")}
 				>
-					<Icon name="Lock" className="h-3 w-3" />
+					<Icon name="Lock" className="size-3" />
 					<span>{t("lock")}</span>
 				</Badge>
 			) : null}

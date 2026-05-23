@@ -44,11 +44,11 @@ export function FilePreviewMethodChooser({
 		<>
 			<DialogHeader className="border-b px-5 py-4">
 				<div className="flex items-center gap-3">
-					<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+					<div className="flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
 						<FileTypeIcon
 							mimeType={file.mime_type}
 							fileName={file.name}
-							className="h-5 w-5"
+							className="size-5"
 						/>
 					</div>
 					<div className="min-w-0 flex-1">
@@ -66,7 +66,7 @@ export function FilePreviewMethodChooser({
 						aria-label={closeLabel}
 						title={closeLabel}
 					>
-						<Icon name="X" className="h-4 w-4" />
+						<Icon name="X" className="size-4" />
 						<span className="sr-only">{closeLabel}</span>
 					</Button>
 				</div>
@@ -111,7 +111,7 @@ export function FilePreviewMethodChooser({
 								<div className="min-w-0 flex-1">
 									<div className="font-medium">{moreOpenMethodsLabel}</div>
 								</div>
-								<Icon name="CaretDown" className="h-4 w-4" />
+								<Icon name="CaretDown" className="size-4" />
 							</div>
 						</Button>
 					) : null}
@@ -142,15 +142,15 @@ function OpenMethodButton({
 			onClick={() => onSelect(option.key)}
 		>
 			<div className="flex w-full items-center gap-2.5">
-				<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-					<PreviewAppIcon icon={option.icon} className="h-4 w-4" />
+				<div className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+					<PreviewAppIcon icon={option.icon} className="size-4" />
 				</div>
 				<div className="min-w-0 flex-1">
 					<div className="truncate font-medium">{label}</div>
 				</div>
 				<Icon
 					name={isActive ? "Check" : "CaretRight"}
-					className="h-4 w-4 text-muted-foreground"
+					className="size-4 text-muted-foreground"
 				/>
 			</div>
 		</Button>

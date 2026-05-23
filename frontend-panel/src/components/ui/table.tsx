@@ -1,11 +1,11 @@
 import type * as React from "react";
-import { useContext } from "react";
+import { use } from "react";
 
-import { ScrollAreaContext } from "@/components/ui/scroll-area";
+import { ScrollAreaContext } from "@/components/ui/scrollAreaContext";
 import { cn } from "@/lib/utils";
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
-	const isInsideScrollArea = useContext(ScrollAreaContext);
+	const isInsideScrollArea = use(ScrollAreaContext);
 	const table = (
 		<table
 			data-slot="table"

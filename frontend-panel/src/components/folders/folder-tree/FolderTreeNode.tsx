@@ -133,32 +133,29 @@ export function FolderTreeNodeRow({
 						disabled={isLoading}
 					>
 						{isLoading ? (
-							<div className="h-3 w-3 animate-spin rounded-full border-2 border-t-muted-foreground border-muted-foreground/30" />
+							<div className="size-3 animate-spin rounded-full border-2 border-t-muted-foreground border-muted-foreground/30" />
 						) : isExpanded ? (
-							<Icon
-								name="CaretDown"
-								className="h-3 w-3 text-muted-foreground"
-							/>
+							<Icon name="CaretDown" className="size-3 text-muted-foreground" />
 						) : (
 							<Icon
 								name="CaretRight"
-								className="h-3 w-3 text-muted-foreground"
+								className="size-3 text-muted-foreground"
 							/>
 						)}
 					</button>
 				) : (
-					<span className="h-4 w-4 shrink-0" aria-hidden="true" />
+					<span className="size-4 shrink-0" aria-hidden="true" />
 				)}
 				<div className="flex min-w-0 flex-1 items-center gap-2 px-1">
 					{isExpanded ? (
 						<Icon
 							name="FolderOpen"
-							className="h-4 w-4 shrink-0 text-muted-foreground"
+							className="size-4 shrink-0 text-muted-foreground"
 						/>
 					) : (
 						<Icon
 							name="Folder"
-							className="h-4 w-4 shrink-0 text-muted-foreground"
+							className="size-4 shrink-0 text-muted-foreground"
 						/>
 					)}
 					<span className="truncate">{node.folder.name}</span>

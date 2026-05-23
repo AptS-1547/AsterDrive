@@ -210,24 +210,39 @@ function formatCodecName(value: string | null | undefined) {
 function formatContainerName(value: string | null | undefined) {
 	const normalized = cleanInfoText(value);
 	if (!normalized) return null;
-	const tokens = normalized
-		.toLowerCase()
-		.split(",")
-		.map((token) => token.trim())
-		.filter(Boolean);
-	if (tokens.includes("matroska") && tokens.includes("webm")) {
+	const tokens = normalized.toLowerCase().split(",");
+	const tokenSet = new Set<string>();
+	for (const rawToken of tokens) {
+		const token = rawToken.trim();
+		if (token) {
+			tokenSet.add(token);
+		}
+	}
+	const hasToken = (token: string) => tokenSet.has(token);
+	if (hasToken("matroska") && hasToken("webm")) {
 		return "Matroska / WebM";
 	}
-	if (tokens.includes("matroska")) return "Matroska";
-	if (tokens.includes("webm")) return "WebM";
-	if (tokens.includes("mpegts")) return "MPEG-TS";
-	if (tokens.includes("avi")) return "AVI";
-	if (tokens.includes("mov") && tokens.includes("mp4")) {
+	if (hasToken("matroska")) return "Matroska";
+	if (hasToken("webm")) return "WebM";
+	if (hasToken("mpegts")) return "MPEG-TS";
+	if (hasToken("avi")) return "AVI";
+	if (hasToken("mov") && hasToken("mp4")) {
 		return "MP4 / QuickTime";
 	}
-	if (tokens.includes("mp4")) return "MP4";
-	if (tokens.includes("mov")) return "QuickTime";
+	if (hasToken("mp4")) return "MP4";
+	if (hasToken("mov")) return "QuickTime";
 	return normalized;
+}
+
+function cleanInfoTexts(values: (string | null | undefined)[]) {
+	const cleaned: string[] = [];
+	for (const value of values) {
+		const text = cleanInfoText(value);
+		if (text !== null) {
+			cleaned.push(text);
+		}
+	}
+	return cleaned;
 }
 
 function formatColorToken(value: string | null | undefined) {
@@ -382,10 +397,10 @@ function buildImageMetadataRows({
 			: [];
 	}
 
-	const camera = [metadata.camera_make, metadata.camera_model]
-		.map(cleanInfoText)
-		.filter((value): value is string => value !== null)
-		.join(" ");
+	const camera = cleanInfoTexts([
+		metadata.camera_make,
+		metadata.camera_model,
+	]).join(" ");
 	const focalLength = formatFocalLength(metadata.focal_length_mm);
 	const lensModel = cleanInfoText(metadata.lens_model);
 	const lens =
@@ -452,9 +467,7 @@ function buildAudioMetadataRows({
 			: [];
 	}
 
-	const artists = (metadata.artists ?? [])
-		.map(cleanInfoText)
-		.filter((value): value is string => value !== null);
+	const artists = cleanInfoTexts(metadata.artists ?? []);
 	const artist =
 		artists.length > 0 ? artists.join(", ") : cleanInfoText(metadata.artist);
 

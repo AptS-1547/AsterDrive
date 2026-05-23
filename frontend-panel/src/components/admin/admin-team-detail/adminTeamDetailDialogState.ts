@@ -48,12 +48,16 @@ export function buildPolicyGroupOptions(
 	policyGroups: StoragePolicyGroup[],
 	selectedPolicyGroupId: number | null,
 ): PolicyGroupOption[] {
-	const options: PolicyGroupOption[] = policyGroups
-		.filter((group) => group.is_enabled && group.items.length > 0)
-		.map((group) => ({
+	const options: PolicyGroupOption[] = [];
+	for (const group of policyGroups) {
+		if (!group.is_enabled || group.items.length === 0) {
+			continue;
+		}
+		options.push({
 			label: group.name,
 			value: String(group.id),
-		}));
+		});
+	}
 
 	if (
 		selectedPolicyGroupId != null &&

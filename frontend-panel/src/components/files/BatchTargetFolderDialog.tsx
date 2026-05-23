@@ -196,7 +196,7 @@ export function BatchTargetFolderDialog({
 							}}
 							disabled={loading || submitting || creatingFolder}
 						>
-							<Icon name="FolderPlus" className="mr-1 h-3.5 w-3.5" />
+							<Icon name="FolderPlus" className="mr-1 size-3.5" />
 							{t("files:create_folder")}
 						</Button>
 					</div>
@@ -206,7 +206,7 @@ export function BatchTargetFolderDialog({
 						className="absolute top-3 right-3"
 						onClick={() => onOpenChange(false)}
 					>
-						<Icon name="X" className="h-4 w-4" />
+						<Icon name="X" className="size-4" />
 					</Button>
 				</DialogHeader>
 
@@ -313,7 +313,7 @@ export function BatchTargetFolderDialog({
 										className="mt-4"
 										onClick={handleGoUp}
 									>
-										<Icon name="ArrowUp" className="mr-1 h-3.5 w-3.5" />
+										<Icon name="ArrowUp" className="mr-1 size-3.5" />
 										{t("files:batch_target_back")}
 									</Button>
 								)}
@@ -332,12 +332,12 @@ export function BatchTargetFolderDialog({
 									>
 										<Icon
 											name="Folder"
-											className="h-4 w-4 shrink-0 text-muted-foreground"
+											className="size-4 shrink-0 text-muted-foreground"
 										/>
 										<span className="truncate">{folder.name}</span>
 										<Icon
 											name="CaretRight"
-											className="ml-auto h-3.5 w-3.5 text-muted-foreground"
+											className="ml-auto size-3.5 text-muted-foreground"
 										/>
 									</button>
 								))}

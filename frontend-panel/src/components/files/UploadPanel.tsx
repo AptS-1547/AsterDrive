@@ -197,8 +197,8 @@ export function UploadPanel({
 			>
 				<CardHeader className="border-b border-border/60 bg-card/80 px-4 py-3 dark:bg-card/65">
 					<div className="flex items-start gap-3">
-						<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/45 text-muted-foreground dark:bg-muted/25">
-							<Icon name="Upload" className="h-4 w-4" />
+						<div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/45 text-muted-foreground dark:bg-muted/25">
+							<Icon name="Upload" className="size-4" />
 						</div>
 						<div className="min-w-0 flex-1">
 							<CardTitle>{title}</CardTitle>
@@ -216,7 +216,7 @@ export function UploadPanel({
 								aria-label={t("upload_settings")}
 								title={t("upload_settings")}
 							>
-								<Icon name="Gear" className="h-3 w-3" />
+								<Icon name="Gear" className="size-3" />
 							</Button>
 							<Button
 								variant="ghost"
@@ -231,7 +231,7 @@ export function UploadPanel({
 							>
 								<Icon
 									name={open ? "CaretDown" : "CaretUp"}
-									className="h-3 w-3"
+									className="size-3"
 								/>
 							</Button>
 						</div>
@@ -266,7 +266,7 @@ export function UploadPanel({
 							onConcurrencyChange={onConcurrencyChange}
 							t={t}
 						/>
-						<CardContent className="min-h-0 flex-1 overflow-hidden bg-background/70 px-0 py-0 group-data-[size=sm]/card:px-0 dark:bg-background/20">
+						<CardContent className="min-h-0 flex-1 overflow-hidden bg-background/70 p-0 group-data-[size=sm]/card:px-0 dark:bg-background/20">
 							{tasks.length === 0 ? (
 								<div className="flex h-full min-h-[10rem] items-center justify-center px-6 py-8 text-center text-sm text-muted-foreground">
 									{emptyText}
@@ -306,7 +306,7 @@ export function UploadPanel({
 							<CardFooter className="shrink-0 justify-end gap-2 border-t border-border/60 bg-card/80 px-4 py-3 dark:bg-card/65">
 								{canRetryFailed ? (
 									<Button variant="outline" size="sm" onClick={onRetryFailed}>
-										<Icon name="ArrowsClockwise" className="h-3.5 w-3.5" />
+										<Icon name="ArrowsClockwise" className="size-3.5" />
 										{retryFailedLabel}
 									</Button>
 								) : null}
@@ -316,7 +316,7 @@ export function UploadPanel({
 										size="sm"
 										onClick={onClearCompleted}
 									>
-										<Icon name="X" className="h-3.5 w-3.5" />
+										<Icon name="X" className="size-3.5" />
 										{clearCompletedLabel}
 									</Button>
 								) : null}
@@ -415,7 +415,7 @@ function UploadSettingsPanel({
 							aria-label={t("upload_concurrency_decrease")}
 							title={t("upload_concurrency_decrease")}
 						>
-							<Icon name="Minus" className="h-3 w-3" />
+							<Icon name="Minus" className="size-3" />
 						</Button>
 						<span className="w-8 text-center text-xs font-medium tabular-nums">
 							{concurrency}
@@ -428,7 +428,7 @@ function UploadSettingsPanel({
 							aria-label={t("upload_concurrency_increase")}
 							title={t("upload_concurrency_increase")}
 						>
-							<Icon name="Plus" className="h-3 w-3" />
+							<Icon name="Plus" className="size-3" />
 						</Button>
 					</div>
 				</div>

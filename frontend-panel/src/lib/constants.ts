@@ -18,7 +18,7 @@ export const ADMIN_SIDEBAR_WIDTH_CLASS = "w-60";
 
 /** Admin 页面密度 */
 export const ADMIN_CONTROL_HEIGHT_CLASS = "h-8";
-export const ADMIN_ICON_BUTTON_CLASS = "h-8 w-8";
+export const ADMIN_ICON_BUTTON_CLASS = "size-8";
 export const ADMIN_TABLE_ACTIONS_WIDTH_CLASS = "w-24";
 
 /** 侧栏 / 列表内边距 */

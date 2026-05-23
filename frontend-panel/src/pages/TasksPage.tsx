@@ -164,7 +164,7 @@ export default function TasksPage() {
 						>
 							<Icon
 								name={loading ? "Spinner" : "ArrowsClockwise"}
-								className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+								className={`size-4 ${loading ? "animate-spin" : ""}`}
 							/>
 						</Button>
 						{hasActiveTasks ? (
@@ -184,7 +184,7 @@ export default function TasksPage() {
 						<Card className="bg-muted/15">
 							<div className="py-12">
 								<EmptyState
-									icon={<Icon name="Clock" className="h-10 w-10" />}
+									icon={<Icon name="Clock" className="size-10" />}
 									title={t("tasks:empty_title")}
 									description={t("tasks:empty_desc")}
 								/>

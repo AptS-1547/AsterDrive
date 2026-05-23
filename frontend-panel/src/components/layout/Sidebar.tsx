@@ -332,7 +332,7 @@ export function Sidebar({
 						}}
 						className={sidebarNavItemClass(false, "w-full text-left")}
 					>
-						<Icon name={link.icon} className="h-4 w-4 shrink-0" />
+						<Icon name={link.icon} className="size-4 shrink-0" />
 						{t(`search:${link.labelKey}`)}
 					</button>
 				))}
@@ -359,7 +359,7 @@ export function Sidebar({
 								"bg-destructive/10 text-destructive ring-1 ring-destructive/30",
 						)}
 					>
-						<Icon name={link.icon} className="h-4 w-4 shrink-0" />
+						<Icon name={link.icon} className="size-4 shrink-0" />
 						{link.label}
 					</Link>
 				))}

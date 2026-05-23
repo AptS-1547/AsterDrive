@@ -31,7 +31,7 @@ export function TopBar({
 			className="h-9 w-full justify-between rounded-full border-border/50 bg-muted/35 px-3 text-muted-foreground shadow-none hover:bg-muted/55 hover:text-foreground"
 		>
 			<span className="flex min-w-0 items-center gap-2">
-				<Icon name="MagnifyingGlass" className="h-4 w-4 shrink-0" />
+				<Icon name="MagnifyingGlass" className="size-4 shrink-0" />
 				<span className="truncate text-sm">{t("search:placeholder")}</span>
 			</span>
 			<span className="hidden items-center gap-1 rounded-full border border-border/60 bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline-flex">
@@ -72,7 +72,7 @@ export function TopBar({
 								aria-label={t("search:open_search")}
 								className="sm:hidden"
 							>
-								<Icon name="MagnifyingGlass" className="h-4 w-4" />
+								<Icon name="MagnifyingGlass" className="size-4" />
 							</Button>
 							{actions}
 						</>

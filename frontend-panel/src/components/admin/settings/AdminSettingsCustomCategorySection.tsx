@@ -38,7 +38,7 @@ export function AdminSettingsCustomCategorySection({
 				className="justify-start px-0"
 				onClick={addCustomDraftRow}
 			>
-				<Icon name="Plus" className="h-4 w-4" />
+				<Icon name="Plus" className="size-4" />
 				{t("add_custom_config")}
 			</Button>
 		</div>

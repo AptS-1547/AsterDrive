@@ -33,15 +33,17 @@ async function waitForUploadCompletion(
 	page: Page,
 	files: ReadonlyArray<TestFile>,
 ) {
-	for (const file of files) {
-		await expect(
-			page
-				.getByText(file.name, { exact: true })
-				.locator("..")
-				.filter({ hasText: "Upload complete" })
-				.first(),
-		).toBeVisible({ timeout: 30_000 });
-	}
+	await Promise.all(
+		files.map((file) =>
+			expect(
+				page
+					.getByText(file.name, { exact: true })
+					.locator("..")
+					.filter({ hasText: "Upload complete" })
+					.first(),
+			).toBeVisible({ timeout: 30_000 }),
+		),
+	);
 }
 
 export async function uploadViaPicker(

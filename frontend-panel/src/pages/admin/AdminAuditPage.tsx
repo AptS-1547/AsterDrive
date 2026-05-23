@@ -359,7 +359,7 @@ export default function AdminAuditPage() {
 						>
 							<Icon
 								name={loading ? "Spinner" : "ArrowsClockwise"}
-								className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+								className={`mr-1 size-3.5 ${loading ? "animate-spin" : ""}`}
 							/>
 							{t("core:refresh")}
 						</Button>
@@ -369,7 +369,7 @@ export default function AdminAuditPage() {
 							<div className="relative min-w-[240px] flex-1 md:max-w-sm">
 								<Icon
 									name="MagnifyingGlass"
-									className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+									className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
 								/>
 								<Input
 									placeholder={t("audit_filter_action")}
@@ -418,7 +418,7 @@ export default function AdminAuditPage() {
 				) : items.length === 0 ? (
 					hasServerFilters ? (
 						<EmptyState
-							icon={<Icon name="Scroll" className="h-10 w-10" />}
+							icon={<Icon name="Scroll" className="size-10" />}
 							title={t("no_filtered_audit_logs")}
 							description={t("no_filtered_audit_logs_desc")}
 							action={
@@ -429,7 +429,7 @@ export default function AdminAuditPage() {
 						/>
 					) : (
 						<EmptyState
-							icon={<Icon name="Scroll" className="h-10 w-10" />}
+							icon={<Icon name="Scroll" className="size-10" />}
 							title={t("no_audit_logs")}
 						/>
 					)
@@ -591,7 +591,7 @@ export default function AdminAuditPage() {
 											/>
 										}
 									>
-										<Icon name="CaretLeft" className="h-4 w-4" />
+										<Icon name="CaretLeft" className="size-4" />
 									</TooltipTrigger>
 									{prevPageDisabled ? (
 										<TooltipContent>
@@ -610,7 +610,7 @@ export default function AdminAuditPage() {
 											/>
 										}
 									>
-										<Icon name="CaretRight" className="h-4 w-4" />
+										<Icon name="CaretRight" className="size-4" />
 									</TooltipTrigger>
 									{nextPageDisabled ? (
 										<TooltipContent>

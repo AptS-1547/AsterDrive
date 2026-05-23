@@ -323,7 +323,7 @@ export function PolicyGroupDialog({
 											onClick={onAddRule}
 											disabled={policies.length === 0}
 										>
-											<Icon name="Plus" className="mr-1 h-4 w-4" />
+											<Icon name="Plus" className="mr-1 size-4" />
 											{t("policy_group_add_rule")}
 										</Button>
 									</div>
@@ -404,7 +404,7 @@ export function PolicyGroupDialog({
 														disabled={form.items.length === 1}
 														aria-label={t("policy_group_remove_rule")}
 													>
-														<Icon name="Trash" className="h-3.5 w-3.5" />
+														<Icon name="Trash" className="size-3.5" />
 													</Button>
 												</div>
 
@@ -560,9 +560,9 @@ export function PolicyGroupDialog({
 						</Button>
 						<Button type="submit" disabled={submitting || policiesLoading}>
 							{submitting ? (
-								<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 							) : (
-								<Icon name="FloppyDisk" className="mr-1 h-4 w-4" />
+								<Icon name="FloppyDisk" className="mr-1 size-4" />
 							)}
 							{mode === "edit" ? t("save_changes") : t("core:create")}
 						</Button>

@@ -33,7 +33,7 @@ export function ReadOnlyFileCollection({
 		<div className="flex min-h-0 flex-1 flex-col">
 			{isEmpty ? (
 				<EmptyState
-					icon={<Icon name="FolderOpen" className="h-12 w-12" />}
+					icon={<Icon name="FolderOpen" className="size-12" />}
 					title={emptyTitle}
 					description={emptyDescription}
 				/>

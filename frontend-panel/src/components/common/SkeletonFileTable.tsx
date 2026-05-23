@@ -18,7 +18,7 @@ export function SkeletonFileTable({ rows = 8 }: SkeletonFileTableProps) {
 			<TableHeader>
 				<TableRow>
 					<TableHead className="w-10">
-						<Skeleton className="h-4 w-4" />
+						<Skeleton className="size-4" />
 					</TableHead>
 					<TableHead>
 						<Skeleton className="h-4 w-24" />
@@ -33,11 +33,11 @@ export function SkeletonFileTable({ rows = 8 }: SkeletonFileTableProps) {
 					// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders never reorder
 					<TableRow key={`skeleton-row-${i}`}>
 						<TableCell>
-							<Skeleton className="h-4 w-4" />
+							<Skeleton className="size-4" />
 						</TableCell>
 						<TableCell>
 							<div className="flex items-center gap-2">
-								<Skeleton className="h-4 w-4 shrink-0" />
+								<Skeleton className="size-4 shrink-0" />
 								<Skeleton
 									className="h-4"
 									style={{ width: `${60 + (i % 3) * 10}%` }}

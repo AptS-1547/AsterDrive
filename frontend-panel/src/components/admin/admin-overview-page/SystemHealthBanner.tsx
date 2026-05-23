@@ -79,11 +79,11 @@ export function SystemHealthBanner({
 			<div className="flex min-w-0 items-start gap-3">
 				<span
 					className={cn(
-						"mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+						"mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full",
 						presentation.iconClass,
 					)}
 				>
-					<Icon name={presentation.icon} className="h-4 w-4" />
+					<Icon name={presentation.icon} className="size-4" />
 				</span>
 				<div className="min-w-0 space-y-1">
 					<div className="flex flex-wrap items-center gap-2">
@@ -129,7 +129,7 @@ export function SystemHealthBanner({
 						void navigate("/admin/tasks?kind=system_runtime");
 					}}
 				>
-					<Icon name="ArrowSquareOut" className="h-4 w-4" />
+					<Icon name="ArrowSquareOut" className="size-4" />
 					{t("overview_system_health_view_history")}
 				</Button>
 			) : null}

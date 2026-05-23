@@ -1,5 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
-import { createContext, useContext } from "react";
+import { createContext, type Dispatch, type SetStateAction, use } from "react";
 import type {
 	ConfigDraftValue,
 	NewCustomDraft,
@@ -87,7 +86,7 @@ export function AdminSettingsCategoryContentProvider({
 }
 
 export function useAdminSettingsCategoryContent() {
-	const context = useContext(AdminSettingsCategoryContentContext);
+	const context = use(AdminSettingsCategoryContentContext);
 	if (!context) {
 		throw new Error("AdminSettingsCategoryContent context is missing");
 	}

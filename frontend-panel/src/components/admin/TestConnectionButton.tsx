@@ -44,14 +44,14 @@ export function TestConnectionButton({
 			onClick={handleTest}
 		>
 			{testing ? (
-				<Icon name="Spinner" className="h-4 w-4 mr-1 animate-spin" />
+				<Icon name="Spinner" className="size-4 mr-1 animate-spin" />
 			) : result === true ? (
 				<Icon
 					name="Check"
-					className="h-4 w-4 mr-1 text-green-600 dark:text-green-400"
+					className="size-4 mr-1 text-green-600 dark:text-green-400"
 				/>
 			) : (
-				<Icon name="WifiHigh" className="h-4 w-4 mr-1" />
+				<Icon name="WifiHigh" className="size-4 mr-1" />
 			)}
 			{label ?? t("test_connection")}
 		</Button>

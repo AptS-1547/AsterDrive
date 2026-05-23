@@ -11,8 +11,8 @@ interface UserAvatarImageProps {
 }
 
 const SIZE_CLASS_MAP = {
-	sm: "h-8 w-8 text-xs",
-	md: "h-10 w-10 text-sm",
+	sm: "size-8 text-xs",
+	md: "size-10 text-sm",
 	lg: "h-24 w-24 text-2xl",
 	xl: "h-full w-full text-5xl",
 } as const;

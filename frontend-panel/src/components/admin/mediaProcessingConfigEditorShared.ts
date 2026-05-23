@@ -153,11 +153,30 @@ function readStringList(value: unknown) {
 		return [];
 	}
 
-	return value
-		.map((item) => readString(item).trim().replace(/^\./, "").toLowerCase())
-		.filter(
-			(item, index, items) => item.length > 0 && items.indexOf(item) === index,
-		);
+	const items: string[] = [];
+	const seen = new Set<string>();
+	for (const valueItem of value) {
+		const item = readString(valueItem).trim().replace(/^\./, "").toLowerCase();
+		if (item.length === 0 || seen.has(item)) {
+			continue;
+		}
+		seen.add(item);
+		items.push(item);
+	}
+	return items;
+}
+
+function isMediaProcessingEditorUse(
+	value: string,
+): value is MediaProcessingEditorUse {
+	return (
+		value === "thumbnail:image" ||
+		value === "thumbnail:audio" ||
+		value === "thumbnail:video" ||
+		value === "metadata:image" ||
+		value === "metadata:audio" ||
+		value === "metadata:video"
+	);
 }
 
 function readUseList(value: unknown) {
@@ -165,20 +184,17 @@ function readUseList(value: unknown) {
 		return [];
 	}
 
-	return value
-		.map((item) => readString(item).trim().toLowerCase())
-		.filter(
-			(item): item is MediaProcessingEditorUse =>
-				item === "thumbnail:image" ||
-				item === "thumbnail:audio" ||
-				item === "thumbnail:video" ||
-				item === "metadata:image" ||
-				item === "metadata:audio" ||
-				item === "metadata:video",
-		)
-		.filter(
-			(item, index, items) => item.length > 0 && items.indexOf(item) === index,
-		);
+	const items: MediaProcessingEditorUse[] = [];
+	const seen = new Set<MediaProcessingEditorUse>();
+	for (const valueItem of value) {
+		const item = readString(valueItem).trim().toLowerCase();
+		if (!isMediaProcessingEditorUse(item) || seen.has(item)) {
+			continue;
+		}
+		seen.add(item);
+		items.push(item);
+	}
+	return items;
 }
 
 function normalizeUses(
@@ -186,8 +202,10 @@ function normalizeUses(
 	uses: MediaProcessingEditorUse[],
 ) {
 	const normalized = uses.length > 0 ? [...uses] : [];
+	const normalizedSet = new Set(normalized);
 	for (const defaultUse of defaultUses(kind)) {
-		if (!normalized.includes(defaultUse)) {
+		if (!normalizedSet.has(defaultUse)) {
+			normalizedSet.add(defaultUse);
 			normalized.push(defaultUse);
 		}
 	}
@@ -316,12 +334,17 @@ function mergeProcessors(
 }
 
 export function parseMediaProcessingDelimitedInput(value: string) {
-	return value
-		.split(",")
-		.map((item) => item.trim().replace(/^\./, "").toLowerCase())
-		.filter(
-			(item, index, items) => item.length > 0 && items.indexOf(item) === index,
-		);
+	const items: string[] = [];
+	const seen = new Set<string>();
+	for (const rawItem of value.split(",")) {
+		const item = rawItem.trim().replace(/^\./, "").toLowerCase();
+		if (item.length === 0 || seen.has(item)) {
+			continue;
+		}
+		seen.add(item);
+		items.push(item);
+	}
+	return items;
 }
 
 export function formatMediaProcessingDelimitedInput(values: string[]) {
@@ -336,13 +359,15 @@ export function parseMediaProcessingConfig(
 		throw new Error("media processing config must be an object");
 	}
 
-	const processors = Array.isArray(parsed.processors)
-		? parsed.processors
-				.map(normalizeProcessor)
-				.filter((processor): processor is MediaProcessingEditorProcessor =>
-					Boolean(processor),
-				)
-		: [];
+	const processors: MediaProcessingEditorProcessor[] = [];
+	if (Array.isArray(parsed.processors)) {
+		for (const rawProcessor of parsed.processors) {
+			const processor = normalizeProcessor(rawProcessor);
+			if (processor) {
+				processors.push(processor);
+			}
+		}
+	}
 
 	return {
 		processors: mergeProcessors(processors),

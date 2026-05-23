@@ -57,9 +57,9 @@ function SortIcon({
 }) {
 	if (column !== current) return null;
 	return order === "asc" ? (
-		<Icon name="SortAscending" className="h-3 w-3 ml-1" />
+		<Icon name="SortAscending" className="size-3 ml-1" />
 	) : (
-		<Icon name="SortDescending" className="h-3 w-3 ml-1" />
+		<Icon name="SortDescending" className="size-3 ml-1" />
 	);
 }
 

@@ -6,7 +6,7 @@ import { OverviewRecentEventsSection } from "@/components/admin/admin-overview-p
 import { OverviewStatsSection } from "@/components/admin/admin-overview-page/OverviewStatsSection";
 import {
 	OverviewTrendChart,
-	type TrendSeries,
+	type OverviewTrendSeries,
 } from "@/components/admin/admin-overview-page/OverviewTrendChart";
 import { SystemHealthBanner } from "@/components/admin/admin-overview-page/SystemHealthBanner";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -42,7 +42,7 @@ export default function AdminOverviewPage() {
 	const timezone = useDisplayTimeZoneStore((s) =>
 		resolveActiveDisplayTimeZone(s.preference),
 	);
-	const trendSeries: TrendSeries[] = [
+	const trendSeries: OverviewTrendSeries[] = [
 		{
 			badgeClass:
 				"border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -159,7 +159,7 @@ export default function AdminOverviewPage() {
 							>
 								<Icon
 									name={refreshing ? "Spinner" : "ArrowClockwise"}
-									className={cn("h-4 w-4", refreshing && "animate-spin")}
+									className={cn("size-4", refreshing && "animate-spin")}
 								/>
 								{t("core:refresh")}
 							</Button>
@@ -226,7 +226,7 @@ export default function AdminOverviewPage() {
 						</>
 					) : (
 						<EmptyState
-							icon={<Icon name="Presentation" className="h-10 w-10" />}
+							icon={<Icon name="Presentation" className="size-10" />}
 							title={t("overview_empty_title")}
 							description={t("overview_empty_desc")}
 							action={
@@ -235,7 +235,7 @@ export default function AdminOverviewPage() {
 									size="sm"
 									onClick={() => void load("refresh")}
 								>
-									<Icon name="ArrowClockwise" className="h-4 w-4" />
+									<Icon name="ArrowClockwise" className="size-4" />
 									{t("core:refresh")}
 								</Button>
 							}

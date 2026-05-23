@@ -82,7 +82,7 @@ export function AdminTeamDetailOverviewSection({
 				>
 					<Icon
 						name={policyGroupsLoading ? "Spinner" : "ArrowsClockwise"}
-						className={`mr-1 h-3.5 w-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
+						className={`mr-1 size-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
 					/>
 					{t("core:refresh")}
 				</Button>
@@ -167,9 +167,9 @@ export function AdminTeamDetailOverviewSection({
 							}
 						>
 							{saving ? (
-								<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 							) : (
-								<Icon name="FloppyDisk" className="mr-1 h-4 w-4" />
+								<Icon name="FloppyDisk" className="mr-1 size-4" />
 							)}
 							{t("save_changes")}
 						</Button>

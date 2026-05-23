@@ -142,9 +142,9 @@ export default function ResetPasswordPage() {
 									}
 								>
 									{showPassword ? (
-										<Icon name="EyeSlash" className="h-4 w-4" />
+										<Icon name="EyeSlash" className="size-4" />
 									) : (
-										<Icon name="Eye" className="h-4 w-4" />
+										<Icon name="Eye" className="size-4" />
 									)}
 								</button>
 							</div>
@@ -159,7 +159,7 @@ export default function ResetPasswordPage() {
 							disabled={submitting || password.length === 0}
 						>
 							{submitting ? (
-								<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 							) : null}
 							{submitting
 								? t("resetting_password")

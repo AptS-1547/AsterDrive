@@ -48,18 +48,18 @@ export function GlobalSearchResultsPanel({
 						})
 					: t("search:start_typing")}
 			</div>
-			<div ref={resultListRef} className="flex-1 overflow-y-auto px-2 py-2">
+			<div ref={resultListRef} className="flex-1 overflow-y-auto p-2">
 				{!searchActive ? (
 					<GlobalSearchEmptyPrompt />
 				) : loading && resultEntries.length === 0 ? (
 					<div className="flex h-full min-h-56 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-						<Icon name="Spinner" className="h-5 w-5 animate-spin" />
+						<Icon name="Spinner" className="size-5 animate-spin" />
 						<span>{t("search:searching")}</span>
 					</div>
 				) : error ? (
 					<div className="flex h-full min-h-56 flex-col items-center justify-center gap-3 px-4 text-center">
-						<div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
-							<Icon name="Warning" className="h-5 w-5" />
+						<div className="flex size-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
+							<Icon name="Warning" className="size-5" />
 						</div>
 						<div className="space-y-1">
 							<p className="text-sm font-medium">{t("search:search_error")}</p>
@@ -68,8 +68,8 @@ export function GlobalSearchResultsPanel({
 					</div>
 				) : resultEntries.length === 0 ? (
 					<div className="flex h-full min-h-56 flex-col items-center justify-center gap-3 px-4 text-center">
-						<div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-							<Icon name="MagnifyingGlass" className="h-5 w-5" />
+						<div className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+							<Icon name="MagnifyingGlass" className="size-5" />
 						</div>
 						<div className="space-y-1">
 							<p className="text-sm font-medium">{t("search:no_results")}</p>
@@ -79,7 +79,7 @@ export function GlobalSearchResultsPanel({
 						</div>
 					</div>
 				) : (
-					<div className="space-y-4 px-1 py-1">
+					<div className="space-y-4 p-1">
 						{results.folders.length > 0 ? (
 							<div className="space-y-1">
 								<div className="px-2 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -138,9 +138,9 @@ export function GlobalSearchResultsPanel({
 								className="flex justify-center py-3"
 							>
 								{loadingMore ? (
-									<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+									<div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
 								) : (
-									<div className="h-5 w-5" />
+									<div className="size-5" />
 								)}
 							</div>
 						) : null}
@@ -168,8 +168,8 @@ function GlobalSearchEmptyPrompt() {
 	return (
 		<div className="grid gap-3 px-2 py-3 sm:grid-cols-2">
 			<div className="rounded-2xl border border-border/60 bg-muted/25 p-4">
-				<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-background text-primary ring-1 ring-border/60">
-					<Icon name="MagnifyingGlass" className="h-4 w-4" />
+				<div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-background text-primary ring-1 ring-border/60">
+					<Icon name="MagnifyingGlass" className="size-4" />
 				</div>
 				<div className="space-y-1">
 					<p className="text-sm font-medium">{t("search:start_typing")}</p>
@@ -179,8 +179,8 @@ function GlobalSearchEmptyPrompt() {
 				</div>
 			</div>
 			<div className="rounded-2xl border border-border/60 bg-muted/25 p-4">
-				<div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-background text-primary ring-1 ring-border/60">
-					<Icon name="ArrowDown" className="h-4 w-4" />
+				<div className="mb-3 flex size-10 items-center justify-center rounded-xl bg-background text-primary ring-1 ring-border/60">
+					<Icon name="ArrowDown" className="size-4" />
 				</div>
 				<div className="space-y-1">
 					<p className="text-sm font-medium">{t("search:navigate_results")}</p>

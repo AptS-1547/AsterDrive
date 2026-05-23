@@ -38,7 +38,7 @@ export function ColorPresetPicker() {
 										aria-pressed={selected}
 										onClick={() => setColorPreset(p.color)}
 										className={cn(
-											"flex h-7 w-7 items-center justify-center rounded-full border border-black/10 transition-transform focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35",
+											"flex size-7 items-center justify-center rounded-full border border-black/10 transition-transform focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/35",
 											selected &&
 												"scale-110 ring-2 ring-foreground ring-offset-2 ring-offset-background",
 										)}
@@ -47,7 +47,7 @@ export function ColorPresetPicker() {
 								}
 							>
 								{selected && (
-									<Icon name="Check" className="h-3.5 w-3.5 text-white" />
+									<Icon name="Check" className="size-3.5 text-white" />
 								)}
 							</TooltipTrigger>
 							<TooltipContent>{p.label}</TooltipContent>

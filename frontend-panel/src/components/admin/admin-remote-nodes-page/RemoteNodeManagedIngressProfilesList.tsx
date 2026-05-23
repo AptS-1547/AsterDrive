@@ -32,7 +32,7 @@ export function RemoteNodeManagedIngressProfilesList({
 			{errorMessage ? null : loading ? (
 				<div className="rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
 					<span className="inline-flex items-center gap-2">
-						<Icon name="Spinner" className="h-4 w-4 animate-spin" />
+						<Icon name="Spinner" className="size-4 animate-spin" />
 						{t("core:loading")}
 					</span>
 				</div>
@@ -118,7 +118,7 @@ function RemoteNodeManagedIngressProfileCard({
 						aria-label={t("core:edit")}
 						title={t("core:edit")}
 					>
-						<Icon name="PencilSimple" className="h-3.5 w-3.5" />
+						<Icon name="PencilSimple" className="size-3.5" />
 					</Button>
 					<Button
 						type="button"
@@ -129,7 +129,7 @@ function RemoteNodeManagedIngressProfileCard({
 						aria-label={t("core:delete")}
 						title={t("core:delete")}
 					>
-						<Icon name="Trash" className="h-3.5 w-3.5" />
+						<Icon name="Trash" className="size-3.5" />
 					</Button>
 				</div>
 			</div>

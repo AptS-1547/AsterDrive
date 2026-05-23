@@ -519,7 +519,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 						onDragLeave={() => setRootDragOver(false)}
 						onDrop={handleRootDrop}
 					>
-						<Icon name="Folder" className="h-4 w-4 text-muted-foreground" />
+						<Icon name="Folder" className="size-4 text-muted-foreground" />
 						{t("root")}
 					</button>
 					{renderChildren(visibleRootIds, 1)}

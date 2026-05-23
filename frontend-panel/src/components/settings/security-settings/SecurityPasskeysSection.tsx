@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
@@ -47,7 +47,7 @@ export function SecurityPasskeysSection() {
 	const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set());
 	const [supported, setSupported] = useState(false);
 
-	const loadPasskeys = useEffectEvent(async (options?: { force?: boolean }) => {
+	const loadPasskeys = useCallback(async (options?: { force?: boolean }) => {
 		try {
 			setLoading(true);
 			setPasskeys(await authService.listPasskeys(options));
@@ -56,12 +56,12 @@ export function SecurityPasskeysSection() {
 		} finally {
 			setLoading(false);
 		}
-	});
+	}, []);
 
 	useEffect(() => {
 		setSupported(isWebAuthnSupported());
 		void loadPasskeys();
-	}, []);
+	}, [loadPasskeys]);
 
 	const handleCreate = async () => {
 		if (!supported) {
@@ -181,9 +181,9 @@ export function SecurityPasskeysSection() {
 					onClick={() => void loadPasskeys({ force: true })}
 				>
 					{loading ? (
-						<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+						<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 					) : (
-						<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
+						<Icon name="ArrowClockwise" className="mr-2 size-4" />
 					)}
 					{t("core:refresh")}
 				</Button>
@@ -209,9 +209,9 @@ export function SecurityPasskeysSection() {
 							onClick={() => void handleCreate()}
 						>
 							{creating ? (
-								<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 							) : (
-								<Icon name="Plus" className="mr-2 h-4 w-4" />
+								<Icon name="Plus" className="mr-2 size-4" />
 							)}
 							{creating
 								? t("settings:settings_passkeys_adding")
@@ -255,7 +255,7 @@ export function SecurityPasskeysSection() {
 									<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 										<div className="flex min-w-0 items-center gap-2">
 											<div className="rounded-lg border bg-background p-2 text-primary">
-												<Icon name="Shield" className="h-4 w-4" />
+												<Icon name="Shield" className="size-4" />
 											</div>
 											<div className="min-w-0 flex-1 space-y-1">
 												{currentEdit ? (
@@ -328,10 +328,10 @@ export function SecurityPasskeysSection() {
 														{busy ? (
 															<Icon
 																name="Spinner"
-																className="mr-2 h-4 w-4 animate-spin"
+																className="mr-2 size-4 animate-spin"
 															/>
 														) : (
-															<Icon name="Check" className="mr-2 h-4 w-4" />
+															<Icon name="Check" className="mr-2 size-4" />
 														)}
 														{t("core:save")}
 													</Button>
@@ -358,7 +358,7 @@ export function SecurityPasskeysSection() {
 														})
 													}
 												>
-													<Icon name="PencilSimple" className="mr-2 h-4 w-4" />
+													<Icon name="PencilSimple" className="mr-2 size-4" />
 													{t("settings:settings_passkeys_rename")}
 												</Button>
 											)}
@@ -372,10 +372,10 @@ export function SecurityPasskeysSection() {
 												{busy ? (
 													<Icon
 														name="Spinner"
-														className="mr-2 h-4 w-4 animate-spin"
+														className="mr-2 size-4 animate-spin"
 													/>
 												) : (
-													<Icon name="Trash" className="mr-2 h-4 w-4" />
+													<Icon name="Trash" className="mr-2 size-4" />
 												)}
 												{t("settings:settings_passkeys_delete")}
 											</Button>

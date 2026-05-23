@@ -66,7 +66,7 @@ export function RemoteNodeEnrollmentDialog({
 										className={ADMIN_CONTROL_HEIGHT_CLASS}
 										onClick={() => void onCopy(command.command)}
 									>
-										<Icon name="Copy" className="mr-1 h-4 w-4" />
+										<Icon name="Copy" className="mr-1 size-4" />
 										{t("remote_node_enrollment_copy_command")}
 									</Button>
 								</div>
@@ -165,7 +165,7 @@ export function RemoteNodeEnrollmentDialog({
 											key={step.title}
 											className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3"
 										>
-											<span className="flex h-6 w-6 items-center justify-center rounded-full border border-border/80 bg-background text-[11px] font-medium text-muted-foreground">
+											<span className="flex size-6 items-center justify-center rounded-full border border-border/80 bg-background text-[11px] font-medium text-muted-foreground">
 												{index + 1}
 											</span>
 											<div className="min-w-0">

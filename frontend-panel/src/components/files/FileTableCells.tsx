@@ -37,7 +37,7 @@ export function FolderNameCell({ folder }: { folder: FolderListItem }) {
 	return (
 		<TableCell className="pl-1 pr-2">
 			<div className="flex min-w-0 items-center gap-2.5">
-				<Icon name="Folder" className="h-4 w-4 shrink-0 text-amber-500" />
+				<Icon name="Folder" className="size-4 shrink-0 text-amber-500" />
 				<div className="flex min-w-0 flex-1 items-center gap-2">
 					<span className="min-w-0 truncate" title={folder.name}>
 						{folder.name}

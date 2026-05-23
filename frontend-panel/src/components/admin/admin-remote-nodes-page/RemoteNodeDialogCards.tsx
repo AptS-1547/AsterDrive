@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/buttonVariants";
 import { Icon } from "@/components/ui/icon";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -55,7 +55,7 @@ export function RemoteNodeSummaryCard({
 	return (
 		<section className="rounded-3xl border border-border/70 bg-muted/20 p-5">
 			<div className="flex items-center gap-3">
-				<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+				<div className="flex size-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
 					<img
 						src="/static/asterdrive/asterdrive-dark.svg"
 						alt=""
@@ -117,8 +117,8 @@ export function RemoteNodeDocsCard() {
 	return (
 		<section className="rounded-3xl border border-border/70 bg-background/85 p-5">
 			<div className="flex items-start gap-3">
-				<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-muted/20 text-primary">
-					<Icon name="Docker" className="h-5 w-5" />
+				<div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-muted/20 text-primary">
+					<Icon name="Docker" className="size-5" />
 				</div>
 				<div className="min-w-0">
 					<h3 className="text-sm font-semibold">
@@ -139,12 +139,12 @@ export function RemoteNodeDocsCard() {
 				)}
 			>
 				<span className="inline-flex items-center gap-2">
-					<Icon name="Globe" className="h-4 w-4" />
+					<Icon name="Globe" className="size-4" />
 					{t("remote_node_wizard_docs_link")}
 				</span>
 				<Icon
 					name="ArrowSquareOut"
-					className="h-3.5 w-3.5 text-muted-foreground"
+					className="size-3.5 text-muted-foreground"
 				/>
 			</a>
 		</section>

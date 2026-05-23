@@ -40,8 +40,8 @@ export function GlobalSearchHeader({
 	return (
 		<div className="border-b bg-background/95 px-4 py-3">
 			<div className="flex items-center gap-3">
-				<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/8 text-primary">
-					<Icon name="MagnifyingGlass" className="h-5 w-5" />
+				<div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/8 text-primary">
+					<Icon name="MagnifyingGlass" className="size-5" />
 				</div>
 				<div className="min-w-0 flex-1">
 					<Input
@@ -67,7 +67,7 @@ export function GlobalSearchHeader({
 					onClick={onClose}
 					className="shrink-0"
 				>
-					<Icon name="X" className="h-4 w-4" />
+					<Icon name="X" className="size-4" />
 				</Button>
 			</div>
 			<div className="mt-3 flex flex-wrap items-center gap-2">
@@ -99,7 +99,7 @@ export function GlobalSearchHeader({
 								className="shrink-0 rounded-full"
 								aria-pressed={active}
 							>
-								<Icon name={option.icon} className="h-4 w-4" />
+								<Icon name={option.icon} className="size-4" />
 								{t(`search:${option.labelKey}`)}
 							</Button>
 						);

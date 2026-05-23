@@ -602,7 +602,7 @@ export default function AdminRemoteNodesPage() {
 										: t("remote_node_primary_site_url_required")
 								}
 							>
-								<Icon name="Plus" className="mr-1 h-4 w-4" />
+								<Icon name="Plus" className="mr-1 size-4" />
 								{t("new_remote_node")}
 							</Button>
 							<Button
@@ -614,7 +614,7 @@ export default function AdminRemoteNodesPage() {
 							>
 								<Icon
 									name={loading ? "Spinner" : "ArrowsClockwise"}
-									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+									className={`mr-1 size-3.5 ${loading ? "animate-spin" : ""}`}
 								/>
 								{t("core:refresh")}
 							</Button>

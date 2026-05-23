@@ -158,7 +158,7 @@ export function FileCard({
 				className="mb-2 flex h-20 w-full items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-muted/30 dark:border-border/60 dark:bg-muted/25"
 			>
 				{isFolder ? (
-					<Icon name="Folder" className="h-12 w-12 text-amber-500" />
+					<Icon name="Folder" className="size-12 text-amber-500" />
 				) : (
 					<FileThumbnail
 						file={item as FileListItem}

@@ -278,7 +278,7 @@ export function TeamManageMembersSection({
 				<SkeletonTable columns={6} rows={5} />
 			) : memberTotal === 0 ? (
 				<EmptyState
-					icon={<Icon name="ListBullets" className="h-10 w-10" />}
+					icon={<Icon name="ListBullets" className="size-10" />}
 					title={
 						hasMemberFilters
 							? t("settings:settings_team_member_filtered_empty")
@@ -438,7 +438,7 @@ export function TeamManageMembersSection({
 										setMemberOffset(Math.max(0, memberOffset - memberPageSize))
 									}
 								>
-									<Icon name="CaretLeft" className="h-4 w-4" />
+									<Icon name="CaretLeft" className="size-4" />
 								</Button>
 								<Button
 									type="button"
@@ -447,7 +447,7 @@ export function TeamManageMembersSection({
 									disabled={nextMemberPageDisabled || memberLoading}
 									onClick={() => setMemberOffset(memberOffset + memberPageSize)}
 								>
-									<Icon name="CaretRight" className="h-4 w-4" />
+									<Icon name="CaretRight" className="size-4" />
 								</Button>
 							</div>
 						</div>

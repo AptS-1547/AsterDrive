@@ -31,7 +31,7 @@ export function PendingActivationPanel({
 		<div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
 			<div className="flex items-start gap-3">
 				<div className="rounded-xl bg-primary/10 p-2 text-primary">
-					<Icon name="Clock" className="h-5 w-5" />
+					<Icon name="Clock" className="size-5" />
 				</div>
 				<div className="space-y-1">
 					<p className="text-sm font-medium">
@@ -61,9 +61,9 @@ export function PendingActivationPanel({
 					onClick={onResendActivation}
 				>
 					{resendingActivation ? (
-						<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+						<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 					) : (
-						<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
+						<Icon name="ArrowClockwise" className="mr-2 size-4" />
 					)}
 					{resendingActivation
 						? t("resending_activation")
@@ -75,7 +75,7 @@ export function PendingActivationPanel({
 					className="h-10"
 					onClick={onReset}
 				>
-					<Icon name="ArrowLeft" className="mr-2 h-4 w-4" />
+					<Icon name="ArrowLeft" className="mr-2 size-4" />
 					{t("not_you")}
 				</Button>
 			</div>

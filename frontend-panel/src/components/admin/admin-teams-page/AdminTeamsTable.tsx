@@ -153,7 +153,7 @@ export function AdminTeamsTable({
 										title={t("view_details")}
 										aria-label={t("view_details")}
 									>
-										<Icon name="CaretRight" className="h-3.5 w-3.5" />
+										<Icon name="CaretRight" className="size-3.5" />
 									</Button>
 								</div>
 							</TableCell>

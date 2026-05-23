@@ -62,7 +62,7 @@ function CopyField({
 				className="sm:shrink-0"
 				onClick={onCopy}
 			>
-				<Icon name="Copy" className="h-3.5 w-3.5" />
+				<Icon name="Copy" className="size-3.5" />
 				{copyLabel ? copyLabel : null}
 			</Button>
 		</div>
@@ -159,7 +159,7 @@ export default function WebdavAccountsPage() {
 	];
 	const sortedAccounts = useMemo(
 		() =>
-			[...accounts].sort(
+			accounts.toSorted(
 				(a, b) =>
 					new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
 			),
@@ -329,7 +329,7 @@ export default function WebdavAccountsPage() {
 							onClick={() => void handleCreate()}
 							disabled={creating || !newUsername.trim()}
 						>
-							<Icon name="Plus" className="h-4 w-4" />
+							<Icon name="Plus" className="size-4" />
 							{creating ? t("loading") : t("create")}
 						</Button>
 					</DialogFooter>
@@ -401,9 +401,9 @@ export default function WebdavAccountsPage() {
 								disabled={testing}
 							>
 								{testing ? (
-									<Icon name="Spinner" className="h-4 w-4 animate-spin" />
+									<Icon name="Spinner" className="size-4 animate-spin" />
 								) : (
-									<Icon name="WifiHigh" className="h-4 w-4" />
+									<Icon name="WifiHigh" className="size-4" />
 								)}
 								{t("admin:test_connection")}
 							</Button>
@@ -428,7 +428,7 @@ export default function WebdavAccountsPage() {
 							className="shrink-0"
 							onClick={() => setCreateDialogOpen(true)}
 						>
-							<Icon name="Plus" className="h-4 w-4" />
+							<Icon name="Plus" className="size-4" />
 							{t("webdav:create_webdav_account")}
 						</Button>
 					</div>
@@ -436,7 +436,7 @@ export default function WebdavAccountsPage() {
 					{/* Endpoint Info Card */}
 					<div className="rounded-xl border bg-muted/20 p-4">
 						<div className="flex items-center gap-2 mb-1">
-							<Icon name="Globe" className="h-4 w-4 text-muted-foreground" />
+							<Icon name="Globe" className="size-4 text-muted-foreground" />
 							<p className="text-sm font-medium">
 								{t("webdav:webdav_endpoint")}
 							</p>
@@ -457,7 +457,7 @@ export default function WebdavAccountsPage() {
 						items={sortedAccounts}
 						columns={5}
 						rows={5}
-						emptyIcon={<Icon name="Globe" className="h-10 w-10" />}
+						emptyIcon={<Icon name="Globe" className="size-10" />}
 						emptyTitle={t("webdav:no_webdav_accounts")}
 						emptyDescription={t("webdav:no_webdav_accounts_desc")}
 						headerRow={
@@ -498,7 +498,7 @@ export default function WebdavAccountsPage() {
 										<div className="flex min-w-[180px] items-center gap-2 text-sm text-foreground">
 											<Icon
 												name={account.root_folder_path ? "FolderOpen" : "Globe"}
-												className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+												className="size-3.5 shrink-0 text-muted-foreground"
 											/>
 											<span className="truncate">
 												{account.root_folder_path ?? t("all_files")}
@@ -532,7 +532,7 @@ export default function WebdavAccountsPage() {
 											>
 												<Icon
 													name={isToggling ? "Spinner" : "Power"}
-													className={`h-3.5 w-3.5 ${isToggling ? "animate-spin" : ""}`}
+													className={`size-3.5 ${isToggling ? "animate-spin" : ""}`}
 												/>
 											</Button>
 											<Button
@@ -545,7 +545,7 @@ export default function WebdavAccountsPage() {
 											>
 												<Icon
 													name={isDeleting ? "Spinner" : "Trash"}
-													className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+													className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
 												/>
 											</Button>
 										</div>

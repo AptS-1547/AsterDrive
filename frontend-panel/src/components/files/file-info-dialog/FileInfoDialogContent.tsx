@@ -6,6 +6,8 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { DetailRow } from "./types";
 
+const EMPTY_METADATA_ROWS: DetailRow[] = [];
+
 interface FileInfoDialogContentProps {
 	currentLocked: boolean;
 	isDesktop: boolean;
@@ -85,7 +87,7 @@ export function FileInfoDialogContent({
 	currentLocked,
 	isDesktop,
 	isShared,
-	metadataRows = [],
+	metadataRows = EMPTY_METADATA_ROWS,
 	metadataTitle,
 	onClose,
 	overviewRows,
@@ -101,17 +103,17 @@ export function FileInfoDialogContent({
 		<div className="space-y-4 p-4">
 			<Section className="gap-0 space-y-4 bg-card/55 dark:bg-background/18">
 				<div className="flex items-start gap-3">
-					<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-muted/35 text-muted-foreground dark:bg-muted/20">
+					<div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-muted/35 text-muted-foreground dark:bg-muted/20">
 						{targetIcon.type === "file" ? (
 							<MediaThumbnail
 								file={targetIcon.file}
 								size="lg"
 								className="rounded-2xl"
-								iconClassName="h-8 w-8"
+								iconClassName="size-8"
 								imageClassName="h-full w-full object-cover"
 							/>
 						) : (
-							<Icon name="Folder" className="h-8 w-8 text-amber-500" />
+							<Icon name="Folder" className="size-8 text-amber-500" />
 						)}
 					</div>
 					<div className="min-w-0 flex-1 space-y-2">
@@ -143,7 +145,7 @@ export function FileInfoDialogContent({
 							onClick={onClose}
 							aria-label={closeLabel}
 						>
-							<Icon name="X" className="h-4 w-4" />
+							<Icon name="X" className="size-4" />
 						</Button>
 					) : null}
 				</div>

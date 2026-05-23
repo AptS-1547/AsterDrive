@@ -54,7 +54,7 @@ export function UserPolicyGroupSection({
 				>
 					<Icon
 						name={policyGroupsLoading ? "Spinner" : "ArrowsClockwise"}
-						className={`mr-1 h-3.5 w-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
+						className={`mr-1 size-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
 					/>
 					{t("core:refresh")}
 				</Button>

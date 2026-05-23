@@ -55,11 +55,11 @@ function WorkspaceMenuItem({
 			<span className="flex min-w-0 flex-1 items-center gap-2.5">
 				<span
 					className={cn(
-						"flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/25 text-muted-foreground",
+						"flex size-7 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/25 text-muted-foreground",
 						active && "border-primary/30 bg-primary/10 text-primary",
 					)}
 				>
-					<Icon name={icon} className="h-3.5 w-3.5" />
+					<Icon name={icon} className="size-3.5" />
 				</span>
 				<span className="min-w-0 flex-1">
 					<span className="block truncate text-[13px] font-medium text-foreground">
@@ -190,13 +190,13 @@ export function WorkspaceSwitcher({
 			>
 				<span
 					className={cn(
-						"flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/20 text-muted-foreground",
+						"flex size-6 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/20 text-muted-foreground",
 						isTeamWorkspace(workspace) && "text-primary",
 					)}
 				>
 					<Icon
 						name={isTeamWorkspace(workspace) ? "Cloud" : "House"}
-						className="h-3.5 w-3.5"
+						className="size-3.5"
 					/>
 				</span>
 				<span className="min-w-0 flex-1">
@@ -207,7 +207,7 @@ export function WorkspaceSwitcher({
 				<Icon
 					name={isLoadingTeamOptions ? "Spinner" : "CaretDown"}
 					className={cn(
-						"h-3 w-3 shrink-0 text-muted-foreground",
+						"size-3 shrink-0 text-muted-foreground",
 						isLoadingTeamOptions && "animate-spin",
 					)}
 				/>
@@ -220,7 +220,7 @@ export function WorkspaceSwitcher({
 					<div className="relative">
 						<Icon
 							name="MagnifyingGlass"
-							className="-translate-y-1/2 absolute top-1/2 left-3 h-3.5 w-3.5 text-muted-foreground"
+							className="-translate-y-1/2 absolute top-1/2 left-3 size-3.5 text-muted-foreground"
 						/>
 						<Input
 							value={teamQuery}
@@ -274,11 +274,8 @@ export function WorkspaceSwitcher({
 						{showLoadingState ? (
 							<>
 								<DropdownMenuSeparator />
-								<DropdownMenuItem
-									disabled
-									className="min-h-9 rounded-xl px-2 py-2"
-								>
-									<Icon name="Spinner" className="h-3.5 w-3.5 animate-spin" />
+								<DropdownMenuItem disabled className="min-h-9 rounded-xl p-2">
+									<Icon name="Spinner" className="size-3.5 animate-spin" />
 									<span className="text-[13px] text-muted-foreground">
 										{t("loading")}
 									</span>
@@ -286,11 +283,11 @@ export function WorkspaceSwitcher({
 							</>
 						) : null}
 						{showEmptyTeamsState || showNoMatchesState ? (
-							<div className="flex min-h-28 flex-col items-center justify-center gap-2.5 px-6 py-6 text-center">
-								<span className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-muted/20 text-muted-foreground">
+							<div className="flex min-h-28 flex-col items-center justify-center gap-2.5 p-6 text-center">
+								<span className="flex size-9 items-center justify-center rounded-xl border border-border/70 bg-muted/20 text-muted-foreground">
 									<Icon
 										name={showNoMatchesState ? "MagnifyingGlass" : "Cloud"}
-										className="h-4 w-4"
+										className="size-4"
 									/>
 								</span>
 								<p className="text-[13px] leading-5 text-muted-foreground">
@@ -305,10 +302,10 @@ export function WorkspaceSwitcher({
 				<div className="border-t border-border/60 p-2">
 					<DropdownMenuItem
 						onClick={handleManageTeams}
-						className="min-h-10 rounded-xl px-2 py-2"
+						className="min-h-10 rounded-xl p-2"
 					>
-						<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/25 text-muted-foreground">
-							<Icon name="Gear" className="h-3.5 w-3.5" />
+						<span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted/25 text-muted-foreground">
+							<Icon name="Gear" className="size-3.5" />
 						</span>
 						<span className="min-w-0 flex-1">
 							<span className="block truncate text-[13px] font-medium text-foreground">

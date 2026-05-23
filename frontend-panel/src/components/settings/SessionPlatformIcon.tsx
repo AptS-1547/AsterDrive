@@ -152,13 +152,13 @@ export function SessionPlatformIcon({
 	return (
 		<span
 			className={cn(
-				"relative flex h-8 w-8 shrink-0 items-center justify-center",
+				"relative flex size-8 shrink-0 items-center justify-center",
 				className,
 			)}
 			aria-hidden="true"
 		>
-			<browser.Icon className={cn("h-4 w-4", browser.className)} />
-			<span className="absolute -right-1 -bottom-1 flex h-4 w-4 items-center justify-center rounded-full border border-background bg-background shadow-sm">
+			<browser.Icon className={cn("size-4", browser.className)} />
+			<span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full border border-background bg-background shadow-sm">
 				<platform.Icon className={cn("h-2.5 w-2.5", platform.className)} />
 			</span>
 		</span>

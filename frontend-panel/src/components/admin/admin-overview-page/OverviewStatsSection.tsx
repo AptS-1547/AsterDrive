@@ -29,11 +29,11 @@ function StatCard({ accentClass, icon, label, value }: StatCardProps) {
 				</div>
 				<div
 					className={cn(
-						"mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+						"mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl",
 						accentClass,
 					)}
 				>
-					<Icon name={icon} className="h-4 w-4" />
+					<Icon name={icon} className="size-4" />
 				</div>
 			</CardContent>
 		</Card>
@@ -48,7 +48,7 @@ function StatCardSkeleton() {
 					<Skeleton className="h-3.5 w-24" />
 					<Skeleton className="h-7 w-20" />
 				</div>
-				<Skeleton className="h-9 w-9 rounded-xl" />
+				<Skeleton className="size-9 rounded-xl" />
 			</CardContent>
 		</Card>
 	);
@@ -154,7 +154,7 @@ export function OverviewStatsSection({
 				</div>
 			) : (
 				<EmptyState
-					icon={<Icon name="Presentation" className="h-10 w-10" />}
+					icon={<Icon name="Presentation" className="size-10" />}
 					title={t("overview_empty_title")}
 					description={t("overview_empty_desc")}
 				/>

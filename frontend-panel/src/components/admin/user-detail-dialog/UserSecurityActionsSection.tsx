@@ -135,9 +135,9 @@ export function UserSecurityActionsSection({
 							className="md:shrink-0"
 						>
 							{revokingSessions ? (
-								<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 							) : (
-								<Icon name="SignOut" className="mr-1 h-4 w-4" />
+								<Icon name="SignOut" className="mr-1 size-4" />
 							)}
 							{t("revoke_sessions")}
 						</Button>

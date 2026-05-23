@@ -221,7 +221,7 @@ export default function MySharesPage() {
 						>
 							<Icon
 								name={loading ? "Spinner" : "ArrowsClockwise"}
-								className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+								className={`size-4 ${loading ? "animate-spin" : ""}`}
 							/>
 						</Button>
 						{shares.length > 0 && (
@@ -248,7 +248,7 @@ export default function MySharesPage() {
 						<Card className="bg-muted/15">
 							<div className="py-12">
 								<EmptyState
-									icon={<Icon name="Link" className="h-10 w-10" />}
+									icon={<Icon name="Link" className="size-10" />}
 									title={t("share:my_shares_empty_title")}
 									description={t("share:my_shares_empty_desc")}
 								/>
@@ -284,17 +284,17 @@ export default function MySharesPage() {
 															onChange={() => toggleSelectShare(share.id)}
 															className="mt-0.5"
 														/>
-														<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-muted/45">
+														<div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/45">
 															{isFolder ? (
 																<Icon
 																	name="Folder"
-																	className="h-5 w-5 text-amber-500"
+																	className="size-5 text-amber-500"
 																/>
 															) : (
 																<FileTypeIcon
 																	mimeType=""
 																	fileName={share.resource_name}
-																	className="h-5 w-5"
+																	className="size-5"
 																/>
 															)}
 														</div>
@@ -326,7 +326,7 @@ export default function MySharesPage() {
 															<span>{t("share:my_shares_never")}</span>
 														)}
 														{share.has_password && (
-															<Icon name="Lock" className="h-3 w-3" />
+															<Icon name="Lock" className="size-3" />
 														)}
 													</div>
 												</Card>
@@ -410,7 +410,7 @@ export default function MySharesPage() {
 								variant="outline"
 								onClick={() => setEditTarget(selectedShares[0])}
 							>
-								<Icon name="PencilSimple" className="mr-1 h-3.5 w-3.5" />
+								<Icon name="PencilSimple" className="mr-1 size-3.5" />
 								{t("core:edit")}
 							</Button>
 						)}
@@ -419,12 +419,12 @@ export default function MySharesPage() {
 							variant="destructive"
 							onClick={() => requestDeleteConfirm(selectedShares)}
 						>
-							<Icon name="Trash" className="mr-1 h-3.5 w-3.5" />
+							<Icon name="Trash" className="mr-1 size-3.5" />
 							{t("share:my_shares_batch_delete")}
 						</Button>
 					</div>
 					<Button size="sm" variant="ghost" onClick={clearSelection}>
-						<Icon name="X" className="h-3.5 w-3.5" />
+						<Icon name="X" className="size-3.5" />
 					</Button>
 				</div>
 			)}

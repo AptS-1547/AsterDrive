@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { handleApiError } from "@/hooks/useApiError";
 import type { SortOrder } from "@/lib/pagination";
 import { adminTeamService } from "@/services/adminService";
@@ -54,7 +54,7 @@ export function useAdminTeamDetailData({
 	const detailRequestIdRef = useRef(0);
 	const memberRequestIdRef = useRef(0);
 
-	const loadTeamDetail = useEffectEvent(async (nextTeamId: number) => {
+	const loadTeamDetail = useCallback(async (nextTeamId: number) => {
 		const requestId = ++detailRequestIdRef.current;
 		setDetailLoading(true);
 		try {
@@ -74,9 +74,9 @@ export function useAdminTeamDetailData({
 				setDetailLoading(false);
 			}
 		}
-	});
+	}, []);
 
-	const loadMembers = useEffectEvent(
+	const loadMembers = useCallback(
 		async (
 			nextTeamId: number,
 			nextOffset = memberOffset,
@@ -118,9 +118,10 @@ export function useAdminTeamDetailData({
 				}
 			}
 		},
+		[memberFilters, memberOffset, memberSortBy, memberSortOrder],
 	);
 
-	const loadAuditEntries = useEffectEvent(
+	const loadAuditEntries = useCallback(
 		async (nextTeamId: number, nextOffset = auditOffset) => {
 			const requestId = ++auditRequestIdRef.current;
 			setAuditLoading(true);
@@ -147,6 +148,7 @@ export function useAdminTeamDetailData({
 				}
 			}
 		},
+		[auditOffset],
 	);
 
 	useEffect(() => {
@@ -158,7 +160,7 @@ export function useAdminTeamDetailData({
 		}
 
 		void loadTeamDetail(teamId);
-	}, [open, teamId]);
+	}, [loadTeamDetail, open, teamId]);
 
 	useEffect(() => {
 		if (!open || teamId == null) {
@@ -170,7 +172,7 @@ export function useAdminTeamDetailData({
 		}
 
 		void loadAuditEntries(teamId, auditOffset);
-	}, [auditOffset, open, teamId]);
+	}, [auditOffset, loadAuditEntries, open, teamId]);
 
 	useEffect(() => {
 		if (!open || teamId == null) {
@@ -197,6 +199,7 @@ export function useAdminTeamDetailData({
 		memberSortOrder,
 		open,
 		teamId,
+		loadMembers,
 	]);
 
 	return {

@@ -122,9 +122,9 @@ export function CreateUserDialog({
 						</Button>
 						<Button type="submit" disabled={creating}>
 							{creating ? (
-								<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 							) : (
-								<Icon name="Plus" className="mr-1 h-4 w-4" />
+								<Icon name="Plus" className="mr-1 size-4" />
 							)}
 							{t("core:create")}
 						</Button>

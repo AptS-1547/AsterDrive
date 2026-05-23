@@ -21,7 +21,7 @@ export function SecuritySummaryCard({
 				<div className="rounded-lg border bg-background px-3 py-2.5">
 					<div className="flex items-center gap-2">
 						<div className="rounded-md bg-primary/10 p-1.5 text-primary">
-							<Icon name="Shield" className="h-4 w-4" />
+							<Icon name="Shield" className="size-4" />
 						</div>
 						<div className="min-w-0">
 							<p className="text-xs font-medium text-muted-foreground">
@@ -62,7 +62,7 @@ export function SecuritySummaryCard({
 				<div className="rounded-lg border bg-background px-3 py-2.5">
 					<div className="flex items-center gap-2">
 						<div className="rounded-md bg-secondary p-1.5 text-secondary-foreground">
-							<Icon name="Monitor" className="h-4 w-4" />
+							<Icon name="Monitor" className="size-4" />
 						</div>
 						<div className="min-w-0">
 							<p className="text-xs font-medium text-muted-foreground">

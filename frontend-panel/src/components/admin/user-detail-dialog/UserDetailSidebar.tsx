@@ -3,7 +3,7 @@ import { UserAvatarImage } from "@/components/common/UserAvatarImage";
 import {
 	getRoleBadgeClass,
 	getStatusBadgeClass,
-} from "@/components/common/UserStatusBadge";
+} from "@/components/common/userBadgeClasses";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
@@ -32,7 +32,7 @@ export function UserDetailSidebar({
 	return (
 		<aside className="border-b bg-muted/20 lg:min-h-0 lg:w-80 lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0">
 			<div className="space-y-5 p-6 max-lg:space-y-4 max-lg:p-4">
-				<div className="space-y-3 max-lg:flex max-lg:items-start max-lg:gap-3 max-lg:space-y-0">
+				<div className="flex flex-col gap-y-3 max-lg:flex-row max-lg:items-start max-lg:gap-3">
 					<UserAvatarImage
 						avatar={user.profile.avatar}
 						name={displayName}
@@ -69,7 +69,7 @@ export function UserDetailSidebar({
 					</div>
 				</div>
 
-				<div className="space-y-3 max-lg:grid max-lg:grid-cols-2 max-lg:gap-3 max-lg:space-y-0">
+				<div className="grid gap-y-3 max-lg:grid-cols-2 max-lg:gap-3">
 					<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:space-y-2 max-lg:p-3">
 						<div className="space-y-1">
 							<p className="text-xs uppercase tracking-wide text-muted-foreground">

@@ -20,8 +20,8 @@ export function SkeletonTree({ count = 5 }: SkeletonTreeProps) {
 						paddingLeft: `${(i % 3) * FOLDER_TREE_INDENT_PX + FOLDER_TREE_SKELETON_OFFSET_PX}px`,
 					}}
 				>
-					<Skeleton className="h-3 w-3 shrink-0" />
-					<Skeleton className="h-4 w-4 shrink-0" />
+					<Skeleton className="size-3 shrink-0" />
+					<Skeleton className="size-4 shrink-0" />
 					<Skeleton
 						className="h-4"
 						style={{ width: `${50 + (i % 4) * 15}%` }}

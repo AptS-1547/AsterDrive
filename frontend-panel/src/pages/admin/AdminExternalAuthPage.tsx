@@ -484,7 +484,7 @@ export default function AdminExternalAuthPage() {
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
 								onClick={openCreate}
 							>
-								<Icon name="Plus" className="mr-1 h-4 w-4" />
+								<Icon name="Plus" className="mr-1 size-4" />
 								{t("external_auth_provider_create")}
 							</Button>
 							<Button
@@ -496,7 +496,7 @@ export default function AdminExternalAuthPage() {
 							>
 								<Icon
 									name={loading ? "Spinner" : "ArrowsClockwise"}
-									className={cn("mr-1 h-3.5 w-3.5", loading && "animate-spin")}
+									className={cn("mr-1 size-3.5", loading && "animate-spin")}
 								/>
 								{t("core:refresh")}
 							</Button>
@@ -535,7 +535,7 @@ export default function AdminExternalAuthPage() {
 					<SkeletonTable columns={6} rows={6} />
 				) : providers.length === 0 ? (
 					<EmptyState
-						icon={<Icon name="Globe" className="h-5 w-5" />}
+						icon={<Icon name="Globe" className="size-5" />}
 						title={t("external_auth_providers_empty")}
 						description={t("external_auth_providers_empty_desc")}
 					/>

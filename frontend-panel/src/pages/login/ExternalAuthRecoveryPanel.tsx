@@ -57,7 +57,7 @@ export function ExternalAuthRecoveryPanel({
 		<div className="space-y-4 rounded-2xl border bg-muted/20 p-4 transition-[background-color,border-color] duration-200">
 			<div className="flex items-start gap-3">
 				<div className="rounded-xl bg-primary/10 p-2 text-primary">
-					<Icon name={sent ? "Check" : "Link"} className="h-5 w-5" />
+					<Icon name={sent ? "Check" : "Link"} className="size-5" />
 				</div>
 				<div className="space-y-1">
 					<p className="text-sm font-medium">
@@ -87,11 +87,11 @@ export function ExternalAuthRecoveryPanel({
 				>
 					<TabsList className="grid h-9 w-full grid-cols-2">
 						<TabsTrigger value="password">
-							<Icon name="Lock" className="h-4 w-4" />
+							<Icon name="Lock" className="size-4" />
 							{t("external_auth_password_link_tab")}
 						</TabsTrigger>
 						<TabsTrigger value="email">
-							<Icon name="EnvelopeSimple" className="h-4 w-4" />
+							<Icon name="EnvelopeSimple" className="size-4" />
 							{t("external_auth_email_verification_tab")}
 						</TabsTrigger>
 					</TabsList>
@@ -161,12 +161,9 @@ export function ExternalAuthRecoveryPanel({
 									}
 								>
 									{submittingPassword ? (
-										<Icon
-											name="Spinner"
-											className="mr-2 h-4 w-4 animate-spin"
-										/>
+										<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 									) : (
-										<Icon name="Link" className="mr-2 h-4 w-4" />
+										<Icon name="Link" className="mr-2 size-4" />
 									)}
 									{submittingPassword
 										? t("external_auth_password_link_signing_in")
@@ -214,12 +211,9 @@ export function ExternalAuthRecoveryPanel({
 									disabled={busy || email.trim().length === 0 || !!emailError}
 								>
 									{submittingEmail ? (
-										<Icon
-											name="Spinner"
-											className="mr-2 h-4 w-4 animate-spin"
-										/>
+										<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 									) : (
-										<Icon name="EnvelopeSimple" className="mr-2 h-4 w-4" />
+										<Icon name="EnvelopeSimple" className="mr-2 size-4" />
 									)}
 									{submittingEmail
 										? t("external_auth_email_verification_sending")
@@ -237,7 +231,7 @@ export function ExternalAuthRecoveryPanel({
 				className="h-10 w-full"
 				onClick={onBack}
 			>
-				<Icon name="ArrowLeft" className="mr-2 h-4 w-4" />
+				<Icon name="ArrowLeft" className="mr-2 size-4" />
 				{t("back_to_sign_in")}
 			</Button>
 		</div>

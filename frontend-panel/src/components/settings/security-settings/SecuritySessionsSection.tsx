@@ -69,9 +69,9 @@ export function SecuritySessionsSection({
 						onClick={onRefreshSessions}
 					>
 						{sessionsLoading ? (
-							<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+							<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 						) : (
-							<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
+							<Icon name="ArrowClockwise" className="mr-2 size-4" />
 						)}
 						{t("core:refresh")}
 					</Button>
@@ -82,9 +82,9 @@ export function SecuritySessionsSection({
 						onClick={onRevokeOtherSessions}
 					>
 						{revokeOthersBusy ? (
-							<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+							<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 						) : (
-							<Icon name="SignOut" className="mr-2 h-4 w-4" />
+							<Icon name="SignOut" className="mr-2 size-4" />
 						)}
 						{t("settings:settings_sessions_revoke_others")}
 					</Button>
@@ -173,10 +173,10 @@ export function SecuritySessionsSection({
 												{busy ? (
 													<Icon
 														name="Spinner"
-														className="mr-2 h-4 w-4 animate-spin"
+														className="mr-2 size-4 animate-spin"
 													/>
 												) : (
-													<Icon name="SignOut" className="mr-2 h-4 w-4" />
+													<Icon name="SignOut" className="mr-2 size-4" />
 												)}
 												{session.is_current
 													? t("settings:settings_sessions_revoke_current")

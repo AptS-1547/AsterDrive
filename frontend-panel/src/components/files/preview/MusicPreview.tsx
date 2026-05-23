@@ -135,8 +135,8 @@ export function MusicPreview({
 	return (
 		<div className="flex min-h-[50vh] items-center justify-center px-6">
 			<div className="flex w-full max-w-xl flex-col items-center gap-4 rounded-lg border border-border/70 bg-card/70 px-6 py-8 text-center shadow-sm dark:bg-card/35">
-				<div className="flex h-14 w-14 items-center justify-center rounded-lg bg-primary/10 text-primary">
-					<Icon name="FileAudio" className="h-7 w-7" />
+				<div className="flex size-14 items-center justify-center rounded-lg bg-primary/10 text-primary">
+					<Icon name="FileAudio" className="size-7" />
 				</div>
 				<div className="min-w-0 space-y-1">
 					<p className="max-w-md truncate text-sm font-medium">{file.name}</p>
@@ -157,7 +157,7 @@ export function MusicPreview({
 				>
 					<Icon
 						name={starting ? "Spinner" : "Play"}
-						className={starting ? "h-4 w-4 animate-spin" : "h-4 w-4"}
+						className={starting ? "size-4 animate-spin" : "size-4"}
 					/>
 					{starting
 						? t("loading_preview")

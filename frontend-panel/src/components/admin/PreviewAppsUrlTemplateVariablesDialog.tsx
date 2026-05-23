@@ -86,7 +86,7 @@ export function PreviewAppsUrlTemplateVariablesDialog({
 					{URL_TEMPLATE_MAGIC_VARIABLES.map((variable) => (
 						<div
 							key={variable.token}
-							className="rounded-xl border border-border/60 bg-card/40 px-4 py-4"
+							className="rounded-xl border border-border/60 bg-card/40 p-4"
 						>
 							<div className="flex flex-wrap items-center gap-2">
 								<code className="break-all rounded bg-muted px-2 py-1 font-mono text-xs">

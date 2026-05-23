@@ -279,12 +279,9 @@ export function ExternalAuthProviderDialog({
 									disabled={submitDisabled}
 								>
 									{submitting ? (
-										<Icon
-											name="Spinner"
-											className="mr-2 h-4 w-4 animate-spin"
-										/>
+										<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 									) : (
-										<Icon name="FloppyDisk" className="mr-2 h-4 w-4" />
+										<Icon name="FloppyDisk" className="mr-2 size-4" />
 									)}
 									{isCreate
 										? t("external_auth_provider_create")

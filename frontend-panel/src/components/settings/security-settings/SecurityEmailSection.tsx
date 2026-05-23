@@ -103,9 +103,9 @@ export function SecurityEmailSection({
 							onClick={onResendEmailChange}
 						>
 							{resendingEmailChange ? (
-								<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 							) : (
-								<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
+								<Icon name="ArrowClockwise" className="mr-2 size-4" />
 							)}
 							{resendingEmailChange
 								? t("settings:settings_email_change_resending")
@@ -145,7 +145,7 @@ export function SecurityEmailSection({
 					disabled={!canSubmitEmailChange}
 				>
 					{emailBusy ? (
-						<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+						<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 					) : null}
 					{emailBusy
 						? t("settings:settings_email_change_requesting")

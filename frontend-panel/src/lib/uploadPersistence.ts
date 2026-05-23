@@ -80,7 +80,7 @@ function writeAll(sessions: ResumableSession[]): void {
 		}
 
 		// quota 超限：按 savedAt 降序保留较新的一半，丢掉较旧的
-		const sorted = [...sessions].sort((a, b) => b.savedAt - a.savedAt);
+		const sorted = sessions.toSorted((a, b) => b.savedAt - a.savedAt);
 		const trimmed = sorted.slice(0, Math.max(1, Math.floor(sorted.length / 2)));
 		try {
 			localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));

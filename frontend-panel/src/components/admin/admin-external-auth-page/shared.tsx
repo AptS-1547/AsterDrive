@@ -210,12 +210,17 @@ export function kindDescription(
 }
 
 export function parseAllowedDomains(value: string) {
-	return value
-		.split(/[,\n]/)
-		.map((domain) => domain.trim().replace(/^@+/, "").toLowerCase())
-		.filter(
-			(domain, index, domains) => domain && domains.indexOf(domain) === index,
-		);
+	const domains: string[] = [];
+	const seen = new Set<string>();
+	for (const item of value.split(/[,\n]/)) {
+		const domain = item.trim().replace(/^@+/, "").toLowerCase();
+		if (!domain || seen.has(domain)) {
+			continue;
+		}
+		seen.add(domain);
+		domains.push(domain);
+	}
+	return domains;
 }
 
 function nullableText(value: string) {
@@ -644,7 +649,7 @@ export function CallbackUrlField({
 				type="button"
 				variant="ghost"
 				size="icon"
-				className="h-7 w-7 shrink-0"
+				className="size-7 shrink-0"
 				disabled={disabled}
 				aria-label={t("external_auth_provider_copy_callback_url")}
 				title={t("external_auth_provider_copy_callback_url")}
@@ -655,7 +660,7 @@ export function CallbackUrlField({
 					}
 				}}
 			>
-				<Icon name="Copy" className="h-3.5 w-3.5" />
+				<Icon name="Copy" className="size-3.5" />
 			</Button>
 		</div>
 	);

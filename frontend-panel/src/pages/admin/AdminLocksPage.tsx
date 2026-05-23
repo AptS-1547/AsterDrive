@@ -177,7 +177,7 @@ export default function AdminLocksPage() {
 					items={locks}
 					columns={7}
 					rows={6}
-					emptyIcon={<Icon name="Lock" className="h-10 w-10" />}
+					emptyIcon={<Icon name="Lock" className="size-10" />}
 					emptyTitle={t("no_active_locks")}
 					emptyDescription={t("no_active_locks_desc")}
 					headerRow={
@@ -283,7 +283,7 @@ export default function AdminLocksPage() {
 									>
 										<Icon
 											name={isUnlocking ? "Spinner" : "Trash"}
-											className={`h-3.5 w-3.5 ${isUnlocking ? "animate-spin" : ""}`}
+											className={`size-3.5 ${isUnlocking ? "animate-spin" : ""}`}
 										/>
 									</Button>
 								</TableCell>

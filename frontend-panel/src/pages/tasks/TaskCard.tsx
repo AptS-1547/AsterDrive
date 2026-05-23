@@ -48,7 +48,7 @@ function TaskStepsPreview({
 	}
 
 	return (
-		<div className="space-y-2.5 rounded-lg border bg-muted/15 px-3 py-3">
+		<div className="space-y-2.5 rounded-lg border bg-muted/15 p-3">
 			<div className="flex flex-wrap items-start justify-between gap-2">
 				<div className="text-sm font-medium">{t("tasks:steps_label")}</div>
 				{activeStep && activeStep.progress_total > 0 ? (
@@ -71,12 +71,12 @@ function TaskStepsPreview({
 							<div key={`${task.id}-${step.key}`} className="contents">
 								<div className="w-32 shrink-0 md:w-36 lg:w-40">
 									<div className="flex flex-col items-center text-center">
-										<div className="relative flex h-10 w-10 items-center justify-center md:h-11 md:w-11">
+										<div className="relative flex size-10 items-center justify-center md:h-11 md:w-11">
 											{step.status === "active" ? (
 												<span className="absolute inset-0 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
 											) : null}
 											<span
-												className={`relative flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold transition-colors md:h-9 md:w-9 md:text-sm ${stepCircleClass(step.status)}`}
+												className={`relative flex size-8 items-center justify-center rounded-full border text-xs font-semibold transition-colors md:h-9 md:w-9 md:text-sm ${stepCircleClass(step.status)}`}
 											>
 												{stepCircleLabel(index, step.status)}
 											</span>
@@ -94,7 +94,7 @@ function TaskStepsPreview({
 									</div>
 								</div>
 								{index < task.steps.length - 1 ? (
-									<div className="flex h-10 w-10 shrink-0 items-center px-1 md:h-11 md:w-12 md:px-1.5">
+									<div className="flex size-10 shrink-0 items-center px-1 md:h-11 md:w-12 md:px-1.5">
 										<div
 											className={`h-1 w-full rounded-full ${stepConnectorClass(step.status)}`}
 										/>
@@ -180,7 +180,7 @@ export function TaskCard({
 									onOpenTargetFolder(parsedResult.target_folder_id ?? null)
 								}
 							>
-								<Icon name="FolderOpen" className="mr-1 h-4 w-4" />
+								<Icon name="FolderOpen" className="mr-1 size-4" />
 								{t("tasks:open_target_folder")}
 							</Button>
 						) : null}
@@ -194,7 +194,7 @@ export function TaskCard({
 							>
 								<Icon
 									name={detailsExpanded ? "CaretUp" : "CaretDown"}
-									className="mr-1 h-4 w-4"
+									className="mr-1 size-4"
 								/>
 								{detailsExpanded
 									? t("tasks:hide_details")
@@ -210,7 +210,7 @@ export function TaskCard({
 							>
 								<Icon
 									name={retrying ? "Spinner" : "ArrowCounterClockwise"}
-									className={`mr-1 h-4 w-4 ${retrying ? "animate-spin" : ""}`}
+									className={`mr-1 size-4 ${retrying ? "animate-spin" : ""}`}
 								/>
 								{t("tasks:retry_task")}
 							</Button>
@@ -230,7 +230,7 @@ export function TaskCard({
 
 				<AnimatedTaskDetails open={detailsExpanded} className="space-y-2.5">
 					<div id={detailsSectionId} className="space-y-2.5 pt-0.5">
-						<div className="rounded-lg border bg-background/70 px-3 py-3">
+						<div className="rounded-lg border bg-background/70 p-3">
 							<div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.65fr)] lg:items-start">
 								<div className="space-y-2">
 									<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
@@ -287,7 +287,7 @@ export function TaskCard({
 						) : null}
 
 						{task.status === "succeeded" && parsedResult ? (
-							<div className="rounded-lg border bg-muted/20 px-3 py-3 text-sm">
+							<div className="rounded-lg border bg-muted/20 p-3 text-sm">
 								<div className="min-w-0">
 									<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
 										{t("tasks:result_path_label")}

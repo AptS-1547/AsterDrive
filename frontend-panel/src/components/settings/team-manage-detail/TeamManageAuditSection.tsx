@@ -53,7 +53,7 @@ export function TeamManageAuditSection({
 				<SkeletonTable columns={4} rows={4} />
 			) : auditTotal === 0 ? (
 				<EmptyState
-					icon={<Icon name="Scroll" className="h-10 w-10" />}
+					icon={<Icon name="Scroll" className="size-10" />}
 					title={t("settings:settings_team_audit_empty")}
 					description={t("settings:settings_team_audit_empty_desc")}
 				/>
@@ -109,7 +109,7 @@ export function TeamManageAuditSection({
 										setAuditOffset(Math.max(0, auditOffset - auditPageSize))
 									}
 								>
-									<Icon name="CaretLeft" className="h-4 w-4" />
+									<Icon name="CaretLeft" className="size-4" />
 								</Button>
 								<Button
 									type="button"
@@ -118,7 +118,7 @@ export function TeamManageAuditSection({
 									disabled={nextAuditPageDisabled || auditLoading}
 									onClick={() => setAuditOffset(auditOffset + auditPageSize)}
 								>
-									<Icon name="CaretRight" className="h-4 w-4" />
+									<Icon name="CaretRight" className="size-4" />
 								</Button>
 							</div>
 						</div>

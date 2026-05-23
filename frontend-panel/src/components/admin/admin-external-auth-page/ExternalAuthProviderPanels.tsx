@@ -268,11 +268,8 @@ export function ExternalAuthProviderKindPanel({
 						}
 					>
 						<div className="flex items-start gap-4">
-							<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-xs ring-1 ring-black/5 dark:bg-slate-950 dark:ring-white/10">
-								<ExternalAuthProviderIcon
-									kind={kind.kind}
-									className="h-8 w-8"
-								/>
+							<div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-xs ring-1 ring-black/5 dark:bg-zinc-950 dark:ring-white/10">
+								<ExternalAuthProviderIcon kind={kind.kind} className="size-8" />
 							</div>
 							<div className="min-w-0 flex-1">
 								<div className="flex flex-wrap items-center gap-2">

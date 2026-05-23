@@ -48,7 +48,7 @@ export function SortMenu({
 					>
 						<Icon
 							name={sortOrder === "asc" ? "SortAscending" : "SortDescending"}
-							className="h-4 w-4"
+							className="size-4"
 						/>
 						<span className="max-w-14 truncate text-[11px] max-[420px]:hidden sm:max-w-none sm:text-xs">
 							{t(`sort_${sortBy}`)}
@@ -73,11 +73,11 @@ export function SortMenu({
 					onValueChange={(v) => onSortOrder(v as SortOrder)}
 				>
 					<DropdownMenuRadioItem value="asc">
-						<Icon name="SortAscending" className="mr-2 h-4 w-4" />
+						<Icon name="SortAscending" className="mr-2 size-4" />
 						{t("sort_asc")}
 					</DropdownMenuRadioItem>
 					<DropdownMenuRadioItem value="desc">
-						<Icon name="SortDescending" className="mr-2 h-4 w-4" />
+						<Icon name="SortDescending" className="mr-2 size-4" />
 						{t("sort_desc")}
 					</DropdownMenuRadioItem>
 				</DropdownMenuRadioGroup>

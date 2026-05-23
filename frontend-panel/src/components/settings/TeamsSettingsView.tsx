@@ -81,7 +81,7 @@ export function TeamsSettingsView() {
 					</div>
 				) : teams.length === 0 ? (
 					<EmptyState
-						icon={<Icon name="Cloud" className="h-10 w-10" />}
+						icon={<Icon name="Cloud" className="size-10" />}
 						title={t("settings:settings_teams_empty_title")}
 						description={t("settings:settings_teams_empty_desc")}
 					/>
@@ -225,12 +225,12 @@ export function TeamsSettingsView() {
 												{restoringTeamId === team.id ? (
 													<Icon
 														name="Spinner"
-														className="mr-1 h-4 w-4 animate-spin"
+														className="mr-1 size-4 animate-spin"
 													/>
 												) : (
 													<Icon
 														name="ArrowCounterClockwise"
-														className="mr-1 h-4 w-4"
+														className="mr-1 size-4"
 													/>
 												)}
 												{t("settings:settings_team_restore")}

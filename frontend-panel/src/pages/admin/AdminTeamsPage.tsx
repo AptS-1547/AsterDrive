@@ -475,7 +475,7 @@ export default function AdminTeamsPage() {
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
 								onClick={handleOpenCreateDialog}
 							>
-								<Icon name="Plus" className="mr-1 h-4 w-4" />
+								<Icon name="Plus" className="mr-1 size-4" />
 								{t("new_team")}
 							</Button>
 							<Button
@@ -491,7 +491,7 @@ export default function AdminTeamsPage() {
 											? "Spinner"
 											: "ArrowsClockwise"
 									}
-									className={`mr-1 h-3.5 w-3.5 ${loading || policyGroupsLoading ? "animate-spin" : ""}`}
+									className={`mr-1 size-3.5 ${loading || policyGroupsLoading ? "animate-spin" : ""}`}
 								/>
 								{t("core:refresh")}
 							</Button>
@@ -515,7 +515,7 @@ export default function AdminTeamsPage() {
 				) : teams.length === 0 ? (
 					hasServerFilters ? (
 						<EmptyState
-							icon={<Icon name="Cloud" className="h-10 w-10" />}
+							icon={<Icon name="Cloud" className="size-10" />}
 							title={t("no_filtered_teams")}
 							description={t("no_filtered_teams_desc")}
 							action={
@@ -526,7 +526,7 @@ export default function AdminTeamsPage() {
 						/>
 					) : (
 						<EmptyState
-							icon={<Icon name="Cloud" className="h-10 w-10" />}
+							icon={<Icon name="Cloud" className="size-10" />}
 							title={t("no_teams")}
 							description={t("no_teams_desc")}
 						/>

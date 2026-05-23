@@ -20,14 +20,14 @@ interface AuditSectionProps {
 	nextAuditPageDisabled: boolean;
 	prevAuditPageDisabled: boolean;
 	roleLabel: (role: TeamMemberRole) => string;
-	setAuditOffset: (offset: number) => void;
+	setAuditOffset: (offset: number | ((offset: number) => number)) => void;
 }
 
 export function AdminTeamDetailAuditSection({
 	auditCurrentPage,
 	auditEntries,
 	auditLoading,
-	auditOffset,
+	auditOffset: _auditOffset,
 	auditTotal,
 	auditTotalPages,
 	nextAuditPageDisabled,
@@ -51,7 +51,7 @@ export function AdminTeamDetailAuditSection({
 				<SkeletonTable columns={4} rows={4} />
 			) : auditTotal === 0 ? (
 				<EmptyState
-					icon={<Icon name="Scroll" className="h-10 w-10" />}
+					icon={<Icon name="Scroll" className="size-10" />}
 					title={t("team_audit_empty")}
 					description={t("team_audit_empty_desc")}
 				/>
@@ -103,18 +103,24 @@ export function AdminTeamDetailAuditSection({
 									variant="outline"
 									size="sm"
 									disabled={prevAuditPageDisabled || auditLoading}
-									onClick={() => setAuditOffset(Math.max(0, auditOffset - 10))}
+									onClick={() =>
+										setAuditOffset((currentOffset) =>
+											Math.max(0, currentOffset - 10),
+										)
+									}
 								>
-									<Icon name="CaretLeft" className="h-4 w-4" />
+									<Icon name="CaretLeft" className="size-4" />
 								</Button>
 								<Button
 									type="button"
 									variant="outline"
 									size="sm"
 									disabled={nextAuditPageDisabled || auditLoading}
-									onClick={() => setAuditOffset(auditOffset + 10)}
+									onClick={() =>
+										setAuditOffset((currentOffset) => currentOffset + 10)
+									}
 								>
-									<Icon name="CaretRight" className="h-4 w-4" />
+									<Icon name="CaretRight" className="size-4" />
 								</Button>
 							</div>
 						</div>

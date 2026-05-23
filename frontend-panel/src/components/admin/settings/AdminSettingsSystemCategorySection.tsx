@@ -69,7 +69,7 @@ function AdminSettingsMailTemplateGroup({
 					<Icon
 						name="CaretDown"
 						className={cn(
-							"h-4 w-4 transition-transform",
+							"size-4 transition-transform",
 							templateExpanded ? "rotate-180" : "",
 						)}
 					/>
@@ -138,7 +138,7 @@ function AdminSettingsSystemSubcategoryCard({
 		category === "mail" && group.subcategory === "config" ? (
 			<div className="flex flex-col items-start gap-2 lg:items-end">
 				<Button variant="outline" size="sm" onClick={openTestEmailDialog}>
-					<Icon name="EnvelopeSimple" className="h-4 w-4" />
+					<Icon name="EnvelopeSimple" className="size-4" />
 					{t("mail_send_test_email")}
 				</Button>
 				<p className="max-w-xs text-xs text-muted-foreground lg:text-right">
@@ -160,14 +160,14 @@ function AdminSettingsSystemSubcategoryCard({
 					return map;
 				}, new Map<string, SystemConfig[]>()),
 			)
-				.sort(([left], [right]) => {
+				.toSorted(([left], [right]) => {
 					return (
 						getMailTemplateGroupOrderIndex(left) -
 							getMailTemplateGroupOrderIndex(right) || left.localeCompare(right)
 					);
 				})
 				.map(([templateGroupId, configs]) => ({
-					configs: [...configs].sort(
+					configs: configs.toSorted(
 						(left, right) =>
 							getMailTemplateFieldOrder(left.key) -
 								getMailTemplateFieldOrder(right.key) ||
@@ -210,7 +210,7 @@ function AdminSettingsSystemSubcategoryCard({
 							<Icon
 								name="CaretDown"
 								className={cn(
-									"h-4 w-4 transition-transform",
+									"size-4 transition-transform",
 									expanded ? "rotate-180" : "",
 								)}
 							/>

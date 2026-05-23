@@ -18,7 +18,7 @@ import { UserAvatarImage } from "@/components/common/UserAvatarImage";
 import {
 	getRoleBadgeClass,
 	getStatusBadgeClass,
-} from "@/components/common/UserStatusBadge";
+} from "@/components/common/userBadgeClasses";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -168,7 +168,7 @@ export function UsersTable({
 											name={getUserDisplayName(user)}
 											alt=""
 											size="sm"
-											className="mr-3 h-7 w-7 rounded-lg text-[11px]"
+											className="mr-3 size-7 rounded-lg text-[11px]"
 										/>
 										<div className={ADMIN_TABLE_STACKED_CELL_CLASS}>
 											<div className="truncate font-medium text-foreground">
@@ -237,7 +237,7 @@ export function UsersTable({
 														>
 															<Icon
 																name={isDeleting ? "Spinner" : "Trash"}
-																className={`h-3.5 w-3.5 ${isDeleting ? "animate-spin" : ""}`}
+																className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
 															/>
 														</Button>
 													</div>

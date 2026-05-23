@@ -47,7 +47,7 @@ export function ShareFileView({
 	return (
 		<SharePageShell>
 			<main className="min-h-0 flex-1 overflow-auto">
-				<div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-6 md:px-6">
+				<div className="mx-auto w-full max-w-5xl p-4 sm:py-6 md:px-6">
 					<article className="overflow-hidden rounded-lg border border-border/70 bg-card/80 shadow-lg shadow-black/5 dark:bg-card/55 dark:shadow-none">
 						<div className="flex min-w-0 items-center gap-3 border-b border-border/65 px-4 py-3 sm:px-5">
 							<UserAvatarImage
@@ -92,7 +92,7 @@ export function ShareFileView({
 											onClick={() => onPreviewFile(singleShareFile)}
 											className="w-full sm:w-auto"
 										>
-											<Icon name="Eye" className="mr-2 h-5 w-5" />
+											<Icon name="Eye" className="mr-2 size-5" />
 											{t("files:preview")}
 										</Button>
 									) : null}
@@ -101,7 +101,7 @@ export function ShareFileView({
 										onClick={onDownload}
 										className="w-full sm:w-auto"
 									>
-										<Icon name="Download" className="mr-2 h-5 w-5" />
+										<Icon name="Download" className="mr-2 size-5" />
 										{t("files:download")}
 									</Button>
 								</div>

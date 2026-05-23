@@ -38,7 +38,7 @@ export function PreviewAppsAddDialog({
 				<div className="grid gap-3 py-2">
 					<Button
 						variant="outline"
-						className="h-auto w-full min-w-0 items-start justify-start px-4 py-4 text-left whitespace-normal"
+						className="h-auto w-full min-w-0 items-start justify-start p-4 text-left whitespace-normal"
 						onClick={onAddEmbedApp}
 					>
 						<div className="min-w-0 space-y-1">
@@ -53,7 +53,7 @@ export function PreviewAppsAddDialog({
 					{canBuildWopiDiscoveryConfig ? (
 						<Button
 							variant="outline"
-							className="h-auto w-full min-w-0 items-start justify-start px-4 py-4 text-left whitespace-normal"
+							className="h-auto w-full min-w-0 items-start justify-start p-4 text-left whitespace-normal"
 							onClick={onOpenWopiDiscovery}
 						>
 							<div className="min-w-0 space-y-1">

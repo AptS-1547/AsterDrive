@@ -172,7 +172,7 @@ export function AvatarCropDialog({
 
 				<div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
 					<aside className="flex min-h-0 flex-col border-b bg-muted/15 lg:border-r lg:border-b-0">
-						<div className="min-h-0 flex-1 space-y-5 overflow-auto px-6 py-6">
+						<div className="min-h-0 flex-1 space-y-5 overflow-auto p-6">
 							<section className="rounded-3xl border bg-background p-5">
 								<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
 									{t("settings:settings_avatar_crop_preview")}
@@ -209,7 +209,7 @@ export function AvatarCropDialog({
 								disabled={busy || processing || !crop}
 								onClick={handleReset}
 							>
-								<Icon name="Undo" className="mr-1 h-4 w-4" />
+								<Icon name="Undo" className="mr-1 size-4" />
 								{t("settings:settings_avatar_crop_reset")}
 							</Button>
 						</div>
@@ -240,7 +240,7 @@ export function AvatarCropDialog({
 							</ReactCrop>
 						) : (
 							<div className="flex items-center justify-center text-sm text-muted-foreground">
-								<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+								<Icon name="Spinner" className="mr-2 size-4 animate-spin" />
 								{t("core:loading")}
 							</div>
 						)}
@@ -262,9 +262,9 @@ export function AvatarCropDialog({
 						onClick={() => void handleConfirm()}
 					>
 						{busy || processing ? (
-							<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+							<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 						) : (
-							<Icon name="Check" className="mr-1 h-4 w-4" />
+							<Icon name="Check" className="mr-1 size-4" />
 						)}
 						{t("settings:settings_avatar_crop_apply")}
 					</Button>
