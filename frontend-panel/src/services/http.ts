@@ -5,6 +5,7 @@ import type {
 } from "axios";
 import axios, { AxiosHeaders } from "axios";
 import { config } from "@/config/app";
+import { isTokenAuthError } from "@/lib/authErrors";
 import { isCrossTabRefreshAuthFailure } from "@/lib/crossTabRefresh";
 import {
 	type ApiErrorInfo as ApiErrorInfoPayload,
@@ -28,6 +29,7 @@ const client: AxiosInstance = axios.create({
 const SKIP_REFRESH_PATHS = [
 	"/auth/refresh",
 	"/auth/login",
+	"/auth/mfa/challenge/verify",
 	"/auth/passkeys/login/start",
 	"/auth/passkeys/login/finish",
 	"/auth/register",
@@ -95,7 +97,7 @@ let refreshPromise: Promise<void> | null = null;
 
 export type ApiRequestConfig = Pick<
 	AxiosRequestConfig,
-	"headers" | "params" | "signal"
+	"data" | "headers" | "params" | "signal"
 >;
 
 type ApiErrorDetails = {
@@ -146,7 +148,8 @@ client.interceptors.response.use(
 			error.response?.status === 401 &&
 			original &&
 			!original._retry &&
-			!shouldSkip
+			!shouldSkip &&
+			isRefreshableAuthError(error)
 		) {
 			original._retry = true;
 
@@ -168,6 +171,7 @@ client.interceptors.response.use(
 				// 网络错误（离线）时不强制登出
 				if (
 					!isCrossTabRefreshAuthFailure(refreshError) &&
+					!isTokenAuthError(refreshError) &&
 					(!axios.isAxiosError(refreshError) || !refreshError.response)
 				) {
 					return Promise.reject(error);
@@ -181,6 +185,10 @@ client.interceptors.response.use(
 		return Promise.reject(extractApiError(error) ?? error);
 	},
 );
+
+function isRefreshableAuthError(error: unknown): boolean {
+	return isTokenAuthError(extractApiError(error) ?? error);
+}
 
 export class ApiError extends Error {
 	code: ErrorCodeType;

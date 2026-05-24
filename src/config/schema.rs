@@ -130,6 +130,8 @@ impl DatabaseConfig {
 pub struct AuthConfig {
     #[serde(default = "AuthConfig::default_jwt_secret")]
     pub jwt_secret: String,
+    #[serde(default = "AuthConfig::default_mfa_secret_key")]
+    pub mfa_secret_key: String,
     /// 首次初始化 system_config 时，是否把 auth_cookie_secure 设为 false。
     #[serde(default = "AuthConfig::default_bootstrap_insecure_cookies")]
     pub bootstrap_insecure_cookies: bool,
@@ -139,17 +141,24 @@ impl Default for AuthConfig {
     fn default() -> Self {
         Self {
             jwt_secret: Self::default_jwt_secret(),
+            mfa_secret_key: Self::default_mfa_secret_key(),
             bootstrap_insecure_cookies: Self::default_bootstrap_insecure_cookies(),
         }
     }
 }
 
 impl AuthConfig {
-    fn default_jwt_secret() -> String {
+    fn random_hex_secret() -> String {
         use rand::RngExt;
         let mut rng = rand::rng();
         let bytes: [u8; 32] = rng.random();
         bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+    fn default_jwt_secret() -> String {
+        Self::random_hex_secret()
+    }
+    fn default_mfa_secret_key() -> String {
+        Self::random_hex_secret()
     }
     fn default_bootstrap_insecure_cookies() -> bool {
         false

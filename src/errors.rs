@@ -410,6 +410,13 @@ pub fn auth_forbidden_with_subcode(subcode: ApiSubcode, message: impl Into<Strin
     tag_error_with_subcode(subcode, message, AsterError::auth_forbidden)
 }
 
+pub fn auth_invalid_credentials_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::auth_invalid_credentials)
+}
+
 pub fn auth_token_invalid_with_reason(
     reason: AuthTokenInvalidReason,
     message: impl Into<String>,
@@ -470,7 +477,7 @@ fn tag_error_with_subcode(
     f(encode_api_error_subcode_message(subcode, message.into()))
 }
 
-pub(crate) fn encode_api_error_subcode_message(subcode: ApiSubcode, message: String) -> String {
+pub fn encode_api_error_subcode_message(subcode: ApiSubcode, message: String) -> String {
     format!(
         "{API_ERROR_SUBCODE_PREFIX}{}{API_ERROR_SUBCODE_SEPARATOR}{message}",
         subcode.as_str()

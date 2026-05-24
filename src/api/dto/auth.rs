@@ -1,6 +1,6 @@
 //! `auth` API DTO 定义。
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
@@ -59,10 +59,24 @@ pub struct ContactVerificationConfirmQuery {
 }
 
 /// Response body for token issuance (login / refresh / password change).
-#[derive(serde::Serialize)]
+#[derive(Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AuthTokenResp {
     pub expires_in: u64,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum LoginResponse {
+    Authenticated {
+        expires_in: u64,
+    },
+    MfaRequired {
+        flow_token: String,
+        expires_in: u64,
+        methods: Vec<crate::types::MfaMethod>,
+    },
 }
 
 /// Generic message-only response (used after email operations).

@@ -222,6 +222,7 @@ describe("adminService", () => {
 		});
 		adminUserService.resetPassword(5, { password: "newsecret" });
 		adminUserService.revokeSessions(5);
+		adminUserService.resetMfa(5);
 		adminUserService.delete(5);
 
 		adminPolicyService.get(3);
@@ -315,7 +316,8 @@ describe("adminService", () => {
 			2,
 			"/admin/users/5/sessions/revoke",
 		);
-		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/admin/users/5");
+		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/admin/users/5/mfa");
+		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/admin/users/5");
 
 		expect(mockState.get).toHaveBeenNthCalledWith(3, "/admin/policies/3");
 		expect(mockState.post).toHaveBeenNthCalledWith(3, "/admin/policies", {
@@ -326,7 +328,7 @@ describe("adminService", () => {
 		expect(mockState.patch).toHaveBeenNthCalledWith(2, "/admin/policies/3", {
 			is_default: true,
 		});
-		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/admin/policies/3");
+		expect(mockState.delete).toHaveBeenNthCalledWith(3, "/admin/policies/3");
 		expect(mockState.post).toHaveBeenNthCalledWith(4, "/admin/policies/3/test");
 		expect(mockState.post).toHaveBeenNthCalledWith(5, "/admin/policies/test", {
 			driver_type: "s3",
@@ -345,7 +347,7 @@ describe("adminService", () => {
 			},
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(
-			3,
+			4,
 			"/admin/remote-nodes/6",
 		);
 		expect(mockState.post).toHaveBeenNthCalledWith(
@@ -402,7 +404,7 @@ describe("adminService", () => {
 			"/admin/external-auth/providers/15/test",
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(
-			4,
+			5,
 			"/admin/external-auth/providers/15",
 		);
 
@@ -426,13 +428,13 @@ describe("adminService", () => {
 			},
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(
-			5,
+			6,
 			"/admin/policy-groups/4",
 		);
 
-		expect(mockState.delete).toHaveBeenNthCalledWith(6, "/admin/shares/11");
-		expect(mockState.delete).toHaveBeenNthCalledWith(7, "/admin/locks/12");
-		expect(mockState.delete).toHaveBeenNthCalledWith(8, "/admin/locks/expired");
+		expect(mockState.delete).toHaveBeenNthCalledWith(7, "/admin/shares/11");
+		expect(mockState.delete).toHaveBeenNthCalledWith(8, "/admin/locks/12");
+		expect(mockState.delete).toHaveBeenNthCalledWith(9, "/admin/locks/expired");
 
 		expect(mockState.get).toHaveBeenNthCalledWith(9, "/admin/config/schema");
 		expect(mockState.get).toHaveBeenNthCalledWith(
@@ -447,7 +449,7 @@ describe("adminService", () => {
 			value: "smtp.example.com",
 		});
 		expect(mockState.delete).toHaveBeenNthCalledWith(
-			9,
+			10,
 			"/admin/config/mail.host",
 		);
 	});

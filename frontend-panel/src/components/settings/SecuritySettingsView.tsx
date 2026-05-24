@@ -1,270 +1,18 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 import { SettingsSection } from "@/components/common/SettingsScaffold";
-import { SecurityEmailSection } from "@/components/settings/security-settings/SecurityEmailSection";
+import { SecurityAccountPane } from "@/components/settings/security-settings/SecurityAccountPane";
 import { SecurityExternalAuthLinksSection } from "@/components/settings/security-settings/SecurityExternalAuthLinksSection";
+import { SecurityMfaSection } from "@/components/settings/security-settings/SecurityMfaSection";
 import { SecurityPasskeysSection } from "@/components/settings/security-settings/SecurityPasskeysSection";
-import { SecurityPasswordSection } from "@/components/settings/security-settings/SecurityPasswordSection";
 import { SecuritySessionsSection } from "@/components/settings/security-settings/SecuritySessionsSection";
 import { SecuritySummaryCard } from "@/components/settings/security-settings/SecuritySummaryCard";
-import type { SecurityFormErrors } from "@/components/settings/security-settings/types";
-import { Icon } from "@/components/ui/icon";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { handleApiError } from "@/hooks/useApiError";
-import {
-	clearContactVerificationRedirectSearch,
-	getContactVerificationRedirectState,
-} from "@/lib/contactVerificationRedirect";
-import {
-	emailSchema,
-	existingPasswordSchema,
-	passwordSchema,
-} from "@/lib/validation";
-import { authService } from "@/services/authService";
-import { forceLogout, useAuthStore } from "@/stores/authStore";
-import type { AuthSessionInfo } from "@/types/api";
-
-type SecurityPane = "account" | "passkeys" | "external" | "sessions";
+import { SecurityTabsShell } from "@/components/settings/security-settings/SecurityTabsShell";
+import { useSecuritySettingsController } from "@/components/settings/security-settings/useSecuritySettingsController";
+import { TabsContent } from "@/components/ui/tabs";
 
 export function SecuritySettingsView() {
-	const { t } = useTranslation(["auth", "core", "settings"]);
-	const { hash, pathname, search } = useLocation();
-	const navigate = useNavigate();
-	const user = useAuthStore((s) => s.user);
-	const refreshUser = useAuthStore((s) => s.refreshUser);
-	const syncSession = useAuthStore((s) => s.syncSession);
-	const [emailBusy, setEmailBusy] = useState(false);
-	const [newEmail, setNewEmail] = useState("");
-	const [passwordBusy, setPasswordBusy] = useState(false);
-	const [resendingEmailChange, setResendingEmailChange] = useState(false);
-	const [currentPassword, setCurrentPassword] = useState("");
-	const [newPassword, setNewPassword] = useState("");
-	const [confirmPassword, setConfirmPassword] = useState("");
-	const [errors, setErrors] = useState<SecurityFormErrors>({});
-	const [sessions, setSessions] = useState<AuthSessionInfo[]>([]);
-	const [sessionsLoading, setSessionsLoading] = useState(false);
-	const [revokeBusyId, setRevokeBusyId] = useState<string | null>(null);
-	const [revokeOthersBusy, setRevokeOthersBusy] = useState(false);
-	const [activePane, setActivePane] = useState<SecurityPane>("account");
-
-	useEffect(() => {
-		const verification = getContactVerificationRedirectState(search);
-		if (!verification) {
-			return;
-		}
-
-		switch (verification.status) {
-			case "email-changed":
-				if (!verification.email) {
-					return;
-				}
-				toast.success(
-					t("settings:settings_email_change_confirmed", {
-						email: verification.email,
-					}),
-					{
-						id: `contact-verification-email-changed-settings:${verification.email}`,
-					},
-				);
-				break;
-			case "expired":
-				toast.error(t("auth:verify_contact_expired_title"), {
-					description: t("auth:verify_contact_expired_desc"),
-					id: "contact-verification-expired-settings",
-				});
-				break;
-			case "invalid":
-				toast.error(t("auth:verify_contact_invalid_title"), {
-					description: t("auth:verify_contact_invalid_desc"),
-					id: "contact-verification-invalid-settings",
-				});
-				break;
-			case "missing":
-				toast.error(t("auth:verify_contact_missing_token_title"), {
-					description: t("auth:verify_contact_missing_token_desc"),
-					id: "contact-verification-missing-settings",
-				});
-				break;
-			case "register-activated":
-				toast.success(t("auth:activation_confirmed"), {
-					id: "contact-verification-register-activated-settings",
-				});
-				break;
-		}
-
-		navigate(
-			{
-				hash,
-				pathname,
-				search: clearContactVerificationRedirectSearch(search),
-			},
-			{ replace: true },
-		);
-	}, [hash, pathname, search, navigate, t]);
-
-	const loadSessions = useCallback(async () => {
-		try {
-			setSessionsLoading(true);
-			setSessions(await authService.listSessions());
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setSessionsLoading(false);
-		}
-	}, []);
-
-	useEffect(() => {
-		void loadSessions();
-	}, [loadSessions]);
-
-	const canSubmitPassword =
-		!passwordBusy &&
-		currentPassword.length > 0 &&
-		newPassword.length > 0 &&
-		confirmPassword.length > 0;
-	const canSubmitEmailChange =
-		!emailBusy && !!user?.email_verified && newEmail.trim().length > 0;
-	const hasOtherSessions = sessions.some((session) => !session.is_current);
-	const validateEmailChange = () => {
-		const email = newEmail.trim();
-		const emailResult = emailSchema.safeParse(email);
-		if (!emailResult.success) {
-			setErrors((prev) => ({
-				...prev,
-				email: emailResult.error.issues[0]?.message ?? "",
-			}));
-			return false;
-		}
-
-		if (email === user?.email) {
-			setErrors((prev) => ({
-				...prev,
-				email: t("settings:settings_email_change_same"),
-			}));
-			return false;
-		}
-
-		setErrors((prev) => ({ ...prev, email: undefined }));
-		return true;
-	};
-
-	const validate = () => {
-		const nextErrors: SecurityFormErrors = {};
-		const currentResult = existingPasswordSchema.safeParse(currentPassword);
-		if (!currentResult.success) {
-			nextErrors.currentPassword = currentResult.error.issues[0]?.message ?? "";
-		}
-
-		const newResult = passwordSchema.safeParse(newPassword);
-		if (!newResult.success) {
-			nextErrors.newPassword = newResult.error.issues[0]?.message ?? "";
-		}
-
-		const confirmResult = passwordSchema.safeParse(confirmPassword);
-		if (!confirmResult.success) {
-			nextErrors.confirmPassword = confirmResult.error.issues[0]?.message ?? "";
-		} else if (confirmPassword !== newPassword) {
-			nextErrors.confirmPassword = t(
-				"settings:settings_password_confirm_mismatch",
-			);
-		}
-
-		setErrors(nextErrors);
-		return Object.keys(nextErrors).length === 0;
-	};
-
-	const handleEmailChangeSubmit = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		if (!user || !validateEmailChange()) return;
-
-		try {
-			setEmailBusy(true);
-			await authService.requestEmailChange(newEmail.trim());
-			setNewEmail("");
-			setErrors((prev) => ({ ...prev, email: undefined }));
-			await refreshUser();
-			toast.success(t("settings:settings_email_change_requested"));
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setEmailBusy(false);
-		}
-	};
-
-	const handleResendEmailChange = async () => {
-		if (!user?.pending_email) return;
-
-		try {
-			setResendingEmailChange(true);
-			await authService.resendEmailChange();
-			toast.success(t("settings:settings_email_change_resent"));
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setResendingEmailChange(false);
-		}
-	};
-
-	const handlePasswordSubmit = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		if (!validate()) return;
-
-		try {
-			setPasswordBusy(true);
-			const session = await authService.changePassword({
-				current_password: currentPassword,
-				new_password: newPassword,
-			});
-			syncSession(session.expiresIn);
-			setCurrentPassword("");
-			setNewPassword("");
-			setConfirmPassword("");
-			setErrors({});
-			toast.success(t("settings:settings_password_updated"));
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setPasswordBusy(false);
-		}
-	};
-
-	const handleRevokeSession = async (session: AuthSessionInfo) => {
-		try {
-			setRevokeBusyId(session.id);
-			await authService.revokeSession(session.id);
-			if (session.is_current) {
-				toast.success(t("settings:settings_sessions_revoked_current"));
-				forceLogout();
-				navigate("/login", { replace: true });
-				return;
-			}
-			setSessions((prev) => prev.filter((item) => item.id !== session.id));
-			toast.success(t("settings:settings_sessions_revoked"));
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setRevokeBusyId(null);
-		}
-	};
-
-	const handleRevokeOtherSessions = async () => {
-		try {
-			setRevokeOthersBusy(true);
-			const removed = await authService.revokeOtherSessions();
-			setSessions((prev) => prev.filter((session) => session.is_current));
-			toast.success(
-				t("settings:settings_sessions_revoke_others_success", {
-					count: removed,
-				}),
-			);
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setRevokeOthersBusy(false);
-		}
-	};
+	const { t } = useTranslation(["settings"]);
+	const controller = useSecuritySettingsController();
 
 	return (
 		<SettingsSection
@@ -273,86 +21,49 @@ export function SecuritySettingsView() {
 			contentClassName="pt-4"
 		>
 			<div className="space-y-4">
-				<SecuritySummaryCard sessionCount={sessions.length} user={user} />
+				<SecuritySummaryCard
+					sessionCount={controller.sessionState.sessions.length}
+					user={controller.user}
+				/>
 
-				<Tabs
-					value={activePane}
-					onValueChange={(value) => setActivePane(value as SecurityPane)}
-					className="gap-4"
+				<SecurityTabsShell
+					activePane={controller.activePane}
+					onActivePaneChange={controller.setActivePane}
 				>
-					<TabsList className="grid !h-11 w-full grid-cols-4 gap-1 p-1">
-						<TabsTrigger value="account" className="h-full min-w-0 px-3 py-0">
-							<Icon name="Lock" className="size-4" />
-							<span className="truncate">
-								{t("settings:settings_security_tab_account")}
-							</span>
-						</TabsTrigger>
-						<TabsTrigger value="passkeys" className="h-full min-w-0 px-3 py-0">
-							<Icon name="Shield" className="size-4" />
-							<span className="truncate">
-								{t("settings:settings_security_tab_passkeys")}
-							</span>
-						</TabsTrigger>
-						<TabsTrigger value="external" className="h-full min-w-0 px-3 py-0">
-							<Icon name="Globe" className="size-4" />
-							<span className="truncate">
-								{t("settings:settings_security_tab_external")}
-							</span>
-						</TabsTrigger>
-						<TabsTrigger value="sessions" className="h-full min-w-0 px-3 py-0">
-							<Icon name="Monitor" className="size-4" />
-							<span className="truncate">
-								{t("settings:settings_security_tab_sessions")}
-							</span>
-						</TabsTrigger>
-					</TabsList>
-
 					<TabsContent
 						value="account"
 						className="space-y-4 animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
 					>
-						<SecurityEmailSection
-							canSubmitEmailChange={canSubmitEmailChange}
-							emailBusy={emailBusy}
-							emailError={errors.email}
-							newEmail={newEmail}
-							resendingEmailChange={resendingEmailChange}
-							user={user}
-							onNewEmailChange={(value) => {
-								setNewEmail(value);
-								setErrors((prev) => ({ ...prev, email: undefined }));
-							}}
-							onResendEmailChange={() => void handleResendEmailChange()}
-							onSubmit={(event) => void handleEmailChangeSubmit(event)}
+						<SecurityAccountPane
+							canSubmitEmailChange={controller.canSubmitEmailChange}
+							canSubmitPassword={controller.canSubmitPassword}
+							confirmPassword={controller.account.confirmPassword}
+							currentPassword={controller.account.currentPassword}
+							emailBusy={controller.account.emailBusy}
+							emailError={controller.account.errors.email}
+							errors={controller.account.errors}
+							newEmail={controller.account.newEmail}
+							newPassword={controller.account.newPassword}
+							passwordBusy={controller.account.passwordBusy}
+							resendingEmailChange={controller.account.resendingEmailChange}
+							user={controller.user}
+							onConfirmPasswordChange={controller.onConfirmPasswordChange}
+							onCurrentPasswordChange={controller.onCurrentPasswordChange}
+							onEmailSubmit={(event) => void controller.onEmailSubmit(event)}
+							onNewEmailChange={controller.onNewEmailChange}
+							onNewPasswordChange={controller.onNewPasswordChange}
+							onPasswordSubmit={(event) =>
+								void controller.onPasswordSubmit(event)
+							}
+							onResendEmailChange={() => void controller.onResendEmailChange()}
 						/>
+					</TabsContent>
 
-						<SecurityPasswordSection
-							canSubmitPassword={canSubmitPassword}
-							confirmPassword={confirmPassword}
-							currentPassword={currentPassword}
-							errors={errors}
-							newPassword={newPassword}
-							passwordBusy={passwordBusy}
-							onConfirmPasswordChange={(value) => {
-								setConfirmPassword(value);
-								setErrors((prev) => ({
-									...prev,
-									confirmPassword: undefined,
-								}));
-							}}
-							onCurrentPasswordChange={(value) => {
-								setCurrentPassword(value);
-								setErrors((prev) => ({
-									...prev,
-									currentPassword: undefined,
-								}));
-							}}
-							onNewPasswordChange={(value) => {
-								setNewPassword(value);
-								setErrors((prev) => ({ ...prev, newPassword: undefined }));
-							}}
-							onSubmit={(event) => void handlePasswordSubmit(event)}
-						/>
+					<TabsContent
+						value="mfa"
+						className="animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
+					>
+						<SecurityMfaSection />
 					</TabsContent>
 
 					<TabsContent
@@ -374,17 +85,21 @@ export function SecuritySettingsView() {
 						className="animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none"
 					>
 						<SecuritySessionsSection
-							hasOtherSessions={hasOtherSessions}
-							revokeBusyId={revokeBusyId}
-							revokeOthersBusy={revokeOthersBusy}
-							sessions={sessions}
-							sessionsLoading={sessionsLoading}
-							onRefreshSessions={() => void loadSessions()}
-							onRevokeOtherSessions={() => void handleRevokeOtherSessions()}
-							onRevokeSession={(session) => void handleRevokeSession(session)}
+							hasOtherSessions={controller.hasOtherSessions}
+							revokeBusyId={controller.sessionState.revokeBusyId}
+							revokeOthersBusy={controller.sessionState.revokeOthersBusy}
+							sessions={controller.sessionState.sessions}
+							sessionsLoading={controller.sessionState.sessionsLoading}
+							onRefreshSessions={() => void controller.onRefreshSessions()}
+							onRevokeOtherSessions={() =>
+								void controller.onRevokeOtherSessions()
+							}
+							onRevokeSession={(session) =>
+								void controller.onRevokeSession(session)
+							}
 						/>
 					</TabsContent>
-				</Tabs>
+				</SecurityTabsShell>
 			</div>
 		</SettingsSection>
 	);

@@ -8,8 +8,9 @@ use crate::utils::hash;
 
 use super::session::{invalidate_auth_snapshot_cache, purge_all_auth_sessions_in_connection};
 use super::shared::{find_user_by_identifier, update_password_in_connection};
-use super::tokens::issue_tokens_for_user;
-use super::{AuthUserInfo, LoginResult, is_email_verified};
+use crate::services::mfa_service::{self, PrimaryLoginCompletion};
+
+use super::{AuthUserInfo, is_email_verified};
 
 pub async fn login(
     state: &PrimaryAppState,
@@ -17,7 +18,7 @@ pub async fn login(
     password: &str,
     ip_address: Option<&str>,
     user_agent: Option<&str>,
-) -> Result<LoginResult> {
+) -> Result<PrimaryLoginCompletion> {
     let identifier_kind = if identifier.trim().contains('@') {
         "email"
     } else {
@@ -53,7 +54,15 @@ pub async fn login(
             return Err(AsterError::auth_invalid_credentials("wrong password"));
         }
 
-        let (access, refresh) = issue_tokens_for_user(state, &user, ip_address, user_agent).await?;
+        let completion = mfa_service::complete_primary_login_or_start_mfa(
+            state,
+            &user,
+            crate::types::MfaFirstFactor::Password,
+            None,
+            ip_address,
+            user_agent,
+        )
+        .await?;
 
         tracing::debug!(
             user_id = user.id,
@@ -61,11 +70,7 @@ pub async fn login(
             "login succeeded"
         );
 
-        Ok(LoginResult {
-            access_token: access,
-            refresh_token: refresh,
-            user_id: user.id,
-        })
+        Ok(completion)
     }
     .await;
 
@@ -73,7 +78,7 @@ pub async fn login(
     outcome
 }
 
-fn record_login_metric(state: &PrimaryAppState, result: &Result<LoginResult>) {
+fn record_login_metric(state: &PrimaryAppState, result: &Result<PrimaryLoginCompletion>) {
     let (status, reason) = match result {
         Ok(_) => ("success", "ok"),
         Err(AsterError::AuthInvalidCredentials(_)) => ("failure", "invalid_credentials"),

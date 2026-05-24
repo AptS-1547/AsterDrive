@@ -13,7 +13,7 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service,
     auth_service::{self, Claims},
-    profile_service, user_service,
+    mfa_service, profile_service, user_service,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
 
@@ -195,6 +195,31 @@ pub async fn reset_user_password(
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     auth_service::set_password_with_audit(&state, *path, &body.password, &ctx).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/admin/users/{id}/mfa",
+    tag = "admin",
+    operation_id = "reset_user_mfa",
+    params(("id" = i64, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "User MFA reset"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "User not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn reset_user_mfa(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    mfa_service::reset_user_mfa(&state, *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 

@@ -63,6 +63,12 @@ define_api_subcodes! {
     AuthCsrfHeaderMissing => "auth.csrf_header_missing",
     AuthCsrfTokenInvalid => "auth.csrf_token_invalid",
     AuthRegistrationDisabled => "auth.registration_disabled",
+    AuthMfaFlowInvalid => "auth.mfa_flow_invalid",
+    AuthMfaFlowExpired => "auth.mfa_flow_expired",
+    AuthMfaCodeInvalid => "auth.mfa_code_invalid",
+    AuthMfaAttemptsExceeded => "auth.mfa_attempts_exceeded",
+    AuthMfaFactorRequired => "auth.mfa_factor_required",
+    AuthMfaRecoveryCodeUsed => "auth.mfa_recovery_code_used",
 
     AvatarFileRequired => "avatar.file_required",
     AvatarUploadReadFailed => "avatar.upload_read_failed",

@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use super::{AuthTokenResp, ChangePasswordReq, MeQuery, storage_event_frame};
+use super::{AuthTokenResp, ChangePasswordReq, LoginResponse, MeQuery, storage_event_frame};
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::request_auth::{access_cookie_token, bearer_token};
 use crate::api::response::{ApiResponse, RemovedCountResponse};
@@ -11,6 +11,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext, AuditRequestInfo};
 use crate::services::auth_service::Claims;
+use crate::services::mfa_service::PrimaryLoginCompletion;
 use crate::services::storage_change_service::StorageChangeWorkspace;
 use crate::services::{auth_service, team_service, user_service};
 use crate::types::TokenType;
@@ -31,6 +32,43 @@ fn refresh_cookie_jti(state: &PrimaryAppState, req: &HttpRequest) -> Option<Stri
         return None;
     }
     claims.jti
+}
+
+pub(super) fn authenticated_login_response(
+    state: &PrimaryAppState,
+    access_token: &str,
+    refresh_token: &str,
+) -> Result<HttpResponse> {
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let secure = auth_policy.cookie_secure;
+    let csrf_token = csrf::build_csrf_token();
+    let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
+    let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
+    Ok(HttpResponse::Ok()
+        .cookie(build_access_cookie(access_token, access_ttl, secure))
+        .cookie(build_refresh_cookie(refresh_token, refresh_ttl, secure))
+        .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
+        .json(ApiResponse::ok(LoginResponse::Authenticated {
+            expires_in: auth_policy.access_token_ttl_secs,
+        })))
+}
+
+pub(super) fn login_completion_response(
+    state: &PrimaryAppState,
+    result: PrimaryLoginCompletion,
+) -> Result<HttpResponse> {
+    match result {
+        PrimaryLoginCompletion::Authenticated(result) => {
+            authenticated_login_response(state, &result.access_token, &result.refresh_token)
+        }
+        PrimaryLoginCompletion::MfaRequired(challenge) => Ok(HttpResponse::Ok().json(
+            ApiResponse::ok(LoginResponse::MfaRequired {
+                flow_token: challenge.flow_token,
+                expires_in: challenge.expires_in,
+                methods: challenge.methods,
+            }),
+        )),
+    }
 }
 
 async fn revalidate_storage_event_stream(
@@ -197,7 +235,7 @@ pub async fn get_storage_events(
     operation_id = "login",
     request_body = super::LoginReq,
     responses(
-        (status = 200, description = "Login successful, tokens set in HttpOnly cookies", body = inline(ApiResponse<AuthTokenResp>)),
+        (status = 200, description = "Login completed or MFA challenge required", body = inline(ApiResponse<LoginResponse>)),
         (status = 401, description = "Invalid credentials"),
     ),
 )]
@@ -218,27 +256,7 @@ pub async fn login(
     let result =
         auth_service::login_with_audit(&state, &body.identifier, &body.password, &audit_info)
             .await?;
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
-
-    let secure = auth_policy.cookie_secure;
-    let csrf_token = csrf::build_csrf_token();
-    let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
-    let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
-    Ok(HttpResponse::Ok()
-        .cookie(build_access_cookie(
-            &result.access_token,
-            access_ttl,
-            secure,
-        ))
-        .cookie(build_refresh_cookie(
-            &result.refresh_token,
-            refresh_ttl,
-            secure,
-        ))
-        .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
-        .json(ApiResponse::ok(AuthTokenResp {
-            expires_in: auth_policy.access_token_ttl_secs,
-        })))
+    login_completion_response(&state, result)
 }
 
 #[api_docs_macros::path(

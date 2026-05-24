@@ -128,6 +128,8 @@ export const adminUserService = {
 	revokeSessions: (id: number) =>
 		api.post<void>(`/admin/users/${id}/sessions/revoke`),
 
+	resetMfa: (id: number) => api.delete<void>(`/admin/users/${id}/mfa`),
+
 	delete: (id: number) => api.delete<void>(`/admin/users/${id}`),
 };
 

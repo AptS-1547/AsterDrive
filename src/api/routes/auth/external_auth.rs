@@ -9,12 +9,13 @@ use crate::config::site_url;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext, AuditRequestInfo};
-use crate::services::auth_service::{Claims, LoginResult};
+use crate::services::auth_service::Claims;
 use crate::services::external_auth_service::{
     self as external_auth_service, ExternalAuthCallbackOutcome, ExternalAuthCallbackQuery,
     ExternalAuthEmailVerificationConfirmQuery, ExternalAuthEmailVerificationStartRequest,
     ExternalAuthLoginAuditDetails, ExternalAuthPasswordLinkRequest, ExternalAuthStartLoginRequest,
 };
+use crate::services::mfa_service::{self, PrimaryLoginCompletion};
 use crate::types::ExternalAuthProviderKind;
 use crate::utils::numbers::u64_to_i64;
 use actix_web::http::header;
@@ -160,7 +161,7 @@ pub async fn start_email_verification(
     operation_id = "link_external_auth_with_password",
     request_body = ExternalAuthPasswordLinkRequest,
     responses(
-        (status = 200, description = "External auth identity linked and user logged in", body = inline(ApiResponse<super::AuthTokenResp>)),
+        (status = 200, description = "External auth identity linked; login completed or MFA challenge required", body = inline(ApiResponse<super::LoginResponse>)),
         (status = 400, description = "Invalid flow or request"),
         (status = 401, description = "Invalid credentials"),
     ),
@@ -249,45 +250,26 @@ async fn external_auth_login_json_response(
     result: impl Into<ExternalAuthLoginRedirectResult>,
 ) -> Result<HttpResponse> {
     let result = result.into();
-    let audit_ctx = audit_info.to_context(result.login.user_id);
+    let audit_ctx = audit_info.to_context(result.primary_login.user.id);
     audit_service::log(
         state,
         &audit_ctx,
         audit_service::AuditAction::UserExternalAuthLogin,
         crate::services::audit_service::AuditEntityType::ExternalAuthIdentity,
         None,
-        Some(&result.provider_key),
+        Some(&result.primary_login.provider_key),
         audit_service::details(ExternalAuthLoginAuditDetails {
-            provider_key: &result.provider_key,
-            issuer: &result.issuer,
-            subject: &result.subject,
-            linked: result.linked,
-            auto_provisioned: result.auto_provisioned,
+            provider_key: &result.primary_login.provider_key,
+            issuer: &result.primary_login.issuer,
+            subject: &result.primary_login.subject,
+            linked: result.primary_login.linked,
+            auto_provisioned: result.primary_login.auto_provisioned,
         }),
     )
     .await;
 
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
-    let secure = auth_policy.cookie_secure;
-    let csrf_token = csrf::build_csrf_token();
-    let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
-    let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
-
-    Ok(HttpResponse::Ok()
-        .cookie(build_access_cookie(
-            &result.login.access_token,
-            access_ttl,
-            secure,
-        ))
-        .cookie(build_refresh_cookie(
-            &result.login.refresh_token,
-            refresh_ttl,
-            secure,
-        ))
-        .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
-        .json(ApiResponse::ok(super::AuthTokenResp {
-            expires_in: auth_policy.access_token_ttl_secs,
-        })))
+    let completion = complete_external_primary_login(state, audit_info, &result).await?;
+    super::session::login_completion_response(state, completion)
 }
 
 async fn external_auth_login_redirect_response(
@@ -296,67 +278,96 @@ async fn external_auth_login_redirect_response(
     result: impl Into<ExternalAuthLoginRedirectResult>,
 ) -> Result<HttpResponse> {
     let result = result.into();
-    let audit_ctx = audit_info.to_context(result.login.user_id);
+    let audit_ctx = audit_info.to_context(result.primary_login.user.id);
     audit_service::log(
         state,
         &audit_ctx,
         audit_service::AuditAction::UserExternalAuthLogin,
         crate::services::audit_service::AuditEntityType::ExternalAuthIdentity,
         None,
-        Some(&result.provider_key),
+        Some(&result.primary_login.provider_key),
         audit_service::details(ExternalAuthLoginAuditDetails {
-            provider_key: &result.provider_key,
-            issuer: &result.issuer,
-            subject: &result.subject,
-            linked: result.linked,
-            auto_provisioned: result.auto_provisioned,
+            provider_key: &result.primary_login.provider_key,
+            issuer: &result.primary_login.issuer,
+            subject: &result.primary_login.subject,
+            linked: result.primary_login.linked,
+            auto_provisioned: result.primary_login.auto_provisioned,
         }),
     )
     .await;
 
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
-    let secure = auth_policy.cookie_secure;
-    let csrf_token = csrf::build_csrf_token();
-    let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
-    let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
-    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, &result.return_path);
-
-    Ok(HttpResponse::Found()
-        .append_header((header::LOCATION, redirect_url))
-        .cookie(build_access_cookie(
-            &result.login.access_token,
-            access_ttl,
-            secure,
-        ))
-        .cookie(build_refresh_cookie(
-            &result.login.refresh_token,
-            refresh_ttl,
-            secure,
-        ))
-        .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
-        .finish())
+    let return_path = result.primary_login.return_path.clone();
+    let completion = complete_external_primary_login(state, audit_info, &result).await?;
+    external_auth_redirect_completion_response(state, completion, &return_path)
 }
 
 struct ExternalAuthLoginRedirectResult {
-    login: LoginResult,
-    return_path: String,
-    provider_key: String,
-    issuer: String,
-    subject: String,
-    linked: bool,
-    auto_provisioned: bool,
+    primary_login: external_auth_service::ExternalAuthPrimaryLogin,
+}
+
+async fn complete_external_primary_login(
+    state: &PrimaryAppState,
+    audit_info: &AuditRequestInfo,
+    result: &ExternalAuthLoginRedirectResult,
+) -> Result<PrimaryLoginCompletion> {
+    mfa_service::complete_primary_login_or_start_mfa(
+        state,
+        &result.primary_login.user,
+        crate::types::MfaFirstFactor::ExternalAuth,
+        Some(&result.primary_login.return_path),
+        audit_info.ip_address.as_deref(),
+        audit_info.user_agent.as_deref(),
+    )
+    .await
+}
+
+fn external_auth_redirect_completion_response(
+    state: &PrimaryAppState,
+    completion: PrimaryLoginCompletion,
+    return_path: &str,
+) -> Result<HttpResponse> {
+    match completion {
+        PrimaryLoginCompletion::Authenticated(result) => {
+            let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+            let secure = auth_policy.cookie_secure;
+            let csrf_token = csrf::build_csrf_token();
+            let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
+            let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
+            let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, return_path);
+
+            Ok(HttpResponse::Found()
+                .append_header((header::LOCATION, redirect_url))
+                .cookie(build_access_cookie(
+                    &result.access_token,
+                    access_ttl,
+                    secure,
+                ))
+                .cookie(build_refresh_cookie(
+                    &result.refresh_token,
+                    refresh_ttl,
+                    secure,
+                ))
+                .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
+                .finish())
+        }
+        PrimaryLoginCompletion::MfaRequired(challenge) => {
+            let path = format!(
+                "/login?mfa=required&flow={}&return_path={}",
+                urlencoding::encode(&challenge.flow_token),
+                urlencoding::encode(return_path)
+            );
+            let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, &path);
+            Ok(HttpResponse::Found()
+                .append_header((header::LOCATION, redirect_url))
+                .finish())
+        }
+    }
 }
 
 impl From<external_auth_service::ExternalAuthCallbackResult> for ExternalAuthLoginRedirectResult {
     fn from(value: external_auth_service::ExternalAuthCallbackResult) -> Self {
         Self {
-            login: value.login,
-            return_path: value.return_path,
-            provider_key: value.provider_key,
-            issuer: value.issuer,
-            subject: value.subject,
-            linked: value.linked,
-            auto_provisioned: value.auto_provisioned,
+            primary_login: value.primary_login,
         }
     }
 }
@@ -366,13 +377,7 @@ impl From<external_auth_service::ExternalAuthEmailVerificationConfirmResult>
 {
     fn from(value: external_auth_service::ExternalAuthEmailVerificationConfirmResult) -> Self {
         Self {
-            login: value.login,
-            return_path: value.return_path,
-            provider_key: value.provider_key,
-            issuer: value.issuer,
-            subject: value.subject,
-            linked: value.linked,
-            auto_provisioned: value.auto_provisioned,
+            primary_login: value.primary_login,
         }
     }
 }
@@ -382,13 +387,7 @@ impl From<external_auth_service::ExternalAuthPasswordLinkResult>
 {
     fn from(value: external_auth_service::ExternalAuthPasswordLinkResult) -> Self {
         Self {
-            login: value.login,
-            return_path: value.return_path,
-            provider_key: value.provider_key,
-            issuer: value.issuer,
-            subject: value.subject,
-            linked: value.linked,
-            auto_provisioned: value.auto_provisioned,
+            primary_login: value.primary_login,
         }
     }
 }

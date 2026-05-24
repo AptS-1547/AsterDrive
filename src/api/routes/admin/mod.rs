@@ -60,8 +60,8 @@ pub use teams::{
     list_team_members, list_teams, patch_team_member, restore_team, update_team,
 };
 pub use users::{
-    create_user, force_delete_user, get_user, get_user_avatar, list_users, reset_user_password,
-    revoke_user_sessions, update_user,
+    create_user, force_delete_user, get_user, get_user_avatar, list_users, reset_user_mfa,
+    reset_user_password, revoke_user_sessions, update_user,
 };
 
 pub fn routes(
@@ -168,6 +168,7 @@ pub fn routes(
                     .route("/users/{id}", web::get().to(get_user))
                     .route("/users/{id}", web::patch().to(update_user))
                     .route("/users/{id}/password", web::put().to(reset_user_password))
+                    .route("/users/{id}/mfa", web::delete().to(reset_user_mfa))
                     .route(
                         "/users/{id}/sessions/revoke",
                         web::post().to(revoke_user_sessions),

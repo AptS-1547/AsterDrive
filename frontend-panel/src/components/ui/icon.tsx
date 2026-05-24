@@ -5,6 +5,7 @@ import {
 	PiArrowCounterClockwise,
 	PiArrowDown,
 	PiArrowLeft,
+	PiArrowRight,
 	PiArrowSquareOut,
 	PiArrowsClockwise,
 	PiArrowsInCardinal,
@@ -44,6 +45,7 @@ import {
 	PiHardDrive,
 	PiHouse,
 	PiInfo,
+	PiKey,
 	PiLink,
 	PiLinkSimple,
 	PiList,
@@ -94,6 +96,7 @@ export type IconName =
 	| "ArrowClockwise"
 	| "ArrowDown"
 	| "ArrowLeft"
+	| "ArrowRight"
 	| "ArrowSquareOut"
 	| "ArrowUp"
 	| "ArrowsInCardinal"
@@ -134,6 +137,7 @@ export type IconName =
 	| "HardDrive"
 	| "House"
 	| "Info"
+	| "Key"
 	| "Link"
 	| "LinkSimple"
 	| "List"
@@ -183,6 +187,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	ArrowClockwise: PiArrowClockwise,
 	ArrowDown: PiArrowDown,
 	ArrowLeft: PiArrowLeft,
+	ArrowRight: PiArrowRight,
 	ArrowSquareOut: PiArrowSquareOut,
 	ArrowUp: PiArrowUp,
 	ArrowsInCardinal: PiArrowsInCardinal,
@@ -223,6 +228,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	HardDrive: PiHardDrive,
 	House: PiHouse,
 	Info: PiInfo,
+	Key: PiKey,
 	Link: PiLink,
 	LinkSimple: PiLinkSimple,
 	List: PiList,

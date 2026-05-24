@@ -55,6 +55,7 @@ async fn test_login_returns_correct_user_id_and_tokens() {
         aster_drive::services::auth_service::login(&state_svc, "logintest", "pass1234", None, None)
             .await
             .unwrap();
+    let result = common::expect_authenticated_login(result);
 
     assert_eq!(
         result.user_id, user.id,

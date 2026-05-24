@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	type FormEvent,
+	useCallback,
+	useEffect,
+	useReducer,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { z } from "zod/v4";
-import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
@@ -15,7 +21,6 @@ import {
 	clearPasswordResetRedirectSearch,
 	getPasswordResetRedirectState,
 } from "@/lib/passwordResetRedirect";
-import { cn } from "@/lib/utils";
 import {
 	emailSchema,
 	existingPasswordSchema,
@@ -29,30 +34,38 @@ import {
 	WebAuthnCancelledError,
 	WebAuthnUnsupportedError,
 } from "@/lib/webauthn";
-import { authService } from "@/services/authService";
+import {
+	authService,
+	type LoginResult,
+	type MfaMethod,
+} from "@/services/authService";
 import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
 import type { ExternalAuthPublicProvider } from "@/types/api";
 import { ErrorCode } from "@/types/api-helpers";
-import { AnimateSwap } from "./login/authAnimations";
-import { ExternalAuthRecoveryPanel } from "./login/ExternalAuthRecoveryPanel";
-import { LoginAuthForm } from "./login/LoginAuthForm";
-import { LoginBrandPanel } from "./login/LoginBrandPanel";
-import { LoginHeader } from "./login/LoginHeader";
-import { PasswordResetRequestPanel } from "./login/PasswordResetRequestPanel";
+import { LoginPageView } from "./login/LoginPageView";
 import {
-	PendingActivationPanel,
-	type PendingActivationState,
-} from "./login/PendingActivationPanel";
+	authPanelReducer,
+	initialAuthPanelState,
+} from "./login/loginPageState";
 import type { AuthMode } from "./login/types";
 
-// ── Component ───────────────────────────────────────────────
+function resolveMfaMethod(code: string, methods: MfaMethod[]): MfaMethod {
+	const normalized = code.trim();
+	const isTotp = /^\d{6}$/.test(normalized.replace(/\s/g, ""));
+	if (isTotp && methods.includes("totp")) {
+		return "totp";
+	}
+	if (methods.includes("recovery_code")) {
+		return "recovery_code";
+	}
+	return methods[0] ?? "totp";
+}
 
-export default function LoginPage() {
+function useLoginPageController() {
 	const { t } = useTranslation(["auth", "core", "settings"]);
 	const { hash, pathname, search } = useLocation();
 	const navigate = useNavigate();
-	const login = useAuthStore((s) => s.login);
 	const refreshUser = useAuthStore((s) => s.refreshUser);
 	const syncSession = useAuthStore((s) => s.syncSession);
 	const conditionalPasskeyAbortRef = useRef<AbortController | null>(null);
@@ -69,67 +82,35 @@ export default function LoginPage() {
 	const [checking, setChecking] = useState(true);
 	const [submitting, setSubmitting] = useState(false);
 	const [resendingActivation, setResendingActivation] = useState(false);
-	const [requestingPasswordReset, setRequestingPasswordReset] = useState(false);
 	const [passkeySubmitting, setPasskeySubmitting] = useState(false);
 	const [externalAuthProviders, setExternalAuthProviders] = useState<
 		ExternalAuthPublicProvider[]
 	>([]);
-	const [externalAuthLoading, setExternalAuthLoading] = useState(false);
+	const [externalAuthLoading, setExternalAuthLoading] = useState(true);
 	const [externalAuthBusyProvider, setExternalAuthBusyProvider] = useState<
 		string | null
 	>(null);
-	const [passkeySupported, setPasskeySupported] = useState(false);
+	const [passkeySupported] = useState(() => isWebAuthnSupported());
 	const [registrationClosed, setRegistrationClosed] = useState(false);
 	const [exiting, setExiting] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
-	const [pendingActivation, setPendingActivation] =
-		useState<PendingActivationState | null>(null);
-	const [showPasswordResetRequest, setShowPasswordResetRequest] =
-		useState(false);
-	const [passwordResetEmail, setPasswordResetEmail] = useState("");
-	const [passwordResetError, setPasswordResetError] = useState("");
-	const [externalAuthRecoveryFlow, setExternalAuthRecoveryFlow] = useState<
-		string | null
-	>(null);
-	const [externalAuthRecoveryMode, setExternalAuthRecoveryMode] = useState<
-		"password" | "email"
-	>("password");
-	const [
-		externalAuthPasswordLinkIdentifier,
-		setExternalAuthPasswordLinkIdentifier,
-	] = useState("");
-	const [
-		externalAuthPasswordLinkPassword,
-		setExternalAuthPasswordLinkPassword,
-	] = useState("");
-	const [
-		externalAuthPasswordLinkIdentifierError,
-		setExternalAuthPasswordLinkIdentifierError,
-	] = useState("");
-	const [
-		externalAuthPasswordLinkPasswordError,
-		setExternalAuthPasswordLinkPasswordError,
-	] = useState("");
-	const [
-		externalAuthPasswordLinkSubmitting,
-		setExternalAuthPasswordLinkSubmitting,
-	] = useState(false);
-	const [
-		externalAuthEmailVerificationEmail,
-		setExternalAuthEmailVerificationEmail,
-	] = useState("");
-	const [
-		externalAuthEmailVerificationError,
-		setExternalAuthEmailVerificationError,
-	] = useState("");
-	const [
-		externalAuthEmailVerificationSubmitting,
-		setExternalAuthEmailVerificationSubmitting,
-	] = useState(false);
-	const [
-		externalAuthEmailVerificationSent,
-		setExternalAuthEmailVerificationSent,
-	] = useState(false);
+	const [authPanel, dispatchAuthPanel] = useReducer(
+		authPanelReducer,
+		initialAuthPanelState,
+	);
+	const pendingActivation =
+		authPanel.kind === "pending-activation"
+			? authPanel.pendingActivation
+			: null;
+	const passwordResetPanel =
+		authPanel.kind === "password-reset" ? authPanel.passwordReset : null;
+	const externalAuthRecovery =
+		authPanel.kind === "external-auth-recovery" ? authPanel.recovery : null;
+	const mfaPanel = authPanel.kind === "mfa" ? authPanel : null;
+	const mfaChallenge = mfaPanel?.challenge ?? null;
+	const showPasswordResetRequest = passwordResetPanel !== null;
+	const externalAuthRecoveryFlow = externalAuthRecovery?.flowToken ?? null;
+	const externalAuthRecoveryMode = externalAuthRecovery?.mode ?? "password";
 
 	// Is the identifier an email address?
 	const isEmail = identifier.includes("@");
@@ -152,15 +133,17 @@ export default function LoginPage() {
 		? t("activation_pending_title")
 		: externalAuthRecoveryFlow
 			? t("external_auth_email_verification_title")
-			: showPasswordResetRequest
-				? t("forgot_password_title")
-				: mode === "login"
-					? t("sign_in")
-					: mode === "register"
-						? t("sign_up")
-						: mode === "setup"
-							? t("create_admin")
-							: "";
+			: mfaChallenge
+				? t("mfa_required_title")
+				: showPasswordResetRequest
+					? t("forgot_password_title")
+					: mode === "login"
+						? t("sign_in")
+						: mode === "register"
+							? t("sign_up")
+							: mode === "setup"
+								? t("create_admin")
+								: "";
 	usePageTitle(modeActionText || t("sign_in"));
 	const isSubmitDisabled =
 		submitting ||
@@ -173,12 +156,15 @@ export default function LoginPage() {
 
 	useEffect(() => {
 		const searchParams = new URLSearchParams(search);
+		const mfaStatus = searchParams.get("mfa");
+		const mfaFlow = searchParams.get("flow");
+		const returnPath = searchParams.get("return_path") || "/";
 		const externalAuthStatus = searchParams.get("external_auth");
 		const externalAuthMessage = searchParams.get("message");
 		const externalAuthFlow = searchParams.get("flow");
 		const verification = getContactVerificationRedirectState(search);
 		const passwordReset = getPasswordResetRedirectState(search);
-		if (!verification && !passwordReset && !externalAuthStatus) {
+		if (!verification && !passwordReset && !externalAuthStatus && !mfaStatus) {
 			return;
 		}
 
@@ -229,19 +215,35 @@ export default function LoginPage() {
 			});
 		}
 
-		if (externalAuthStatus === "email_required" && externalAuthFlow) {
-			setExternalAuthRecoveryFlow(externalAuthFlow);
-			setExternalAuthEmailVerificationEmail(passwordResetPrefill);
-			setExternalAuthRecoveryMode("password");
-			setExternalAuthPasswordLinkIdentifier(identifier.trim());
-			setExternalAuthPasswordLinkPassword("");
-			setExternalAuthPasswordLinkIdentifierError("");
-			setExternalAuthPasswordLinkPasswordError("");
-			setExternalAuthEmailVerificationError("");
-			setExternalAuthEmailVerificationSent(false);
-			setShowPasswordResetRequest(false);
-			setPendingActivation(null);
-			setMode("login");
+		if (mfaStatus === "required" && mfaFlow) {
+			dispatchAuthPanel({
+				type: "open_mfa",
+				challenge: {
+					expiresAt: Date.now() + 300_000,
+					flowToken: mfaFlow,
+					methods: ["totp", "recovery_code"],
+					returnPath,
+					successMessage: loginSuccessMessage,
+				},
+			});
+		} else if (externalAuthStatus === "email_required" && externalAuthFlow) {
+			dispatchAuthPanel({
+				type: "open_external_auth_recovery",
+				recovery: {
+					email: passwordResetPrefill,
+					emailError: "",
+					emailSubmitting: false,
+					flowToken: externalAuthFlow,
+					mode: "password",
+					password: "",
+					passwordError: "",
+					passwordIdentifier: identifier.trim(),
+					passwordIdentifierError: "",
+					passwordSubmitting: false,
+					returnPath,
+					sent: false,
+				},
+			});
 		} else if (externalAuthStatus === "email_verification_missing") {
 			toast.error(t("external_auth_email_verification_missing_token_title"), {
 				description: t("external_auth_email_verification_missing_token_desc"),
@@ -266,6 +268,7 @@ export default function LoginPage() {
 		}
 
 		searchParams.delete("external_auth");
+		searchParams.delete("mfa");
 		searchParams.delete("code");
 		searchParams.delete("message");
 		searchParams.delete("flow");
@@ -284,7 +287,26 @@ export default function LoginPage() {
 			},
 			{ replace: true },
 		);
-	}, [hash, pathname, search, navigate, identifier, passwordResetPrefill, t]);
+	}, [
+		hash,
+		pathname,
+		search,
+		navigate,
+		identifier,
+		loginSuccessMessage,
+		passwordResetPrefill,
+		t,
+	]);
+
+	useEffect(() => {
+		if (!mfaChallenge) return;
+		dispatchAuthPanel({ type: "set_mfa_now", now: Date.now() });
+		const timer = window.setInterval(
+			() => dispatchAuthPanel({ type: "set_mfa_now", now: Date.now() }),
+			1000,
+		);
+		return () => window.clearInterval(timer);
+	}, [mfaChallenge]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -319,13 +341,8 @@ export default function LoginPage() {
 	}, []);
 
 	useEffect(() => {
-		setPasskeySupported(isWebAuthnSupported());
-	}, []);
-
-	useEffect(() => {
 		let cancelled = false;
 
-		setExternalAuthLoading(true);
 		void authService
 			.listExternalAuthProviders()
 			.then((providers) => {
@@ -415,33 +432,70 @@ export default function LoginPage() {
 
 	// ── Exit animation → navigate ──
 
-	const exitAndNavigate = useCallback(() => {
-		setExiting(true);
-		setTimeout(() => navigate("/", { replace: true }), 350);
-	}, [navigate]);
+	const exitAndNavigateTo = useCallback(
+		(target = "/") => {
+			setExiting(true);
+			setTimeout(() => navigate(target, { replace: true }), 350);
+		},
+		[navigate],
+	);
+
+	const finishAuthenticatedLogin = useCallback(
+		async (
+			session: { expiresIn: number },
+			returnPath: string,
+			successMessage: string,
+		) => {
+			syncSession(session.expiresIn);
+			await refreshUser();
+			toast.success(successMessage);
+			exitAndNavigateTo(returnPath || "/");
+		},
+		[exitAndNavigateTo, refreshUser, syncSession],
+	);
+
+	const handleLoginResult = useCallback(
+		async (result: LoginResult, returnPath: string, successMessage: string) => {
+			if (result.status === "authenticated") {
+				await finishAuthenticatedLogin(result, returnPath, successMessage);
+				return;
+			}
+			const methods: MfaMethod[] =
+				result.methods.length > 0 ? result.methods : ["totp"];
+			dispatchAuthPanel({
+				type: "open_mfa",
+				challenge: {
+					expiresAt: Date.now() + result.expiresIn * 1000,
+					flowToken: result.flowToken,
+					methods,
+					returnPath,
+					successMessage,
+				},
+			});
+			setPassword("");
+			setShowPassword(false);
+		},
+		[finishAuthenticatedLogin],
+	);
 
 	const resetPendingActivation = () => {
-		setPendingActivation(null);
+		dispatchAuthPanel({ type: "open_auth" });
 		setErrors({});
 		setPassword("");
 		setShowPassword(false);
 	};
 
 	const closePasswordResetRequest = () => {
-		setShowPasswordResetRequest(false);
-		setPasswordResetError("");
+		dispatchAuthPanel({ type: "close_password_reset" });
 	};
 
 	const closeExternalAuthRecovery = () => {
-		setExternalAuthRecoveryFlow(null);
-		setExternalAuthRecoveryMode("password");
-		setExternalAuthPasswordLinkIdentifier("");
-		setExternalAuthPasswordLinkPassword("");
-		setExternalAuthPasswordLinkIdentifierError("");
-		setExternalAuthPasswordLinkPasswordError("");
-		setExternalAuthEmailVerificationEmail("");
-		setExternalAuthEmailVerificationError("");
-		setExternalAuthEmailVerificationSent(false);
+		dispatchAuthPanel({ type: "close_external_auth_recovery" });
+	};
+
+	const closeMfaChallenge = () => {
+		dispatchAuthPanel({ type: "close_mfa" });
+		setMode("login");
 	};
 
 	const switchAuthMode = (
@@ -466,58 +520,73 @@ export default function LoginPage() {
 	};
 
 	const handlePasswordResetRequest = async () => {
-		const email = passwordResetEmail.trim();
+		if (!passwordResetPanel) return;
+		const email = passwordResetPanel.email.trim();
 		const result = emailSchema.safeParse(email);
 		if (!result.success) {
-			setPasswordResetError(result.error.issues[0]?.message ?? "");
+			dispatchAuthPanel({
+				type: "set_password_reset_error",
+				error: result.error.issues[0]?.message ?? "",
+			});
 			return;
 		}
 
 		try {
-			setRequestingPasswordReset(true);
+			dispatchAuthPanel({
+				type: "set_password_reset_requesting",
+				requesting: true,
+			});
 			await authService.requestPasswordReset({ email });
 			toast.success(t("password_reset_request_sent"));
 			setIdentifier(email);
-			setPasswordResetError("");
-			setShowPasswordResetRequest(false);
+			dispatchAuthPanel({ type: "close_password_reset" });
 		} catch (error) {
 			handleApiError(error);
 		} finally {
-			setRequestingPasswordReset(false);
+			dispatchAuthPanel({
+				type: "set_password_reset_requesting",
+				requesting: false,
+			});
 		}
 	};
 
 	const handleExternalAuthEmailVerificationRequest = async () => {
-		if (!externalAuthRecoveryFlow) return;
-		const email = externalAuthEmailVerificationEmail.trim();
+		if (!externalAuthRecovery) return;
+		const email = externalAuthRecovery.email.trim();
 		const result = emailSchema.safeParse(email);
 		if (!result.success) {
-			setExternalAuthEmailVerificationError(
-				result.error.issues[0]?.message ?? "",
-			);
+			dispatchAuthPanel({
+				type: "set_external_email_error",
+				error: result.error.issues[0]?.message ?? "",
+			});
 			return;
 		}
 
 		try {
-			setExternalAuthEmailVerificationSubmitting(true);
+			dispatchAuthPanel({
+				type: "set_external_email_submitting",
+				submitting: true,
+			});
 			await authService.startExternalAuthEmailVerification({
-				flow_token: externalAuthRecoveryFlow,
+				flow_token: externalAuthRecovery.flowToken,
 				email,
 			});
-			setExternalAuthEmailVerificationError("");
-			setExternalAuthEmailVerificationSent(true);
+			dispatchAuthPanel({ type: "external_email_sent" });
 			toast.success(t("external_auth_email_verification_sent_toast"));
 		} catch (error) {
 			handleApiError(error);
 		} finally {
-			setExternalAuthEmailVerificationSubmitting(false);
+			dispatchAuthPanel({
+				type: "set_external_email_submitting",
+				submitting: false,
+			});
 		}
 	};
 
 	const handleExternalAuthPasswordLink = async () => {
-		if (!externalAuthRecoveryFlow) return;
-		const id = externalAuthPasswordLinkIdentifier.trim();
-		const pw = externalAuthPasswordLinkPassword;
+		if (!externalAuthRecovery) return;
+		const id = externalAuthRecovery.passwordIdentifier.trim();
+		const pw = externalAuthRecovery.password;
 		const errs: Record<string, string> = {};
 		if (id.length === 0) {
 			errs.identifier = t("email_or_username");
@@ -526,37 +595,44 @@ export default function LoginPage() {
 		if (!pwResult.success) {
 			errs.password = pwResult.error.issues[0]?.message ?? "";
 		}
-		setExternalAuthPasswordLinkIdentifierError(errs.identifier ?? "");
-		setExternalAuthPasswordLinkPasswordError(errs.password ?? "");
+		dispatchAuthPanel({
+			type: "set_external_password_errors",
+			identifier: errs.identifier ?? "",
+			password: errs.password ?? "",
+		});
 		if (Object.keys(errs).length > 0) return;
 
 		try {
-			setExternalAuthPasswordLinkSubmitting(true);
-			const session = await authService.linkExternalAuthWithPassword({
-				flow_token: externalAuthRecoveryFlow,
+			dispatchAuthPanel({
+				type: "set_external_password_submitting",
+				submitting: true,
+			});
+			const result = await authService.linkExternalAuthWithPassword({
+				flow_token: externalAuthRecovery.flowToken,
 				identifier: id,
 				password: pw,
 			});
-			syncSession(session.expiresIn);
-			await refreshUser();
-			toast.success(t("external_auth_password_link_success"));
-			exitAndNavigate();
+			await handleLoginResult(
+				result,
+				externalAuthRecovery.returnPath,
+				t("external_auth_password_link_success"),
+			);
 		} catch (error) {
 			handleApiError(error);
 		} finally {
-			setExternalAuthPasswordLinkSubmitting(false);
+			dispatchAuthPanel({
+				type: "set_external_password_submitting",
+				submitting: false,
+			});
 		}
 	};
 
 	const finishPasskeyLogin = useCallback(
 		async (flowId: string, credential: unknown) => {
 			const session = await authService.finishPasskeyLogin(flowId, credential);
-			syncSession(session.expiresIn);
-			await refreshUser();
-			toast.success(loginSuccessMessage);
-			exitAndNavigate();
+			await finishAuthenticatedLogin(session, "/", loginSuccessMessage);
 		},
-		[exitAndNavigate, loginSuccessMessage, refreshUser, syncSession],
+		[finishAuthenticatedLogin, loginSuccessMessage],
 	);
 
 	const handlePasskeyLogin = async () => {
@@ -613,6 +689,7 @@ export default function LoginPage() {
 		if (
 			mode !== "login" ||
 			checking ||
+			mfaChallenge ||
 			showPasswordResetRequest ||
 			externalAuthRecoveryFlow ||
 			pendingActivation ||
@@ -627,18 +704,21 @@ export default function LoginPage() {
 
 		void (async () => {
 			try {
+				if (controller.signal.aborted) return;
 				const start = await authService.startPasskeyLogin({
 					conditional: true,
 				});
-				if (controller.signal.aborted) return;
-				const credential = await getPasskeyCredential(
-					start.public_key,
-					"conditional",
-					controller.signal,
-				);
-				if (controller.signal.aborted) return;
-				completed = true;
-				await finishPasskeyLogin(start.flow_id, credential);
+				if (!controller.signal.aborted) {
+					const credential = await getPasskeyCredential(
+						start.public_key,
+						"conditional",
+						controller.signal,
+					);
+					if (!controller.signal.aborted) {
+						completed = true;
+						await finishPasskeyLogin(start.flow_id, credential);
+					}
+				}
 			} catch (error) {
 				if (controller.signal.aborted) return;
 				if (
@@ -668,14 +748,58 @@ export default function LoginPage() {
 		finishPasskeyLogin,
 		mode,
 		externalAuthRecoveryFlow,
+		mfaChallenge,
 		pendingActivation,
 		showPasswordResetRequest,
 	]);
 
 	// ── Submit ──
 
-	const handleSubmit = async (e: React.FormEvent) => {
+	const handleMfaSubmit = async () => {
+		if (!mfaPanel) return;
+		const { challenge } = mfaPanel;
+		if (challenge.expiresAt <= Date.now()) {
+			dispatchAuthPanel({
+				type: "set_mfa_error",
+				error: t("mfa_flow_expired"),
+			});
+			return;
+		}
+		const code = mfaPanel.code.trim();
+		if (!code) {
+			dispatchAuthPanel({
+				type: "set_mfa_error",
+				error: t("mfa_code_required"),
+			});
+			return;
+		}
+
+		try {
+			const method = resolveMfaMethod(code, challenge.methods);
+			dispatchAuthPanel({ type: "set_mfa_submitting", submitting: true });
+			const session = await authService.verifyMfaChallenge({
+				flow_token: challenge.flowToken,
+				method,
+				code,
+			});
+			await finishAuthenticatedLogin(
+				session,
+				challenge.returnPath,
+				challenge.successMessage,
+			);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			dispatchAuthPanel({ type: "set_mfa_submitting", submitting: false });
+		}
+	};
+
+	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
+		if (mfaChallenge) {
+			await handleMfaSubmit();
+			return;
+		}
 		if (showPasswordResetRequest) {
 			await handlePasswordResetRequest();
 			return;
@@ -697,9 +821,11 @@ export default function LoginPage() {
 			const extra = extraField.trim();
 
 			if (mode === "login") {
-				await login(id, password);
-				toast.success(loginSuccessMessage);
-				exitAndNavigate();
+				await handleLoginResult(
+					await authService.login(id, password),
+					"/",
+					loginSuccessMessage,
+				);
 				return;
 			}
 
@@ -709,8 +835,11 @@ export default function LoginPage() {
 			if (mode === "setup") {
 				await authService.setup(un, em, password);
 				toast.success(t("setup_complete"));
-				await login(em, password);
-				exitAndNavigate();
+				await handleLoginResult(
+					await authService.login(em, password),
+					"/",
+					loginSuccessMessage,
+				);
 				return;
 			}
 
@@ -720,16 +849,19 @@ export default function LoginPage() {
 			setErrors({});
 			if (registeredUser.email_verified) {
 				toast.success(t("register_success_direct"));
-				setPendingActivation(null);
+				dispatchAuthPanel({ type: "open_auth" });
 				setMode("login");
 				setIdentifier(em);
 				setExtraField("");
 			} else {
 				toast.success(t("register_success"));
-				setPendingActivation({
-					email: em,
-					identifier: em,
-					username: un,
+				dispatchAuthPanel({
+					type: "set_pending_activation",
+					pendingActivation: {
+						email: em,
+						identifier: em,
+						username: un,
+					},
 				});
 			}
 		} catch (error) {
@@ -737,10 +869,13 @@ export default function LoginPage() {
 				error instanceof ApiError &&
 				error.code === ErrorCode.PendingActivation
 			) {
-				setPendingActivation({
-					email: isEmail ? identifier.trim() : undefined,
-					identifier: identifier.trim(),
-					username: isEmail ? undefined : identifier.trim(),
+				dispatchAuthPanel({
+					type: "set_pending_activation",
+					pendingActivation: {
+						email: isEmail ? identifier.trim() : undefined,
+						identifier: identifier.trim(),
+						username: isEmail ? undefined : identifier.trim(),
+					},
 				});
 				setPassword("");
 				setShowPassword(false);
@@ -777,6 +912,7 @@ export default function LoginPage() {
 		}
 		if (externalAuthRecoveryFlow)
 			return t("external_auth_account_recovery_desc");
+		if (mfaChallenge) return t("mfa_required_desc");
 		if (showPasswordResetRequest) return t("password_reset_request_desc");
 		if (mode === "setup") return t("setup_desc");
 		if (mode === "register") return t("create_new_account");
@@ -784,184 +920,138 @@ export default function LoginPage() {
 		return t("sign_in_to_account");
 	};
 
-	return (
-		<div
-			className={cn(
-				"min-h-screen flex transition-all duration-300 ease-out",
-				exiting && "opacity-0 scale-[1.02]",
-			)}
-		>
-			<LoginBrandPanel />
+	return {
+		checking,
+		description: description(),
+		emailSchema,
+		errors,
+		exiting,
+		externalAuthBusyProvider,
+		externalAuthLoading,
+		externalAuthProviders,
+		externalAuthRecovery,
+		extraField,
+		extraLabel,
+		extraPlaceholder,
+		identifier,
+		identifierLabel,
+		identifierPlaceholder,
+		isSubmitDisabled,
+		mfaPanel,
+		mode,
+		modeActionText,
+		passkeySubmitting,
+		passkeySupported,
+		password,
+		passwordResetPanel,
+		pendingActivation,
+		registrationClosed,
+		resendingActivation,
+		showPassword,
+		submitLabel: submitLabel(),
+		submitting,
+		t,
+		title: pendingActivation
+			? t("activation_pending_title")
+			: externalAuthRecoveryFlow
+				? t("external_auth_email_verification_title")
+				: mfaChallenge
+					? t("mfa_required_title")
+					: showPasswordResetRequest
+						? t("forgot_password_title")
+						: mode === "setup"
+							? t("welcome_setup")
+							: t("sign_in_to_account"),
+		onExternalAuthEmailChange: (value: string, error: string) => {
+			dispatchAuthPanel({
+				type: "set_external_email",
+				email: value,
+				error,
+			});
+		},
+		onExternalAuthIdentifierChange: (value: string) => {
+			dispatchAuthPanel({
+				type: "set_external_password_identifier",
+				identifier: value,
+			});
+		},
+		onExternalAuthLogin: (provider: ExternalAuthPublicProvider) =>
+			void handleExternalAuthLogin(provider),
+		onExternalAuthModeChange: (nextMode: "password" | "email") =>
+			dispatchAuthPanel({ type: "set_external_mode", mode: nextMode }),
+		onExternalAuthPasswordChange: (value: string) => {
+			let error: string | undefined;
+			if (externalAuthRecovery?.passwordError) {
+				const result = existingPasswordSchema.safeParse(value);
+				error = result.success ? "" : (result.error.issues[0]?.message ?? "");
+			}
+			dispatchAuthPanel({
+				type: "set_external_password",
+				password: value,
+				error,
+			});
+		},
+		onExternalAuthRecoveryBack: closeExternalAuthRecovery,
+		onExtraFieldChange: (value: string) => {
+			setExtraField(value);
+			const schema = isEmail ? usernameSchema : emailSchema;
+			validateSingle("extra", value, schema);
+		},
+		onForgotPassword: () => {
+			dispatchAuthPanel({
+				type: "open_password_reset",
+				email: passwordResetPrefill,
+			});
+		},
+		onIdentifierChange: (value: string) => {
+			setIdentifier(value);
+			if (value.length > 0 && !value.includes("@")) {
+				validateSingle("identifier", value, usernameSchema);
+			} else if (value.includes("@") && value.length > 3) {
+				validateSingle("identifier", value, emailSchema);
+			} else {
+				setErrors((prev) => {
+					const next = { ...prev };
+					delete next.identifier;
+					return next;
+				});
+			}
+		},
+		onMfaBack: closeMfaChallenge,
+		onMfaCodeChange: (value: string) => {
+			dispatchAuthPanel({
+				type: "set_mfa_code",
+				code: value,
+			});
+		},
+		onPasskeyLogin: () => void handlePasskeyLogin(),
+		onPasswordChange: (value: string) => {
+			setPassword(value);
+			if (mode !== "login" || errors.password) {
+				validateSingle(
+					"password",
+					value,
+					mode === "login" ? existingPasswordSchema : passwordSchema,
+				);
+			}
+		},
+		onPasswordResetBack: closePasswordResetRequest,
+		onPasswordResetEmailChange: (value: string, error: string) => {
+			dispatchAuthPanel({
+				type: "set_password_reset_email",
+				email: value,
+				error,
+			});
+		},
+		onPasswordResetSubmit: () => void handlePasswordResetRequest(),
+		onPendingActivationReset: resetPendingActivation,
+		onResendActivation: () => void handleResendActivation(),
+		onShowPasswordChange: setShowPassword,
+		onSubmit: handleSubmit,
+		onSwitchAuthMode: switchAuthMode,
+	};
+}
 
-			{/* Right — form */}
-			<div className="flex-1 flex items-center justify-center bg-background p-6">
-				<div className="w-full max-w-sm">
-					{/* Mobile logo */}
-					<div className="lg:hidden text-center mb-8">
-						<AsterDriveWordmark
-							alt="AsterDrive"
-							className="mx-auto h-16 w-auto"
-						/>
-					</div>
-
-					<LoginHeader
-						title={
-							pendingActivation
-								? t("activation_pending_title")
-								: externalAuthRecoveryFlow
-									? t("external_auth_email_verification_title")
-									: showPasswordResetRequest
-										? t("forgot_password_title")
-										: mode === "setup"
-											? t("welcome_setup")
-											: t("sign_in_to_account")
-						}
-						description={description()}
-					/>
-
-					<form onSubmit={handleSubmit}>
-						<AnimateSwap
-							activeKey={
-								pendingActivation
-									? "pending-activation"
-									: externalAuthRecoveryFlow
-										? "external-auth-recovery"
-										: showPasswordResetRequest
-											? "password-reset-request"
-											: "auth-form"
-							}
-						>
-							{pendingActivation ? (
-								<PendingActivationPanel
-									pendingActivation={pendingActivation}
-									resendingActivation={resendingActivation}
-									t={t}
-									onResendActivation={() => void handleResendActivation()}
-									onReset={resetPendingActivation}
-								/>
-							) : showPasswordResetRequest ? (
-								<PasswordResetRequestPanel
-									emailSchema={emailSchema}
-									passwordResetEmail={passwordResetEmail}
-									passwordResetError={passwordResetError}
-									requestingPasswordReset={requestingPasswordReset}
-									t={t}
-									onBack={closePasswordResetRequest}
-									onEmailChange={(value, error) => {
-										setPasswordResetEmail(value);
-										setPasswordResetError(error);
-									}}
-									onSubmit={() => void handlePasswordResetRequest()}
-								/>
-							) : externalAuthRecoveryFlow ? (
-								<ExternalAuthRecoveryPanel
-									email={externalAuthEmailVerificationEmail}
-									emailError={externalAuthEmailVerificationError}
-									emailSchema={emailSchema}
-									identifier={externalAuthPasswordLinkIdentifier}
-									identifierError={externalAuthPasswordLinkIdentifierError}
-									mode={externalAuthRecoveryMode}
-									password={externalAuthPasswordLinkPassword}
-									passwordError={externalAuthPasswordLinkPasswordError}
-									sent={externalAuthEmailVerificationSent}
-									submittingEmail={externalAuthEmailVerificationSubmitting}
-									submittingPassword={externalAuthPasswordLinkSubmitting}
-									t={t}
-									onBack={closeExternalAuthRecovery}
-									onEmailChange={(value, error) => {
-										setExternalAuthEmailVerificationEmail(value);
-										setExternalAuthEmailVerificationError(error);
-									}}
-									onIdentifierChange={(value) => {
-										setExternalAuthPasswordLinkIdentifier(value);
-										if (value.trim().length > 0) {
-											setExternalAuthPasswordLinkIdentifierError("");
-										}
-									}}
-									onModeChange={setExternalAuthRecoveryMode}
-									onPasswordChange={(value) => {
-										setExternalAuthPasswordLinkPassword(value);
-										if (externalAuthPasswordLinkPasswordError) {
-											const result = existingPasswordSchema.safeParse(value);
-											setExternalAuthPasswordLinkPasswordError(
-												result.success
-													? ""
-													: (result.error.issues[0]?.message ?? ""),
-											);
-										}
-									}}
-								/>
-							) : (
-								<LoginAuthForm
-									checking={checking}
-									errors={errors}
-									extraField={extraField}
-									extraLabel={extraLabel}
-									extraPlaceholder={extraPlaceholder}
-									identifier={identifier}
-									identifierLabel={identifierLabel}
-									identifierPlaceholder={identifierPlaceholder}
-									isSubmitDisabled={isSubmitDisabled}
-									mode={mode}
-									modeActionText={modeActionText}
-									password={password}
-									passkeySubmitting={passkeySubmitting}
-									passkeySupported={passkeySupported}
-									externalAuthBusyProvider={externalAuthBusyProvider}
-									externalAuthLoading={externalAuthLoading}
-									externalAuthProviders={externalAuthProviders}
-									registrationClosed={registrationClosed}
-									showPassword={showPassword}
-									submitLabel={submitLabel()}
-									submitting={submitting}
-									onExtraFieldChange={(value) => {
-										setExtraField(value);
-										const schema = isEmail ? usernameSchema : emailSchema;
-										validateSingle("extra", value, schema);
-									}}
-									onForgotPassword={() => {
-										setShowPasswordResetRequest(true);
-										setPasswordResetEmail(passwordResetPrefill);
-										setPasswordResetError("");
-									}}
-									onIdentifierChange={(value) => {
-										setIdentifier(value);
-										if (value.length > 0 && !value.includes("@")) {
-											validateSingle("identifier", value, usernameSchema);
-										} else if (value.includes("@") && value.length > 3) {
-											validateSingle("identifier", value, emailSchema);
-										} else {
-											setErrors((prev) => {
-												const next = { ...prev };
-												delete next.identifier;
-												return next;
-											});
-										}
-									}}
-									onPasswordChange={(value) => {
-										setPassword(value);
-										if (mode !== "login" || errors.password) {
-											validateSingle(
-												"password",
-												value,
-												mode === "login"
-													? existingPasswordSchema
-													: passwordSchema,
-											);
-										}
-									}}
-									onPasskeyLogin={() => void handlePasskeyLogin()}
-									onExternalAuthLogin={(provider) =>
-										void handleExternalAuthLogin(provider)
-									}
-									onShowPasswordChange={setShowPassword}
-									onSwitchAuthMode={switchAuthMode}
-								/>
-							)}
-						</AnimateSwap>
-					</form>
-				</div>
-			</div>
-		</div>
-	);
+export default function LoginPage() {
+	return <LoginPageView {...useLoginPageController()} />;
 }

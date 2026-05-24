@@ -4,7 +4,7 @@ import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
 type MockAxiosError = {
 	config?: { _retry?: boolean; url?: string };
 	isAxiosError?: boolean;
-	response?: { status: number };
+	response?: { data?: unknown; status: number };
 };
 
 type MockRequestConfig = {
@@ -341,7 +341,14 @@ describe("http api helpers", () => {
 		await expect(
 			errorHandler({
 				config: originalRequest,
-				response: { status: 401 },
+				response: {
+					status: 401,
+					data: {
+						code: ErrorCode.TokenExpired,
+						msg: "Token Expired",
+						error: { internal_code: "E011" },
+					},
+				},
 			}),
 		).resolves.toEqual({
 			data: {
@@ -357,6 +364,36 @@ describe("http api helpers", () => {
 				_retry: true,
 			}),
 		);
+	});
+
+	it("does not attempt refresh for non-token auth failures", async () => {
+		await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+		const originalError = {
+			config: { url: "/auth/mfa/factors/3", _retry: false },
+			response: {
+				status: 401,
+				data: {
+					code: ErrorCode.AuthFailed,
+					msg: "invalid MFA code",
+					error: {
+						internal_code: "E010",
+						subcode: ApiSubcode.AuthMfaCodeInvalid,
+					},
+				},
+			},
+		} satisfies MockAxiosError;
+
+		await expect(errorHandler(originalError)).rejects.toEqual(
+			expect.objectContaining({
+				code: ErrorCode.AuthFailed,
+				message: "invalid MFA code",
+				internalCode: "E010",
+				subcode: ApiSubcode.AuthMfaCodeInvalid,
+			}),
+		);
+		expect(mockState.refreshToken).not.toHaveBeenCalled();
+		expect(mockState.client).not.toHaveBeenCalled();
 	});
 
 	it("does not attempt refresh for public share endpoints", async () => {

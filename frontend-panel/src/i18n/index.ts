@@ -136,6 +136,7 @@ const SPLIT_NAMESPACE_PARTS: Partial<
 		"profile",
 		"avatar",
 		"security",
+		"mfa",
 		"email",
 		"password",
 		"passkeys",

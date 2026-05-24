@@ -9,11 +9,13 @@ import type { UserPasswordErrors } from "./types";
 interface UserSecurityActionsSectionProps {
 	confirmPasswordValue: string;
 	onConfirmPasswordValueChange: (value: string) => void;
+	onMfaReset: () => Promise<void>;
 	onPasswordReset: () => Promise<void>;
 	onPasswordValueChange: (value: string) => void;
 	onSessionRevoke: () => Promise<void>;
 	passwordErrors: UserPasswordErrors;
 	passwordValue: string;
+	resettingMfa: boolean;
 	revokingSessions: boolean;
 	savingPassword: boolean;
 }
@@ -21,11 +23,13 @@ interface UserSecurityActionsSectionProps {
 export function UserSecurityActionsSection({
 	confirmPasswordValue,
 	onConfirmPasswordValueChange,
+	onMfaReset,
 	onPasswordReset,
 	onPasswordValueChange,
 	onSessionRevoke,
 	passwordErrors,
 	passwordValue,
+	resettingMfa,
 	revokingSessions,
 	savingPassword,
 }: UserSecurityActionsSectionProps) {
@@ -110,6 +114,36 @@ export function UserSecurityActionsSection({
 							}
 						>
 							{t("reset_password")}
+						</Button>
+					</div>
+				</div>
+
+				<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5 max-lg:p-4">
+					<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+						<div className="max-w-2xl space-y-2">
+							<h5 className="text-sm font-semibold text-foreground">
+								{t("reset_mfa")}
+							</h5>
+							<p className="text-sm text-muted-foreground">
+								{t("reset_mfa_desc")}
+							</p>
+							<p className="text-xs text-muted-foreground">
+								{t("reset_mfa_hint")}
+							</p>
+						</div>
+						<Button
+							type="button"
+							variant="destructive"
+							onClick={() => void onMfaReset()}
+							disabled={resettingMfa}
+							className="md:shrink-0"
+						>
+							{resettingMfa ? (
+								<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
+							) : (
+								<Icon name="Shield" className="mr-1 size-4" />
+							)}
+							{t("reset_mfa")}
 						</Button>
 					</div>
 				</div>

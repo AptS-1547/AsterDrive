@@ -12,6 +12,7 @@ const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
 	listPolicies: vi.fn(),
 	onUpdate: vi.fn(),
+	resetMfa: vi.fn(),
 	revokeSessions: vi.fn(),
 	resetPassword: vi.fn(),
 	toastError: vi.fn(),
@@ -319,6 +320,7 @@ vi.mock("@/lib/format", () => ({
 
 vi.mock("@/services/adminService", () => ({
 	adminUserService: {
+		resetMfa: (...args: unknown[]) => mockState.resetMfa(...args),
 		revokeSessions: (...args: unknown[]) => mockState.revokeSessions(...args),
 		resetPassword: (...args: unknown[]) => mockState.resetPassword(...args),
 	},
@@ -416,6 +418,7 @@ describe("UserDetailDialog", () => {
 		mockState.handleApiError.mockReset();
 		mockState.listPolicies.mockReset();
 		mockState.onUpdate.mockReset();
+		mockState.resetMfa.mockReset();
 		mockState.revokeSessions.mockReset();
 		mockState.resetPassword.mockReset();
 		mockState.toastError.mockReset();
@@ -432,6 +435,7 @@ describe("UserDetailDialog", () => {
 			total: 2,
 		});
 		mockState.onUpdate.mockResolvedValue(undefined);
+		mockState.resetMfa.mockResolvedValue(undefined);
 		mockState.revokeSessions.mockResolvedValue(undefined);
 		mockState.resetPassword.mockResolvedValue(undefined);
 	});
@@ -656,6 +660,25 @@ describe("UserDetailDialog", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"password_reset_success",
 		);
+	});
+
+	it("resets user MFA from the detail dialog", async () => {
+		renderDialog();
+
+		await waitForPolicyLoad();
+
+		const resetMfaButton = screen.getByRole("button", {
+			name: /reset_mfa/i,
+		});
+
+		expect(resetMfaButton).toHaveAttribute("data-variant", "destructive");
+
+		fireEvent.click(resetMfaButton);
+
+		await waitFor(() => {
+			expect(mockState.resetMfa).toHaveBeenCalledWith(2);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("reset_mfa_success");
 	});
 
 	it("revokes user sessions from the detail dialog", async () => {

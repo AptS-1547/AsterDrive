@@ -427,6 +427,19 @@ pub fn seed_csrf_token(session_token: &str) -> String {
 }
 
 #[allow(dead_code)]
+#[track_caller]
+pub fn expect_authenticated_login(
+    completion: aster_drive::services::mfa_service::PrimaryLoginCompletion,
+) -> aster_drive::services::auth_service::LoginResult {
+    match completion {
+        aster_drive::services::mfa_service::PrimaryLoginCompletion::Authenticated(login) => login,
+        aster_drive::services::mfa_service::PrimaryLoginCompletion::MfaRequired(_) => {
+            panic!("expected login to complete without MFA challenge")
+        }
+    }
+}
+
+#[allow(dead_code)]
 pub fn csrf_token_for(session_token: impl AsRef<str>) -> String {
     let session_token = session_token.as_ref();
     if let Some(token) = CSRF_LOOKUP_CACHE.with(|cache| cache.borrow().get(session_token).cloned())
@@ -1035,6 +1048,7 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
         },
         auth: aster_drive::config::AuthConfig {
             jwt_secret: "test-secret-key-for-integration-tests".to_string(),
+            mfa_secret_key: "test-mfa-secret-key-for-integration-tests".to_string(),
             bootstrap_insecure_cookies: true,
         },
         ..Default::default()

@@ -37,6 +37,54 @@ export interface AuthSessionState {
 	expiresIn: number;
 }
 
+export type MfaMethod = "totp" | "recovery_code";
+
+export type LoginResult =
+	| { status: "authenticated"; expiresIn: number }
+	| {
+			status: "mfa_required";
+			flowToken: string;
+			expiresIn: number;
+			methods: MfaMethod[];
+	  };
+
+export interface MfaFactorInfo {
+	id: number;
+	method: "totp";
+	name: string;
+	enabled_at: string;
+	last_used_at: string | null;
+}
+
+export interface MfaStatus {
+	enabled: boolean;
+	factors: MfaFactorInfo[];
+	recovery_codes_remaining: number;
+}
+
+export interface TotpSetupStartResponse {
+	flow_token: string;
+	expires_in: number;
+	secret: string;
+	otpauth_uri: string;
+}
+
+export interface TotpSetupFinishResponse {
+	factor: MfaFactorInfo;
+	recovery_codes: string[];
+}
+
+export interface MfaSensitiveActionRequest {
+	code?: string;
+}
+
+type RawLoginResponse = {
+	status?: string;
+	expires_in?: number;
+	flow_token?: string;
+	methods?: string[];
+};
+
 interface ListPasskeysOptions {
 	force?: boolean;
 }
@@ -85,6 +133,25 @@ export function invalidateExternalAuthLinksCache() {
 function invalidateAuthIdentityCaches() {
 	invalidatePasskeysCache();
 	invalidateExternalAuthLinksCache();
+}
+
+function normalizeLoginResult(data: RawLoginResponse): LoginResult {
+	const expiresIn = Number(data.expires_in) || 900;
+	if (data.status === "mfa_required") {
+		return {
+			status: "mfa_required",
+			flowToken: data.flow_token || "",
+			expiresIn,
+			methods: (data.methods || []).filter(
+				(method): method is MfaMethod =>
+					method === "totp" || method === "recovery_code",
+			),
+		};
+	}
+	return {
+		status: "authenticated",
+		expiresIn,
+	};
 }
 
 function upsertCachedPasskey(passkey: PasskeyInfo) {
@@ -199,18 +266,13 @@ function me(fields?: MeField[]) {
 export const authService = {
 	check: () => api.post<CheckResp>("/auth/check"),
 
-	login: async (
-		identifier: string,
-		password: string,
-	): Promise<AuthSessionState> => {
+	login: async (identifier: string, password: string): Promise<LoginResult> => {
 		invalidateAuthIdentityCaches();
-		const data = await api.post<AuthTokenResp>("/auth/login", {
+		const data = await api.post<RawLoginResponse>("/auth/login", {
 			identifier,
 			password,
 		});
-		return {
-			expiresIn: Number(data.expires_in) || 900,
-		};
+		return normalizeLoginResult(data);
 	},
 
 	startPasskeyLogin: (payload: PasskeyLoginStartRequest = {}) =>
@@ -238,15 +300,13 @@ export const authService = {
 
 	linkExternalAuthWithPassword: async (
 		payload: ExternalAuthPasswordLinkRequest,
-	): Promise<AuthSessionState> => {
+	): Promise<LoginResult> => {
 		invalidateAuthIdentityCaches();
-		const data = await api.post<AuthTokenResp>(
+		const data = await api.post<RawLoginResponse>(
 			"/auth/external-auth/password-link",
 			payload,
 		);
-		return {
-			expiresIn: Number(data.expires_in) || 900,
-		};
+		return normalizeLoginResult(data);
 	},
 
 	finishPasskeyLogin: async (
@@ -311,6 +371,38 @@ export const authService = {
 	listSessions: () => api.get<AuthSessionInfo[]>("/auth/sessions"),
 
 	listExternalAuthLinks,
+
+	getMfaStatus: () => api.get<MfaStatus>("/auth/mfa"),
+
+	startTotpSetup: () =>
+		api.post<TotpSetupStartResponse>("/auth/mfa/totp/setup/start"),
+
+	finishTotpSetup: (payload: {
+		flow_token: string;
+		code: string;
+		name?: string;
+	}) =>
+		api.post<TotpSetupFinishResponse>("/auth/mfa/totp/setup/finish", payload),
+
+	verifyMfaChallenge: async (payload: {
+		flow_token: string;
+		method: MfaMethod;
+		code: string;
+	}): Promise<AuthSessionState> => {
+		const data = await api.post<RawLoginResponse>(
+			"/auth/mfa/challenge/verify",
+			payload,
+		);
+		return {
+			expiresIn: Number(data.expires_in) || 900,
+		};
+	},
+
+	deleteMfaFactor: (id: number, payload: MfaSensitiveActionRequest) =>
+		api.delete<void>(`/auth/mfa/factors/${id}`, { data: payload }),
+
+	regenerateMfaRecoveryCodes: (payload: MfaSensitiveActionRequest) =>
+		api.post<string[]>("/auth/mfa/recovery-codes/regenerate", payload),
 
 	deleteExternalAuthLink: async (id: number) => {
 		await api.delete<void>(`/auth/external-auth/links/${id}`);

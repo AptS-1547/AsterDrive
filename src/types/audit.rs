@@ -59,6 +59,7 @@ define_audit_entity_type! {
     ExternalAuthProvider => "external_auth_provider",
     File => "file",
     Folder => "folder",
+    MfaFactor => "mfa_factor",
     Passkey => "passkey",
     PolicyGroup => "policy_group",
     RemoteIngressProfile => "remote_ingress_profile",
@@ -190,6 +191,8 @@ pub enum AuditAction {
     AdminRevokeUserSessions,
     #[sea_orm(string_value = "admin_reset_user_password")]
     AdminResetUserPassword,
+    #[sea_orm(string_value = "admin_reset_user_mfa")]
+    AdminResetUserMfa,
     #[sea_orm(string_value = "admin_update_team")]
     AdminUpdateTeam,
     #[sea_orm(string_value = "admin_update_user")]
@@ -382,6 +385,16 @@ pub enum AuditAction {
     UserLogin,
     #[sea_orm(string_value = "user_logout")]
     UserLogout,
+    #[sea_orm(string_value = "user_mfa_enable")]
+    UserMfaEnable,
+    #[sea_orm(string_value = "user_mfa_disable")]
+    UserMfaDisable,
+    #[sea_orm(string_value = "user_mfa_recovery_codes_regenerate")]
+    UserMfaRecoveryCodesRegenerate,
+    #[sea_orm(string_value = "user_mfa_challenge_success")]
+    UserMfaChallengeSuccess,
+    #[sea_orm(string_value = "user_mfa_challenge_failed")]
+    UserMfaChallengeFailed,
     #[sea_orm(string_value = "user_passkey_delete")]
     UserPasskeyDelete,
     #[sea_orm(string_value = "user_passkey_login")]
@@ -421,6 +434,7 @@ impl AuditAction {
             Self::AdminRestoreTeam => "admin_restore_team",
             Self::AdminRevokeUserSessions => "admin_revoke_user_sessions",
             Self::AdminResetUserPassword => "admin_reset_user_password",
+            Self::AdminResetUserMfa => "admin_reset_user_mfa",
             Self::AdminUpdateTeam => "admin_update_team",
             Self::AdminUpdateUser => "admin_update_user",
             Self::AdminDeletePolicyGroup => "admin_delete_policy_group",
@@ -519,6 +533,11 @@ impl AuditAction {
             Self::UserConfirmRegistration => "user_confirm_registration",
             Self::UserLogin => "user_login",
             Self::UserLogout => "user_logout",
+            Self::UserMfaEnable => "user_mfa_enable",
+            Self::UserMfaDisable => "user_mfa_disable",
+            Self::UserMfaRecoveryCodesRegenerate => "user_mfa_recovery_codes_regenerate",
+            Self::UserMfaChallengeSuccess => "user_mfa_challenge_success",
+            Self::UserMfaChallengeFailed => "user_mfa_challenge_failed",
             Self::UserPasskeyDelete => "user_passkey_delete",
             Self::UserPasskeyLogin => "user_passkey_login",
             Self::UserPasskeyRegister => "user_passkey_register",
@@ -545,6 +564,7 @@ impl AuditAction {
             "admin_restore_team" => Some(Self::AdminRestoreTeam),
             "admin_revoke_user_sessions" => Some(Self::AdminRevokeUserSessions),
             "admin_reset_user_password" => Some(Self::AdminResetUserPassword),
+            "admin_reset_user_mfa" => Some(Self::AdminResetUserMfa),
             "admin_update_team" => Some(Self::AdminUpdateTeam),
             "admin_update_user" => Some(Self::AdminUpdateUser),
             "admin_delete_policy_group" => Some(Self::AdminDeletePolicyGroup),
@@ -643,6 +663,11 @@ impl AuditAction {
             "user_confirm_registration" => Some(Self::UserConfirmRegistration),
             "user_login" => Some(Self::UserLogin),
             "user_logout" => Some(Self::UserLogout),
+            "user_mfa_enable" => Some(Self::UserMfaEnable),
+            "user_mfa_disable" => Some(Self::UserMfaDisable),
+            "user_mfa_recovery_codes_regenerate" => Some(Self::UserMfaRecoveryCodesRegenerate),
+            "user_mfa_challenge_success" => Some(Self::UserMfaChallengeSuccess),
+            "user_mfa_challenge_failed" => Some(Self::UserMfaChallengeFailed),
             "user_passkey_delete" => Some(Self::UserPasskeyDelete),
             "user_passkey_login" => Some(Self::UserPasskeyLogin),
             "user_passkey_register" => Some(Self::UserPasskeyRegister),

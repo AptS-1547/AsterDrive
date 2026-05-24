@@ -2,6 +2,7 @@
 	"settings_security": "Security",
 	"settings_security_desc": "Manage your sign-in password and review how this browser session behaves after the change.",
 	"settings_security_tab_account": "Account",
+	"settings_security_tab_mfa": "MFA",
 	"settings_security_tab_passkeys": "Passkeys",
 	"settings_security_tab_external": "External IDs",
 	"settings_security_tab_sessions": "Login devices",

@@ -6,7 +6,6 @@ use crate::entities::external_auth_login_flow;
 use crate::errors::{AsterError, Result};
 use crate::external_auth::{ExternalAuthCallback, registry};
 use crate::runtime::PrimaryAppState;
-use crate::services::auth_service::{self, LoginResult};
 use crate::types::ExternalAuthProviderKind;
 use crate::utils::numbers::u64_to_i64;
 
@@ -19,7 +18,7 @@ use super::resolution::{
 use super::verification::create_pending_email_verification_flow;
 use super::{
     ExternalAuthCallbackOutcome, ExternalAuthCallbackQuery, ExternalAuthCallbackResult,
-    ExternalAuthStartLoginResponse, FLOW_TTL_SECS,
+    ExternalAuthPrimaryLogin, ExternalAuthStartLoginResponse, FLOW_TTL_SECS,
 };
 
 pub async fn start_login(
@@ -80,8 +79,8 @@ pub async fn finish_callback(
     provider_kind: ExternalAuthProviderKind,
     provider_key: &str,
     query: &ExternalAuthCallbackQuery,
-    ip_address: Option<&str>,
-    user_agent: Option<&str>,
+    _ip_address: Option<&str>,
+    _user_agent: Option<&str>,
 ) -> Result<ExternalAuthCallbackOutcome> {
     if let Some(error) = query.error.as_deref() {
         let description = query
@@ -146,22 +145,17 @@ pub async fn finish_callback(
             resolve_existing_external_auth_identity(state.writer_db(), &user_claims, Utc::now())
                 .await?
         {
-            let (access_token, refresh_token) =
-                auth_service::issue_tokens_for_user(state, &resolved.user, ip_address, user_agent)
-                    .await?;
             return Ok(ExternalAuthCallbackOutcome::Login(
                 ExternalAuthCallbackResult {
-                    login: LoginResult {
-                        access_token,
-                        refresh_token,
-                        user_id: resolved.user.id,
+                    primary_login: ExternalAuthPrimaryLogin {
+                        user: resolved.user,
+                        return_path: flow.return_path.unwrap_or_else(|| "/".to_string()),
+                        provider_key: provider.key,
+                        issuer: user_claims.identity_namespace,
+                        subject: user_claims.subject,
+                        linked: resolved.linked,
+                        auto_provisioned: resolved.auto_provisioned,
                     },
-                    return_path: flow.return_path.unwrap_or_else(|| "/".to_string()),
-                    provider_key: provider.key,
-                    issuer: user_claims.identity_namespace,
-                    subject: user_claims.subject,
-                    linked: resolved.linked,
-                    auto_provisioned: resolved.auto_provisioned,
                 },
             ));
         }
@@ -192,22 +186,18 @@ pub async fn finish_callback(
             ));
         }
     };
-    let (access_token, refresh_token) =
-        auth_service::issue_tokens_for_user(state, &resolved.user, ip_address, user_agent).await?;
 
     Ok(ExternalAuthCallbackOutcome::Login(
         ExternalAuthCallbackResult {
-            login: LoginResult {
-                access_token,
-                refresh_token,
-                user_id: resolved.user.id,
+            primary_login: ExternalAuthPrimaryLogin {
+                user: resolved.user,
+                return_path: flow.return_path.unwrap_or_else(|| "/".to_string()),
+                provider_key: provider.key,
+                issuer: user_claims.identity_namespace,
+                subject: user_claims.subject,
+                linked: resolved.linked,
+                auto_provisioned: resolved.auto_provisioned,
             },
-            return_path: flow.return_path.unwrap_or_else(|| "/".to_string()),
-            provider_key: provider.key,
-            issuer: user_claims.identity_namespace,
-            subject: user_claims.subject,
-            linked: resolved.linked,
-            auto_provisioned: resolved.auto_provisioned,
         },
     ))
 }
