@@ -23,6 +23,10 @@ pub use self::external_auth::{
     start_email_verification as start_external_auth_email_verification,
     start_login as start_external_auth_login,
 };
+pub use self::mfa::{
+    delete_factor as delete_mfa_factor, finish_totp_setup, regenerate_recovery_codes,
+    start_totp_setup, status as mfa_status, verify_challenge as verify_mfa_challenge,
+};
 pub use self::passkeys::{
     delete_passkey, finish_login as finish_passkey_login,
     finish_registration as finish_passkey_registration, list_passkeys, rename_passkey,
@@ -53,6 +57,7 @@ const AUTH_MAIL_RESPONSE_JITTER_MS: u64 = 125;
 
 pub mod cookies;
 pub mod external_auth;
+pub mod mfa;
 pub mod passkeys;
 pub mod profile;
 pub mod public;
@@ -105,6 +110,11 @@ pub fn routes(
             web::resource("/login")
                 .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
                 .route(web::post().to(login)),
+        )
+        .service(
+            web::resource("/mfa/challenge/verify")
+                .wrap(Condition::new(rl.enabled, Governor::new(&auth_limiter)))
+                .route(web::post().to(verify_mfa_challenge)),
         )
         .service(
             web::resource("/passkeys/login/start")
@@ -185,6 +195,36 @@ pub fn routes(
                 .wrap(JwtAuth)
                 .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
                 .route(web::put().to(put_password)),
+        )
+        .service(
+            web::resource("/mfa")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::get().to(mfa_status)),
+        )
+        .service(
+            web::resource("/mfa/totp/setup/start")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::post().to(start_totp_setup)),
+        )
+        .service(
+            web::resource("/mfa/totp/setup/finish")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::post().to(finish_totp_setup)),
+        )
+        .service(
+            web::resource("/mfa/factors/{id}")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::delete().to(delete_mfa_factor)),
+        )
+        .service(
+            web::resource("/mfa/recovery-codes/regenerate")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::post().to(regenerate_recovery_codes)),
         )
         .service(
             web::resource("/passkeys")

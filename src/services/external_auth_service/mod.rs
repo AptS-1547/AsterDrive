@@ -14,7 +14,7 @@ mod verification;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::services::auth_service::LoginResult;
+use crate::entities::user;
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind, NullablePatch};
 
 pub use links::{cleanup_expired_flows, delete_link, list_links};
@@ -137,6 +137,17 @@ pub struct ExternalAuthLinkInfo {
     pub updated_at: chrono::DateTime<Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub last_login_at: Option<chrono::DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternalAuthPrimaryLogin {
+    pub user: user::Model,
+    pub return_path: String,
+    pub provider_key: String,
+    pub issuer: String,
+    pub subject: String,
+    pub linked: bool,
+    pub auto_provisioned: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -398,36 +409,22 @@ pub struct PendingExternalAuthEmailVerification {
 }
 
 pub struct ExternalAuthEmailVerificationConfirmResult {
-    pub login: LoginResult,
-    pub return_path: String,
-    pub provider_key: String,
-    pub issuer: String,
-    pub subject: String,
-    pub linked: bool,
-    pub auto_provisioned: bool,
+    pub primary_login: ExternalAuthPrimaryLogin,
 }
 
 pub struct ExternalAuthPasswordLinkResult {
-    pub login: LoginResult,
-    pub return_path: String,
-    pub provider_key: String,
-    pub issuer: String,
-    pub subject: String,
-    pub linked: bool,
-    pub auto_provisioned: bool,
+    pub primary_login: ExternalAuthPrimaryLogin,
 }
 
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one-shot service-to-route result; boxing would add a heap allocation without shrinking retained state"
+)]
 pub enum ExternalAuthCallbackOutcome {
     Login(ExternalAuthCallbackResult),
     EmailVerificationRequired(PendingExternalAuthEmailVerification),
 }
 
 pub struct ExternalAuthCallbackResult {
-    pub login: LoginResult,
-    pub return_path: String,
-    pub provider_key: String,
-    pub issuer: String,
-    pub subject: String,
-    pub linked: bool,
-    pub auto_provisioned: bool,
+    pub primary_login: ExternalAuthPrimaryLogin,
 }

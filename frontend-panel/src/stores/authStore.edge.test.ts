@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	applyFilePrefs: vi.fn(),
@@ -71,6 +72,14 @@ function createCachedUser() {
 		id: 1,
 		username: "cached-user",
 		email: "cached@example.com",
+	};
+}
+
+function tokenApiError(code = ErrorCode.TokenInvalid) {
+	return {
+		code,
+		message:
+			code === ErrorCode.TokenInvalid ? "session revoked" : "token expired",
 	};
 }
 
@@ -156,6 +165,33 @@ describe("useAuthStore edge cases", () => {
 		expect(localStorage.getItem("aster-cached-user")).toBeNull();
 	});
 
+	it("clears cached auth state on token ApiError auth checks", async () => {
+		localStorage.setItem(
+			"aster-cached-user",
+			JSON.stringify(createCachedUser()),
+		);
+		sessionStorage.setItem(
+			"aster-auth-expires-at",
+			String(Date.now() + 60_000),
+		);
+		mockState.me.mockRejectedValue(tokenApiError());
+		mockState.isAxiosError.mockReturnValue(false);
+		const { useAuthStore } = await loadStore();
+
+		await useAuthStore.getState().checkAuth();
+
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: false,
+			isChecking: false,
+			isAuthStale: false,
+			bootOffline: false,
+			user: null,
+			expiresAt: null,
+		});
+		expect(localStorage.getItem("aster-cached-user")).toBeNull();
+		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
+	});
+
 	it("logs a warning when refreshUser fails", async () => {
 		localStorage.setItem(
 			"aster-cached-user",
@@ -168,6 +204,25 @@ describe("useAuthStore edge cases", () => {
 		await useAuthStore.getState().refreshUser();
 
 		expect(mockState.warn).toHaveBeenCalledWith("refreshUser failed", failure);
+	});
+
+	it("rejects MFA-required login responses before syncing a session", async () => {
+		mockState.login.mockResolvedValue({
+			status: "mfa_required",
+			expiresIn: 300,
+			flowToken: "mfa-flow",
+			methods: ["totp"],
+		});
+		const { useAuthStore } = await loadStore();
+
+		await expect(
+			useAuthStore.getState().login("alice@example.com", "secret"),
+		).rejects.toThrow("MFA verification is required before session sync");
+		expect(mockState.me).not.toHaveBeenCalled();
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: false,
+			user: null,
+		});
 	});
 
 	it("clears local session state when refresh fails with an auth response", async () => {
@@ -188,6 +243,37 @@ describe("useAuthStore edge cases", () => {
 		await expect(useAuthStore.getState().refreshToken()).rejects.toEqual(
 			expect.objectContaining({
 				response: { status: 401 },
+			}),
+		);
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: false,
+			isChecking: false,
+			isAuthStale: false,
+			bootOffline: false,
+			user: null,
+			expiresAt: null,
+		});
+		expect(localStorage.getItem("aster-cached-user")).toBeNull();
+		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
+	});
+
+	it("clears local session state when refresh fails with a token ApiError", async () => {
+		localStorage.setItem(
+			"aster-cached-user",
+			JSON.stringify(createCachedUser()),
+		);
+		sessionStorage.setItem(
+			"aster-auth-expires-at",
+			String(Date.now() + 60_000),
+		);
+		mockState.refreshToken.mockRejectedValue(tokenApiError());
+		mockState.isAxiosError.mockReturnValue(false);
+		const { useAuthStore } = await loadStore();
+
+		await expect(useAuthStore.getState().refreshToken()).rejects.toEqual(
+			expect.objectContaining({
+				code: ErrorCode.TokenInvalid,
+				message: "session revoked",
 			}),
 		);
 		expect(useAuthStore.getState()).toMatchObject({

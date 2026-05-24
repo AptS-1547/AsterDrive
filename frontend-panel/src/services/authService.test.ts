@@ -161,6 +161,7 @@ describe("authService", () => {
 		await expect(
 			authService.login("alice@example.com", "secret"),
 		).resolves.toEqual({
+			status: "authenticated",
 			expiresIn: 900,
 		});
 		authService.register("alice", "alice@example.com", "secret");
@@ -340,6 +341,7 @@ describe("authService", () => {
 		mockState.delete.mockReturnValue({ removed: 0 });
 
 		await expect(authService.login("alice", "secret")).resolves.toEqual({
+			status: "authenticated",
 			expiresIn: 900,
 		});
 		await expect(
@@ -359,6 +361,135 @@ describe("authService", () => {
 			expiresIn: 900,
 		});
 		await expect(authService.revokeOtherSessions()).resolves.toBe(0);
+	});
+
+	it("parses login and MFA challenge response variants", async () => {
+		mockState.post.mockImplementation((url: string) => {
+			if (url === "/auth/login") {
+				return {
+					status: "mfa_required",
+					expires_in: 300,
+					flow_token: "mfa-flow",
+					methods: ["totp", "recovery_code"],
+				};
+			}
+			if (url === "/auth/mfa/challenge/verify") {
+				return { status: "authenticated", expires_in: 900 };
+			}
+			return undefined;
+		});
+
+		await expect(authService.login("alice", "secret")).resolves.toEqual({
+			status: "mfa_required",
+			expiresIn: 300,
+			flowToken: "mfa-flow",
+			methods: ["totp", "recovery_code"],
+		});
+		await expect(
+			authService.verifyMfaChallenge({
+				flow_token: "mfa-flow",
+				method: "totp",
+				code: "123456",
+			}),
+		).resolves.toEqual({ expiresIn: 900 });
+
+		expect(mockState.post).toHaveBeenNthCalledWith(1, "/auth/login", {
+			identifier: "alice",
+			password: "secret",
+		});
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			2,
+			"/auth/mfa/challenge/verify",
+			{
+				flow_token: "mfa-flow",
+				method: "totp",
+				code: "123456",
+			},
+		);
+	});
+
+	it("rejects MFA login responses without a flow token", async () => {
+		mockState.post.mockReturnValueOnce({
+			status: "mfa_required",
+			expires_in: 300,
+			methods: ["totp"],
+		});
+
+		await expect(authService.login("alice", "secret")).rejects.toThrow(
+			"MFA challenge response is missing flow token",
+		);
+	});
+
+	it("uses MFA management endpoints without current password", async () => {
+		mockState.post.mockImplementation((url: string) => {
+			if (url === "/auth/mfa/totp/setup/start") {
+				return {
+					expires_in: 300,
+					flow_token: "setup-flow",
+					otpauth_uri: "otpauth://totp/AsterDrive:alice",
+					secret: "SECRET",
+				};
+			}
+			if (url === "/auth/mfa/totp/setup/finish") {
+				return {
+					factor: {
+						enabled_at: "2026-05-23T00:00:00Z",
+						id: 7,
+						last_used_at: null,
+						method: "totp",
+						name: "Phone",
+					},
+					recovery_codes: ["ABCD-EFGH-IJKL"],
+				};
+			}
+			if (url === "/auth/mfa/recovery-codes/regenerate") {
+				return ["KLMN-OPQR-STUV"];
+			}
+			return undefined;
+		});
+		mockState.delete.mockResolvedValue(undefined);
+
+		await expect(await authService.startTotpSetup()).toMatchObject({
+			flow_token: "setup-flow",
+			secret: "SECRET",
+		});
+		await expect(
+			await authService.finishTotpSetup({
+				flow_token: "setup-flow",
+				code: "123456",
+				name: "Phone",
+			}),
+		).toMatchObject({
+			recovery_codes: ["ABCD-EFGH-IJKL"],
+		});
+		await authService.deleteMfaFactor(7, { code: "123456" });
+		await expect(
+			await authService.regenerateMfaRecoveryCodes({ code: "KLMN-OPQR-STUV" }),
+		).toEqual(["KLMN-OPQR-STUV"]);
+		expect(authService.getMfaStatus()).toBeUndefined();
+
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			1,
+			"/auth/mfa/totp/setup/start",
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			2,
+			"/auth/mfa/totp/setup/finish",
+			{
+				flow_token: "setup-flow",
+				code: "123456",
+				name: "Phone",
+			},
+		);
+		expect(mockState.delete).toHaveBeenCalledWith("/auth/mfa/factors/7", {
+			data: { code: "123456" },
+		});
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			3,
+			"/auth/mfa/recovery-codes/regenerate",
+			{ code: "KLMN-OPQR-STUV" },
+		);
+		expect(mockState.get).toHaveBeenCalledWith("/auth/mfa");
 	});
 
 	it("uses the expected external auth endpoints and payloads", async () => {
@@ -404,7 +535,7 @@ describe("authService", () => {
 				identifier: "alice@example.com",
 				password: "secret",
 			}),
-		).resolves.toEqual({ expiresIn: 1200 });
+		).resolves.toEqual({ status: "authenticated", expiresIn: 1200 });
 
 		expect(mockState.get).toHaveBeenCalledWith("/auth/external-auth/providers");
 		expect(mockState.post).toHaveBeenNthCalledWith(

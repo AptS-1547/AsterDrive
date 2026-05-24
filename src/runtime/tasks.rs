@@ -743,6 +743,32 @@ pub fn spawn_primary_background_tasks(
     ));
 
     tasks.push(spawn_periodic(
+        "mfa-flow-cleanup",
+        maintenance_cleanup_interval,
+        Some(MAINTENANCE_CLEANUP_JITTER_CAP),
+        shutdown_token.clone(),
+        state.clone(),
+        |s| async move {
+            match crate::services::mfa_service::cleanup_expired_flows(&s).await {
+                Ok(count) if count > 0 => {
+                    tracing::info!("cleaned up {count} expired MFA flows");
+                    crate::services::task_service::RuntimeTaskRunOutcome::succeeded(Some(format!(
+                        "cleaned up {count} expired MFA flows"
+                    )))
+                }
+                Ok(_) => crate::services::task_service::RuntimeTaskRunOutcome::quiet(),
+                Err(error) => {
+                    tracing::warn!("MFA flow cleanup failed: {error}");
+                    crate::services::task_service::RuntimeTaskRunOutcome::failed(
+                        Some("MFA flow cleanup failed".to_string()),
+                        error.to_string(),
+                    )
+                }
+            }
+        },
+    ));
+
+    tasks.push(spawn_periodic(
         "audit-cleanup",
         maintenance_cleanup_interval,
         Some(MAINTENANCE_CLEANUP_JITTER_CAP),

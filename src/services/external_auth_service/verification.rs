@@ -8,9 +8,7 @@ use crate::db::repository::{
 use crate::entities::{external_auth_email_verification_flow, external_auth_provider};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::{
-    auth_service, mail_outbox_service, mail_service, mail_template::MailTemplatePayload,
-};
+use crate::services::{mail_outbox_service, mail_service, mail_template::MailTemplatePayload};
 use crate::utils::numbers::u64_to_i64;
 
 use super::normalize::{
@@ -23,7 +21,7 @@ use super::resolution::{
 use super::{
     EMAIL_VERIFICATION_FLOW_TTL_SECS, ExternalAuthEmailVerificationConfirmResult,
     ExternalAuthEmailVerificationStartRequest, ExternalAuthEmailVerificationStartResponse,
-    PendingExternalAuthEmailVerification,
+    ExternalAuthPrimaryLogin, PendingExternalAuthEmailVerification,
 };
 
 fn format_mail_duration_seconds(total_secs: i64) -> String {
@@ -188,8 +186,8 @@ pub async fn start_email_verification(
 pub async fn confirm_email_verification(
     state: &PrimaryAppState,
     token: &str,
-    ip_address: Option<&str>,
-    user_agent: Option<&str>,
+    _ip_address: Option<&str>,
+    _user_agent: Option<&str>,
 ) -> Result<ExternalAuthEmailVerificationConfirmResult> {
     let token = token.trim();
     if token.is_empty() {
@@ -249,20 +247,15 @@ pub async fn confirm_email_verification(
         }
         Err(error) => return Err(error),
     };
-    let (access_token, refresh_token) =
-        auth_service::issue_tokens_for_user(state, &resolved.user, ip_address, user_agent).await?;
-
     Ok(ExternalAuthEmailVerificationConfirmResult {
-        login: super::LoginResult {
-            access_token,
-            refresh_token,
-            user_id: resolved.user.id,
+        primary_login: ExternalAuthPrimaryLogin {
+            user: resolved.user,
+            return_path: flow.return_path.unwrap_or_else(|| "/".to_string()),
+            provider_key: provider.key,
+            issuer: claims.identity_namespace,
+            subject: claims.subject,
+            linked: resolved.linked,
+            auto_provisioned: resolved.auto_provisioned,
         },
-        return_path: flow.return_path.unwrap_or_else(|| "/".to_string()),
-        provider_key: provider.key,
-        issuer: claims.identity_namespace,
-        subject: claims.subject,
-        linked: resolved.linked,
-        auto_provisioned: resolved.auto_provisioned,
     })
 }

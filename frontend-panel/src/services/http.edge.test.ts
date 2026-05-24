@@ -13,6 +13,17 @@ type MockRequestConfig = {
 	url?: string;
 };
 
+function tokenErrorResponse(code = ErrorCode.TokenExpired) {
+	return {
+		status: 401,
+		data: {
+			code,
+			msg:
+				code === ErrorCode.TokenInvalid ? "session revoked" : "token expired",
+		},
+	};
+}
+
 function setTestCookie(cookie: string) {
 	// biome-ignore lint/suspicious/noDocumentCookie: jsdom tests need direct cookie mutation.
 	document.cookie = cookie;
@@ -168,7 +179,7 @@ describe("http refresh edge cases", () => {
 		const errorHandler = mockState.getErrorHandler();
 		const originalError = {
 			config: { url: "/files", _retry: false },
-			response: { status: 401 },
+			response: tokenErrorResponse(),
 		} satisfies MockAxiosError;
 
 		await expect(errorHandler(originalError)).rejects.toBe(originalError);
@@ -186,7 +197,25 @@ describe("http refresh edge cases", () => {
 		const errorHandler = mockState.getErrorHandler();
 		const originalError = {
 			config: { url: "/files", _retry: false },
-			response: { status: 401 },
+			response: tokenErrorResponse(),
+		} satisfies MockAxiosError;
+
+		await expect(errorHandler(originalError)).rejects.toBe(originalError);
+		expect(mockState.forceLogout).toHaveBeenCalledTimes(1);
+		expect(window.location.href).toBe("/login");
+	});
+
+	it("forces logout when refresh fails with a token ApiError", async () => {
+		mockState.axiosModule.isAxiosError.mockReturnValue(false);
+		mockState.refreshToken.mockRejectedValue({
+			code: ErrorCode.TokenInvalid,
+			message: "session revoked",
+		});
+		await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+		const originalError = {
+			config: { url: "/files", _retry: false },
+			response: tokenErrorResponse(ErrorCode.TokenInvalid),
 		} satisfies MockAxiosError;
 
 		await expect(errorHandler(originalError)).rejects.toBe(originalError);
@@ -213,11 +242,11 @@ describe("http refresh edge cases", () => {
 
 		const first = errorHandler({
 			config: { url: "/files/1", _retry: false },
-			response: { status: 401 },
+			response: tokenErrorResponse(),
 		});
 		const second = errorHandler({
 			config: { url: "/files/2", _retry: false },
-			response: { status: 401 },
+			response: tokenErrorResponse(),
 		});
 
 		await new Promise((resolve) => setTimeout(resolve, 0));
@@ -251,11 +280,11 @@ describe("http refresh edge cases", () => {
 		const errorHandler = mockState.getErrorHandler();
 		const firstError = {
 			config: { url: "/files/1", _retry: false },
-			response: { status: 401 },
+			response: tokenErrorResponse(),
 		} satisfies MockAxiosError;
 		const secondError = {
 			config: { url: "/files/2", _retry: false },
-			response: { status: 401 },
+			response: tokenErrorResponse(),
 		} satisfies MockAxiosError;
 
 		const first = errorHandler(firstError);
@@ -277,7 +306,7 @@ describe("http refresh edge cases", () => {
 		const errorHandler = mockState.getErrorHandler();
 		const originalError = {
 			config: { url: "/files", _retry: false },
-			response: { status: 401 },
+			response: tokenErrorResponse(),
 		} satisfies MockAxiosError;
 
 		await expect(errorHandler(originalError)).rejects.toBe(originalError);

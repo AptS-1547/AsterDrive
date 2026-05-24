@@ -7,7 +7,7 @@ use crate::utils::paths::{
 };
 use config::{Config as RawConfig, Environment, File, FileFormat};
 use std::path::{Path, PathBuf};
-use toml_edit::{DocumentMut, Item, Table};
+use toml_edit::{DocumentMut, Item, Table, value};
 
 pub fn load() -> Result<Config> {
     let base_dir = std::env::current_dir()
@@ -33,11 +33,14 @@ fn load_from_dir(
 
     ensure_default_config_exists(&config_path, &Config::default())?;
     let migrated_config = migrate_legacy_config_file(&config_path)?;
+    let stable_defaults_config =
+        ensure_stable_default_config_keys(&config_path, migrated_config.as_deref())?;
+    let config_content = stable_defaults_config.or(migrated_config);
 
     let mut builder = RawConfig::builder();
-    builder = match migrated_config {
-        Some(migrated_config) => {
-            builder.add_source(File::from_str(&migrated_config, FileFormat::Toml))
+    builder = match config_content {
+        Some(config_content) => {
+            builder.add_source(File::from_str(&config_content, FileFormat::Toml))
         }
         None => builder.add_source(File::from(config_path.as_path()).required(false)),
     };
@@ -189,6 +192,63 @@ fn create_default_config(config_path: &Path, default: &Config) -> Result<()> {
     );
     eprintln!("[INFO] Please review and modify it as needed.");
     Ok(())
+}
+
+fn ensure_stable_default_config_keys(
+    config_path: &Path,
+    current_content: Option<&str>,
+) -> Result<Option<String>> {
+    let content = match current_content {
+        Some(content) => content.to_string(),
+        None => std::fs::read_to_string(config_path).map_err(|error| {
+            AsterError::config_error(format!("failed to read {}: {error}", config_path.display()))
+        })?,
+    };
+
+    let mut doc = content.parse::<DocumentMut>().map_err(|error| {
+        AsterError::config_error(format!(
+            "failed to parse {}: {error}",
+            config_path.display()
+        ))
+    })?;
+
+    let mut changed = false;
+    let auth_item = doc
+        .as_table_mut()
+        .entry("auth")
+        .or_insert(Item::Table(Table::new()));
+    let Some(auth_table) = auth_item.as_table_mut() else {
+        return Err(AsterError::config_error("auth must be a table"));
+    };
+    if !auth_table.contains_key("mfa_secret_key") {
+        auth_table.insert(
+            "mfa_secret_key",
+            value(crate::config::AuthConfig::default().mfa_secret_key),
+        );
+        changed = true;
+    }
+
+    if !changed {
+        return Ok(None);
+    }
+
+    let updated = doc.to_string();
+    if let Err(error) = std::fs::write(config_path, &updated) {
+        eprintln!(
+            "[ERROR] Failed to write generated stable configuration keys to {}: {error}. Fix config file permissions before starting.",
+            config_path.display()
+        );
+        return Err(AsterError::config_error(format!(
+            "failed to persist generated stable configuration keys to {}: {error}",
+            config_path.display()
+        )));
+    } else {
+        eprintln!(
+            "[INFO] Added generated stable configuration keys to: {}",
+            config_path.display()
+        );
+    }
+    Ok(Some(updated))
 }
 
 fn resolve_loaded_paths(base_dir: &Path, config_path: &Path, cfg: &mut Config) -> Result<()> {

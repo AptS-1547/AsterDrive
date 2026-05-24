@@ -410,6 +410,13 @@ pub fn auth_forbidden_with_subcode(subcode: ApiSubcode, message: impl Into<Strin
     tag_error_with_subcode(subcode, message, AsterError::auth_forbidden)
 }
 
+pub fn auth_invalid_credentials_with_subcode(
+    subcode: ApiSubcode,
+    message: impl Into<String>,
+) -> AsterError {
+    tag_error_with_subcode(subcode, message, AsterError::auth_invalid_credentials)
+}
+
 pub fn auth_token_invalid_with_reason(
     reason: AuthTokenInvalidReason,
     message: impl Into<String>,
@@ -470,7 +477,7 @@ fn tag_error_with_subcode(
     f(encode_api_error_subcode_message(subcode, message.into()))
 }
 
-pub(crate) fn encode_api_error_subcode_message(subcode: ApiSubcode, message: String) -> String {
+pub fn encode_api_error_subcode_message(subcode: ApiSubcode, message: String) -> String {
     format!(
         "{API_ERROR_SUBCODE_PREFIX}{}{API_ERROR_SUBCODE_SEPARATOR}{message}",
         subcode.as_str()
@@ -613,8 +620,9 @@ impl<T, E: std::fmt::Display + 'static> MapAsterErr<T> for std::result::Result<T
 #[cfg(test)]
 mod tests {
     use super::{
-        AsterError, MapAsterErr, ResponseLogLevel, thumbnail_generation_error_with_subcode,
-        upload_assembly_error_with_subcode, validation_error_with_subcode,
+        AsterError, MapAsterErr, ResponseLogLevel, auth_invalid_credentials_with_subcode,
+        thumbnail_generation_error_with_subcode, upload_assembly_error_with_subcode,
+        validation_error_with_subcode,
     };
     use crate::api::error_code::ErrorCode;
     use crate::api::response::ApiErrorInfo;
@@ -742,6 +750,24 @@ mod tests {
 
         assert_eq!(err.api_error_subcode(), None);
         assert_eq!(err.message(), "remote message");
+    }
+
+    #[actix_web::test]
+    async fn auth_invalid_credentials_subcode_response_preserves_subcode() {
+        let subcode = ApiSubcode::AuthMfaCodeInvalid;
+        let err = auth_invalid_credentials_with_subcode(subcode, "invalid MFA code");
+        let response = actix_web::ResponseError::error_response(&err);
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let body = body::to_bytes(response.into_body())
+            .await
+            .expect("response body should read");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("response body should be valid json");
+
+        assert_eq!(payload["msg"], "invalid MFA code");
+        assert_eq!(payload["error"]["subcode"], subcode.as_str());
     }
 
     #[actix_web::test]

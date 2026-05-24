@@ -22,7 +22,7 @@ pub use refresh::refresh_tokens;
 pub use refresh::test_support;
 
 #[derive(Debug)]
-struct IssuedTokens {
+pub struct IssuedTokens {
     access_token: String,
     refresh_token: String,
     session_id: String,
@@ -154,6 +154,18 @@ async fn persist_auth_session<C: ConnectionTrait>(
     Ok(())
 }
 
+pub async fn issue_tokens_for_user_in_connection<C: ConnectionTrait>(
+    db: &C,
+    state: &PrimaryAppState,
+    user: &user::Model,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<(String, String)> {
+    let tokens = issue_tokens_for_session_id(state, user.id, user.session_version, None)?;
+    persist_auth_session(db, user.id, &tokens, ip_address, user_agent).await?;
+    Ok((tokens.access_token, tokens.refresh_token))
+}
+
 fn issue_tokens_for_session_id(
     state: &PrimaryAppState,
     user_id: i64,
@@ -188,7 +200,8 @@ pub async fn issue_tokens_for_user(
     ip_address: Option<&str>,
     user_agent: Option<&str>,
 ) -> Result<(String, String)> {
-    issue_tokens_for_session(state, user.id, user.session_version, ip_address, user_agent).await
+    issue_tokens_for_user_in_connection(state.writer_db(), state, user, ip_address, user_agent)
+        .await
 }
 
 pub async fn revoke_refresh_token(state: &PrimaryAppState, token: &str) -> Result<bool> {

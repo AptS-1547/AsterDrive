@@ -3158,6 +3158,7 @@ async fn test_remote_relay_stream_direct_upload_e2e() {
     let login = auth_service::login(&consumer_state, "remrelaydir", "pass1234", None, None)
         .await
         .expect("consumer login should succeed");
+    let login = common::expect_authenticated_login(login);
     common::seed_csrf_token(&login.access_token);
 
     let body = b"remote relay stream direct".to_vec();
@@ -3839,6 +3840,7 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
     let login = auth_service::login(&consumer_state, "remrelaych", "pass1234", None, None)
         .await
         .expect("consumer test user should log in");
+    let login = common::expect_authenticated_login(login);
     common::seed_csrf_token(&login.access_token);
     let folder = folder_service::create(&consumer_state, user.id, "remote-relay-chunked", None)
         .await

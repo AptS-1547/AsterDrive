@@ -6,9 +6,14 @@ import SettingsPage from "@/pages/SettingsPage";
 const mockState = vi.hoisted(() => ({
 	authService: {
 		changePassword: vi.fn(),
+		deleteMfaFactor: vi.fn(),
 		listPasskeys: vi.fn(),
 		listSessions: vi.fn(),
+		finishTotpSetup: vi.fn(),
+		getMfaStatus: vi.fn(),
+		regenerateMfaRecoveryCodes: vi.fn(),
 		startPasskeyRegistration: vi.fn(),
+		startTotpSetup: vi.fn(),
 		finishPasskeyRegistration: vi.fn(),
 		renamePasskey: vi.fn(),
 		deletePasskey: vi.fn(),
@@ -26,8 +31,13 @@ const mockState = vi.hoisted(() => ({
 		setStorageEventStreamEnabled: vi.fn(),
 		syncSession: vi.fn(),
 		user: {
+			access_token_expires_at: null,
+			created_at: "2026-04-01T08:00:00Z",
 			email: "alice@example.com",
+			email_verified: true,
 			id: 1,
+			pending_email: null,
+			policy_group_id: null,
 			preferences: {
 				storage_event_stream_enabled: true,
 			},
@@ -44,6 +54,7 @@ const mockState = vi.hoisted(() => ({
 			status: "active",
 			storage_quota: 0,
 			storage_used: 0,
+			updated_at: "2026-04-01T08:00:00Z",
 			username: "alice",
 		},
 	},
@@ -75,6 +86,8 @@ const mockState = vi.hoisted(() => ({
 		pathname: "/settings/security",
 		search: "",
 	},
+	handleApiError: vi.fn(),
+	toastError: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -329,13 +342,43 @@ vi.mock("@/lib/preferenceSync", () => ({
 		mockState.preferenceSync(...args),
 }));
 
+vi.mock("@/lib/validation", () => ({
+	emailSchema: {
+		safeParse: (value: string) =>
+			/^[^@]+@[^@]+\.[^@]+$/.test(value)
+				? { success: true }
+				: {
+						error: { issues: [{ message: "invalid-email" }] },
+						success: false,
+					},
+	},
+	existingPasswordSchema: {
+		safeParse: (value: string) =>
+			value.length > 0
+				? { success: true }
+				: {
+						error: { issues: [{ message: "password-required" }] },
+						success: false,
+					},
+	},
+	passwordSchema: {
+		safeParse: (value: string) =>
+			value.length >= 8
+				? { success: true }
+				: {
+						error: { issues: [{ message: "invalid-password" }] },
+						success: false,
+					},
+	},
+}));
+
 vi.mock("@/hooks/useApiError", () => ({
-	handleApiError: vi.fn(),
+	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
 }));
 
 vi.mock("sonner", () => ({
 	toast: {
-		error: vi.fn(),
+		error: (...args: unknown[]) => mockState.toastError(...args),
 		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
 }));
@@ -344,14 +387,22 @@ vi.mock("@/services/authService", () => ({
 	authService: {
 		changePassword: (...args: unknown[]) =>
 			mockState.authService.changePassword(...args),
+		deleteMfaFactor: (...args: unknown[]) =>
+			mockState.authService.deleteMfaFactor(...args),
 		deletePasskey: (...args: unknown[]) =>
 			mockState.authService.deletePasskey(...args),
 		finishPasskeyRegistration: (...args: unknown[]) =>
 			mockState.authService.finishPasskeyRegistration(...args),
+		finishTotpSetup: (...args: unknown[]) =>
+			mockState.authService.finishTotpSetup(...args),
+		getMfaStatus: (...args: unknown[]) =>
+			mockState.authService.getMfaStatus(...args),
 		listPasskeys: (...args: unknown[]) =>
 			mockState.authService.listPasskeys(...args),
 		listSessions: (...args: unknown[]) =>
 			mockState.authService.listSessions(...args),
+		regenerateMfaRecoveryCodes: (...args: unknown[]) =>
+			mockState.authService.regenerateMfaRecoveryCodes(...args),
 		renamePasskey: (...args: unknown[]) =>
 			mockState.authService.renamePasskey(...args),
 		revokeOtherSessions: (...args: unknown[]) =>
@@ -368,6 +419,8 @@ vi.mock("@/services/authService", () => ({
 			mockState.authService.setAvatarSource(...args),
 		startPasskeyRegistration: (...args: unknown[]) =>
 			mockState.authService.startPasskeyRegistration(...args),
+		startTotpSetup: (...args: unknown[]) =>
+			mockState.authService.startTotpSetup(...args),
 		uploadAvatar: (...args: unknown[]) =>
 			mockState.authService.uploadAvatar(...args),
 	},
@@ -419,6 +472,8 @@ describe("SettingsPage", () => {
 	beforeEach(() => {
 		mockState.authService.changePassword.mockReset();
 		mockState.authService.changePassword.mockResolvedValue({ expiresIn: 900 });
+		mockState.authService.deleteMfaFactor.mockReset();
+		mockState.authService.deleteMfaFactor.mockResolvedValue(undefined);
 		mockState.authService.deletePasskey.mockReset();
 		mockState.authService.deletePasskey.mockResolvedValue(undefined);
 		mockState.authService.finishPasskeyRegistration.mockReset();
@@ -432,6 +487,23 @@ describe("SettingsPage", () => {
 			sign_count: 0,
 			transports: null,
 			updated_at: "2026-05-01T08:00:00Z",
+		});
+		mockState.authService.finishTotpSetup.mockReset();
+		mockState.authService.finishTotpSetup.mockResolvedValue({
+			factor: {
+				enabled_at: "2026-05-01T08:00:00Z",
+				id: 1,
+				last_used_at: null,
+				method: "totp",
+				name: "Authenticator",
+			},
+			recovery_codes: ["AAAA-BBBB"],
+		});
+		mockState.authService.getMfaStatus.mockReset();
+		mockState.authService.getMfaStatus.mockResolvedValue({
+			enabled: false,
+			factors: [],
+			recovery_codes_remaining: 0,
 		});
 		mockState.authService.listPasskeys.mockReset();
 		mockState.authService.listPasskeys.mockResolvedValue([]);
@@ -475,12 +547,25 @@ describe("SettingsPage", () => {
 			}),
 		);
 		mockState.authService.requestEmailChange.mockReset();
+		mockState.authService.requestEmailChange.mockResolvedValue(undefined);
 		mockState.authService.resendEmailChange.mockReset();
+		mockState.authService.resendEmailChange.mockResolvedValue(undefined);
+		mockState.authService.regenerateMfaRecoveryCodes.mockReset();
+		mockState.authService.regenerateMfaRecoveryCodes.mockResolvedValue([
+			"CCCC-DDDD",
+		]);
 		mockState.authService.setAvatarSource.mockReset();
 		mockState.authService.startPasskeyRegistration.mockReset();
 		mockState.authService.startPasskeyRegistration.mockResolvedValue({
 			flow_id: "passkey-flow",
 			public_key: { publicKey: { challenge: "AQID" } },
+		});
+		mockState.authService.startTotpSetup.mockReset();
+		mockState.authService.startTotpSetup.mockResolvedValue({
+			expires_in: 300,
+			flow_token: "totp-flow",
+			otpauth_uri: "otpauth://totp/AsterDrive:alice",
+			secret: "SECRET123",
 		});
 		mockState.authService.uploadAvatar.mockReset();
 		mockState.authService.updateProfile.mockReset();
@@ -489,6 +574,9 @@ describe("SettingsPage", () => {
 		mockState.authStore.setStorageEventStreamEnabled.mockReset();
 		mockState.authStore.syncSession.mockReset();
 		mockState.authStore.user.preferences.storage_event_stream_enabled = true;
+		mockState.authStore.user.email = "alice@example.com";
+		mockState.authStore.user.email_verified = true;
+		mockState.authStore.user.pending_email = null;
 		mockState.changeLanguage.mockReset();
 		mockState.displayTimeZoneStore.preference = "browser";
 		mockState.displayTimeZoneStore.setPreference.mockReset();
@@ -496,10 +584,12 @@ describe("SettingsPage", () => {
 		mockState.fileStore.setBrowserOpenMode.mockReset();
 		mockState.fileStore.setViewMode.mockReset();
 		mockState.fileStore.viewMode = "list";
+		mockState.handleApiError.mockReset();
 		mockState.navigate.mockReset();
 		mockState.preferenceSync.mockReset();
 		mockState.themeStore.mode = "dark";
 		mockState.themeStore.setMode.mockReset();
+		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.translationLanguage = "zh-CN";
 		mockState.webAuthn.createPasskeyCredential.mockReset();
@@ -786,6 +876,248 @@ describe("SettingsPage", () => {
 		expect(mockState.authStore.syncSession).toHaveBeenCalledWith(900);
 	});
 
+	it("validates and reports password update failures in security settings", async () => {
+		const error = new Error("password update failed");
+		mockState.authService.changePassword.mockRejectedValueOnce(error);
+		render(<SettingsPage section="security" />);
+
+		const form = screen
+			.getByLabelText("settings:settings_password_current")
+			.closest("form");
+		if (!form) throw new Error("password form not found");
+
+		fireEvent.submit(form);
+		expect(screen.getByText("password-required")).toBeInTheDocument();
+		expect(screen.getAllByText("invalid-password").length).toBeGreaterThan(0);
+		expect(mockState.authService.changePassword).not.toHaveBeenCalled();
+
+		fireEvent.change(
+			screen.getByLabelText("settings:settings_password_current"),
+			{
+				target: { value: "pass123" },
+			},
+		);
+		fireEvent.change(screen.getByLabelText("settings:settings_password_new"), {
+			target: { value: "newsecret456" },
+		});
+		fireEvent.change(
+			screen.getByLabelText("settings:settings_password_confirm"),
+			{
+				target: { value: "different456" },
+			},
+		);
+		fireEvent.submit(form);
+		expect(
+			screen.getByText("settings:settings_password_confirm_mismatch"),
+		).toBeInTheDocument();
+		expect(mockState.authService.changePassword).not.toHaveBeenCalled();
+
+		fireEvent.change(
+			screen.getByLabelText("settings:settings_password_confirm"),
+			{
+				target: { value: "newsecret456" },
+			},
+		);
+		fireEvent.submit(form);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
+	});
+
+	it("requests, validates, and resends security email changes", async () => {
+		const { rerender } = render(<SettingsPage section="security" />);
+
+		fireEvent.change(screen.getByLabelText("settings:settings_email_new"), {
+			target: { value: "bad" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_email_change_request",
+			}),
+		);
+
+		await waitFor(() =>
+			expect(mockState.authService.requestEmailChange).not.toHaveBeenCalled(),
+		);
+		expect(mockState.authService.requestEmailChange).not.toHaveBeenCalled();
+
+		fireEvent.change(screen.getByLabelText("settings:settings_email_new"), {
+			target: { value: "alice@example.com" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_email_change_request",
+			}),
+		);
+
+		await waitFor(() =>
+			expect(mockState.authService.requestEmailChange).not.toHaveBeenCalled(),
+		);
+		expect(mockState.authService.requestEmailChange).not.toHaveBeenCalled();
+
+		fireEvent.change(screen.getByLabelText("settings:settings_email_new"), {
+			target: { value: "  alice+new@example.com  " },
+		});
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_email_change_request",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.authService.requestEmailChange).toHaveBeenCalledWith(
+				"alice+new@example.com",
+			);
+		});
+		expect(mockState.authStore.refreshUser).toHaveBeenCalledTimes(1);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"settings:settings_email_change_requested",
+		);
+
+		mockState.authStore.user.pending_email = "alice+pending@example.com";
+		rerender(<SettingsPage section="security" />);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "settings:settings_email_change_resend",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.authService.resendEmailChange).toHaveBeenCalledTimes(1);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"settings:settings_email_change_resent",
+		);
+	});
+
+	it("reports security email change and resend failures", async () => {
+		const requestError = new Error("email change failed");
+		const resendError = new Error("email resend failed");
+		mockState.authService.requestEmailChange.mockRejectedValueOnce(
+			requestError,
+		);
+		mockState.authService.resendEmailChange.mockRejectedValueOnce(resendError);
+
+		const { rerender } = render(<SettingsPage section="security" />);
+
+		fireEvent.change(screen.getByLabelText("settings:settings_email_new"), {
+			target: { value: "alice+fail@example.com" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_email_change_request",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(requestError);
+		});
+
+		mockState.authStore.user.pending_email = "alice+pending@example.com";
+		rerender(<SettingsPage section="security" />);
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "settings:settings_email_change_resend",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(resendError);
+		});
+	});
+
+	it("revokes current and non-current sessions from security settings", async () => {
+		render(<SettingsPage section="security" />);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_security_tab_sessions",
+			}),
+		);
+		await waitFor(() =>
+			expect(mockState.authService.listSessions).toHaveBeenCalled(),
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_sessions_revoke",
+			}),
+		);
+		await waitFor(() => {
+			expect(mockState.authService.revokeSession).toHaveBeenCalledWith(
+				"session-other",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"settings:settings_sessions_revoked",
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_sessions_revoke_current",
+			}),
+		);
+		await waitFor(() => {
+			expect(mockState.authService.revokeSession).toHaveBeenCalledWith(
+				"session-current",
+			);
+		});
+		expect(mockState.authStore.forceLogout).toHaveBeenCalledTimes(1);
+		expect(mockState.navigate).toHaveBeenCalledWith("/login", {
+			replace: true,
+		});
+	});
+
+	it("reports security session loading and revoke failures", async () => {
+		const loadError = new Error("sessions failed");
+		mockState.authService.listSessions.mockRejectedValueOnce(loadError);
+
+		const firstView = render(<SettingsPage section="security" />);
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(loadError);
+		});
+		firstView.unmount();
+		mockState.handleApiError.mockReset();
+
+		const revokeError = new Error("revoke failed");
+		mockState.authService.revokeSession.mockRejectedValueOnce(revokeError);
+		render(<SettingsPage section="security" />);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_security_tab_sessions",
+			}),
+		);
+		await waitFor(() =>
+			expect(mockState.authService.listSessions).toHaveBeenCalled(),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_sessions_revoke",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(revokeError);
+		});
+
+		const revokeOthersError = new Error("revoke others failed");
+		mockState.handleApiError.mockReset();
+		mockState.authService.revokeOtherSessions.mockRejectedValueOnce(
+			revokeOthersError,
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_sessions_revoke_others",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(revokeOthersError);
+		});
+	});
+
 	it("shows a query toast after redirecting into security settings", async () => {
 		mockState.location = {
 			hash: "",
@@ -811,6 +1143,57 @@ describe("SettingsPage", () => {
 			},
 			{ replace: true },
 		);
+	});
+
+	it("shows security redirect error toasts", async () => {
+		const cases = [
+			{
+				description: "auth:verify_contact_expired_desc",
+				id: "contact-verification-expired-settings",
+				search: "?contact_verification=expired",
+				title: "auth:verify_contact_expired_title",
+			},
+			{
+				description: "auth:verify_contact_invalid_desc",
+				id: "contact-verification-invalid-settings",
+				search: "?contact_verification=invalid",
+				title: "auth:verify_contact_invalid_title",
+			},
+			{
+				description: "auth:verify_contact_missing_token_desc",
+				id: "contact-verification-missing-settings",
+				search: "?contact_verification=missing",
+				title: "auth:verify_contact_missing_token_title",
+			},
+		];
+
+		for (const item of cases) {
+			mockState.location = {
+				hash: "#security",
+				pathname: "/settings/security",
+				search: item.search,
+			};
+			mockState.navigate.mockReset();
+			mockState.toastError.mockReset();
+
+			const view = render(<SettingsPage section="security" />);
+
+			await waitFor(() => {
+				expect(mockState.toastError).toHaveBeenCalledWith(item.title, {
+					description: item.description,
+					id: item.id,
+				});
+			});
+			expect(mockState.navigate).toHaveBeenCalledWith(
+				{
+					hash: "#security",
+					pathname: "/settings/security",
+					search: "",
+				},
+				{ replace: true },
+			);
+			view.unmount();
+		}
 	});
 
 	it("saves the display name through the profile endpoint", async () => {

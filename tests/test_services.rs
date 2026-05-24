@@ -134,6 +134,7 @@ async fn test_auth_service_register_login() {
         aster_drive::services::auth_service::login(&state, "alice", "password123", None, None)
             .await
             .unwrap();
+    let result = common::expect_authenticated_login(result);
     assert!(!result.access_token.is_empty());
     assert!(!result.refresh_token.is_empty());
     assert_eq!(result.user_id, user.id);
@@ -201,6 +202,7 @@ async fn test_auth_service_change_password() {
         aster_drive::services::auth_service::login(&state, "alice", "newpass456", None, None)
             .await
             .unwrap();
+    let new_login = common::expect_authenticated_login(new_login);
     assert_eq!(new_login.user_id, user.id);
 }
 
@@ -230,6 +232,7 @@ async fn test_auth_service_set_password() {
         aster_drive::services::auth_service::login(&state, "alice", "resetpass789", None, None)
             .await
             .unwrap();
+    let new_login = common::expect_authenticated_login(new_login);
     assert_eq!(new_login.user_id, user.id);
 }
 
@@ -245,6 +248,7 @@ async fn test_auth_service_verify_token() {
         aster_drive::services::auth_service::login(&state, "bobb", "pass1234", None, None)
             .await
             .unwrap();
+    let login_result = common::expect_authenticated_login(login_result);
 
     // 验证 access token
     let claims = aster_drive::services::auth_service::verify_token(

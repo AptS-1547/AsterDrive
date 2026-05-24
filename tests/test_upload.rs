@@ -3479,6 +3479,7 @@ async fn test_create_empty_file_s3_no_dedup() {
     let login = auth_service::login(&state, "s3empty", "pass1234", None, None)
         .await
         .unwrap();
+    let login = common::expect_authenticated_login(login);
     common::seed_csrf_token(&login.access_token);
 
     let db = state.writer_db().clone();
@@ -3572,6 +3573,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
     let login = auth_service::login(&state, "relaydirect", "pass1234", None, None)
         .await
         .unwrap();
+    let login = common::expect_authenticated_login(login);
     common::seed_csrf_token(&login.access_token);
 
     let data = b"hello relay stream!";
@@ -3698,6 +3700,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
     let login = auth_service::login(&state, "relayexact", "pass1234", None, None)
         .await
         .unwrap();
+    let login = common::expect_authenticated_login(login);
     common::seed_csrf_token(&login.access_token);
 
     let db = state.writer_db().clone();
@@ -3838,6 +3841,7 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     let login = auth_service::login(&state, "relaychunked", "pass1234", None, None)
         .await
         .unwrap();
+    let login = common::expect_authenticated_login(login);
     common::seed_csrf_token(&login.access_token);
 
     let part1 = vec![b'A'; 5_242_880];

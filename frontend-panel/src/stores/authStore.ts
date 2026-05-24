@@ -1,6 +1,7 @@
 import axios from "axios";
 import { create } from "zustand";
 import i18n from "@/i18n";
+import { isTokenAuthError } from "@/lib/authErrors";
 import {
 	isCrossTabRefreshAuthFailure,
 	runWithCrossTabRefreshLock,
@@ -252,6 +253,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
 	login: async (identifier, password) => {
 		const session = await authService.login(identifier, password);
+		if (session.status !== "authenticated") {
+			throw new Error("MFA verification is required before session sync");
+		}
 		const user = await authService.me();
 		setCachedUser(user);
 		set({
@@ -302,7 +306,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 			}
 		} catch (error) {
 			// 网络错误（离线）时用缓存的用户信息保持登录态
-			if (!axios.isAxiosError(error) || !error.response) {
+			if (
+				!isTokenAuthError(error) &&
+				(!axios.isAxiosError(error) || !error.response)
+			) {
 				const cached = getCachedUser();
 				const expiresAt =
 					getExpiresAtFromUser(cached) ??
@@ -346,7 +353,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 					},
 					{
 						classifyError: (error) =>
-							axios.isAxiosError(error) && error.response
+							isTokenAuthError(error) ||
+							(axios.isAxiosError(error) && error.response)
 								? "auth"
 								: "transient",
 					},
@@ -375,6 +383,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 			} catch (error) {
 				if (
 					isCrossTabRefreshAuthFailure(error) ||
+					isTokenAuthError(error) ||
 					(axios.isAxiosError(error) && error.response)
 				) {
 					applyLoggedOutState(set);

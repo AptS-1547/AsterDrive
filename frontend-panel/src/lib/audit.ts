@@ -8,6 +8,7 @@ export const AUDIT_ENTITY_TYPE_FILTER_VALUES = [
 	"external_auth_provider",
 	"file",
 	"folder",
+	"mfa_factor",
 	"passkey",
 	"policy_group",
 	"remote_ingress_profile",

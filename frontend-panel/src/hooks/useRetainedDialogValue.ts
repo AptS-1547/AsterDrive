@@ -10,18 +10,20 @@ export function useRetainedDialogValue<T>(
 	open: boolean,
 ): UseRetainedDialogValueResult<T> {
 	const [retainedValue, setRetainedValue] = useState<T | null>(value);
-	const visibleValue = value ?? (open ? null : retainedValue);
 
 	useEffect(() => {
-		if (value !== null) {
-			setRetainedValue(value);
-			return;
-		}
+		setRetainedValue((current) => {
+			if (value !== null && current !== value) {
+				return value;
+			}
+			if (value === null && open && current !== null) {
+				return null;
+			}
+			return current;
+		});
+	}, [value, open]);
 
-		if (open) {
-			setRetainedValue(null);
-		}
-	}, [open, value]);
+	const visibleValue = value ?? (open ? null : retainedValue);
 
 	const handleOpenChangeComplete = useCallback((nextOpen: boolean) => {
 		if (!nextOpen) {

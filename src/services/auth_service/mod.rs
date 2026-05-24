@@ -11,6 +11,7 @@ mod validation;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext, AuditRequestInfo};
+use crate::services::mfa_service::PrimaryLoginCompletion;
 use sea_orm::{ActiveValue, Set};
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +34,8 @@ pub use session::{
 pub use tokens::test_support;
 pub use tokens::{
     authenticate_access_token, authenticate_refresh_token, issue_tokens_for_session,
-    issue_tokens_for_user, refresh_tokens, revoke_refresh_token, verify_token,
+    issue_tokens_for_user, issue_tokens_for_user_in_connection, refresh_tokens,
+    revoke_refresh_token, verify_token,
 };
 pub(crate) use validation::{validate_email, validate_password, validate_username};
 
@@ -329,7 +331,7 @@ pub async fn login_with_audit(
     identifier: &str,
     password: &str,
     request_info: &AuditRequestInfo,
-) -> Result<LoginResult> {
+) -> Result<PrimaryLoginCompletion> {
     let result = login(
         state,
         identifier,
@@ -338,7 +340,11 @@ pub async fn login_with_audit(
         request_info.user_agent.as_deref(),
     )
     .await?;
-    let audit_ctx = request_info.to_context(result.user_id);
+    let user_id = match &result {
+        PrimaryLoginCompletion::Authenticated(login) => login.user_id,
+        PrimaryLoginCompletion::MfaRequired(challenge) => challenge.user_id,
+    };
+    let audit_ctx = request_info.to_context(user_id);
     audit_service::log(
         state,
         &audit_ctx,
