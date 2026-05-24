@@ -146,7 +146,7 @@ describe("UrlTemplatePreview", () => {
 		).toBeInTheDocument();
 	});
 
-	it("keeps same-origin sandbox only for known office URL template providers", async () => {
+	it("uses trusted document viewer iframe permissions for known office URL template providers", async () => {
 		render(
 			<UrlTemplatePreview
 				file={file}
@@ -163,7 +163,11 @@ describe("UrlTemplatePreview", () => {
 
 		expect(await screen.findByTitle("Microsoft Viewer")).toHaveAttribute(
 			"sandbox",
-			"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin",
+			"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin allow-top-navigation allow-popups-to-escape-sandbox",
+		);
+		expect(screen.getByTitle("Microsoft Viewer")).toHaveAttribute(
+			"allow",
+			"autoplay; fullscreen; picture-in-picture; clipboard-read 'src'; clipboard-write 'src'",
 		);
 	});
 });

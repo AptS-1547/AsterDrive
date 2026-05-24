@@ -96,7 +96,11 @@ describe("WopiPreview", () => {
 		expect(form.target).toBe(frame.getAttribute("name"));
 		expect(frame).toHaveAttribute(
 			"sandbox",
-			"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin",
+			"allow-scripts allow-forms allow-popups allow-downloads allow-same-origin allow-top-navigation allow-popups-to-escape-sandbox",
+		);
+		expect(frame).toHaveAttribute(
+			"allow",
+			"autoplay; fullscreen; picture-in-picture; clipboard-read 'src'; clipboard-write 'src'",
 		);
 		expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
 		expect(form).toHaveFormValues({

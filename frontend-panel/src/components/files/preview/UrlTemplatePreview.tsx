@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,8 @@ import type { PreviewLinkInfo } from "@/types/api";
 import {
 	EmbeddedWebAppPreview,
 	EXTERNAL_WEB_APP_IFRAME_SANDBOX,
-	EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX,
+	TRUSTED_DOCUMENT_VIEWER_IFRAME_ALLOW,
+	TRUSTED_DOCUMENT_VIEWER_IFRAME_SANDBOX,
 } from "./EmbeddedWebAppPreview";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import {
@@ -25,14 +26,22 @@ interface UrlTemplatePreviewProps {
 	rawConfig: Record<string, unknown> | null | undefined;
 }
 
-const SAME_ORIGIN_SANDBOX_URL_TEMPLATE_KEYS = new Set([
+const TRUSTED_DOCUMENT_VIEWER_URL_TEMPLATE_KEYS = new Set([
 	"builtin.office_google",
 	"builtin.office_microsoft",
 ]);
 
 interface UrlTemplatePreviewState {
-	isLoading: boolean;
+	requestKey: UrlTemplatePreviewRequestKey;
 	target: ResolvedVideoBrowserTarget | null;
+}
+
+interface UrlTemplatePreviewRequestKey {
+	createPreviewLink: UrlTemplatePreviewProps["createPreviewLink"];
+	downloadPath: string;
+	file: VideoBrowserFileContext;
+	label: string;
+	rawConfig: UrlTemplatePreviewProps["rawConfig"];
 }
 
 export function UrlTemplatePreview({
@@ -44,16 +53,15 @@ export function UrlTemplatePreview({
 	rawConfig,
 }: UrlTemplatePreviewProps) {
 	const { t } = useTranslation("files");
-	const [{ isLoading, target }, setPreviewState] =
-		useState<UrlTemplatePreviewState>({
-			isLoading: true,
-			target: null,
-		});
+	const [previewState, setPreviewState] =
+		useState<UrlTemplatePreviewState | null>(null);
+	const requestKey = useMemo<UrlTemplatePreviewRequestKey>(
+		() => ({ createPreviewLink, downloadPath, file, label, rawConfig }),
+		[createPreviewLink, downloadPath, file, label, rawConfig],
+	);
 
 	useEffect(() => {
 		let cancelled = false;
-
-		setPreviewState({ isLoading: true, target: null });
 
 		void resolveUrlTemplateTarget(
 			file,
@@ -64,17 +72,20 @@ export function UrlTemplatePreview({
 		)
 			.then((resolvedTarget) => {
 				if (cancelled) return;
-				setPreviewState({ isLoading: false, target: resolvedTarget });
+				setPreviewState({ requestKey, target: resolvedTarget });
 			})
 			.catch(() => {
 				if (cancelled) return;
-				setPreviewState({ isLoading: false, target: null });
+				setPreviewState({ requestKey, target: null });
 			});
 
 		return () => {
 			cancelled = true;
 		};
-	}, [createPreviewLink, downloadPath, file, label, rawConfig]);
+	}, [createPreviewLink, downloadPath, file, label, rawConfig, requestKey]);
+
+	const isLoading = previewState?.requestKey !== requestKey;
+	const target = isLoading ? null : previewState.target;
 
 	const openTarget = () => {
 		if (!target) return;
@@ -126,11 +137,15 @@ export function UrlTemplatePreview({
 					{t("url_template_open", { label: target.label })}
 				</Button>
 			}
-			iframeAllow="autoplay; fullscreen; picture-in-picture"
+			iframeAllow={
+				optionKey && TRUSTED_DOCUMENT_VIEWER_URL_TEMPLATE_KEYS.has(optionKey)
+					? TRUSTED_DOCUMENT_VIEWER_IFRAME_ALLOW
+					: "autoplay; fullscreen; picture-in-picture"
+			}
 			iframeReferrerPolicy="same-origin"
 			iframeSandbox={
-				optionKey && SAME_ORIGIN_SANDBOX_URL_TEMPLATE_KEYS.has(optionKey)
-					? EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX
+				optionKey && TRUSTED_DOCUMENT_VIEWER_URL_TEMPLATE_KEYS.has(optionKey)
+					? TRUSTED_DOCUMENT_VIEWER_IFRAME_SANDBOX
 					: EXTERNAL_WEB_APP_IFRAME_SANDBOX
 			}
 		/>

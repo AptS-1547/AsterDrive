@@ -3,7 +3,9 @@ import { cn } from "@/lib/utils";
 
 export const EXTERNAL_WEB_APP_IFRAME_SANDBOX =
 	"allow-scripts allow-forms allow-popups allow-downloads";
-export const EXTERNAL_WEB_APP_SAME_ORIGIN_IFRAME_SANDBOX = `${EXTERNAL_WEB_APP_IFRAME_SANDBOX} allow-same-origin`;
+export const TRUSTED_DOCUMENT_VIEWER_IFRAME_SANDBOX = `${EXTERNAL_WEB_APP_IFRAME_SANDBOX} allow-same-origin allow-top-navigation allow-popups-to-escape-sandbox`;
+export const TRUSTED_DOCUMENT_VIEWER_IFRAME_ALLOW =
+	"autoplay; fullscreen; picture-in-picture; clipboard-read 'src'; clipboard-write 'src'";
 
 interface EmbeddedWebAppPreviewProps {
 	actions?: ReactNode;
