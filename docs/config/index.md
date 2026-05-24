@@ -50,7 +50,7 @@ AsterDrive 的配置分得很清楚。先把这些层分开，后续就能更容
 | --- | --- |
 | 改监听地址、端口、线程数、临时目录、primary / follower 模式 | [服务器](/config/server) |
 | 改数据库地址、连接池、启动重试 | [数据库](/config/database) |
-| 固定登录签名密钥、第一次纯 HTTP 引导 | [登录与会话](/config/auth) |
+| 固定登录签名密钥、MFA 加密密钥、第一次纯 HTTP 引导 | [登录与会话](/config/auth) |
 | 公开站点地址、品牌、注册、Cookie、Token、调度、分享流播放、ZIP 预览、回收站、版本、配额、WOPI、WebDAV、审计 | [系统设置](/config/runtime) |
 | 接 OIDC / SSO 外部登录，管理外部身份提供商 | [登录与会话](/config/auth) / [管理后台](/guide/admin-console#外部认证) |
 | 配 SMTP、发测试邮件、改邮件模版 | [邮件](/config/mail) |
@@ -64,7 +64,7 @@ AsterDrive 的配置分得很清楚。先把这些层分开，后续就能更容
 
 ## `config.toml` 在哪、怎么写
 
-首次启动时，如果当前工作目录里没有 `data/config.toml`，AsterDrive 会自动生成一份默认配置（含一段随机的 `jwt_secret`）。
+首次启动时，如果当前工作目录里没有 `data/config.toml`，AsterDrive 会自动生成一份默认配置（含随机的 `jwt_secret` 和 `mfa_secret_key`）。
 
 ::: tip 只写要覆盖的项
 不需要把整份默认配置全抄出来，`config.toml` 里只写你要改的项即可，其他保留默认。
@@ -108,7 +108,7 @@ ASTER__WEBDAV__PREFIX=/dav
 | --- | --- |
 | [server](/config/server) | 监听地址、端口、线程数、临时目录、节点模式、follower 接收根目录 |
 | [database](/config/database) | 数据库连接、连接池、启动重试 |
-| [auth](/config/auth) | 登录签名密钥、首次纯 HTTP 引导 |
+| [auth](/config/auth) | 登录签名密钥、MFA 加密密钥、首次纯 HTTP 引导 |
 | [cache](/config/cache) | 内存缓存 / Redis / 关闭缓存 |
 | [logging](/config/logging) | 日志级别、格式、输出文件、轮转 |
 | [webdav](/config/webdav) | WebDAV 路径前缀、上传体积硬上限 |

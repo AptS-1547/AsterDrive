@@ -12,6 +12,7 @@
 ```toml
 [auth]
 jwt_secret = "<首次生成的一串随机密钥>"
+mfa_secret_key = "<首次生成的一串随机密钥>"
 bootstrap_insecure_cookies = false
 ```
 
@@ -24,6 +25,16 @@ bootstrap_insecure_cookies = false
 - 当前所有登录会话失效
 - 公开分享的密码验证 Cookie 失效
 - 所有人都要重新登录
+:::
+
+### `mfa_secret_key`
+
+这是 MFA/TOTP 密钥的服务端加密密钥。首次生成配置时，服务会自动写入一段随机值。
+
+::: warning 备份和迁移时必须保留
+如果你已经有用户启用了 MFA，不要在迁移、恢复或重建 `config.toml` 时随手换掉它。
+
+一旦修改，已有认证器密钥无法解密，启用了 MFA 的用户会无法通过原来的认证器完成二次验证。管理员只能到 `管理 -> 用户 -> 用户详情 -> 安全操作` 里重置对应用户的 MFA，让用户重新绑定认证器并保存新的恢复码。
 :::
 
 ### `bootstrap_insecure_cookies`
@@ -42,12 +53,50 @@ bootstrap_insecure_cookies = false
 - **系统里已有用户，输入的是新账号，且管理员允许公开注册** —— 创建普通账号
 - **管理员启用了外部认证提供商** —— 登录页会出现对应的外部登录入口
 - **当前浏览器支持 Passkey** —— 登录页会显示 Passkey 登录入口，已登记 Passkey 的账号可以直接用设备解锁或安全密钥登录
+- **账号启用了 MFA** —— 密码或外部身份通过后，还需要输入认证器验证码或恢复码
 
 需要注意：
 
 - 第一个账号直接成为管理员，不走邮箱激活
 - 后续公开注册的普通账号，要先点激活邮件才能登录
 - 管理员关闭公开注册后，登录页只剩登录和找回密码
+
+## MFA 多因素认证
+
+MFA 由用户自己在这里启用：
+
+```text
+设置 -> 安全 -> 多因素认证
+```
+
+当前支持 TOTP 认证器应用。常见应用包括 1Password、Bitwarden、Google Authenticator、Microsoft Authenticator 等。
+
+启用流程大致是：
+
+1. 打开 `设置 -> 安全 -> 多因素认证`
+2. 点击设置认证器
+3. 用认证器应用扫描二维码，或手动输入密钥
+4. 输入认证器生成的 6 位验证码完成绑定
+5. 下载或复制恢复码，并保存到密码管理器或其他安全位置
+
+恢复码只在生成时明文显示一次，每个恢复码只能使用一次。丢失认证器时，可以在登录页用恢复码完成 MFA 验证；登录后应尽快重新生成恢复码，或重新绑定认证器。
+
+启用 MFA 后，下面这些登录方式都会进入二次验证：
+
+- 本地密码登录
+- 外部认证登录
+
+Passkey 登录不会进入这里描述的 MFA 挑战。它本身依赖设备解锁或安全密钥完成用户验证，和“密码/外部身份 + TOTP”是两条不同登录路径。
+
+MFA 登录验证流程默认 `5` 分钟内有效，最多允许 `5` 次尝试。验证过期或尝试次数用完后，返回登录页重新开始即可。
+
+如果用户丢失认证器和恢复码，管理员可以在这里重置：
+
+```text
+管理 -> 用户 -> 用户详情 -> 安全操作 -> 重置 MFA
+```
+
+重置会清除该用户的认证器、恢复码和未完成的 MFA 登录流程，并让该用户现有会话失效。用户下次登录后需要重新设置 MFA。
 
 ## Passkey 登录
 
@@ -137,6 +186,7 @@ bootstrap_insecure_cookies = true
 ```toml
 [auth]
 jwt_secret = "replace-with-your-own-secret"
+mfa_secret_key = "replace-with-another-stable-secret"
 bootstrap_insecure_cookies = false
 ```
 
@@ -144,6 +194,7 @@ bootstrap_insecure_cookies = false
 
 ```bash
 ASTER__AUTH__JWT_SECRET="replace-with-your-own-secret"
+ASTER__AUTH__MFA_SECRET_KEY="replace-with-another-stable-secret"
 ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=false
 ```
 

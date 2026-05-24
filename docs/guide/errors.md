@@ -167,6 +167,20 @@ Passkey 相关问题通常仍归在 `bad_request`、`auth_failed` 或 `token_inv
 
 如果登录页提示当前浏览器不支持 Passkey，通常是浏览器、系统或当前访问来源不满足 WebAuthn 要求。正式部署建议使用 HTTPS。
 
+### MFA 相关子错误
+
+MFA 相关问题通常发生在登录二次验证、启用认证器、禁用 MFA 或重新生成恢复码时：
+
+- `auth.mfa_flow_invalid`：MFA 登录或设置流程无效，返回登录页或重新开始设置
+- `auth.mfa_flow_expired`：流程已过期，默认大约 5 分钟，重新开始即可
+- `auth.mfa_code_invalid`：验证码或恢复码不正确，检查认证器时间是否同步，或换一个未使用的恢复码
+- `auth.mfa_attempts_exceeded`：尝试次数过多，重新开始登录流程
+- `auth.mfa_factor_required`：账号需要已启用的 MFA 因子，但当前状态不完整，联系管理员重置 MFA
+- `auth.mfa_factor_already_exists`：当前账号已经启用 TOTP，不能重复添加同类因子
+- `auth.mfa_recovery_code_used`：恢复码已经用过，登录后重新生成恢复码
+
+如果认证器和恢复码都丢了，普通用户无法自行绕过 MFA。联系管理员到 `管理 -> 用户 -> 用户详情 -> 安全操作` 重置 MFA。
+
 ### 外部认证相关问题
 
 外部认证失败通常会在登录页展示“外部登录失败”，后端主错误码可能是 `auth_failed`、`forbidden`、`bad_request` 或 `mail_delivery_failed`。
@@ -293,7 +307,8 @@ ZIP 预览错误通常会挂在 `bad_request` 或 `forbidden` 下，具体看 `e
 - `archive_preview.source_size_mismatch`：扫描时发现源文件大小和记录不一致，通常要重新上传或检查底层存储
 - `archive_preview.rejected`：后台任务拒绝执行，多半是文件已变化、权限变化或运行时限制不再满足
 
-第一次打开 ZIP 时如果只是“生成中”，那不是错误。等 `管理 -> 任务` / `任务中心` 里的 `压缩包预览生成` 完成后再打开。
+第一次打开 ZIP 时如果只是“生成中”，那不是错误。等 `管理 -> 任务` / `任务中心` 里的 `压缩包预览生成` 完成后再打开。  
+如果界面提示当前文件名编码无法解析这个 ZIP，切换 ZIP 预览工具栏里的 `文件名编码` 后重试；这类提示不一定有单独的后端 subcode。
 
 ---
 

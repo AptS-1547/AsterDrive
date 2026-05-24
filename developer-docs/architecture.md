@@ -263,6 +263,7 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
   - `lock-cleanup`
   - `auth-session-cleanup`
   - `external-auth-flow-cleanup`
+  - `mfa-flow-cleanup`
   - `audit-cleanup`
   - `task-cleanup`
   - `wopi-session-cleanup`

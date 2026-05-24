@@ -14,6 +14,7 @@
 | `POST` | `/auth/password/reset/request` | 请求密码重置邮件 |
 | `POST` | `/auth/password/reset/confirm` | 使用 token 完成密码重置 |
 | `POST` | `/auth/login` | 登录并写入认证 Cookie |
+| `POST` | `/auth/mfa/challenge/verify` | 完成 MFA 二次验证并写入认证 Cookie |
 | `POST` | `/auth/passkeys/login/start` | 发起 WebAuthn Passkey 登录挑战 |
 | `POST` | `/auth/passkeys/login/finish` | 完成 Passkey 登录并写入认证 Cookie |
 | `GET` | `/auth/external-auth/providers` | 列出匿名态可用的外部认证提供商 |
@@ -29,6 +30,11 @@
 | `DELETE` | `/auth/sessions/others` | 吊销除当前 refresh session 外的其他会话 |
 | `DELETE` | `/auth/sessions/{id}` | 吊销指定登录会话 |
 | `PUT` | `/auth/password` | 修改当前用户密码 |
+| `GET` | `/auth/mfa` | 读取当前用户 MFA 状态 |
+| `POST` | `/auth/mfa/totp/setup/start` | 发起 TOTP MFA 设置流程 |
+| `POST` | `/auth/mfa/totp/setup/finish` | 校验 TOTP 并启用 MFA |
+| `DELETE` | `/auth/mfa/factors/{id}` | 删除当前用户 MFA 因子 |
+| `POST` | `/auth/mfa/recovery-codes/regenerate` | 重新生成 MFA 恢复码 |
 | `GET` | `/auth/passkeys` | 列出当前用户已注册的 Passkey |
 | `POST` | `/auth/passkeys/register/start` | 发起 Passkey 注册挑战 |
 | `POST` | `/auth/passkeys/register/finish` | 完成 Passkey 注册 |
@@ -105,6 +111,51 @@
 
 如果用户状态是 `disabled`，登录会直接失败。
 
+如果用户已经启用 MFA，`POST /auth/login` 不会立即写入认证 Cookie，而是返回：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "status": "mfa_required",
+    "flow_token": "mfa_xxx",
+    "expires_in": 300,
+    "methods": ["totp", "recovery_code"]
+  }
+}
+```
+
+随后前端调用 `POST /auth/mfa/challenge/verify`：
+
+```json
+{
+  "flow_token": "mfa_xxx",
+  "method": "totp",
+  "code": "123456"
+}
+```
+
+`method` 当前支持：
+
+- `totp`
+- `recovery_code`
+
+验证成功后响应形状和普通登录成功一样：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "status": "authenticated",
+    "expires_in": 900
+  }
+}
+```
+
+同时会写入 `aster_access`、`aster_refresh` 和 CSRF Cookie。MFA 登录 flow 默认 5 分钟过期，最多允许 5 次错误尝试；过期、被消费或超过尝试次数后都必须重新完成第一因子登录。
+
 ### Passkey 登录与管理
 
 Passkey 使用 WebAuthn 两段式流程。所有 challenge 响应和 credential 请求体都保持 WebAuthn 原始 JSON 结构，由浏览器的 `navigator.credentials.*` 直接消费或回传。
@@ -123,6 +174,66 @@ Passkey 使用 WebAuthn 两段式流程。所有 challenge 响应和 credential 
 - `DELETE /auth/passkeys/{id}`：删除当前用户自己的 Passkey
 
 当前 Passkey 记录保存在 `passkeys` 表，credential 以强类型包装后的 JSON 存储。服务端要求可发现凭证；不支持的 credential 会返回带 `passkey.*` 子码的校验错误。
+
+### MFA 管理
+
+MFA 自助管理接口都需要已登录。当前持久化因子只支持 TOTP；登录挑战允许用 TOTP 或一次性恢复码完成。
+
+`GET /auth/mfa` 返回当前用户 MFA 状态：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "enabled": true,
+    "factors": [
+      {
+        "id": 7,
+        "method": "totp",
+        "name": "Authenticator app",
+        "enabled_at": "2026-05-24T12:00:00Z",
+        "last_used_at": null
+      }
+    ],
+    "recovery_codes_remaining": 10
+  }
+}
+```
+
+启用 TOTP 是两段式流程：
+
+- `POST /auth/mfa/totp/setup/start`：返回 `flow_token`、`expires_in`、Base32 `secret` 和 `otpauth_uri`
+- `POST /auth/mfa/totp/setup/finish`：请求体是 `{ "flow_token": "...", "code": "123456", "name": "Phone" }`
+
+完成设置成功后返回新 factor 和一组恢复码：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "factor": {
+      "id": 7,
+      "method": "totp",
+      "name": "Phone",
+      "enabled_at": "2026-05-24T12:00:00Z",
+      "last_used_at": null
+    },
+    "recovery_codes": ["ABCD-EFGH-IJKL"]
+  }
+}
+```
+
+删除因子和重新生成恢复码都属于敏感操作，必须带一个当前可用的 MFA code：
+
+```json
+{
+  "code": "123456"
+}
+```
+
+`code` 可以是 TOTP，也可以是未使用过的恢复码。删除最后一个 TOTP factor 会同时清理该用户的恢复码、待处理 MFA 登录 flow 和待处理 TOTP setup flow；重新生成恢复码会替换旧恢复码，旧码立即失效。
 
 ### 外部认证
 
@@ -147,7 +258,8 @@ Passkey 使用 WebAuthn 两段式流程。所有 challenge 响应和 credential 
 
 - `POST /auth/external-auth/{kind}/{provider}/start`：请求体可传 `{ "return_path": "/files" }`，返回 `authorization_url`
 - 浏览器跳到 `authorization_url` 后，OIDC 提供商回调 `GET /auth/external-auth/{kind}/{provider}/callback`
-- 回调成功时服务端写入认证 Cookie，并 `302` 到 `return_path`
+- 如果账号未启用 MFA，回调成功时服务端写入认证 Cookie，并 `302` 到 `return_path`
+- 如果账号已启用 MFA，回调会先创建 MFA 登录 flow，并重定向到登录页携带 MFA challenge 信息；前端继续调用 `POST /auth/mfa/challenge/verify` 完成二次验证
 
 如果 provider 返回的身份缺少可用邮箱，而当前策略需要邮箱确认，回调会重定向到登录页并带上 `external_auth=email_required` 和 `flow`。随后前端使用：
 

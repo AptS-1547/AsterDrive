@@ -17,6 +17,12 @@ AsterDrive 当前**不提供统一的 `backup` / `restore` CLI**。
 - 当前数据库
 - 所有本地持久化目录
 
+`config.toml` 里包含登录签名密钥和 MFA/TOTP 加密密钥。恢复时必须使用同一份配置文件，不能只新建一份默认配置再接旧数据库。
+
+::: warning 不要丢失 `auth.mfa_secret_key`
+如果已有用户启用了 MFA，`auth.mfa_secret_key` 丢失或被替换后，原有认证器密钥无法解密。用户会无法用原认证器完成二次验证，只能由管理员逐个重置 MFA 后重新绑定。
+:::
+
 这里的“本地持久化目录”通常包括：
 
 - 默认本地存储策略目录 `data/uploads`

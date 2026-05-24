@@ -99,7 +99,7 @@
 - Prometheus 指标
 - follower 内部对象读取流 `/api/v1/internal/storage/objects/{tail:.*}`
 
-公开品牌配置、公开预览应用配置、公开缩略图能力和公开 enrollment 虽然不需要登录，但仍然是普通 `/api/v1/public/*` JSON 接口。
+公开品牌配置、公开预览应用配置、公开缩略图能力、公开媒体数据能力和公开 enrollment 虽然不需要登录，但仍然是普通 `/api/v1/public/*` JSON 接口。
 
 ## 错误码分域
 
@@ -177,7 +177,7 @@
 其中比较值得优先看的几组能力是：
 
 - 上传与版本：见 [文件](./files.md)
-- Passkey、外部认证和登录会话：见 [认证](./auth.md)
+- MFA、Passkey、外部认证和登录会话：见 [认证](./auth.md)
 - ZIP 归档只读预览：见 [文件](./files.md)、[分享](./shares.md) 和 [后台任务](./tasks.md)
 - 批量删除 / 移动 / 复制 / 打包：见 [批量操作](./batch.md)
 - 回收站恢复与清理：见 [回收站](./trash.md)
@@ -187,7 +187,7 @@
 - 公开分享、预览链接和流式播放 session：见 [分享](./shares.md)
 - Office / WOPI 预览与回调：见 [WOPI](./wopi.md)
 - WebDAV 协议、账号与 DeltaV：见 [WebDAV](./webdav.md)
-- 登录页、匿名页、缩略图能力与远端节点注册握手：见 [公共接口](./public.md)
+- 登录页、匿名页、缩略图 / 媒体数据能力与远端节点注册握手：见 [公共接口](./public.md)
 - 主从节点内部对象协议：见 [内部存储协议（follower）](./internal-storage.md)
 - 后台策略、远端节点、外部认证 provider、锁、运行时配置与审计：见 [管理](./admin.md)
 

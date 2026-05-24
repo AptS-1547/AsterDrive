@@ -57,6 +57,7 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 - 任务产物
 - WOPI 会话
 - 外部认证临时登录流和邮箱验证流
+- MFA 登录和设置临时流程
 
 ## 新部署实例的默认状态
 
@@ -86,6 +87,8 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 
 其中 `data/.tmp` 和 `data/.uploads` 是运行时临时目录，不是长期数据目录。  
 `data/managed-ingress` 是 follower 受主控托管的本地接收根目录，只有你把这台实例作为从节点使用时才会真的重要。
+
+`data/config.toml` 里的 `auth.jwt_secret` 和 `auth.mfa_secret_key` 会在首次生成时写入随机值。后续备份、迁移和恢复都应保留它们；如果启用了 MFA，替换 `mfa_secret_key` 会导致已有认证器无法继续验证。
 
 ## 启动后马上检查这些项
 

@@ -35,7 +35,7 @@
 - 恢复时，如果原父目录已经不存在，资源会回到根目录
 - 如果恢复的是文件夹，会递归恢复其已删除子项
 - `DELETE /trash/{entity_type}/{id}` 是永久删除
-- `DELETE /trash` 会清空整个回收站，并返回 `{ "purged": <count> }`
+- `DELETE /trash` 会创建 `trash_purge_all` 后台任务，并返回 `TaskInfo`；真正清空由后台 dispatcher 执行
 
 永久删除时，文件会处理 Blob 引用计数、缩略图、版本与配额回收；文件夹则会递归清掉整棵目录树。
 

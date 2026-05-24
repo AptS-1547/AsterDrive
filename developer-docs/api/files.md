@@ -22,6 +22,8 @@
 | `POST` | `/files/{id}/wopi/open` | 为指定 WOPI 预览器创建启动会话 |
 | `GET` | `/files/{id}/download` | 下载文件内容 |
 | `GET` | `/files/{id}/thumbnail` | 获取缩略图 |
+| `GET` | `/files/{id}/image-preview` | 获取图片预览 WebP |
+| `GET` | `/files/{id}/media-metadata` | 获取图片 / 音频 / 视频媒体元数据 |
 | `PUT` | `/files/{id}/content` | 覆盖文件内容并写入版本历史 |
 | `POST` | `/files/{id}/extract` | 把归档文件解包成后台任务 |
 | `PATCH` | `/files/{id}` | 重命名或移动文件 |
@@ -115,6 +117,8 @@
 - `POST /files/{id}/wopi/open`：为配置成 `provider = "wopi"` 的预览器创建一次 WOPI 启动会话
 - `GET /files/{id}/download`：下载文件；默认是流式响应，若命中的 S3 / Remote 策略把下载策略设为 `presigned`，则会在鉴权后返回 `302` 重定向到短时效的对象存储 GET URL；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅服务端当前支持的类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
+- `GET /files/{id}/image-preview`：为图片预览返回 WebP 原始响应，不走统一 JSON 包装；成功响应带 `ETag`，支持 `If-None-Match` 命中返回 `304`
+- `GET /files/{id}/media-metadata`：读取按 blob 缓存的媒体元数据；缓存未生成时返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
 - `POST /files/{id}/extract`：把 ZIP 等受支持归档文件解包成后台任务，结果会出现在 `/tasks`
 - `PATCH /files/{id}`：改名或移动
@@ -171,6 +175,16 @@
 当前图片元数据由内置 `images` 处理器读取尺寸和格式；音频元数据由内置 `lofty` 处理器读取标题、艺术家、专辑、时长、采样率、声道、码率、曲目号和内嵌封面存在性等信息；视频元数据由 `ffprobe_cli` 处理器通过服务端 `ffprobe` 读取时长、尺寸、编码、容器和帧率。`media_metadata_enabled` 是总开关；图片 / 音频 / 视频是否参与解析、命中的后缀，以及 `ffprobe` 的命令名或绝对路径，都统一在 `media_processing_registry_json` 里配置。若运行环境找不到配置的 `ffprobe`，视频会返回并缓存为 `unsupported`；配置修正且命令可用后，旧的 missing-probe unsupported 缓存会被重新探测。
 
 音频内嵌封面不单独开音乐封面缓存。`lofty` 处理器具备 `thumbnail:audio` 用途时，客户端继续复用现有 thumbnail 路径获取封面图；响应里的 `has_embedded_picture` 和 MIME 用于播放器元数据展示和兜底判断。
+
+### 图片预览
+
+`GET /files/{id}/image-preview` 和团队空间的 `GET /teams/{team_id}/files/{id}/image-preview` 直接返回 WebP 图片数据，用于文件预览面板展示大图。它和缩略图接口不是同一个缓存尺寸：
+
+- 缩略图面向文件列表和卡片，可能异步生成并返回 `202`
+- 图片预览面向预览器，按当前媒体处理器同步生成或命中缓存
+- 成功响应是 `image/webp`，带 `ETag` 和 `Cache-Control: private, max-age=0, must-revalidate`
+- 不支持的文件类型会返回文件/缩略图分域错误，不会退回原始文件流
+- 支持的处理器和命令仍然来自 `media_processing_registry_json`
 
 ### `GET /files/{id}/archive-preview`
 

@@ -12,7 +12,7 @@
 不管你用哪种部署方式，升级前都该做：
 
 1. **看 [更新日志](https://github.com/AptS-1547/AsterDrive/blob/master/CHANGELOG.md) 对应版本段** —— 重点看 `Changed` / `Removed` / `Deprecated` 三节
-2. **完整备份一次** —— 至少包括 `data/config.toml`、数据库、所有本地存储目录；详见 [备份与恢复](./backup)
+2. **完整备份一次** —— 至少包括 `data/config.toml`、数据库、所有本地存储目录；`config.toml` 里的登录签名密钥和 MFA 加密密钥都要保留，详见 [备份与恢复](./backup)
 3. **确认数据库账号有 DDL 权限** —— 启动时会自动跑 migration，账号没 `CREATE` / `ALTER` 权限会失败
 4. **预估停机窗口** —— 小型部署几十秒；如果数据库已有大量数据，看下文 MySQL 章节
 

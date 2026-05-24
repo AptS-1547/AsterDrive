@@ -32,6 +32,8 @@
 - `GET /teams/{team_id}/files/{id}/archive-preview`
 - `GET /s/{token}/archive-preview`
 - `GET /s/{token}/files/{file_id}/archive-preview`
+- `DELETE /trash`
+- `DELETE /teams/{team_id}/trash`
 
 另外，系统内部还会创建：
 
@@ -98,13 +100,14 @@
 
 ## 当前任务类型
 
-当前代码里的 `BackgroundTaskKind` 有七种：
+当前代码里的 `BackgroundTaskKind` 有八种：
 
 - `archive_extract`
 - `archive_compress`
 - `archive_preview_generate`
 - `thumbnail_generate`
 - `media_metadata_extract`
+- `trash_purge_all`
 - `storage_policy_temp_cleanup`
 - `system_runtime`
 
@@ -123,6 +126,7 @@
 - `archive_compress`：把一组选中资源打包并写回工作空间
 - `archive_preview_generate`：异步扫描 ZIP 文件并把只读 manifest 缓存在实体属性里
 - `media_metadata_extract`：异步解析图片 / 音频 / 视频基础元数据并把结果按 blob 缓存；`media_metadata_enabled` 是总开关，具体图片 / 音频 / 视频处理器、后缀绑定和 `ffprobe` 命令由 `media_processing_registry_json` 控制，缺失时缓存为 `unsupported`
+- `trash_purge_all`：异步清空个人或团队回收站，完成后发布一次 `sync.required` 存储变更事件
 - `storage_policy_temp_cleanup`：强制删除存储策略后，兜底清理遗留的临时对象和 multipart upload
 
 ## `POST /tasks/{id}/retry`
@@ -142,5 +146,6 @@
 - `/batch/archive-download` 及团队对应接口走的是“短期 stream ticket + 直接 ZIP 流下载”，不会创建 `background_task`
 - `/batch/archive-compress` 和 `/files/{id}/extract` 才会真正创建这里能看到的后台任务
 - `/files/{id}/archive-preview` 和公开分享归档预览接口第一次命中未生成缓存时，会创建 `archive_preview_generate`；接口本身返回 `202`，前端应稍后重试原接口，而不是轮询任务详情作为唯一入口
+- `DELETE /trash` 和团队对应接口不会同步清空回收站，而是创建 `trash_purge_all` 任务并返回 `TaskInfo`
 
 所以如果你只用了下载 ticket 打包链路，任务列表为空是正常现象；如果你用了压缩 / 解压链路，列表就应该能看到对应任务。

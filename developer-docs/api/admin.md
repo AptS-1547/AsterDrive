@@ -236,6 +236,7 @@
 | `GET` | `/admin/users/{id}` | 获取用户详情 |
 | `PATCH` | `/admin/users/{id}` | 更新角色、状态、总配额和策略组绑定 |
 | `PUT` | `/admin/users/{id}/password` | 管理员直接重置用户密码 |
+| `DELETE` | `/admin/users/{id}/mfa` | 清空用户 MFA 配置并吊销会话 |
 | `POST` | `/admin/users/{id}/sessions/revoke` | 吊销该用户所有现有会话 |
 | `DELETE` | `/admin/users/{id}` | 永久删除用户及其全部数据 |
 | `GET` | `/admin/users/{id}/avatar/{size}` | 读取指定用户已上传头像 |
@@ -278,6 +279,7 @@
 - 当前实现禁止禁用初始管理员 `id = 1`
 - 当前实现也禁止把初始管理员 `id = 1` 降级为非管理员
 - `PUT /admin/users/{id}/password` 使用 `{ "password": "new-secret" }`
+- `DELETE /admin/users/{id}/mfa` 会删除该用户全部 MFA factor、恢复码、待处理 MFA 登录 flow 和 TOTP setup flow，并递增 `session_version`、删除该用户现有 refresh session；用户需要重新登录并重新配置 MFA
 - `POST /admin/users/{id}/sessions/revoke` 会让这个用户现有 JWT / Cookie 会话全部失效
 - `GET /admin/users/{id}/avatar/{size}` 只会返回“已上传头像”的二进制资源；Gravatar 应看用户详情里的 `profile.avatar.url_*`
 - `DELETE /admin/users/{id}` 是物理删除，不是软删除；当前也不允许删除管理员用户

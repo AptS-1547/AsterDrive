@@ -73,6 +73,8 @@
 | `POST` | `/teams/{team_id}/files/{id}/wopi/open` | 为团队文件创建 WOPI 启动会话 |
 | `GET` | `/teams/{team_id}/files/{id}/download` | 下载团队文件 |
 | `GET` | `/teams/{team_id}/files/{id}/thumbnail` | 获取团队文件缩略图 |
+| `GET` | `/teams/{team_id}/files/{id}/image-preview` | 获取团队文件图片预览 WebP |
+| `GET` | `/teams/{team_id}/files/{id}/media-metadata` | 获取团队文件媒体元数据 |
 | `PUT` | `/teams/{team_id}/files/{id}/content` | 覆盖团队文件内容 |
 | `POST` | `/teams/{team_id}/files/{id}/extract` | 把团队归档文件解包成后台任务 |
 | `PATCH` | `/teams/{team_id}/files/{id}` | 重命名或移动团队文件 |

@@ -2,15 +2,16 @@
 
 这组路径都相对于 `/api/v1`，且不需要认证。
 
-其中品牌、预览应用和缩略图能力给匿名页面启动用；remote-enrollment 两条用于 primary 和 follower 之间的远端节点 enrollment 握手。这些接口只在 `primary` 节点注册。
+其中品牌、预览应用、缩略图能力和媒体数据能力给匿名页面启动用；remote-enrollment 两条用于 primary 和 follower 之间的远端节点 enrollment 握手。这些接口只在 `primary` 节点注册。
 
-三个公开配置读取接口都会带 `Cache-Control: public, max-age=60`。缩略图能力还会在进程内按 60 秒 TTL 缓存，并在媒体处理配置或存储策略变更时主动失效。
+公开配置读取接口都会带 `Cache-Control: public, max-age=60`。缩略图能力和媒体数据能力还会在进程内按 60 秒 TTL 缓存，并在媒体处理配置或存储策略变更时主动失效。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/public/branding` | 读取登录页、公开页和匿名入口需要的品牌配置 |
 | `GET` | `/public/preview-apps` | 读取匿名态可见的预览应用注册表 |
 | `GET` | `/public/thumbnail-support` | 读取当前匿名态可见的缩略图扩展名能力 |
+| `GET` | `/public/media-data-support` | 读取当前匿名态可见的媒体元数据能力 |
 | `POST` | `/public/remote-enrollment/redeem` | follower 用 enrollment token 兑换远端节点绑定信息 |
 | `POST` | `/public/remote-enrollment/ack` | follower 确认 enrollment 已完成 |
 
@@ -117,6 +118,49 @@
 - `vips_cli` / `ffmpeg_cli` 只有在对应命令可用且处理器启用时，才会把配置里的扩展名暴露出去；因此它可能包含图片以外的文档或视频扩展名
 - 这份能力主要来自运行时配置 `media_processing_registry_json`
 - 如果某条存储策略配置了 `thumbnail_processor = "storage_native"`，且实际驱动暴露了存储原生缩略图能力，策略里的 `thumbnail_extensions` 也会合并进公开能力列表；当前内置驱动默认不暴露这项能力
+
+## `GET /public/media-data-support`
+
+这条接口返回匿名态前端可用的媒体元数据解析能力，主要用于决定文件信息面板、播放器和预览页是否应主动请求 `/media-metadata`：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "version": 1,
+    "enabled": true,
+    "max_source_bytes": 52428800,
+    "kinds": {
+      "image": {
+        "enabled": true,
+        "match": "extensions",
+        "extensions": ["bmp", "gif", "jpeg", "jpg", "png", "tif", "tiff", "webp"]
+      },
+      "audio": {
+        "enabled": true,
+        "match": "extensions",
+        "extensions": ["flac", "m4a", "mp3", "ogg", "wav"]
+      },
+      "video": {
+        "enabled": false,
+        "match": "extensions",
+        "extensions": []
+      }
+    }
+  }
+}
+```
+
+要点：
+
+- `enabled` 是媒体元数据总开关，对应运行时配置 `media_metadata_enabled`
+- `max_source_bytes` 会按服务端配置值返回，但会裁剪到 JavaScript 安全整数范围内
+- `kinds.image` 来自内置 `images` 处理器的 `metadata:image` 用途
+- `kinds.audio` 来自内置 `lofty` 处理器的 `metadata:audio` 用途
+- `kinds.video` 来自 `ffprobe_cli` 处理器的 `metadata:video` 用途；命令不可用或处理器未启用时会返回 `enabled = false`
+- `match = "extensions"` 表示前端应按扩展名匹配；`match = "any"` 当前只会出现在启用 `ffprobe_cli` 且没有配置扩展名过滤时，表示视频元数据可尝试所有视频候选文件
+- 这份能力主要来自 `media_processing_registry_json`，并受 `media_metadata_max_source_bytes` 限制
 
 ## `POST /public/remote-enrollment/redeem`
 
