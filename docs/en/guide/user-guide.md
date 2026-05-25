@@ -1,0 +1,351 @@
+# User Manual
+
+Welcome to AsterDrive.
+
+This page is for **regular users**: receiving an account, logging in, uploading the first file, sharing it with others, and recovering content from the trash when needed. The manual is organized by page. You do not need to read it in order; after login, jump to the section for the area you do not understand.
+
+If you are an administrator, it is useful to read this page first to understand the regular-user perspective, then read [Admin Console](./admin-console).  
+If you plan to mount WebDAV or connect Office files to external editors, the related sections cover those specifically.
+
+## What We Mean by "Easy to Use"
+
+AsterDrive is not trying to be "the cloud drive with the most features". We want to build something like this:
+
+- **Common actions should not make you think**: upload, find files, share, and recover from mistaken deletion should each be one clear action
+- **Expected things should not interrupt you**: unnecessary prompts, unnecessary dialogs, and unnecessary "are you sure" moments should be minimized
+- **When something really goes wrong, give a clear signal**: error code + readable message + an actionable next step
+
+If something feels awkward after you use it, [open an issue and tell us](https://github.com/AptS-1547/AsterDrive/issues). That is the most direct feedback path.
+
+## Login and First Entry
+
+The login page does not ask you to decide first whether this is login or registration.  
+After you enter a username or email, the page decides the flow automatically:
+
+- There are no users in the system: create the administrator
+- The input is an existing account: log in
+- The input is a new account and public registration is allowed: register a regular account
+
+Important notes:
+
+- The first successfully created account automatically becomes an administrator
+- Later newly registered regular accounts usually need to click the activation email before logging in
+- If public registration is disabled, contact an administrator to create an account for you
+- If mail is configured, you can request a password reset email directly from the login page
+- If you have added a passkey, you can log in directly from the login page with device unlock or a security key
+- If the administrator configured external authentication, the login page shows the corresponding external login entries
+- If your account has MFA enabled, after password or external identity login, you must also enter an authenticator code or recovery code
+
+## Understand Workspaces First
+
+After login, the top of the left side shows the workspace list:
+
+- `My Space`: your personal files, personal shares, personal trash, and WebDAV accounts are here
+- Team spaces: appear only after you join teams; each team space has its own files, shares, trash, and task list
+
+Search, shares, tasks, and trash all follow the current workspace.  
+To manage a group of content, switch to the corresponding workspace first.
+
+## Common Areas on the Files Page
+
+- Left-side workspace list: switch personal space or team spaces
+- Left-side folder tree: jump quickly into the target folder
+- Top search box: search files and folders in the current workspace
+- `Trash`: handle deleted content in the current workspace
+- `My Shares`: view links already sent from the current workspace
+- `Task Center`: view background tasks such as online compression, online extraction, and package downloads
+- `WebDAV`: appears only in personal space and is used to create desktop client accounts
+- `Settings` in the top-right user menu: adjust profile, interface, security, and team-related settings
+
+## Upload and Organize Files
+
+The file list, context menu, and top action area handle most daily work:
+
+- Create folders
+- Create blank text files
+- Upload files
+- Upload folders
+- Download files
+- Rename, copy, move, and delete files and folders
+- View details
+- Manually lock or unlock files
+- Online compression, online extraction, and folder package download
+- Switch between list view and grid view
+- Sort by name, size, creation time, update time, or type
+
+You can also drag directly:
+
+- Drag files or folders to target folders in the left-side folder tree
+- Drag files or folders to a parent directory in the top breadcrumbs
+- Drag files or folders to the left-side trash
+
+## Search, Multi-Select, and Batch Operations
+
+The top search box searches files and folders by name in the current workspace.  
+You can click the search box directly or use `Ctrl + K` to open the search dialog. In the dialog, you can switch between "all / files only / folders only", and quickly filter by images, videos, music, documents, spreadsheets, presentations, archives, code, and others. Use arrow keys to select results and `Enter` to open.
+
+The left side also has quick entries for common types such as images, videos, music, and documents. Clicking one still searches by file category inside the current workspace.
+
+Search state on the files page follows the current workspace.  
+Results you find in a team space do not mix with personal-space files.
+
+When you need to handle multiple items at once, select them and batch execute:
+
+- Batch move
+- Batch copy
+- Batch delete
+- Batch package download
+
+In the file list and trash, you can use `Ctrl + A` or `Cmd + A` to select all items on the current page.
+
+File or folder "Details" shows name, size, type, creation time, modification time, lock status, share status, storage policy ID, and other information.  
+When diagnosing "which policy is this file on" or "is it locked", start here.
+
+## Open, Preview, and Edit
+
+Many common files can open directly on the web page, such as:
+
+- Images
+- Audio and video
+- PDF
+- Markdown
+- CSV / TSV
+- JSON
+- XML
+- ZIP archive listings
+- Plain text and common code files
+
+Text files can usually be edited directly. When saving, the system automatically:
+
+- Checks whether the file was changed by someone else after you opened it
+- Creates a new version
+- Releases the edit lock
+
+If the administrator configured extra online preview or online editing capabilities for the site, some files will also show extra "open with" entries.  
+The most common scenario is handing Office files to an external previewer or WOPI online editor.
+
+Whether such entries appear depends on whether the administrator configured a corresponding preview app for the current file type.  
+If your `docx`, `xlsx`, or `pptx` file does not show an extra open method, the site has usually not connected that file type to a usable external service yet.
+
+ZIP archive preview is a read-only listing preview. It shows only directories, files, sizes, and modification times inside the archive. It does not extract the archive into the current folder and cannot download a single file inside the archive. The first time you open a ZIP, it may show generation in progress until the background task finishes and the listing is displayed.
+
+If filenames inside the ZIP look garbled, switch `Filename encoding` in the preview toolbar. Try `Auto` first. If it does not work, choose based on the archive source, such as `GB18030`, `CP437`, `Shift_JIS`, or `Big5`. This choice only affects listing display and does not modify the archive itself.
+
+## How to Use Version History
+
+In version history, you can:
+
+- View old versions
+- Restore an old version
+- Delete old versions you no longer need
+
+After restoring an old version, versions newer than that one are truncated, so confirm before restoring.
+
+If a conflict prompt appears while saving, it usually means this file was changed by someone else after you opened it. Refresh the content first, then decide whether to continue saving.
+
+## Task Center
+
+In the current UI, the most common actions that enter `Task Center` include:
+
+- Package downloading a folder
+- Online compression after selecting a batch of files or folders
+- Online extraction of an archive
+- Generating a listing the first time a ZIP archive preview opens
+
+If the site later adds other background file tasks, they will appear here in the same way.
+
+In `Task Center`, you can:
+
+- See whether a task is queued, processing, completed, canceled, or failed
+- View creation time, start time, and completion time
+- View current progress and status description for each step
+- Open the result folder directly after completion
+- Requeue after failure
+
+Task Center also follows the current workspace.  
+Tasks started in a team space must be viewed in that team's `Task Center`.
+
+## Trash
+
+Normal deletion does not immediately remove files or folders permanently. They enter the trash first.
+
+In trash, you can:
+
+- Restore items
+- Permanently delete a single item
+- Empty the whole trash
+- Batch restore
+- Batch permanently delete
+
+If the original parent directory no longer exists, the item returns to the root directory during restore.
+
+## Share Links
+
+Shares follow the current workspace.  
+To share files in a team space, switch to that team space first, then create the share.
+
+AsterDrive supports file shares and folder shares. When creating a share, you can set:
+
+- Password
+- Expiration time
+- Maximum download count
+
+Rules to note:
+
+- The same file or folder can have only one active share at the same time
+- If you want to change the password, expiration time, or download count, you do not need to recreate the link; edit it directly in `My Shares`
+- If the link has a password, visitors usually do not need to enter it again for about 1 hour after successful verification in the current browser
+
+If you share a single file, the dialog can also switch to `Direct link` mode. Direct links do not support password, expiration time, or download count limits, but they provide an additional "force download link". The default direct link is better for opening directly; the force download link explicitly asks the browser to download. When the file lives on third-party storage with a `presigned` download policy enabled, this force download link may first redirect to a short-lived download URL.
+
+When playing audio or video on a share page, the system creates a short-lived playback session, valid for about 3 hours by default. This session is only for the browser player. The share link's own password, expiration time, and download count limits still apply normally.
+
+If the administrator enables share-side ZIP preview, visitors can also view a read-only listing of ZIP contents on the share page. If the share has a password, visitors must pass password verification before seeing the listing.
+
+## My Shares
+
+The left-side `My Shares` page lists links already sent from the current workspace.
+
+There you can:
+
+- Copy share links
+- Open public pages
+- Edit password, expiration time, and download count limits
+- Delete shares no longer needed
+- View open counts and download counts
+- Batch remove shares after multi-select
+
+The share list is paginated. When there are many shares, confirm the current page before batch operations so you do not mistakenly think all historical shares were selected at once.
+
+## WebDAV
+
+If you want to use AsterDrive directly from Finder, Windows Explorer, rclone, or other desktop tools, create a dedicated WebDAV account.
+
+WebDAV accounts are managed only in personal space and are not shared with team spaces.
+
+Common practice:
+
+- One independent account per device
+- Disable only that account if a device is lost
+- Restrict an account to a folder under the root directory
+
+When creating a WebDAV account, you can:
+
+- Customize the username
+- Customize the password, or let the system generate one automatically
+- Specify the access scope
+
+The password is shown only once after creation. Save it immediately.
+
+The default WebDAV address is usually:
+
+```text
+https://your-domain/webdav/
+```
+
+If the administrator changed the WebDAV prefix, use the new address.
+
+## Settings
+
+After entering from the top-right user menu, the settings page has four sections.
+
+### Profile
+
+You can change:
+
+- Display name
+- Avatar
+
+Avatar supports common methods:
+
+- Upload and crop an avatar
+- Use a Gravatar avatar generated from your email
+- Clear the current avatar
+
+Your username is shown here.  
+Email status is also shown, but changing the bound email is handled under `Settings -> Security`.
+
+### Interface
+
+You can adjust:
+
+- Light / dark / follow system
+- Theme color
+- Display language
+- Default file browser view
+- Single-click or double-click to open files and folders
+- Whether to enable realtime file-change sync
+- Display time zone
+
+Here, "realtime file-change sync" means the web page refreshes the current view through realtime push. It is not a desktop local-folder sync client, so keep it separate from local sync capability.
+
+### Security
+
+This section handles email status, email change, password, MFA, passkeys, external identities, and login devices.
+
+You can see:
+
+- Whether the current email has been verified
+- Whether passkeys can be added
+- Whether MFA is enabled
+- Which external identities are bound
+- Whether there is a "new email pending confirmation"
+
+If the current email has been verified, you can:
+
+- Enter a new email
+- Send a confirmation email to the new address
+- Resend the confirmation email when needed
+
+The new email takes effect only after you open the confirmation link.
+
+You can also change the login password here. Changing the password requires entering the current password first.
+
+In the current version, after a password change succeeds, the current browser session stays logged in, while login sessions on other devices become invalid and must log in again.
+
+The `Multi-factor authentication` tab can add a second factor to the account. TOTP authenticator apps are currently supported, such as 1Password, Bitwarden, Google Authenticator, and Microsoft Authenticator.
+
+When enabling MFA, the system asks you to:
+
+- Scan a QR code with an authenticator app, or manually enter the secret
+- Enter the current 6-digit code to finish binding
+- Download or copy recovery codes
+
+Recovery codes are shown in plaintext only once when generated, and each can be used only once. Save them to a password manager, encrypted note, or another safe place. If you lose the authenticator, you can complete second-factor verification on the login page with a recovery code. After logging in, regenerate recovery codes.
+
+After MFA is enabled, password login and external identity login both require the second factor. Passkey login itself relies on device unlock or a security key to complete user verification, so it does not enter this TOTP challenge. Disabling MFA or regenerating recovery codes also requires entering the current TOTP code or an unused recovery code to confirm.
+
+If both authenticator and recovery codes are lost, contact an administrator to reset MFA in user details.
+
+The `Passkey` tab manages passwordless login methods:
+
+- Add a new passkey
+- Rename existing passkeys
+- View creation time and last used time
+- Delete passkeys no longer used
+
+When adding one, the browser opens the system verification window. After success, the login page can use device unlock, fingerprint, face, or security key to log into the account directly. The exact method depends on your browser and system.
+
+The `External identities` tab lists external login identities bound to the current account. After unbinding, that identity can no longer directly log into this account. If the administrator enabled auto-binding by verified email, it may still bind again later when the rules are met.
+
+In `Login devices`, you can also:
+
+- View devices that are still logged in
+- Remove one device separately
+- Sign out other devices at once
+
+If you remove the current device, the current browser logs out immediately.
+
+### Teams
+
+`Settings -> Teams` lists the teams you have joined.
+
+You can:
+
+- View team name, description, member count, and space usage
+- Open a team workspace directly
+- Enter the team management page
+- View archived teams
+
+If you are an administrator or owner in a team, you can continue managing members and viewing team audit.  
+If you have the corresponding permission, you can also restore archived teams.

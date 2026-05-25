@@ -6,9 +6,9 @@
 </p>
 
 <p align="center">
-  A lightweight, hackable file infrastructure for self-hosters and small teams.
+  Self-hosted file infrastructure in Rust for small teams that need storage control, reliable large-file uploads, WebDAV/WOPI, and operations visibility without adopting a full private-cloud suite.
   <br />
-  Reliable uploads, storage policies, local / S3 / remote-node backends, sharing, WebDAV, WOPI, version history, trash, and operations tooling in one Rust + React service.
+  Route files across local, S3-compatible, and remote-node backends with one MIT-licensed Rust + React service built for deployment, auditability, and modification.
 </p>
 
 <p align="center">
@@ -173,6 +173,32 @@ On first startup, AsterDrive will automatically:
 - background task records for archive jobs, thumbnail generation, mail dispatch, cleanup, and runtime tasks
 - periodic cleanup for uploads, trash, locks, audit logs, teams, WOPI sessions, and orphaned blobs
 - Swagger UI in debug builds with the `openapi` feature, plus static OpenAPI export
+
+## Roadmap
+
+### v0.2.x: operational maturity
+
+The `v0.2.x` line focuses on making AsterDrive easier to operate in real deployments: storage migration, scoped access, background workflows, safer error semantics, and remote-node deployment flexibility.
+
+- storage-policy blob migration tasks
+- team-scoped WebDAV accounts
+- offline HTTP/HTTPS import tasks with SSRF protection
+- broader archive preview and extraction support
+- email verification login
+- error-code taxonomy cleanup
+- deployment and operations documentation
+- reverse-connection support for follower nodes behind NAT
+
+### v0.3: organization and extensibility
+
+The `v0.3` line focuses on richer workspace organization and the foundation for controlled integrations.
+
+- tags for files and folders
+- tag-based filtering in file lists and search
+- WASM/Extism plugin design and spike
+- capability-based plugin permissions
+- event subscriptions and webhook-style automation
+- file actions and plugin-provided admin settings
 
 ## Documentation
 
