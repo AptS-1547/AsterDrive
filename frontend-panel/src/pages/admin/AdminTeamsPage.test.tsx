@@ -13,6 +13,7 @@ const mockState = vi.hoisted(() => ({
 	reload: vi.fn(),
 	searchParams: "",
 	setSearchParams: vi.fn(),
+	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
 
@@ -56,6 +57,7 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("sonner", () => ({
 	toast: {
+		error: (...args: unknown[]) => mockState.toastError(...args),
 		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
 }));
@@ -277,6 +279,7 @@ describe("AdminTeamsPage", () => {
 		mockState.reload.mockReset();
 		mockState.searchParams = "";
 		mockState.setSearchParams.mockReset();
+		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
 
 		mockState.createTeam.mockResolvedValue({
@@ -347,5 +350,25 @@ describe("AdminTeamsPage", () => {
 			policy_group_id: 5,
 		});
 		expect(payload).not.toHaveProperty("storage_quota");
+	});
+
+	it("rejects overflowing create quota values before submitting", async () => {
+		render(<AdminTeamsPage />);
+
+		fireEvent.click(screen.getByText("new_team"));
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Huge" },
+		});
+		fireEvent.change(screen.getByLabelText("team_admin_identifier"), {
+			target: { value: "lead@example.com" },
+		});
+		fireEvent.change(screen.getByLabelText("team_quota_mb"), {
+			target: { value: "999999999999999999999999" },
+		});
+
+		fireEvent.click(screen.getByText("create_team"));
+
+		expect(mockState.createTeam).not.toHaveBeenCalled();
+		expect(mockState.toastError).toHaveBeenCalledWith("team_quota_invalid");
 	});
 });

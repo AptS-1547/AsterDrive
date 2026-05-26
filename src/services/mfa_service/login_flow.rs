@@ -550,6 +550,7 @@ fn email_code_policy_ready(state: &PrimaryAppState, policy: &RuntimeEmailCodeLog
 }
 
 fn generate_email_code() -> String {
+    // rand::rng() returns ThreadRng, which implements CryptoRng and is seeded from the OS.
     let mut rng = rand::rng();
     (0..EMAIL_CODE_DIGITS)
         .map(|_| char::from(b'0' + rng.random_range(0_u8..10_u8)))

@@ -23,6 +23,7 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { handleApiError } from "@/hooks/useApiError";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import type { SortOrder } from "@/lib/pagination";
+import { BYTES_PER_MB, parseStorageQuotaMbToBytes } from "@/lib/storageQuota";
 import { getUserDisplayName } from "@/lib/user";
 import { adminTeamService } from "@/services/adminService";
 import type { AdminTeamMemberSortBy } from "@/types/adminSort";
@@ -51,8 +52,6 @@ interface AdminTeamDetailDialogProps {
 	pageTab?: AdminTeamDetailTab;
 }
 
-const BYTES_PER_MB = 1024 * 1024;
-
 function quotaMbValue(team: AdminTeamInfo | null) {
 	const quota = team?.storage_quota ?? 0;
 	return quota > 0 ? String(quota / BYTES_PER_MB) : "";
@@ -66,11 +65,8 @@ function quotaValueToBytes(value: string, team: AdminTeamInfo | null) {
 	if (!normalized) {
 		return 0;
 	}
-	if (!/^\d+$/.test(normalized)) {
-		return null;
-	}
-	const mb = Number.parseInt(normalized, 10);
-	return mb === 0 ? 0 : mb * BYTES_PER_MB;
+
+	return parseStorageQuotaMbToBytes(normalized);
 }
 
 export function AdminTeamDetailDialog({

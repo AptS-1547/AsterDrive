@@ -96,6 +96,7 @@ export function AdminTeamDetailOverviewSection({
 			) : (
 				<form
 					className="space-y-4"
+					noValidate
 					onSubmit={(event) => {
 						event.preventDefault();
 						void onSave();
@@ -157,7 +158,7 @@ export function AdminTeamDetailOverviewSection({
 								id="admin-team-detail-storage-quota"
 								type="number"
 								min={0}
-								step="any"
+								step={1}
 								value={quotaValue}
 								disabled={formDisabled}
 								placeholder={t("team_quota_unlimited_short")}

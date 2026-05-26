@@ -41,13 +41,13 @@ import {
 	parseSortSearchParam,
 	type SortOrder,
 } from "@/lib/pagination";
+import { parseStorageQuotaMbToBytes } from "@/lib/storageQuota";
 import { adminTeamService } from "@/services/adminService";
 import type { AdminTeamSortBy } from "@/types/adminSort";
 import type { StoragePolicyGroup } from "@/types/api";
 
 const TEAM_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_TEAM_PAGE_SIZE = 20 as const;
-const BYTES_PER_MB = 1024 * 1024;
 const TEAM_MANAGED_QUERY_KEYS = [
 	"archived",
 	"keyword",
@@ -87,11 +87,8 @@ function parseArchivedSearchParam(value: string | null) {
 function createTeamQuotaBytes(value: string) {
 	const normalized = value.trim();
 	if (!normalized) return undefined;
-	if (!/^\d+$/.test(normalized)) return null;
 
-	const mb = Number.parseInt(normalized, 10);
-	if (Number.isNaN(mb) || mb < 0) return null;
-	return mb === 0 ? 0 : mb * BYTES_PER_MB;
+	return parseStorageQuotaMbToBytes(normalized);
 }
 
 function buildManagedTeamSearchParams({

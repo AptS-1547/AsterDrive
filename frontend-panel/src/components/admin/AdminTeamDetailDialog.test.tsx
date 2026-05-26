@@ -5,6 +5,8 @@ import type { UserSummary } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
+	toastError: vi.fn(),
+	toastSuccess: vi.fn(),
 }));
 
 const adminTeamServiceMocks = vi.hoisted(() => ({
@@ -43,8 +45,8 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("sonner", () => ({
 	toast: {
-		error: vi.fn(),
-		success: vi.fn(),
+		error: (...args: unknown[]) => mockState.toastError(...args),
+		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
 }));
 
@@ -59,6 +61,8 @@ vi.mock("@/services/adminService", () => ({
 describe("AdminTeamDetailDialog", () => {
 	beforeEach(() => {
 		mockState.handleApiError.mockReset();
+		mockState.toastError.mockReset();
+		mockState.toastSuccess.mockReset();
 		adminTeamServiceMocks.addMember.mockReset();
 		adminTeamServiceMocks.delete.mockReset();
 		adminTeamServiceMocks.get.mockReset();
@@ -478,5 +482,56 @@ describe("AdminTeamDetailDialog", () => {
 				policy_group_id: 5,
 			});
 		});
+	});
+
+	it("rejects overflowing overview quota values before saving", async () => {
+		render(
+			<AdminTeamDetailDialog
+				layout="page"
+				onListChange={async () => undefined}
+				onOpenChange={vi.fn()}
+				onPageTabChange={vi.fn()}
+				onRefreshPolicyGroups={async () => undefined}
+				open
+				pageTab="overview"
+				policyGroups={[
+					{
+						created_at: "2026-04-01T00:00:00Z",
+						description: "",
+						id: 5,
+						is_default: false,
+						is_enabled: true,
+						items: [
+							{
+								id: 1,
+								max_file_size: 0,
+								min_file_size: 0,
+								policy: {
+									id: 7,
+									name: "Default",
+								},
+								policy_id: 7,
+								priority: 1,
+							},
+						],
+						name: "Primary",
+						updated_at: "2026-04-01T00:00:00Z",
+					},
+				]}
+				policyGroupsLoading={false}
+				teamId={14}
+			/>,
+		);
+
+		const quotaInput = (await screen.findByLabelText(
+			"team_quota_mb",
+		)) as HTMLInputElement;
+		fireEvent.change(quotaInput, {
+			target: { value: "999999999999999999999999" },
+		});
+
+		expect(screen.getByRole("button", { name: "save_changes" })).toBeDisabled();
+		expect(adminTeamServiceMocks.update).not.toHaveBeenCalled();
+		expect(mockState.toastError).not.toHaveBeenCalled();
 	});
 });
