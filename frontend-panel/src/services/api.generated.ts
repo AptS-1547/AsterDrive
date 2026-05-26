@@ -4662,6 +4662,7 @@ export interface components {
             filename: string;
             /** Format: int64 */
             folder_id?: number | null;
+            frontend_client_id?: string | null;
             relative_path?: string | null;
             /** Format: int64 */
             total_size: number;
@@ -6399,6 +6400,11 @@ export interface components {
             filename: string;
             /** Format: int64 */
             folder_id?: number | null;
+            /**
+             * @description Browser/frontend instance that initiated the session.
+             *     Used only for recoverable-session visibility; auth still uses user/team scope.
+             */
+            frontend_client_id?: string | null;
             id: string;
             /** Format: int64 */
             policy_id: number;
@@ -13048,7 +13054,9 @@ export interface operations {
     };
     list_recoverable_upload_sessions: {
         parameters: {
-            query?: never;
+            query?: {
+                frontend_client_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -18215,7 +18223,9 @@ export interface operations {
     };
     list_team_recoverable_upload_sessions: {
         parameters: {
-            query?: never;
+            query?: {
+                frontend_client_id?: string | null;
+            };
             header?: never;
             path: {
                 /** @description Team ID */

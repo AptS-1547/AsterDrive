@@ -38,6 +38,7 @@ async fn init_upload_for_scope(
     total_size: i64,
     folder_id: Option<i64>,
     relative_path: Option<&str>,
+    frontend_client_id: Option<&str>,
 ) -> Result<InitUploadResponse> {
     tracing::debug!(
         scope = ?scope,
@@ -48,9 +49,16 @@ async fn init_upload_for_scope(
         "initializing upload session"
     );
 
-    let ctx =
-        resolve_init_upload_context(state, scope, filename, total_size, folder_id, relative_path)
-            .await?;
+    let ctx = resolve_init_upload_context(
+        state,
+        scope,
+        filename,
+        total_size,
+        folder_id,
+        relative_path,
+        frontend_client_id,
+    )
+    .await?;
     let transport = resolve_policy_upload_transport(&ctx.policy);
 
     if ctx.total_size == 0 {
@@ -118,6 +126,7 @@ async fn init_chunked_upload_session(
                 total_chunks,
                 folder_id: ctx.target.folder_id,
                 policy_id: ctx.policy.id,
+                frontend_client_id: ctx.frontend_client_id.as_deref(),
                 status: UploadSessionStatus::Uploading,
                 s3_temp_key: None,
                 s3_multipart_id: None,
@@ -180,6 +189,27 @@ pub async fn init_upload(
     folder_id: Option<i64>,
     relative_path: Option<&str>,
 ) -> Result<InitUploadResponse> {
+    init_upload_with_frontend_client(
+        state,
+        user_id,
+        filename,
+        total_size,
+        folder_id,
+        relative_path,
+        None,
+    )
+    .await
+}
+
+pub async fn init_upload_with_frontend_client(
+    state: &PrimaryAppState,
+    user_id: i64,
+    filename: &str,
+    total_size: i64,
+    folder_id: Option<i64>,
+    relative_path: Option<&str>,
+    frontend_client_id: Option<&str>,
+) -> Result<InitUploadResponse> {
     init_upload_for_scope(
         state,
         personal_scope(user_id),
@@ -187,6 +217,7 @@ pub async fn init_upload(
         total_size,
         folder_id,
         relative_path,
+        frontend_client_id,
     )
     .await
 }
@@ -201,6 +232,29 @@ pub async fn init_upload_for_team(
     folder_id: Option<i64>,
     relative_path: Option<&str>,
 ) -> Result<InitUploadResponse> {
+    init_upload_for_team_with_frontend_client(
+        state,
+        team_id,
+        user_id,
+        filename,
+        total_size,
+        folder_id,
+        relative_path,
+        None,
+    )
+    .await
+}
+
+pub async fn init_upload_for_team_with_frontend_client(
+    state: &PrimaryAppState,
+    team_id: i64,
+    user_id: i64,
+    filename: &str,
+    total_size: i64,
+    folder_id: Option<i64>,
+    relative_path: Option<&str>,
+    frontend_client_id: Option<&str>,
+) -> Result<InitUploadResponse> {
     init_upload_for_scope(
         state,
         team_scope(team_id, user_id),
@@ -208,6 +262,7 @@ pub async fn init_upload_for_team(
         total_size,
         folder_id,
         relative_path,
+        frontend_client_id,
     )
     .await
 }

@@ -35,10 +35,51 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
+class MockCache {
+	deleteCalls: string[] = [];
+	store = new Map<string, Response>();
+
+	async match(request: Request) {
+		return this.store.get(request.url)?.clone();
+	}
+
+	async put(request: Request, response: Response) {
+		this.store.set(request.url, response.clone());
+	}
+
+	async delete(request: Request) {
+		this.deleteCalls.push(request.url);
+		return this.store.delete(request.url);
+	}
+
+	clear() {
+		this.store.clear();
+	}
+}
+
+function installCacheStorage(cache = new MockCache()) {
+	const cacheStorage = {
+		delete: vi.fn(async () => {
+			cache.clear();
+			return true;
+		}),
+		open: vi.fn(async () => cache),
+	};
+	Object.defineProperty(globalThis, "caches", {
+		configurable: true,
+		value: cacheStorage,
+	});
+	return { cache, cacheStorage };
+}
+
 describe("useBlobUrl", () => {
 	beforeEach(() => {
 		mockState.get.mockReset();
 		mockState.warn.mockReset();
+		Object.defineProperty(globalThis, "caches", {
+			configurable: true,
+			value: undefined,
+		});
 		Object.defineProperty(URL, "createObjectURL", {
 			configurable: true,
 			value: vi
@@ -97,7 +138,9 @@ describe("useBlobUrl", () => {
 			});
 		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
 
-		const { result } = renderHook(() => useBlobUrl("/thumb"));
+		const { result } = renderHook(() =>
+			useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
 
 		await waitFor(() => {
 			expect(mockState.get).toHaveBeenCalledTimes(2);
@@ -147,7 +190,9 @@ describe("useBlobUrl", () => {
 			});
 		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
 
-		const { result } = renderHook(() => useBlobUrl("/thumb"));
+		const { result } = renderHook(() =>
+			useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
 
 		await waitFor(() => {
 			expect(result.current.error).toBe(true);
@@ -264,6 +309,63 @@ describe("useBlobUrl", () => {
 		clearBlobUrlCache();
 	});
 
+	it("restores persisted thumbnail blobs before background revalidation finishes", async () => {
+		const { cacheStorage } = installCacheStorage();
+		const revalidation = deferred<{
+			status: number;
+			data: Blob;
+			headers: Record<string, string>;
+		}>();
+		mockState.get
+			.mockResolvedValueOnce({
+				status: 200,
+				data: new Blob(["persisted-image"]),
+				headers: { etag: '"etag-persisted"' },
+			})
+			.mockImplementationOnce(() => revalidation.promise);
+		let module = await loadHookModule();
+
+		const first = renderHook(() =>
+			module.useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
+		await waitFor(() => {
+			expect(first.result.current.blobUrl).toBe("blob:1");
+		});
+		expect(cacheStorage.open).toHaveBeenCalled();
+		expect(mockState.warn).not.toHaveBeenCalled();
+		first.unmount();
+		module.clearBlobUrlCache();
+
+		module = await loadHookModule();
+		const second = renderHook(() =>
+			module.useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
+
+		await waitFor(() => {
+			expect(second.result.current.blobUrl).toBe("blob:2");
+			expect(second.result.current.loading).toBe(false);
+		});
+		expect(mockState.get).toHaveBeenCalledTimes(2);
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/thumb", {
+			headers: { "If-None-Match": '"etag-persisted"' },
+			responseType: "blob",
+			validateStatus: expect.any(Function),
+		});
+
+		revalidation.resolve({
+			status: 304,
+			data: new Blob([]),
+			headers: {},
+		});
+
+		await waitFor(() => {
+			expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+		});
+		second.unmount();
+		module.clearBlobUrlCache();
+		await module.clearPersistedBlobUrlCache();
+	});
+
 	it("stays idle when no path is provided", async () => {
 		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
 
@@ -277,6 +379,7 @@ describe("useBlobUrl", () => {
 	});
 
 	it("re-fetches active consumers after explicit invalidation", async () => {
+		const { cache, cacheStorage } = installCacheStorage();
 		mockState.get
 			.mockResolvedValueOnce({
 				status: 200,
@@ -291,14 +394,24 @@ describe("useBlobUrl", () => {
 		const { clearBlobUrlCache, invalidateBlobUrl, useBlobUrl } =
 			await loadHookModule();
 
-		const { result } = renderHook(() => useBlobUrl("/thumb"));
+		const { result } = renderHook(() =>
+			useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
 
 		await waitFor(() => {
 			expect(result.current.blobUrl).toBe("blob:1");
 		});
+		expect(cacheStorage.open).toHaveBeenCalled();
+		expect(mockState.warn).not.toHaveBeenCalled();
+		await waitFor(() => {
+			expect(cache.store.size).toBe(1);
+		});
 
 		act(() => {
 			invalidateBlobUrl("/thumb");
+		});
+		await waitFor(() => {
+			expect(cache.deleteCalls).toHaveLength(1);
 		});
 
 		await waitFor(() => {
