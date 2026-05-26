@@ -84,11 +84,13 @@ pub async fn init_chunked_upload(
     let resp = upload_service::init_upload_with_frontend_client(
         &state,
         claims.user_id,
-        &body.filename,
-        body.total_size,
-        body.folder_id,
-        body.relative_path.as_deref(),
-        body.frontend_client_id.as_deref(),
+        upload_service::InitUploadParams::new(
+            &body.filename,
+            body.total_size,
+            body.folder_id,
+            body.relative_path.as_deref(),
+        )
+        .with_frontend_client(body.frontend_client_id.as_deref()),
     )
     .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(resp)))
@@ -351,11 +353,13 @@ pub(crate) async fn team_init_chunked_upload(
         &state,
         *path,
         claims.user_id,
-        &body.filename,
-        body.total_size,
-        body.folder_id,
-        body.relative_path.as_deref(),
-        body.frontend_client_id.as_deref(),
+        upload_service::InitUploadParams::new(
+            &body.filename,
+            body.total_size,
+            body.folder_id,
+            body.relative_path.as_deref(),
+        )
+        .with_frontend_client(body.frontend_client_id.as_deref()),
     )
     .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(resp)))

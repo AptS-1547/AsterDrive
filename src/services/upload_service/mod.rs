@@ -30,7 +30,7 @@ pub use complete::{
     complete_upload_with_audit,
 };
 pub use init::{
-    init_upload, init_upload_for_team, init_upload_for_team_with_frontend_client,
+    InitUploadParams, init_upload, init_upload_for_team, init_upload_for_team_with_frontend_client,
     init_upload_with_frontend_client,
 };
 pub use lifecycle::{
