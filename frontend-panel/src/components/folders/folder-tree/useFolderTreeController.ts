@@ -47,6 +47,7 @@ export function useFolderTreeController({
 	const moveToFolder = useFileStore((s) => s.moveToFolder);
 	const storeFolders = useFileStore((s) => s.folders);
 	const storeCurrentFolderId = useFileStore((s) => s.currentFolderId);
+	const storeLastFolderContents = useFileStore((s) => s.lastFolderContents);
 	const storeLoading = useFileStore((s) => s.loading);
 	const sortBy = useFileStore((s) => s.sortBy);
 	const sortOrder = useFileStore((s) => s.sortOrder);
@@ -162,6 +163,18 @@ export function useFolderTreeController({
 				return;
 			}
 
+			const lastFolderContents = useFileStore.getState().lastFolderContents;
+			if (
+				lastFolderContents?.folderId === parentId &&
+				lastFolderContents.sortBy === sortBy &&
+				lastFolderContents.sortOrder === sortOrder &&
+				lastFolderContents.workspaceRevision ===
+					useFileStore.getState().workspaceRequestRevision
+			) {
+				syncFolderChildren(parentId, lastFolderContents.folders);
+				return;
+			}
+
 			const inflight = inflightLoadsRef.current.get(parentId);
 			if (inflight) {
 				await inflight;
@@ -235,16 +248,31 @@ export function useFolderTreeController({
 
 	useEffect(() => {
 		if (rootLoaded) return;
+		if (isRootRoute && storeLoading && storeCurrentFolderId === null) return;
 		let cancelled = false;
-		void ensureChildrenLoaded(null).catch(() => {
-			if (!cancelled) {
-				dispatchTree({ type: "setRootLoaded", loaded: false });
+		const timer = window.setTimeout(() => {
+			if (cancelled) return;
+			const state = useFileStore.getState();
+			if (isRootRoute && state.loading && state.currentFolderId === null) {
+				return;
 			}
-		});
+			void ensureChildrenLoaded(null).catch(() => {
+				if (!cancelled) {
+					dispatchTree({ type: "setRootLoaded", loaded: false });
+				}
+			});
+		}, 0);
 		return () => {
 			cancelled = true;
+			window.clearTimeout(timer);
 		};
-	}, [ensureChildrenLoaded, rootLoaded]);
+	}, [
+		ensureChildrenLoaded,
+		isRootRoute,
+		rootLoaded,
+		storeCurrentFolderId,
+		storeLoading,
+	]);
 
 	useEffect(() => {
 		if (storeLoading) return;
@@ -259,6 +287,22 @@ export function useFolderTreeController({
 		storeLoading,
 		syncFolderChildren,
 	]);
+
+	useEffect(() => {
+		if (!storeLastFolderContents) return;
+		if (storeLastFolderContents.sortBy !== sortBy) return;
+		if (storeLastFolderContents.sortOrder !== sortOrder) return;
+		if (
+			storeLastFolderContents.workspaceRevision !==
+			useFileStore.getState().workspaceRequestRevision
+		) {
+			return;
+		}
+		syncFolderChildren(
+			storeLastFolderContents.folderId,
+			storeLastFolderContents.folders,
+		);
+	}, [sortBy, sortOrder, storeLastFolderContents, syncFolderChildren]);
 
 	useEffect(() => {
 		if (storeLoading) return;

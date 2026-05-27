@@ -84,6 +84,15 @@ class MockEventSource {
 	}
 }
 
+async function connectStorageEvents() {
+	await waitFor(
+		() => {
+			expect(MockEventSource.instances).toHaveLength(1);
+		},
+		{ timeout: 2_000 },
+	);
+}
+
 vi.mock("@/config/app", () => ({
 	config: {
 		apiBaseUrl: "http://api.test/api/v1",
@@ -202,9 +211,7 @@ describe("useStorageChangeEvents", () => {
 
 		const hook = renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(1);
-		});
+		await connectStorageEvents();
 
 		MockEventSource.instances[0]?.emit({
 			kind: "file.updated",
@@ -249,9 +256,7 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(1);
-		});
+		await connectStorageEvents();
 
 		MockEventSource.instances[0]?.emit({
 			kind: "sync.required",
@@ -282,9 +287,7 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(1);
-		});
+		await connectStorageEvents();
 
 		MockEventSource.instances[0]?.emit({
 			kind: "file.trashed",
@@ -312,9 +315,7 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(1);
-		});
+		await connectStorageEvents();
 
 		MockEventSource.instances[0]?.emit({
 			kind: "file.created",
@@ -343,9 +344,7 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(1);
-		});
+		await connectStorageEvents();
 
 		MockEventSource.instances[0]?.emit({
 			kind: "file.purged",
@@ -377,9 +376,7 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(1);
-		});
+		await connectStorageEvents();
 
 		MockEventSource.instances[0]?.emit({
 			kind: "file.updated",
@@ -414,9 +411,7 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(1);
-		});
+		await connectStorageEvents();
 
 		MockEventSource.instances[0]?.emit({
 			kind: "file.trashed",
@@ -444,9 +439,8 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(0);
-		});
+		await new Promise((resolve) => window.setTimeout(resolve, 1600));
+		expect(MockEventSource.instances).toHaveLength(0);
 	});
 
 	it("does not open the event stream while auth bootstrap is checking", async () => {
@@ -457,9 +451,8 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await waitFor(() => {
-			expect(MockEventSource.instances).toHaveLength(0);
-		});
+		await new Promise((resolve) => window.setTimeout(resolve, 1600));
+		expect(MockEventSource.instances).toHaveLength(0);
 	});
 
 	it("reconnects with exponential backoff after onerror", async () => {
@@ -470,7 +463,7 @@ describe("useStorageChangeEvents", () => {
 			);
 			renderHook(() => useStorageChangeEvents());
 
-			// 初始连接
+			await vi.advanceTimersByTimeAsync(1500);
 			expect(MockEventSource.instances).toHaveLength(1);
 
 			// 第 1 次失败 → 退避 1000ms 后重连
@@ -505,6 +498,7 @@ describe("useStorageChangeEvents", () => {
 			);
 			renderHook(() => useStorageChangeEvents());
 
+			await vi.advanceTimersByTimeAsync(1500);
 			MockEventSource.instances[0]?.triggerError();
 
 			expect(mockState.auth.refreshToken).toHaveBeenCalledTimes(1);
@@ -530,6 +524,7 @@ describe("useStorageChangeEvents", () => {
 			);
 			renderHook(() => useStorageChangeEvents());
 
+			await vi.advanceTimersByTimeAsync(1500);
 			MockEventSource.instances[0]?.triggerError();
 			await vi.advanceTimersByTimeAsync(60_000);
 
@@ -548,6 +543,7 @@ describe("useStorageChangeEvents", () => {
 			);
 			renderHook(() => useStorageChangeEvents());
 
+			await vi.advanceTimersByTimeAsync(1500);
 			expect(MockEventSource.instances).toHaveLength(1);
 
 			MockEventSource.instances[0]?.triggerClosedError();
@@ -568,6 +564,7 @@ describe("useStorageChangeEvents", () => {
 			);
 			renderHook(() => useStorageChangeEvents());
 
+			await vi.advanceTimersByTimeAsync(1500);
 			// 失败 1 次累计 failureCount=1，等待 1000ms 后重连
 			MockEventSource.instances[0]?.triggerError();
 			await vi.advanceTimersByTimeAsync(1000);
@@ -595,6 +592,7 @@ describe("useStorageChangeEvents", () => {
 			);
 			const hook = renderHook(() => useStorageChangeEvents());
 
+			await vi.advanceTimersByTimeAsync(1500);
 			// 触发 8 次连续失败（达到 SSE_RECONNECT_FAILURE_LIMIT）
 			for (let i = 0; i < 8; i += 1) {
 				MockEventSource.instances[i]?.triggerError();

@@ -236,6 +236,10 @@ async function renderUploadArea() {
 	);
 }
 
+async function runUploadRestoreTimer() {
+	await new Promise((resolve) => window.setTimeout(resolve, 700));
+}
+
 async function uploadFiles(files: File[]) {
 	await renderUploadAreaWithFiles(files);
 
@@ -279,6 +283,7 @@ describe("UploadArea", () => {
 		await renderUploadArea();
 
 		expect(screen.queryByTestId("upload-panel")).not.toBeInTheDocument();
+		await runUploadRestoreTimer();
 		await waitFor(() => {
 			expect(listRecoverableSessions).toHaveBeenCalledTimes(1);
 		});
@@ -504,6 +509,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await screen.findByText("server.bin:Chunked:files:upload_pending_file");
 		expect(listRecoverableSessions).toHaveBeenCalledTimes(1);
 		expect(getProgress).not.toHaveBeenCalled();
@@ -953,6 +959,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
 		fireEvent.click(screen.getByText("files:upload_resume_select"));
 		fireEvent.change(screen.getByTestId("resume-input"), {
@@ -996,6 +1003,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await waitFor(() => {
 			expect(removeSession).toHaveBeenCalledWith("upload-failed");
 		});
@@ -1023,6 +1031,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await waitFor(() => {
 			expect(getProgress).toHaveBeenCalledWith("upload-transient");
 		});
@@ -1061,6 +1070,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await waitFor(() => {
 			expect(getProgress).toHaveBeenCalledWith("upload-missing-status");
 		});
@@ -1116,6 +1126,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await waitFor(() => {
 			expect(getProgress).toHaveBeenCalledTimes(4);
 		});
@@ -1189,6 +1200,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
 		fireEvent.click(screen.getByText("files:upload_resume_select"));
 		fireEvent.change(screen.getByTestId("resume-input"), {
@@ -1229,6 +1241,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await screen.findByText("assembling.txt:Chunked:files:upload_success");
 		expect(completeUpload).toHaveBeenCalledWith("upload-assembling", undefined);
 		expect(removeSession).toHaveBeenCalledWith("upload-assembling");
@@ -1263,6 +1276,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await screen.findByText("assembling.txt:Chunked:files:upload_failed");
 		expect(removeSession).not.toHaveBeenCalled();
 
@@ -1300,6 +1314,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await screen.findByText("completed.txt:Chunked:files:upload_success");
 		expect(completeUpload).toHaveBeenCalledWith("upload-completed", undefined);
 		expect(removeSession).toHaveBeenCalledWith("upload-completed");
@@ -1337,6 +1352,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await screen.findByText(
 			"multipart.txt:Presigned Multipart:files:upload_success",
 		);
@@ -1395,6 +1411,7 @@ describe("UploadArea", () => {
 
 		await renderUploadArea();
 
+		await runUploadRestoreTimer();
 		await screen.findByText("resume.txt:Chunked:files:upload_pending_file");
 		fireEvent.click(screen.getByText("files:upload_resume_select"));
 		fireEvent.change(screen.getByTestId("resume-input"), {

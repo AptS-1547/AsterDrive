@@ -26,10 +26,18 @@ const mockState = vi.hoisted(() => ({
 		}>,
 		currentFolderId: null as number | null,
 		folders: [] as Array<{ id: number; name: string }>,
+		lastFolderContents: null as {
+			folderId: number | null;
+			folders: Array<{ id: number; name: string }>;
+			sortBy: "name" | "size" | "created_at" | "updated_at" | "type";
+			sortOrder: "asc" | "desc";
+			workspaceRevision: number;
+		} | null,
 		loading: false,
 		moveToFolder: vi.fn(),
 		sortBy: "name" as "name" | "size" | "created_at" | "updated_at" | "type",
 		sortOrder: "asc" as "asc" | "desc",
+		workspaceRequestRevision: 0,
 	},
 	pathname: "/",
 	writeInternalDragData: vi.fn(),
@@ -87,10 +95,17 @@ vi.mock("@/stores/authStore", () => ({
 		selector(mockState.auth),
 }));
 
-vi.mock("@/stores/fileStore", () => ({
-	useFileStore: <T,>(selector: (state: typeof mockState.fileStore) => T) =>
-		selector(mockState.fileStore),
-}));
+vi.mock("@/stores/fileStore", () => {
+	const useFileStore = Object.assign(
+		<T,>(selector: (state: typeof mockState.fileStore) => T) =>
+			selector(mockState.fileStore),
+		{
+			getState: () => mockState.fileStore,
+		},
+	);
+
+	return { useFileStore };
+});
 
 function createFolder(id: number, name: string) {
 	return {
@@ -143,10 +158,12 @@ describe("FolderTree", () => {
 		mockState.fileStore.breadcrumb = [{ id: null, name: "Root" }];
 		mockState.fileStore.currentFolderId = null;
 		mockState.fileStore.folders = [];
+		mockState.fileStore.lastFolderContents = null;
 		mockState.fileStore.loading = false;
 		mockState.fileStore.moveToFolder.mockResolvedValue(undefined);
 		mockState.fileStore.sortBy = "name";
 		mockState.fileStore.sortOrder = "asc";
+		mockState.fileStore.workspaceRequestRevision = 0;
 		mockState.pathname = "/";
 
 		mockState.getInvalidInternalDropReason.mockReturnValue(null);
@@ -195,6 +212,35 @@ describe("FolderTree", () => {
 		expect(screen.getByText("Beta")).toBeInTheDocument();
 		expect(screen.queryByText("skeleton:4")).not.toBeInTheDocument();
 		expect(mockState.listRoot).toHaveBeenCalledTimes(1);
+	});
+
+	it("reuses the root file listing while the file page is loading", async () => {
+		mockState.fileStore.loading = true;
+		mockState.listRoot.mockResolvedValue({
+			folders: [createFolder(9, "Duplicate Request")],
+		});
+
+		const { FolderTree } = await import("@/components/folders/FolderTree");
+		const view = render(<FolderTree />);
+
+		expect(screen.getByText("skeleton:4")).toBeInTheDocument();
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+		expect(mockState.listRoot).not.toHaveBeenCalled();
+
+		mockState.fileStore.loading = false;
+		mockState.fileStore.folders = [createFolder(1, "Alpha")];
+		mockState.fileStore.lastFolderContents = {
+			folderId: null,
+			folders: [createFolder(1, "Alpha")],
+			sortBy: "name",
+			sortOrder: "asc",
+			workspaceRevision: 0,
+		};
+		view.rerender(<FolderTree />);
+
+		expect(await screen.findByText("Alpha")).toBeInTheDocument();
+		expect(mockState.listRoot).not.toHaveBeenCalled();
+		expect(screen.queryByText("Duplicate Request")).not.toBeInTheDocument();
 	});
 
 	it("collapses and expands the root folder list without navigating", async () => {
