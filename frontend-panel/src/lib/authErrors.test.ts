@@ -12,6 +12,9 @@ describe("isTokenAuthError", () => {
 
 	it("detects token auth errors from direct and nested API codes", () => {
 		expect(isTokenAuthError({ code: ErrorCode.TokenExpired })).toBe(true);
+		expect(isTokenAuthError({ code: String(ErrorCode.TokenExpired) })).toBe(
+			true,
+		);
 		expect(isTokenAuthError({ code: ErrorCode.TokenMissing })).toBe(true);
 		expect(
 			isTokenAuthError({
@@ -34,6 +37,11 @@ describe("isTokenAuthError", () => {
 	it("detects stale refresh token errors separately", () => {
 		expect(
 			isStaleRefreshTokenError({ code: ErrorCode.RefreshTokenStale }),
+		).toBe(true);
+		expect(
+			isStaleRefreshTokenError({
+				code: String(ErrorCode.RefreshTokenStale),
+			}),
 		).toBe(true);
 		expect(
 			isStaleRefreshTokenError({

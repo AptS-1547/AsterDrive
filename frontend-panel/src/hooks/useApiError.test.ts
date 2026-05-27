@@ -30,6 +30,7 @@ const mockState = vi.hoisted(() => {
 				(error as { isAxiosError?: boolean }).isAxiosError === true,
 		),
 		toastError: vi.fn(),
+		exists: vi.fn(() => true),
 		translate: vi.fn((key: string) => `translated:${key}`),
 	};
 });
@@ -49,6 +50,7 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/i18n", () => ({
 	default: {
+		exists: mockState.exists,
 		t: mockState.translate,
 	},
 }));
@@ -60,6 +62,8 @@ vi.mock("@/services/http", () => ({
 describe("handleApiError", () => {
 	beforeEach(() => {
 		mockState.isAxiosError.mockClear();
+		mockState.exists.mockReset();
+		mockState.exists.mockReturnValue(true);
 		mockState.toastError.mockReset();
 		mockState.translate.mockClear();
 	});
@@ -160,6 +164,30 @@ describe("handleApiError", () => {
 		);
 		expect(mockState.toastError).toHaveBeenCalledWith(
 			"translated:errors:upload_hash_temp_read_failed",
+		);
+	});
+
+	it("falls back to legacy subcodes when structured API error translation is missing", async () => {
+		mockState.exists.mockReturnValue(false);
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.FileUploadFailed,
+				"Upload Failed",
+				ApiSubcode.UploadTempFileWriteFailed,
+				ApiErrorCode.UploadHashTempReadFailed,
+			),
+		);
+
+		expect(mockState.exists).toHaveBeenCalledWith(
+			"errors:upload_hash_temp_read_failed",
+		);
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:upload_temp_file_write_failed",
+		);
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:upload_temp_file_write_failed",
 		);
 	});
 

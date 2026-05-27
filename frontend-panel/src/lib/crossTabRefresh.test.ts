@@ -62,21 +62,28 @@ async function loadModuleForTab(tabId: string): Promise<CrossTabRefreshModule> {
 	return await import("@/lib/crossTabRefresh");
 }
 
-function setRefreshLock({
-	expiresAt = Date.now() + 15_000,
-	lockId = "peer-lock",
-	ownerId = "peer-tab",
-	updatedAt = Date.now(),
-}: {
-	expiresAt?: number;
-	lockId?: string;
-	ownerId?: string;
-	updatedAt?: number;
-} = {}) {
-	localStorage.setItem(
-		"aster-auth-refresh-lock",
-		JSON.stringify({ ownerId, lockId, expiresAt, updatedAt }),
-	);
+function setRefreshLock(
+	options: {
+		expiresAt?: number;
+		lockId?: string;
+		ownerId?: string;
+		updatedAt?: number | undefined;
+	} = {},
+) {
+	const {
+		expiresAt = Date.now() + 15_000,
+		lockId = "peer-lock",
+		ownerId = "peer-tab",
+	} = options;
+	const hasUpdatedAt = Object.hasOwn(options, "updatedAt");
+	const updatedAt = hasUpdatedAt ? options.updatedAt : Date.now();
+	const lock = {
+		ownerId,
+		lockId,
+		expiresAt,
+		...(updatedAt === undefined ? {} : { updatedAt }),
+	};
+	localStorage.setItem("aster-auth-refresh-lock", JSON.stringify(lock));
 }
 
 function setRefreshEvent({
@@ -791,6 +798,46 @@ describe("cross-tab refresh coordination", () => {
 		expect(refresh).not.toHaveBeenCalled();
 	});
 
+	it("treats active locks without updatedAt as live for old tabs", async () => {
+		vi.useFakeTimers();
+
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		setRefreshLock({
+			expiresAt: Date.now() + 10_000,
+			updatedAt: undefined,
+		});
+
+		const pending = runWithCrossTabRefreshLock(refresh);
+		await vi.advanceTimersByTimeAsync(3_000);
+
+		expect(refresh).not.toHaveBeenCalled();
+		dispatchRefreshEvent();
+
+		await expect(pending).resolves.toBe(false);
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("does not schedule stale takeover for old locks without updatedAt", async () => {
+		vi.useFakeTimers();
+
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		setRefreshLock({
+			expiresAt: Date.now() + 10_000,
+			updatedAt: undefined,
+		});
+
+		const pending = runWithCrossTabRefreshLock(refresh);
+		await vi.advanceTimersByTimeAsync(9_999);
+
+		expect(refresh).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+
+		await expect(pending).resolves.toBe(true);
+		expect(refresh).toHaveBeenCalledTimes(1);
+	});
+
 	it("extends the peer expiry timer from storage lock renewal events", async () => {
 		vi.useFakeTimers();
 
@@ -813,6 +860,34 @@ describe("cross-tab refresh coordination", () => {
 			}),
 		);
 		await vi.advanceTimersByTimeAsync(500);
+
+		expect(refresh).not.toHaveBeenCalled();
+		dispatchRefreshEvent();
+
+		await expect(pending).resolves.toBe(false);
+		expect(refresh).not.toHaveBeenCalled();
+	});
+
+	it("ignores malformed peer lock renewal events while waiting", async () => {
+		vi.useFakeTimers();
+
+		const { runWithCrossTabRefreshLock } = await loadModule();
+		const refresh = vi.fn(async () => undefined);
+		setRefreshLock({ expiresAt: Date.now() + 5_000 });
+
+		const pending = runWithCrossTabRefreshLock(refresh);
+		window.dispatchEvent(
+			new StorageEvent("storage", {
+				key: "aster-auth-refresh-lock",
+				newValue: JSON.stringify({
+					ownerId: "peer-tab",
+					lockId: "peer-lock",
+					expiresAt: "soon",
+					updatedAt: Date.now(),
+				}),
+			}),
+		);
+		await vi.advanceTimersByTimeAsync(1_000);
 
 		expect(refresh).not.toHaveBeenCalled();
 		dispatchRefreshEvent();

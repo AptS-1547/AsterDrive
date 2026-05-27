@@ -432,6 +432,7 @@ describe("useStorageChangeEvents", () => {
 	});
 
 	it("does not open the event stream when the user disables realtime sync", async () => {
+		vi.useFakeTimers();
 		mockState.auth.user.preferences.storage_event_stream_enabled = false;
 		const { useStorageChangeEvents } = await import(
 			"@/hooks/useStorageChangeEvents"
@@ -439,11 +440,12 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await new Promise((resolve) => window.setTimeout(resolve, 1600));
+		await vi.advanceTimersByTimeAsync(1600);
 		expect(MockEventSource.instances).toHaveLength(0);
 	});
 
 	it("does not open the event stream while auth bootstrap is checking", async () => {
+		vi.useFakeTimers();
 		mockState.auth.isChecking = true;
 		const { useStorageChangeEvents } = await import(
 			"@/hooks/useStorageChangeEvents"
@@ -451,7 +453,7 @@ describe("useStorageChangeEvents", () => {
 
 		renderHook(() => useStorageChangeEvents());
 
-		await new Promise((resolve) => window.setTimeout(resolve, 1600));
+		await vi.advanceTimersByTimeAsync(1600);
 		expect(MockEventSource.instances).toHaveLength(0);
 	});
 

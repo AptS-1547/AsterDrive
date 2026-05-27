@@ -61,7 +61,7 @@ function Loading() {
 function ProtectedRoute() {
 	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 	const isChecking = useAuthStore((s) => s.isChecking);
-	if (isChecking) return <Loading />;
+	if (!isAuthenticated && isChecking) return <Loading />;
 	if (!isAuthenticated) return <Navigate to="/login" replace />;
 	return (
 		<div
@@ -79,8 +79,9 @@ function AdminRoute() {
 	const user = useAuthStore((s) => s.user);
 	const isChecking = useAuthStore((s) => s.isChecking);
 	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-	if (isChecking) return <Loading />;
+	if (!isAuthenticated && isChecking) return <Loading />;
 	if (!isAuthenticated) return <Navigate to="/login" replace />;
+	if (!user && isChecking) return <Loading />;
 	if (user?.role !== "admin") return <Navigate to="/" replace />;
 	return (
 		<div aria-busy={isChecking || undefined}>

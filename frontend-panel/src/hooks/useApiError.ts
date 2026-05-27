@@ -293,7 +293,10 @@ export function getApiErrorMessage(error: unknown) {
 			error.subcode && isApiSubcode(error.subcode)
 				? errorSubcodeKeys[error.subcode]
 				: undefined;
-		const key = apiCodeKey ?? subcodeKey ?? errorMessageKeys[error.code];
+		const key =
+			apiCodeKey && i18n.exists(apiCodeKey)
+				? apiCodeKey
+				: (subcodeKey ?? errorMessageKeys[error.code]);
 		if (key) {
 			return i18n.t(key);
 		}

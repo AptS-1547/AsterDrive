@@ -155,6 +155,16 @@ export function useFolderTreeController({
 		[],
 	);
 
+	const hasFreshStoreFolderContents = useCallback(
+		(parentId: number | null) =>
+			storeLastFolderContents?.folderId === parentId &&
+			storeLastFolderContents.sortBy === sortBy &&
+			storeLastFolderContents.sortOrder === sortOrder &&
+			storeLastFolderContents.workspaceRevision ===
+				useFileStore.getState().workspaceRequestRevision,
+		[sortBy, sortOrder, storeLastFolderContents],
+	);
+
 	const ensureChildrenLoaded = useCallback(
 		async (parentId: number | null) => {
 			if (parentId === null) {
@@ -248,30 +258,33 @@ export function useFolderTreeController({
 
 	useEffect(() => {
 		if (rootLoaded) return;
-		if (isRootRoute && storeLoading && storeCurrentFolderId === null) return;
-		let cancelled = false;
-		const timer = window.setTimeout(() => {
-			if (cancelled) return;
-			const state = useFileStore.getState();
-			if (isRootRoute && state.loading && state.currentFolderId === null) {
+
+		if (isRootRoute && storeCurrentFolderId === null) {
+			if (storeLoading) return;
+			if (hasFreshStoreFolderContents(null)) {
+				syncFolderChildren(null, storeFolders);
 				return;
 			}
-			void ensureChildrenLoaded(null).catch(() => {
-				if (!cancelled) {
-					dispatchTree({ type: "setRootLoaded", loaded: false });
-				}
-			});
-		}, 0);
+		}
+
+		let cancelled = false;
+		void ensureChildrenLoaded(null).catch(() => {
+			if (!cancelled) {
+				dispatchTree({ type: "setRootLoaded", loaded: false });
+			}
+		});
 		return () => {
 			cancelled = true;
-			window.clearTimeout(timer);
 		};
 	}, [
 		ensureChildrenLoaded,
+		hasFreshStoreFolderContents,
 		isRootRoute,
 		rootLoaded,
 		storeCurrentFolderId,
+		storeFolders,
 		storeLoading,
+		syncFolderChildren,
 	]);
 
 	useEffect(() => {

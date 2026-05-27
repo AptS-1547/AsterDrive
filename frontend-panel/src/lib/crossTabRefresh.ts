@@ -141,16 +141,14 @@ function lockIsActive(lock: RefreshLock | null, now = Date.now()) {
 	return lock !== null && lock.expiresAt > now;
 }
 
-function lockUpdatedAt(lock: RefreshLock) {
-	return lock.updatedAt ?? 0;
+function lockUpdatedAt(lock: RefreshLock): number | undefined {
+	return lock.updatedAt;
 }
 
 function lockIsLive(lock: RefreshLock | null, now = Date.now()) {
-	return (
-		lockIsActive(lock, now) &&
-		lock !== null &&
-		now - lockUpdatedAt(lock) < REFRESH_LOCK_STALE_MS
-	);
+	if (lock === null || !lockIsActive(lock, now)) return false;
+	const updatedAt = lockUpdatedAt(lock);
+	return updatedAt === undefined || now - updatedAt < REFRESH_LOCK_STALE_MS;
 }
 
 function writeLock(lock: RefreshLock) {
@@ -350,8 +348,9 @@ function waitForPeerRefresh(
 			);
 		};
 
-		const scheduleStale = (updatedAt: number) => {
+		const scheduleStale = (updatedAt: number | undefined) => {
 			if (staleTimeout !== null) clearTimeout(staleTimeout);
+			if (updatedAt === undefined) return;
 			staleTimeout = setTimeout(
 				() => {
 					const latestEvent = getStoredEventForLock(peerLock, waitStartedAt);
