@@ -530,7 +530,15 @@ async fn migrate_one_blob(
         return merge_blob_records(state, task_id, latest, target_blob).await;
     }
 
-    copy_blob_streaming(source_driver, target_driver, &latest, &target_path).await?;
+    copy_blob_streaming(
+        state,
+        source_driver,
+        target_driver,
+        target_policy_id,
+        &latest,
+        &target_path,
+    )
+    .await?;
     let moved = transaction::with_transaction(state.writer_db(), async |txn| {
         let moved = file_repo::move_blob_policy_if_current(
             txn,
@@ -567,12 +575,20 @@ async fn migrate_one_blob(
     })
     .await?;
     if moved.skipped > 0 {
-        cleanup_unmoved_target_object(target_driver, &target_path).await;
+        cleanup_unmoved_target_object(state, target_driver, target_policy_id, &target_path).await;
     }
     Ok(moved)
 }
 
-async fn cleanup_unmoved_target_object(target_driver: &dyn StorageDriver, target_path: &str) {
+async fn cleanup_unmoved_target_object(
+    state: &PrimaryAppState,
+    target_driver: &dyn StorageDriver,
+    target_policy_id: i64,
+    target_path: &str,
+) {
+    if target_object_is_referenced(state, target_policy_id, target_path).await {
+        return;
+    }
     if let Err(error) = target_driver.delete(target_path).await {
         tracing::warn!(
             target_path,
@@ -669,8 +685,10 @@ fn checkpoint_delta(
 }
 
 async fn copy_blob_streaming(
+    state: &PrimaryAppState,
     source_driver: &dyn StorageDriver,
     target_driver: &dyn StorageDriver,
+    target_policy_id: i64,
     blob: &file_blob::Model,
     target_path: &str,
 ) -> Result<()> {
@@ -696,16 +714,60 @@ async fn copy_blob_streaming(
     .await;
 
     if let Err(error) = verify_result {
-        if let Err(cleanup_error) = target_driver.delete(target_path).await {
-            tracing::warn!(
-                target_path,
-                "failed to cleanup migrated target object after verification error: {cleanup_error}"
-            );
-        }
+        cleanup_failed_target_object(state, target_driver, target_policy_id, target_path).await;
         return Err(error);
     }
 
     Ok(())
+}
+
+async fn cleanup_failed_target_object(
+    state: &PrimaryAppState,
+    target_driver: &dyn StorageDriver,
+    target_policy_id: i64,
+    target_path: &str,
+) {
+    if target_object_is_referenced(state, target_policy_id, target_path).await {
+        return;
+    }
+    if let Err(cleanup_error) = target_driver.delete(target_path).await {
+        tracing::warn!(
+            target_path,
+            "failed to cleanup migrated target object after verification error: {cleanup_error}"
+        );
+    }
+}
+
+async fn target_object_is_referenced(
+    state: &PrimaryAppState,
+    target_policy_id: i64,
+    target_path: &str,
+) -> bool {
+    match file_repo::blob_storage_path_exists_for_policy(
+        state.reader_db(),
+        target_policy_id,
+        target_path,
+    )
+    .await
+    {
+        Ok(true) => {
+            tracing::debug!(
+                target_path,
+                target_policy_id,
+                "skip target object cleanup because the path is already referenced"
+            );
+            true
+        }
+        Ok(false) => false,
+        Err(error) => {
+            tracing::warn!(
+                target_path,
+                target_policy_id,
+                "failed to verify target object references before cleanup: {error}"
+            );
+            true
+        }
+    }
 }
 
 fn is_content_sha256_blob_key(hash: &str) -> bool {

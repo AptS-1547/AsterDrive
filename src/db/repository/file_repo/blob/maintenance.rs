@@ -60,6 +60,20 @@ pub async fn find_blob_storage_paths_by_storage_paths<C: ConnectionTrait>(
     Ok(paths.into_iter().collect())
 }
 
+pub async fn blob_storage_path_exists_for_policy<C: ConnectionTrait>(
+    db: &C,
+    policy_id: i64,
+    storage_path: &str,
+) -> Result<bool> {
+    let count = FileBlob::find()
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .filter(file_blob::Column::StoragePath.eq(storage_path))
+        .count(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(count > 0)
+}
+
 pub async fn set_thumbnail_metadata<C: ConnectionTrait>(
     db: &C,
     id: i64,

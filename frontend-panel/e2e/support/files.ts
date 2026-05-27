@@ -227,7 +227,10 @@ export async function renameItem(
 
 	const dialog = page.getByRole("dialog");
 	await expect(dialog).toBeVisible();
-	await dialog.getByRole("textbox").fill(nextName);
+	const textbox = dialog.getByRole("textbox");
+	await textbox.click();
+	await textbox.press("ControlOrMeta+A");
+	await textbox.pressSequentially(nextName);
 	await dialog.getByRole("button", { name: "Rename" }).click();
 	await expect(dialog).toBeHidden();
 }

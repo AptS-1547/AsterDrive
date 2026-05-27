@@ -69,10 +69,8 @@ test.describe
 			const taskCard = page
 				.locator('[data-slot="card"]')
 				.filter({
-					has: page.getByRole("heading", {
-						exact: true,
-						name: displayName,
-					}),
+					has: page.getByText(archiveFile.name, { exact: true }),
+					hasText: outputFolderName,
 				})
 				.first();
 			await expect(taskCard).toBeVisible({ timeout: 30_000 });
@@ -99,13 +97,8 @@ test.describe
 				"Tasks",
 			);
 			const adminTaskRow = page
-				.getByRole("row")
-				.filter({
-					has: page.getByRole("cell", {
-						exact: true,
-						name: displayName,
-					}),
-				})
+				.getByRole("button")
+				.filter({ hasText: displayName })
 				.first();
 			await expect(adminTaskRow).toBeVisible({ timeout: 30_000 });
 			await expect(
