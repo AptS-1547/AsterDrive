@@ -8,15 +8,15 @@ use crate::types::{MediaProcessorKind, SystemConfigSource, SystemConfigValueType
 use chrono::Utc;
 
 use super::{
-    BUILTIN_AUDIO_METADATA_EXTENSIONS, BUILTIN_IMAGE_METADATA_EXTENSIONS,
-    BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_FFMPEG_COMMAND, DEFAULT_FFMPEG_EXTENSIONS,
-    DEFAULT_FFPROBE_COMMAND, DEFAULT_FFPROBE_EXTENSIONS, DEFAULT_VIPS_COMMAND,
-    DEFAULT_VIPS_EXTENSIONS, MEDIA_PROCESSING_REGISTRY_JSON_KEY, MEDIA_PROCESSING_REGISTRY_VERSION,
-    MatchedMediaProcessor, MediaProcessingMatchKind, MediaProcessingProcessorConfig,
-    MediaProcessingProcessorRuntimeConfig, MediaProcessingRegistryConfig, MediaProcessingUse,
-    PUBLIC_MEDIA_DATA_MAX_SAFE_SOURCE_BYTES, PUBLIC_MEDIA_DATA_SUPPORT_VERSION,
-    PublicMediaDataKindSupport, PublicMediaDataSupport, PublicMediaDataSupportMatch,
-    PublicThumbnailSupport, builtin_audio_metadata_supports_extension,
+    BUILTIN_AUDIO_METADATA_EXTENSIONS, BUILTIN_AUDIO_THUMBNAIL_EXTENSIONS,
+    BUILTIN_IMAGE_METADATA_EXTENSIONS, BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_FFMPEG_COMMAND,
+    DEFAULT_FFMPEG_EXTENSIONS, DEFAULT_FFPROBE_COMMAND, DEFAULT_FFPROBE_EXTENSIONS,
+    DEFAULT_VIPS_COMMAND, DEFAULT_VIPS_EXTENSIONS, MEDIA_PROCESSING_REGISTRY_JSON_KEY,
+    MEDIA_PROCESSING_REGISTRY_VERSION, MatchedMediaProcessor, MediaProcessingMatchKind,
+    MediaProcessingProcessorConfig, MediaProcessingProcessorRuntimeConfig,
+    MediaProcessingRegistryConfig, MediaProcessingUse, PUBLIC_MEDIA_DATA_MAX_SAFE_SOURCE_BYTES,
+    PUBLIC_MEDIA_DATA_SUPPORT_VERSION, PublicMediaDataKindSupport, PublicMediaDataSupport,
+    PublicMediaDataSupportMatch, PublicThumbnailSupport, builtin_audio_metadata_supports_extension,
     builtin_image_metadata_supports_extension, command_is_available,
     default_media_processing_registry, default_media_processing_registry_json,
     default_uses_for_kind, ffmpeg_command_from_registry_value, ffprobe_command_from_registry_value,
@@ -434,15 +434,10 @@ fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
         .to_string(),
     ));
 
-    let mut expected = BUILTIN_AUDIO_METADATA_EXTENSIONS
-        .iter()
-        .map(|extension| (*extension).to_string())
+    let expected = ["avif", "flac", "heic", "mp3", "mp4", "webm"]
+        .into_iter()
+        .map(str::to_string)
         .collect::<std::collections::BTreeSet<_>>();
-    expected.extend(
-        ["avif", "heic", "mp4", "webm"]
-            .into_iter()
-            .map(str::to_string),
-    );
 
     assert_eq!(
         public_thumbnail_support(&runtime_config),
@@ -458,7 +453,7 @@ fn public_thumbnail_support_keeps_builtin_extensions_when_images_are_enabled() {
     let support = public_thumbnail_support(&RuntimeConfig::new());
     let expected = BUILTIN_IMAGES_SUPPORTED_EXTENSIONS
         .iter()
-        .chain(BUILTIN_AUDIO_METADATA_EXTENSIONS.iter())
+        .chain(BUILTIN_AUDIO_THUMBNAIL_EXTENSIONS.iter())
         .map(|extension| (*extension).to_string())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
@@ -466,6 +461,24 @@ fn public_thumbnail_support_keeps_builtin_extensions_when_images_are_enabled() {
 
     assert_eq!(support.version, 1);
     assert_eq!(support.extensions, expected);
+    assert!(
+        !support
+            .extensions
+            .iter()
+            .any(|extension| extension == "mp4")
+    );
+    assert!(
+        !support
+            .extensions
+            .iter()
+            .any(|extension| extension == "m4v")
+    );
+    assert!(
+        !support
+            .extensions
+            .iter()
+            .any(|extension| extension == "3gp")
+    );
 }
 
 #[test]

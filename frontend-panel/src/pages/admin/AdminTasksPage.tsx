@@ -67,6 +67,7 @@ const TASK_KIND_FILTER_VALUES = [
 	"archive_preview_generate",
 	"thumbnail_generate",
 	"trash_purge_all",
+	"storage_policy_migration",
 	"system_runtime",
 ] as const;
 const TASK_STATUS_FILTER_VALUES = [
@@ -223,6 +224,9 @@ export default function AdminTasksPage() {
 		),
 	);
 	const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
+	const [detailDialogTaskId, setDetailDialogTaskId] = useState<number | null>(
+		null,
+	);
 	const [cleanupFinishedBefore, setCleanupFinishedBefore] = useState(
 		defaultCleanupFinishedBeforeValue,
 	);
@@ -323,6 +327,15 @@ export default function AdminTasksPage() {
 		[kindFilter, offset, pageSize, sortBy, sortOrder, statusFilter],
 	);
 
+	useEffect(() => {
+		if (detailDialogTaskId == null) {
+			return;
+		}
+		if (!items.some((task) => task.id === detailDialogTaskId)) {
+			setDetailDialogTaskId(null);
+		}
+	}, [detailDialogTaskId, items]);
+
 	const activeFilterCount =
 		(kindFilter !== "__all__" ? 1 : 0) + (statusFilter !== "__all__" ? 1 : 0);
 	const hasServerFilters = activeFilterCount > 0;
@@ -364,6 +377,8 @@ export default function AdminTasksPage() {
 				return t("tasks:kind_thumbnail_generate");
 			case "trash_purge_all":
 				return t("tasks:kind_trash_purge_all");
+			case "storage_policy_migration":
+				return t("tasks:kind_storage_policy_migration");
 			case "system_runtime":
 				return t("tasks:kind_system_runtime");
 			default:
@@ -573,9 +588,14 @@ export default function AdminTasksPage() {
 				) : (
 					<AdminTaskTable
 						items={items}
+						detailTaskId={detailDialogTaskId}
 						formatTaskKind={formatTaskKind}
 						formatTaskSource={formatTaskSource}
 						formatTaskStatus={formatTaskStatus}
+						onOpenDetail={setDetailDialogTaskId}
+						onOpenDetailChange={(open) => {
+							if (!open) setDetailDialogTaskId(null);
+						}}
 						sortBy={sortBy}
 						sortOrder={sortOrder}
 						onSortChange={handleSortChange}

@@ -262,6 +262,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::admin::policies::update_policy_group,
         crate::api::routes::admin::policies::delete_policy_group,
         crate::api::routes::admin::policies::migrate_policy_group_users,
+        crate::api::routes::admin::storage_migrations::create_storage_policy_migration,
         crate::api::routes::admin::remote_nodes::list_remote_nodes,
         crate::api::routes::admin::remote_nodes::create_remote_node,
         crate::api::routes::admin::remote_nodes::get_remote_node,

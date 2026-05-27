@@ -11,8 +11,6 @@ use super::shared::{MediaOperation, ResolvedMediaProcessor, ThumbnailContext};
 
 const THUMBNAIL_PROCESSOR_MATCH_MISSING_PREFIX: &str = "no enabled thumbnail processor matched";
 const BUILTIN_IMAGES_PROCESSOR_PREFIX: &str = "built-in images processor";
-const AUDIO_THUMBNAIL_EXTENSIONS: &[&str] =
-    &["mp3", "m4a", "flac", "aac", "ogg", "wav", "wma", "opus"];
 
 pub(crate) fn resolve_thumbnail_processor_for_blob(
     state: &PrimaryAppState,
@@ -336,7 +334,9 @@ fn is_audio_thumbnail_source(file_name: &str, source_mime_type: &str) -> bool {
 
     media_processing_config::file_extension(file_name)
         .as_deref()
-        .is_some_and(|extension| AUDIO_THUMBNAIL_EXTENSIONS.contains(&extension))
+        .is_some_and(|extension| {
+            media_processing_config::BUILTIN_AUDIO_THUMBNAIL_EXTENSIONS.contains(&extension)
+        })
 }
 
 fn resolve_media_processor_from_candidates(

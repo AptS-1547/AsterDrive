@@ -17,6 +17,16 @@
 	"step_archive_preview_generate_download_source": "下载源压缩包",
 	"step_archive_preview_generate_scan_archive": "扫描压缩包清单",
 	"step_archive_preview_generate_persist_manifest": "保存预览清单",
+	"step_thumbnail_generate_waiting": "等待执行",
+	"step_thumbnail_generate_inspect_source": "检查源文件",
+	"step_thumbnail_generate_render_thumbnail": "生成缩略图",
+	"step_thumbnail_generate_persist_thumbnail": "保存缩略图",
 	"step_trash_purge_all_waiting": "等待执行",
-	"step_trash_purge_all_purge_trash": "清空回收站"
+	"step_trash_purge_all_purge_trash": "清空回收站",
+	"step_storage_policy_migration_waiting": "等待执行",
+	"step_storage_policy_migration_prepare_sources": "准备源策略",
+	"step_storage_policy_migration_scan_blobs": "扫描源对象",
+	"step_storage_policy_migration_migrate_blobs": "迁移对象",
+	"step_storage_policy_migration_finalize": "完成迁移",
+	"step_storage_policy_migration_finish": "完成迁移"
 }

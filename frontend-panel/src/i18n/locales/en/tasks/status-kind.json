@@ -10,6 +10,11 @@
 	"kind_archive_preview_generate": "Archive preview generation",
 	"kind_thumbnail_generate": "Thumbnail generation",
 	"kind_trash_purge_all": "Trash purge",
+	"kind_storage_policy_migration": "Storage policy migration",
 	"kind_system_runtime": "System runtime task",
-	"status_text_label": "Status"
+	"status_text_label": "Status",
+	"storage_migration_migrated_blobs": "Migrated objects",
+	"storage_migration_skipped_blobs": "Skipped objects",
+	"storage_migration_failed_blobs": "Failed objects",
+	"storage_migration_migrated_bytes": "Bytes"
 }

@@ -10,11 +10,11 @@ use crate::errors::{AsterError, Result};
 use crate::types::{MediaMetadataKind, MediaProcessorKind};
 
 use super::types::{
-    BUILTIN_AUDIO_METADATA_EXTENSIONS, BUILTIN_IMAGE_METADATA_EXTENSIONS,
-    BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_FFMPEG_COMMAND, DEFAULT_FFMPEG_EXTENSIONS,
-    DEFAULT_FFPROBE_COMMAND, DEFAULT_FFPROBE_EXTENSIONS, DEFAULT_VIPS_COMMAND,
-    DEFAULT_VIPS_EXTENSIONS, MEDIA_PROCESSING_REGISTRY_VERSION, MatchedMediaProcessor,
-    MediaProcessingMatchKind, MediaProcessingProcessorConfig,
+    BUILTIN_AUDIO_METADATA_EXTENSIONS, BUILTIN_AUDIO_THUMBNAIL_EXTENSIONS,
+    BUILTIN_IMAGE_METADATA_EXTENSIONS, BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_FFMPEG_COMMAND,
+    DEFAULT_FFMPEG_EXTENSIONS, DEFAULT_FFPROBE_COMMAND, DEFAULT_FFPROBE_EXTENSIONS,
+    DEFAULT_VIPS_COMMAND, DEFAULT_VIPS_EXTENSIONS, MEDIA_PROCESSING_REGISTRY_VERSION,
+    MatchedMediaProcessor, MediaProcessingMatchKind, MediaProcessingProcessorConfig,
     MediaProcessingProcessorRuntimeConfig, MediaProcessingRegistryConfig, MediaProcessingUse,
     PUBLIC_MEDIA_DATA_MAX_SAFE_SOURCE_BYTES, PUBLIC_MEDIA_DATA_SUPPORT_VERSION,
     PUBLIC_THUMBNAIL_SUPPORT_VERSION, PublicMediaDataKindSupport, PublicMediaDataKindsSupport,
@@ -165,9 +165,13 @@ pub fn public_thumbnail_support(runtime_config: &RuntimeConfig) -> PublicThumbna
                 if processor_supports_use(processor, MediaProcessingUse::ThumbnailAudio) =>
             {
                 extensions.extend(
-                    BUILTIN_AUDIO_METADATA_EXTENSIONS
+                    processor
+                        .extensions
                         .iter()
-                        .map(|extension| (*extension).to_string()),
+                        .filter(|extension| {
+                            BUILTIN_AUDIO_THUMBNAIL_EXTENSIONS.contains(&extension.as_str())
+                        })
+                        .cloned(),
                 );
             }
             MediaProcessorKind::Images

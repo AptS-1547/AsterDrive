@@ -42,6 +42,9 @@ async fn test_public_thumbnail_support_returns_default_builtin_extensions() {
     assert!(extensions.iter().any(|value| value == "tiff"));
     assert!(extensions.iter().any(|value| value == "mp3"));
     assert!(extensions.iter().any(|value| value == "flac"));
+    assert!(!extensions.iter().any(|value| value == "mp4"));
+    assert!(!extensions.iter().any(|value| value == "m4v"));
+    assert!(!extensions.iter().any(|value| value == "3gp"));
 }
 
 #[actix_web::test]

@@ -43,6 +43,7 @@ async fn insert_task(
         BackgroundTaskKind::MediaMetadataExtract => "media-metadata-extract",
         BackgroundTaskKind::TrashPurgeAll => "trash-purge-all",
         BackgroundTaskKind::StoragePolicyTempCleanup => "storage-policy-temp-cleanup",
+        BackgroundTaskKind::StoragePolicyMigration => "storage-policy-migration",
         BackgroundTaskKind::SystemRuntime => "task-cleanup",
     };
     let payload_json = match kind {
@@ -100,6 +101,14 @@ async fn insert_task(
             "remote_node": null,
             "temp_keys": ["files/temp-object"],
             "multipart_uploads": [],
+        }),
+        BackgroundTaskKind::StoragePolicyMigration => serde_json::json!({
+            "source_policy_id": 1,
+            "target_policy_id": 2,
+            "delete_source_after_success": false,
+            "plan_hash": "hash",
+            "source_policy_updated_at": "2026-01-01T00:00:00Z",
+            "target_policy_updated_at": "2026-01-01T00:00:00Z",
         }),
         BackgroundTaskKind::SystemRuntime => serde_json::json!({
             "task_name": task_name,

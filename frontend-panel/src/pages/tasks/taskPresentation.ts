@@ -2,6 +2,7 @@ import { formatDateAbsolute, formatNumber } from "@/lib/format";
 import type {
 	BackgroundTaskKind,
 	BackgroundTaskStatus,
+	StoragePolicyMigrationTaskResult,
 	TaskInfo,
 	TaskStepInfo,
 	TaskStepStatus,
@@ -157,6 +158,8 @@ export function formatTaskKind(t: TaskTranslate, kind: BackgroundTaskKind) {
 			return t("tasks:kind_thumbnail_generate");
 		case "trash_purge_all":
 			return t("tasks:kind_trash_purge_all");
+		case "storage_policy_migration":
+			return t("tasks:kind_storage_policy_migration");
 		case "system_runtime":
 			return t("tasks:kind_system_runtime");
 		default:
@@ -304,4 +307,14 @@ export function parseTaskResult(task: TaskInfo) {
 		default:
 			return null;
 	}
+}
+
+export function parseStoragePolicyMigrationResult(task: TaskInfo) {
+	if (!task.result || task.result.kind !== "storage_policy_migration") {
+		return null;
+	}
+
+	return task.result as StoragePolicyMigrationTaskResult & {
+		kind: "storage_policy_migration";
+	};
 }

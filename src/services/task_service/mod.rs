@@ -10,6 +10,7 @@ mod media_metadata;
 mod retry;
 mod runtime;
 mod steps;
+mod storage_migration;
 mod storage_policy_cleanup;
 mod thumbnail;
 mod trash;
@@ -47,6 +48,9 @@ pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 pub(crate) use media_metadata::ensure_media_metadata_task;
 pub use runtime::{RuntimeTaskRunOutcome, record_runtime_task_run};
 use steps::{initial_task_steps, parse_task_steps_json, serialize_task_steps};
+pub(crate) use storage_migration::{
+    CreateStoragePolicyMigrationInput, create_storage_policy_migration_task,
+};
 pub(crate) use storage_policy_cleanup::create_storage_policy_temp_cleanup_task;
 pub(crate) use thumbnail::ensure_thumbnail_task;
 pub(crate) use trash::create_trash_purge_all_task_in_scope;
@@ -56,7 +60,8 @@ pub use types::{
     CreateArchiveCompressTaskParams, CreateArchiveExtractTaskParams, CreateArchiveTaskParams,
     MediaMetadataExtractTaskPayload, MediaMetadataExtractTaskResult, RuntimeSystemHealthComponent,
     RuntimeSystemHealthResult, RuntimeSystemHealthStatus, RuntimeTaskPayload, RuntimeTaskResult,
-    TaskInfo, TaskPayload, TaskResult, TaskStepInfo, TaskStepStatus, ThumbnailGenerateTaskPayload,
+    StoragePolicyMigrationTaskPayload, StoragePolicyMigrationTaskResult, TaskInfo, TaskPayload,
+    TaskResult, TaskStepInfo, TaskStepStatus, ThumbnailGenerateTaskPayload,
     ThumbnailGenerateTaskResult, TrashPurgeAllTaskPayload, TrashPurgeAllTaskResult,
 };
 use types::{parse_task_payload_info, parse_task_result_info, serialize_task_payload};
@@ -691,7 +696,8 @@ fn configured_task_max_attempts(state: &PrimaryAppState, kind: BackgroundTaskKin
         | BackgroundTaskKind::ArchiveExtract
         | BackgroundTaskKind::ArchivePreviewGenerate
         | BackgroundTaskKind::TrashPurgeAll
-        | BackgroundTaskKind::StoragePolicyTempCleanup => {
+        | BackgroundTaskKind::StoragePolicyTempCleanup
+        | BackgroundTaskKind::StoragePolicyMigration => {
             operations::background_task_max_attempts(&state.runtime_config)
         }
     }

@@ -6,6 +6,7 @@ use crate::types::BackgroundTaskKind;
 pub(super) enum TaskLane {
     Archive,
     Thumbnail,
+    StorageMigration,
     Fallback,
 }
 
@@ -25,13 +26,19 @@ const THUMBNAIL_TASK_KINDS: [BackgroundTaskKind; 2] = [
     BackgroundTaskKind::ThumbnailGenerate,
     BackgroundTaskKind::MediaMetadataExtract,
 ];
+const STORAGE_MIGRATION_TASK_KINDS: [BackgroundTaskKind; 1] =
+    [BackgroundTaskKind::StoragePolicyMigration];
 const FALLBACK_TASK_KINDS: [BackgroundTaskKind; 3] = [
     BackgroundTaskKind::SystemRuntime,
     BackgroundTaskKind::StoragePolicyTempCleanup,
     BackgroundTaskKind::TrashPurgeAll,
 ];
-pub(super) const TASK_LANES: [TaskLane; 3] =
-    [TaskLane::Archive, TaskLane::Thumbnail, TaskLane::Fallback];
+pub(super) const TASK_LANES: [TaskLane; 4] = [
+    TaskLane::Archive,
+    TaskLane::Thumbnail,
+    TaskLane::StorageMigration,
+    TaskLane::Fallback,
+];
 pub(super) fn task_lane_configs(state: &PrimaryAppState) -> Vec<TaskLaneConfig> {
     TASK_LANES
         .into_iter()
@@ -43,6 +50,11 @@ pub(super) fn task_lane_configs(state: &PrimaryAppState) -> Vec<TaskLaneConfig> 
                 }
                 TaskLane::Thumbnail => {
                     operations::background_task_thumbnail_max_concurrency(&state.runtime_config)
+                }
+                TaskLane::StorageMigration => {
+                    operations::background_task_storage_migration_max_concurrency(
+                        &state.runtime_config,
+                    )
                 }
                 TaskLane::Fallback => {
                     operations::background_task_max_concurrency(&state.runtime_config)
@@ -62,6 +74,9 @@ impl TaskLaneConfig {
         match self.lane {
             TaskLane::Archive => operations::BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
             TaskLane::Thumbnail => operations::BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+            TaskLane::StorageMigration => {
+                operations::BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY
+            }
             TaskLane::Fallback => operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
         }
     }
@@ -75,6 +90,7 @@ pub(super) fn task_lane(kind: BackgroundTaskKind) -> TaskLane {
         BackgroundTaskKind::ThumbnailGenerate | BackgroundTaskKind::MediaMetadataExtract => {
             TaskLane::Thumbnail
         }
+        BackgroundTaskKind::StoragePolicyMigration => TaskLane::StorageMigration,
         BackgroundTaskKind::StoragePolicyTempCleanup
         | BackgroundTaskKind::TrashPurgeAll
         | BackgroundTaskKind::SystemRuntime => TaskLane::Fallback,
@@ -85,6 +101,7 @@ pub(super) fn task_lane_kinds(lane: TaskLane) -> &'static [BackgroundTaskKind] {
     match lane {
         TaskLane::Archive => &ARCHIVE_TASK_KINDS,
         TaskLane::Thumbnail => &THUMBNAIL_TASK_KINDS,
+        TaskLane::StorageMigration => &STORAGE_MIGRATION_TASK_KINDS,
         TaskLane::Fallback => &FALLBACK_TASK_KINDS,
     }
 }

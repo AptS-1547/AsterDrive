@@ -309,6 +309,18 @@ pub struct AdminTaskCleanupReq {
     pub status: Option<crate::types::BackgroundTaskStatus>,
 }
 
+/// Create a background task that migrates blobs from one storage policy to another.
+#[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct CreateStoragePolicyMigrationReq {
+    #[validate(range(min = 1, message = "source_policy_id must be greater than 0"))]
+    pub source_policy_id: i64,
+    #[validate(range(min = 1, message = "target_policy_id must be greater than 0"))]
+    pub target_policy_id: i64,
+    #[serde(default)]
+    pub delete_source_after_success: bool,
+}
+
 // ── Admin Teams ─────────────────────────────────────────────────────────────
 
 /// Query parameters for the admin team list.

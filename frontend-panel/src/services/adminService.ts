@@ -31,6 +31,7 @@ import type {
 	CreatePolicyGroupRequest,
 	CreatePolicyRequest,
 	CreateRemoteNodeRequest,
+	CreateStoragePolicyMigrationRequest,
 	CreateUserReq,
 	DeletePolicyQuery,
 	ExecuteConfigActionRequest,
@@ -56,6 +57,7 @@ import type {
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
+	TaskInfo,
 	TaskPage,
 	TeamAuditPage,
 	TeamMemberPage,
@@ -233,6 +235,9 @@ export const adminPolicyService = {
 
 	testParams: (data: TestPolicyParamsRequest) =>
 		api.post<void>("/admin/policies/test", data),
+
+	createMigration: (data: CreateStoragePolicyMigrationRequest) =>
+		api.post<TaskInfo>("/admin/storage-migrations", data),
 };
 
 export const adminRemoteNodeService = {

@@ -23,6 +23,9 @@ pub(super) const TASK_STEP_EXTRACT_METADATA: &str = "extract_metadata";
 pub(super) const TASK_STEP_PERSIST_METADATA: &str = "persist_metadata";
 pub(super) const TASK_STEP_CLEANUP_OBJECTS: &str = "cleanup_objects";
 pub(super) const TASK_STEP_PURGE_TRASH: &str = "purge_trash";
+pub(super) const TASK_STEP_SCAN_BLOBS: &str = "scan_blobs";
+pub(super) const TASK_STEP_MIGRATE_BLOBS: &str = "migrate_blobs";
+pub(super) const TASK_STEP_FINISH: &str = "finish";
 
 #[derive(Debug, Clone, Copy)]
 struct TaskStepSpec {
@@ -144,6 +147,28 @@ fn task_step_specs(kind: BackgroundTaskKind) -> &'static [TaskStepSpec] {
             TaskStepSpec {
                 key: TASK_STEP_CLEANUP_OBJECTS,
                 title: "Clean temporary objects",
+            },
+        ],
+        BackgroundTaskKind::StoragePolicyMigration => &[
+            TaskStepSpec {
+                key: TASK_STEP_WAITING,
+                title: "Waiting",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_PREPARE_SOURCES,
+                title: "Prepare storage policies",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_SCAN_BLOBS,
+                title: "Scan source blobs",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_MIGRATE_BLOBS,
+                title: "Migrate blobs",
+            },
+            TaskStepSpec {
+                key: TASK_STEP_FINISH,
+                title: "Finish migration",
             },
         ],
         BackgroundTaskKind::SystemRuntime => &[],

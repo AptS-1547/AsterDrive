@@ -287,6 +287,12 @@ export type ResetUserPasswordRequest =
 export type StoragePolicy = components["schemas"]["StoragePolicy"];
 export type StoragePolicyPage =
 	components["schemas"]["OffsetPage_StoragePolicy"];
+export type CreateStoragePolicyMigrationRequest =
+	components["schemas"]["CreateStoragePolicyMigrationReq"];
+export type StoragePolicyMigrationTaskPayload =
+	components["schemas"]["StoragePolicyMigrationTaskPayload"];
+export type StoragePolicyMigrationTaskResult =
+	components["schemas"]["StoragePolicyMigrationTaskResult"];
 export type S3DownloadStrategy = components["schemas"]["S3DownloadStrategy"];
 export type StoragePolicyGroupItem =
 	components["schemas"]["StoragePolicyGroupItemInfo"];

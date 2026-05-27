@@ -100,3 +100,18 @@ pub async fn move_many_to_folder<C: ConnectionTrait>(
         })?;
     Ok(())
 }
+
+pub async fn replace_file_blob_refs<C: ConnectionTrait>(
+    db: &C,
+    old_blob_id: i64,
+    new_blob_id: i64,
+) -> Result<u64> {
+    let result = File::update_many()
+        .col_expr(file::Column::BlobId, Expr::value(new_blob_id))
+        .col_expr(file::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file::Column::BlobId.eq(old_blob_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected)
+}

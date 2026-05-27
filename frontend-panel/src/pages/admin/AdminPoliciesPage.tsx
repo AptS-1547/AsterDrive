@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { PoliciesTable } from "@/components/admin/admin-policies-page/PoliciesTable";
 import { PolicyDialogs } from "@/components/admin/admin-policies-page/PolicyDialogs";
 import { PROTECTED_POLICY_ID } from "@/components/admin/admin-policies-page/policyPresentation";
+import { StoragePolicyMigrationDialog } from "@/components/admin/admin-policies-page/StoragePolicyMigrationDialog";
 import {
 	buildCreatePolicyPayload,
 	buildPolicyTestPayload,
@@ -76,6 +77,7 @@ const POLICY_UPLOAD_SESSION_BLOCKER_SUBCODE =
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("policies"));
+	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const [offset, setOffset] = useState(
 		parseOffsetSearchParam(searchParams.get("offset")),
@@ -129,6 +131,10 @@ export default function AdminPoliciesPage() {
 	);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
 	const [submitting, setSubmitting] = useState(false);
+	const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
+	const [migrationSourcePolicyId, setMigrationSourcePolicyId] = useState("");
+	const [migrationTargetPolicyId, setMigrationTargetPolicyId] = useState("");
+	const [migrationSubmitting, setMigrationSubmitting] = useState(false);
 	const [validatedConnectionKey, setValidatedConnectionKey] = useState<
 		string | null
 	>(null);
@@ -286,6 +292,16 @@ export default function AdminPoliciesPage() {
 		setForm(emptyForm);
 		void refreshRemoteNodeLookup();
 		setDialogOpen(true);
+	};
+
+	const openMigrationDialog = () => {
+		const firstPolicy = policies[0];
+		const secondPolicy = policies.find(
+			(policy) => policy.id !== firstPolicy?.id,
+		);
+		setMigrationSourcePolicyId(firstPolicy ? String(firstPolicy.id) : "");
+		setMigrationTargetPolicyId(secondPolicy ? String(secondPolicy.id) : "");
+		setMigrationDialogOpen(true);
 	};
 
 	const openEdit = (policy: StoragePolicy) => {
@@ -548,6 +564,39 @@ export default function AdminPoliciesPage() {
 		}
 	};
 
+	const handleCreateMigration = async () => {
+		if (migrationSubmitting) return;
+		const sourcePolicyId = Number(migrationSourcePolicyId);
+		const targetPolicyId = Number(migrationTargetPolicyId);
+		if (
+			!Number.isSafeInteger(sourcePolicyId) ||
+			!Number.isSafeInteger(targetPolicyId) ||
+			sourcePolicyId <= 0 ||
+			targetPolicyId <= 0 ||
+			sourcePolicyId === targetPolicyId
+		) {
+			return;
+		}
+
+		setMigrationSubmitting(true);
+		try {
+			const task = await adminPolicyService.createMigration({
+				source_policy_id: sourcePolicyId,
+				target_policy_id: targetPolicyId,
+				delete_source_after_success: false,
+			});
+			setMigrationDialogOpen(false);
+			toast.success(t("policy_migration_created", { id: task.id }));
+			navigate("/admin/tasks?kind=storage_policy_migration", {
+				viewTransition: false,
+			});
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setMigrationSubmitting(false);
+		}
+	};
+
 	return (
 		<AdminLayout>
 			<AdminPageShell>
@@ -563,6 +612,16 @@ export default function AdminPoliciesPage() {
 							>
 								<Icon name="Plus" className="mr-1 size-4" />
 								{t("new_policy")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={openMigrationDialog}
+								disabled={policies.length < 2}
+							>
+								<Icon name="ArrowsClockwise" className="mr-1 size-3.5" />
+								{t("policy_migration_action")}
 							</Button>
 							<Button
 								variant="outline"
@@ -631,6 +690,22 @@ export default function AdminPoliciesPage() {
 					onCreateStepChange={handleCreateStepChange}
 					onCreateNext={handleCreateNext}
 					onSyncNormalizedS3Form={syncNormalizedS3Form}
+				/>
+				<StoragePolicyMigrationDialog
+					open={migrationDialogOpen}
+					policies={policies}
+					sourcePolicyId={migrationSourcePolicyId}
+					targetPolicyId={migrationTargetPolicyId}
+					submitting={migrationSubmitting}
+					onOpenChange={setMigrationDialogOpen}
+					onSourcePolicyChange={(policyId) => {
+						setMigrationSourcePolicyId(policyId);
+						if (policyId === migrationTargetPolicyId) {
+							setMigrationTargetPolicyId("");
+						}
+					}}
+					onTargetPolicyChange={setMigrationTargetPolicyId}
+					onSubmit={() => void handleCreateMigration()}
 				/>
 			</AdminPageShell>
 		</AdminLayout>

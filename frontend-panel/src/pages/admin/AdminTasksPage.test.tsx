@@ -59,6 +59,24 @@ vi.mock("react-i18next", () => ({
 			) {
 				return `cleanup-desc:${options?.finishedBefore}:${options?.kind}:${options?.status}`;
 			}
+			if (key === "tasks:step_storage_policy_migration_prepare_sources") {
+				return "Prepare source policy";
+			}
+			if (key === "tasks:step_storage_policy_migration_finish") {
+				return "Finish migration";
+			}
+			if (key === "tasks:storage_migration_migrated_blobs") {
+				return "Migrated objects";
+			}
+			if (key === "tasks:storage_migration_skipped_blobs") {
+				return "Skipped objects";
+			}
+			if (key === "tasks:storage_migration_failed_blobs") {
+				return "Failed objects";
+			}
+			if (key === "tasks:storage_migration_migrated_bytes") {
+				return "Bytes";
+			}
 			return key;
 		},
 	}),
@@ -152,21 +170,42 @@ vi.mock("@/components/ui/button", () => ({
 		disabled,
 		onClick,
 		type,
+		...props
 	}: {
 		children: React.ReactNode;
 		disabled?: boolean;
-		onClick?: () => void;
+		onClick?: React.MouseEventHandler<HTMLButtonElement>;
 		type?: "button" | "submit" | "reset";
-	}) => (
-		<button type={type ?? "button"} disabled={disabled} onClick={onClick}>
+	} & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+		<button
+			type={type ?? "button"}
+			disabled={disabled}
+			onClick={onClick}
+			{...props}
+		>
 			{children}
 		</button>
 	),
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
-	Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
-		open ? <div>{children}</div> : null,
+	Dialog: ({
+		children,
+		onOpenChange,
+		open,
+	}: {
+		children: React.ReactNode;
+		onOpenChange?: (open: boolean) => void;
+		open: boolean;
+	}) =>
+		open ? (
+			<div>
+				{children}
+				<button type="button" onClick={() => onOpenChange?.(false)}>
+					X
+				</button>
+			</div>
+		) : null,
 	DialogContent: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
@@ -186,6 +225,10 @@ vi.mock("@/components/ui/dialog", () => ({
 
 vi.mock("@/components/ui/icon", () => ({
 	Icon: ({ name }: { name: string }) => <span>{name}</span>,
+}));
+
+vi.mock("@/components/ui/progress", () => ({
+	Progress: ({ value }: { value?: number }) => <div>{`progress:${value}`}</div>,
 }));
 
 vi.mock("@/components/ui/input", () => ({
@@ -280,21 +323,41 @@ vi.mock("@/components/ui/select", () => ({
 }));
 
 vi.mock("@/components/ui/table", () => ({
-	Table: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-	TableBody: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	Table: ({
+		children,
+		...props
+	}: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) => (
+		<div {...props}>{children}</div>
 	),
-	TableCell: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableBody: ({
+		children,
+		...props
+	}: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) => (
+		<div {...props}>{children}</div>
 	),
-	TableHead: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableCell: ({
+		children,
+		...props
+	}: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) => (
+		<div {...props}>{children}</div>
 	),
-	TableHeader: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableHead: ({
+		children,
+		...props
+	}: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) => (
+		<div {...props}>{children}</div>
 	),
-	TableRow: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableHeader: ({
+		children,
+		...props
+	}: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) => (
+		<div {...props}>{children}</div>
+	),
+	TableRow: ({
+		children,
+		...props
+	}: React.HTMLAttributes<HTMLDivElement> & { children: React.ReactNode }) => (
+		<div {...props}>{children}</div>
 	),
 }));
 
@@ -574,6 +637,203 @@ describe("AdminTasksPage", () => {
 			screen.getAllByText("tasks:kind_trash_purge_all").length,
 		).toBeGreaterThan(0);
 		expect(screen.getByText("select:trash_purge_all")).toBeInTheDocument();
+	});
+
+	it("accepts storage policy migration filters from the url", async () => {
+		mockState.list.mockResolvedValueOnce({
+			items: [
+				createTask({
+					display_name: "Migrate blobs",
+					kind: "storage_policy_migration",
+					payload: {
+						kind: "storage_policy_migration",
+						source_policy_id: 1,
+						target_policy_id: 2,
+					} as never,
+					progress_current: 12,
+					progress_percent: 100,
+					progress_total: 12,
+					result: {
+						kind: "storage_policy_migration",
+						migrated_blobs: 12,
+						skipped_blobs: 1,
+						failed_blobs: 0,
+						migrated_bytes: 4096,
+						merged_blobs: 0,
+						scanned_blobs: 13,
+						source_policy_id: 1,
+						target_policy_id: 2,
+					} as never,
+					status: "succeeded",
+					status_text: "Migration completed",
+					steps: [
+						{
+							key: "prepare_sources",
+							title: "Prepare storage policies",
+							status: "succeeded",
+							progress_current: 1,
+							progress_total: 1,
+						},
+						{
+							key: "finish",
+							title: "Finish storage migration",
+							status: "succeeded",
+							progress_current: 1,
+							progress_total: 1,
+						},
+					],
+				}),
+			],
+			total: 1,
+		});
+
+		renderPage("/admin/tasks?kind=storage_policy_migration");
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenCalledWith({
+				kind: "storage_policy_migration",
+				limit: 20,
+				offset: 0,
+				sort_by: "updated_at",
+				sort_order: "desc",
+			});
+		});
+		expect(screen.getByText("Migrate blobs")).toBeInTheDocument();
+		expect(
+			screen.getAllByText("tasks:kind_storage_policy_migration").length,
+		).toBeGreaterThan(0);
+		expect(
+			screen.getByText("select:storage_policy_migration"),
+		).toBeInTheDocument();
+		expect(screen.queryByText("Prepare source policy")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByText("Migrate blobs"));
+
+		expect(
+			await screen.findByText(/Prepare source policy/),
+		).toBeInTheDocument();
+		expect(screen.getByText(/Finish migration/)).toBeInTheDocument();
+		expect(screen.getByText("Migrated objects")).toBeInTheDocument();
+		expect(screen.getByText("Skipped objects")).toBeInTheDocument();
+		expect(screen.getByText("Failed objects")).toBeInTheDocument();
+		expect(screen.getByText("Bytes")).toBeInTheDocument();
+		expect(screen.getByText("4096")).toBeInTheDocument();
+	});
+
+	it("opens task details in a dialog from mouse and keyboard without rendering the old inline expander", async () => {
+		mockState.list.mockResolvedValueOnce({
+			items: [
+				createTask({
+					display_name: "Task with timeline",
+					progress_current: 3,
+					progress_total: 5,
+					steps: [
+						{
+							key: "extract",
+							title: "Extract archive",
+							status: "active",
+							progress_current: 3,
+							progress_total: 5,
+						},
+					],
+				}),
+			],
+			total: 1,
+		});
+
+		renderPage();
+
+		const rowText = await screen.findByText("Task with timeline");
+		expect(
+			screen.queryByRole("button", { name: "tasks:show_details" }),
+		).not.toBeInTheDocument();
+		expect(screen.queryByText("#31")).not.toBeInTheDocument();
+		expect(screen.queryByText(/Extract archive/)).not.toBeInTheDocument();
+
+		fireEvent.click(rowText);
+
+		expect(await screen.findByText("#31")).toBeInTheDocument();
+		expect(screen.getByText(/Extract archive/)).toBeInTheDocument();
+		expect(screen.getByText("3 / 5")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByText("X"));
+		await waitFor(() => {
+			expect(screen.queryByText("#31")).not.toBeInTheDocument();
+		});
+
+		fireEvent.keyDown(rowText.closest("div") as HTMLElement, { key: "Enter" });
+		expect(await screen.findByText("#31")).toBeInTheDocument();
+	});
+
+	it("does not open a detail dialog for tasks without extra detail payload", async () => {
+		mockState.list.mockResolvedValueOnce({
+			items: [
+				createTask({
+					display_name: "Plain pending task",
+					last_error: null,
+					result: null,
+					status: "pending",
+					status_text: null,
+					steps: [],
+				}),
+			],
+			total: 1,
+		});
+
+		renderPage();
+
+		const rowText = await screen.findByText("Plain pending task");
+		fireEvent.click(rowText);
+		fireEvent.keyDown(rowText.closest("div") as HTMLElement, { key: "Enter" });
+
+		expect(screen.queryByText("#31")).not.toBeInTheDocument();
+		expect(screen.queryByText("tasks:timeline_label")).not.toBeInTheDocument();
+	});
+
+	it("clears the selected task detail when pagination replaces the current row", async () => {
+		mockState.list
+			.mockResolvedValueOnce({
+				items: [
+					createTask({
+						display_name: "First page failed task",
+						last_error: "first page failure",
+						status: "failed",
+					}),
+				],
+				total: 25,
+			})
+			.mockResolvedValueOnce({
+				items: [
+					createTask({
+						id: 77,
+						display_name: "Second page failed task",
+						last_error: "second page failure",
+						status: "failed",
+					}),
+				],
+				total: 25,
+			});
+
+		renderPage();
+
+		fireEvent.click(await screen.findByText("First page failed task"));
+		expect(await screen.findByText("#31")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "CaretRight" }));
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenNthCalledWith(2, {
+				limit: 20,
+				offset: 20,
+				sort_by: "updated_at",
+				sort_order: "desc",
+			});
+		});
+		expect(
+			await screen.findByText("Second page failed task"),
+		).toBeInTheDocument();
+		expect(screen.queryByText("#31")).not.toBeInTheDocument();
+		expect(screen.queryByText("first page failure")).not.toBeInTheDocument();
 	});
 
 	it("cleans up completed tasks from the dialog and reloads the list", async () => {

@@ -502,6 +502,20 @@ describe("adminService", () => {
 		);
 	});
 
+	it("creates storage policy migration tasks", () => {
+		adminPolicyService.createMigration({
+			source_policy_id: 3,
+			target_policy_id: 9,
+			delete_source_after_success: false,
+		});
+
+		expect(mockState.post).toHaveBeenCalledWith("/admin/storage-migrations", {
+			source_policy_id: 3,
+			target_policy_id: 9,
+			delete_source_after_success: false,
+		});
+	});
+
 	it("omits null policy_group_id values from update user payloads", () => {
 		adminUserService.update(5, {
 			role: "admin" as never,

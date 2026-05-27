@@ -2079,6 +2079,10 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
                 r#"{"policy":{"id":1,"name":"Deleted policy","driver_type":"local","endpoint":"","bucket":"","access_key":"","secret_key":"","base_path":"/tmp/asterdrive-deleted-policy","remote_node_id":null,"max_file_size":0,"allowed_types":"[]","options":"{}","is_default":false,"chunk_size":5242880},"remote_node":null,"temp_keys":["files/temp-object"],"multipart_uploads":[]}"#
                     .to_string(),
             ),
+            BackgroundTaskKind::StoragePolicyMigration => StoredTaskPayload(
+                r#"{"source_policy_id":1,"target_policy_id":2,"delete_source_after_success":false,"plan_hash":"hash","source_policy_updated_at":"2026-01-01T00:00:00Z","target_policy_updated_at":"2026-01-01T00:00:00Z"}"#
+                    .to_string(),
+            ),
             BackgroundTaskKind::TrashPurgeAll => {
                 StoredTaskPayload(r#"{}"#.to_string())
             }

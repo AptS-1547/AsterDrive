@@ -16,6 +16,7 @@ use super::super::media_metadata;
 use super::super::retry::{TaskRetryClass, TaskRetryPolicy};
 use super::super::runtime;
 use super::super::steps::{mark_active_step_failed, parse_task_steps_json, serialize_task_steps};
+use super::super::storage_migration;
 use super::super::storage_policy_cleanup;
 use super::super::thumbnail;
 use super::super::trash;
@@ -308,6 +309,9 @@ async fn process_task(
             )
             .await
         }
+        BackgroundTaskKind::StoragePolicyMigration => {
+            storage_migration::process_storage_policy_migration_task(state, task, lease_guard).await
+        }
         BackgroundTaskKind::SystemRuntime => Err(crate::errors::AsterError::internal_error(
             format!("system runtime task #{} should not be dispatched", task.id),
         )),
@@ -341,6 +345,9 @@ pub(super) fn task_retry_class(kind: BackgroundTaskKind, error: &AsterError) -> 
         }
         BackgroundTaskKind::TrashPurgeAll => super::super::retry::default_retry_class(error),
         BackgroundTaskKind::StoragePolicyTempCleanup => {
+            super::super::retry::default_retry_class(error)
+        }
+        BackgroundTaskKind::StoragePolicyMigration => {
             super::super::retry::default_retry_class(error)
         }
         BackgroundTaskKind::SystemRuntime => runtime::RuntimeRetryPolicy::retry_class(error),

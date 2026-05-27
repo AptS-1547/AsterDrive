@@ -11,10 +11,11 @@ pub use crate::api::dto::admin::{
     AdminAuditLogSortQuery, AdminCreateTeamReq, AdminListQuery, AdminLockListQuery,
     AdminPatchTeamReq, AdminPolicyGroupListQuery, AdminPolicyListQuery, AdminRemoteNodeListQuery,
     AdminShareListQuery, AdminTaskCleanupReq, AdminTaskListQuery, AdminTeamListQuery,
-    AdminUserListQuery, CreatePolicyGroupReq, CreatePolicyReq, CreateRemoteNodeReq, CreateUserReq,
-    DeletePolicyQuery, ExecuteConfigActionReq, ExecuteConfigActionResp, MigratePolicyGroupUsersReq,
-    PatchPolicyGroupReq, PatchPolicyReq, PatchRemoteNodeReq, PatchUserReq, PolicyGroupItemReq,
-    ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq, TestRemoteNodeParamsReq,
+    AdminUserListQuery, CreatePolicyGroupReq, CreatePolicyReq, CreateRemoteNodeReq,
+    CreateStoragePolicyMigrationReq, CreateUserReq, DeletePolicyQuery, ExecuteConfigActionReq,
+    ExecuteConfigActionResp, MigratePolicyGroupUsersReq, PatchPolicyGroupReq, PatchPolicyReq,
+    PatchRemoteNodeReq, PatchUserReq, PolicyGroupItemReq, ResetUserPasswordReq, SetConfigReq,
+    TestPolicyParamsReq, TestRemoteNodeParamsReq,
 };
 
 pub(crate) mod audit_logs;
@@ -26,6 +27,7 @@ pub(crate) mod overview;
 pub(crate) mod policies;
 pub(crate) mod remote_nodes;
 pub(crate) mod shares;
+pub(crate) mod storage_migrations;
 pub(crate) mod tasks;
 pub(crate) mod teams;
 pub(crate) mod users;
@@ -54,6 +56,7 @@ pub use remote_nodes::{
     test_remote_node_params, update_remote_node, update_remote_node_ingress_profile,
 };
 pub use shares::{admin_delete_share, list_all_shares};
+pub use storage_migrations::create_storage_policy_migration;
 pub use tasks::{cleanup_tasks, list_tasks};
 pub use teams::{
     add_team_member, create_team, delete_team, delete_team_member, get_team, list_team_audit_logs,
@@ -200,6 +203,10 @@ pub fn routes(
                     .route("/shares", web::get().to(list_all_shares))
                     .route("/shares/{id}", web::delete().to(admin_delete_share))
                     // tasks
+                    .route(
+                        "/storage-migrations",
+                        web::post().to(create_storage_policy_migration),
+                    )
                     .route("/tasks", web::get().to(list_tasks))
                     .route("/tasks/cleanup", web::post().to(cleanup_tasks))
                     // config

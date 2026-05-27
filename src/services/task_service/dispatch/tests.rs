@@ -171,6 +171,10 @@ fn task_lane_keeps_archive_and_thumbnail_separate() {
         task_lane(BackgroundTaskKind::StoragePolicyTempCleanup),
         TaskLane::Fallback
     );
+    assert_eq!(
+        task_lane(BackgroundTaskKind::StoragePolicyMigration),
+        TaskLane::StorageMigration
+    );
 }
 
 #[test]

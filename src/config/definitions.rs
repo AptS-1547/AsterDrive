@@ -46,6 +46,8 @@ pub const BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY: &str =
     "background_task_archive_max_concurrency";
 pub const BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY: &str =
     "background_task_thumbnail_max_concurrency";
+pub const BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY: &str =
+    "background_task_storage_migration_max_concurrency";
 pub const BACKGROUND_TASK_MAX_ATTEMPTS_KEY: &str = "background_task_max_attempts";
 pub const SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY: &str =
     "share_download_rollback_queue_capacity";
@@ -490,6 +492,20 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "operations.background_task",
         description: "Maximum number of thumbnail background tasks the server may execute at the same time",
+    },
+    ConfigDef {
+        key: BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY,
+        label_i18n_key: "settings_item_background_task_storage_migration_max_concurrency_label",
+        description_i18n_key: "settings_item_background_task_storage_migration_max_concurrency_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY
+                .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations.background_task",
+        description: "Maximum number of storage policy migration tasks the server may execute at the same time",
     },
     ConfigDef {
         key: BACKGROUND_TASK_MAX_ATTEMPTS_KEY,

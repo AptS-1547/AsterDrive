@@ -500,6 +500,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/storage-migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_storage_policy_migration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tasks": {
         parameters: {
             query?: never;
@@ -4104,7 +4120,7 @@ export interface components {
          * @description 后台任务类型
          * @enum {string}
          */
-        BackgroundTaskKind: "archive_extract" | "archive_compress" | "archive_preview_generate" | "thumbnail_generate" | "media_metadata_extract" | "trash_purge_all" | "storage_policy_temp_cleanup" | "system_runtime";
+        BackgroundTaskKind: "archive_extract" | "archive_compress" | "archive_preview_generate" | "thumbnail_generate" | "media_metadata_extract" | "trash_purge_all" | "storage_policy_temp_cleanup" | "storage_policy_migration" | "system_runtime";
         /**
          * @description 后台任务状态
          * @enum {string}
@@ -4299,6 +4315,14 @@ export interface components {
             max_downloads?: number;
             password?: string | null;
             target: components["schemas"]["ShareTarget"];
+        };
+        /** @description Create a background task that migrates blobs from one storage policy to another. */
+        CreateStoragePolicyMigrationReq: {
+            delete_source_after_success?: boolean;
+            /** Format: int64 */
+            source_policy_id: number;
+            /** Format: int64 */
+            target_policy_id: number;
         };
         /** @description Create a new team. */
         CreateTeamReq: {
@@ -5962,6 +5986,34 @@ export interface components {
             /** Format: int32 */
             priority: number;
         };
+        StoragePolicyMigrationTaskPayload: {
+            delete_source_after_success: boolean;
+            plan_hash: string;
+            /** Format: int64 */
+            source_policy_id: number;
+            source_policy_updated_at: string;
+            /** Format: int64 */
+            target_policy_id: number;
+            target_policy_updated_at: string;
+        };
+        StoragePolicyMigrationTaskResult: {
+            /** Format: int64 */
+            failed_blobs: number;
+            /** Format: int64 */
+            merged_blobs: number;
+            /** Format: int64 */
+            migrated_blobs: number;
+            /** Format: int64 */
+            migrated_bytes: number;
+            /** Format: int64 */
+            scanned_blobs: number;
+            /** Format: int64 */
+            skipped_blobs: number;
+            /** Format: int64 */
+            source_policy_id: number;
+            /** Format: int64 */
+            target_policy_id: number;
+        };
         StoragePolicyOptions: {
             content_dedup?: boolean | null;
             remote_download_strategy?: null | components["schemas"]["RemoteDownloadStrategy"];
@@ -6086,6 +6138,9 @@ export interface components {
         }) | (components["schemas"]["StoragePolicyTempCleanupTaskPayloadInfo"] & {
             /** @enum {string} */
             kind: "storage_policy_temp_cleanup";
+        }) | (components["schemas"]["StoragePolicyMigrationTaskPayload"] & {
+            /** @enum {string} */
+            kind: "storage_policy_migration";
         }) | (components["schemas"]["RuntimeTaskPayload"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -6111,6 +6166,9 @@ export interface components {
         }) | (components["schemas"]["StoragePolicyTempCleanupTaskResult"] & {
             /** @enum {string} */
             kind: "storage_policy_temp_cleanup";
+        }) | (components["schemas"]["StoragePolicyMigrationTaskResult"] & {
+            /** @enum {string} */
+            kind: "storage_policy_migration";
         }) | (components["schemas"]["RuntimeTaskResult"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -9445,6 +9503,89 @@ export interface operations {
             };
             /** @description Share not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_storage_policy_migration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateStoragePolicyMigrationReq"];
+            };
+        };
+        responses: {
+            /** @description Storage policy migration task created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            creator?: null | components["schemas"]["UserSummary"];
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            lease_expires_at?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload: components["schemas"]["TaskPayload"];
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result?: null | components["schemas"]["TaskResult"];
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

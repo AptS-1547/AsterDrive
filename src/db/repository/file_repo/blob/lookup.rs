@@ -38,6 +38,22 @@ pub async fn find_blob_by_hash<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_blobs_by_policy_paginated<C: ConnectionTrait>(
+    db: &C,
+    policy_id: i64,
+    after_id: i64,
+    limit: u64,
+) -> Result<Vec<file_blob::Model>> {
+    FileBlob::find()
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .filter(file_blob::Column::Id.gt(after_id))
+        .order_by_asc(file_blob::Column::Id)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn create_blob<C: ConnectionTrait>(
     db: &C,
     model: file_blob::ActiveModel,

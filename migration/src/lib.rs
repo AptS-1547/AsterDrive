@@ -18,6 +18,7 @@ mod m20260520_000001_add_blob_media_metadata;
 mod m20260523_000001_add_mfa;
 mod m20260526_000001_add_upload_session_frontend_client;
 mod m20260526_000002_add_mfa_email_codes;
+mod m20260527_000001_add_storage_migration_checkpoints;
 mod search_acceleration;
 mod time;
 
@@ -108,6 +109,7 @@ impl MigratorTrait for CurrentMigrator {
             Box::new(m20260523_000001_add_mfa::Migration),
             Box::new(m20260526_000001_add_upload_session_frontend_client::Migration),
             Box::new(m20260526_000002_add_mfa_email_codes::Migration),
+            Box::new(m20260527_000001_add_storage_migration_checkpoints::Migration),
         ]
     }
 }

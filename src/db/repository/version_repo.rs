@@ -202,3 +202,17 @@ pub async fn next_version<C: ConnectionTrait>(db: &C, file_id: i64) -> Result<i3
         .map_err(AsterError::from)?;
     Ok(latest.map(|v| v.version + 1).unwrap_or(1))
 }
+
+pub async fn replace_version_blob_refs<C: ConnectionTrait>(
+    db: &C,
+    old_blob_id: i64,
+    new_blob_id: i64,
+) -> Result<u64> {
+    let result = FileVersion::update_many()
+        .col_expr(file_version::Column::BlobId, Expr::value(new_blob_id))
+        .filter(file_version::Column::BlobId.eq(old_blob_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected)
+}
