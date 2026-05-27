@@ -96,10 +96,7 @@ test.describe
 				"/admin/tasks?kind=archive_extract&status=succeeded",
 				"Tasks",
 			);
-			const adminTaskRow = page
-				.getByRole("button")
-				.filter({ hasText: displayName })
-				.first();
+			const adminTaskRow = page.getByRole("button", { name: displayName });
 			await expect(adminTaskRow).toBeVisible({ timeout: 30_000 });
 			await expect(
 				adminTaskRow.getByText("Archive extraction", { exact: true }),
