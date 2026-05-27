@@ -106,6 +106,10 @@ pub async fn replace_file_blob_refs<C: ConnectionTrait>(
     old_blob_id: i64,
     new_blob_id: i64,
 ) -> Result<u64> {
+    if old_blob_id == new_blob_id {
+        return Ok(0);
+    }
+
     let result = File::update_many()
         .col_expr(file::Column::BlobId, Expr::value(new_blob_id))
         .col_expr(file::Column::UpdatedAt, Expr::value(Utc::now()))

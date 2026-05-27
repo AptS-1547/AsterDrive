@@ -22,6 +22,7 @@
 	"summary_extract_metadata_for": "提取媒体信息",
 	"summary_purge_trash": "清空回收站",
 	"summary_migrate_storage_policy": "迁移存储策略",
+	"summary_migrate_to": "至",
 	"summary_policy_id": "策略 #{{id}}",
 	"summary_cleanup_temp_files": "清理存储临时文件",
 	"summary_system_runtime": "执行系统任务 {{name}}",

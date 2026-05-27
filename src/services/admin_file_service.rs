@@ -1,5 +1,7 @@
 //! Admin observability service for files and file blobs.
 
+use std::collections::HashSet;
+
 use crate::api::dto::admin::{
     AdminFileBlobDetail, AdminFileBlobHashKind, AdminFileBlobInfo, AdminFileBlobListQuery,
     AdminFileBlobReferenceFile, AdminFileBlobReferenceVersion, AdminFileBlobSummary,
@@ -45,6 +47,8 @@ pub async fn get_file(state: &PrimaryAppState, file_id: i64) -> Result<AdminFile
     let version_blob_ids = versions
         .iter()
         .map(|version| version.blob_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
         .collect::<Vec<_>>();
     let version_blobs = file_repo::find_blobs_by_ids(state.reader_db(), &version_blob_ids).await?;
     let versions = versions

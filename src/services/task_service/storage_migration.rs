@@ -5,7 +5,7 @@ use std::task::{Context, Poll};
 
 use chrono::Utc;
 use sea_orm::Set;
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 
 use crate::db::repository::{
     background_task_repo, file_repo, policy_repo, storage_migration_checkpoint_repo, version_repo,
@@ -62,7 +62,7 @@ pub(crate) async fn create_storage_policy_migration_task(
     state: &PrimaryAppState,
     input: CreateStoragePolicyMigrationInput,
 ) -> Result<super::TaskInfo> {
-    validate_storage_policy_migration_input(state, input).await?;
+    validate_storage_policy_migration_input(input)?;
 
     let source_policy = policy_repo::find_by_id(state.writer_db(), input.source_policy_id).await?;
     let target_policy = policy_repo::find_by_id(state.writer_db(), input.target_policy_id).await?;
@@ -83,6 +83,22 @@ pub(crate) async fn create_storage_policy_migration_task(
     };
 
     let task = transaction::with_transaction(state.writer_db(), async |txn| {
+        let first_policy_id = input.source_policy_id.min(input.target_policy_id);
+        let second_policy_id = input.source_policy_id.max(input.target_policy_id);
+        policy_repo::lock_by_id(txn, first_policy_id).await?;
+        policy_repo::lock_by_id(txn, second_policy_id).await?;
+        if storage_migration_checkpoint_repo::has_active_for_pair(
+            txn,
+            input.source_policy_id,
+            input.target_policy_id,
+        )
+        .await?
+        {
+            return Err(AsterError::validation_error(
+                "an active storage policy migration already exists for this source and target",
+            ));
+        }
+
         let now = Utc::now();
         let task = background_task_repo::create(
             txn,
@@ -148,7 +164,8 @@ pub(crate) async fn dry_run_storage_policy_migration(
     state: &PrimaryAppState,
     input: CreateStoragePolicyMigrationInput,
 ) -> Result<StoragePolicyMigrationDryRun> {
-    validate_storage_policy_migration_input(state, input).await?;
+    validate_storage_policy_migration_input(input)?;
+    ensure_no_active_storage_policy_migration(state.writer_db(), input).await?;
     let source_policy = policy_repo::find_by_id(state.writer_db(), input.source_policy_id).await?;
     let target_policy = policy_repo::find_by_id(state.writer_db(), input.target_policy_id).await?;
     let _plan_hash = migration_plan_hash(
@@ -197,10 +214,7 @@ pub(crate) async fn dry_run_storage_policy_migration(
     })
 }
 
-async fn validate_storage_policy_migration_input(
-    state: &PrimaryAppState,
-    input: CreateStoragePolicyMigrationInput,
-) -> Result<()> {
+fn validate_storage_policy_migration_input(input: CreateStoragePolicyMigrationInput) -> Result<()> {
     if input.source_policy_id <= 0 || input.target_policy_id <= 0 {
         return Err(AsterError::validation_error(
             "source_policy_id and target_policy_id must be greater than 0",
@@ -216,8 +230,15 @@ async fn validate_storage_policy_migration_input(
             "delete_source_after_success is not supported in the first storage migration version",
         ));
     }
+    Ok(())
+}
+
+async fn ensure_no_active_storage_policy_migration<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    input: CreateStoragePolicyMigrationInput,
+) -> Result<()> {
     if storage_migration_checkpoint_repo::has_active_for_pair(
-        state.writer_db(),
+        db,
         input.source_policy_id,
         input.target_policy_id,
     )
@@ -545,7 +566,19 @@ async fn migrate_one_blob(
         Ok(outcome)
     })
     .await?;
+    if moved.skipped > 0 {
+        cleanup_unmoved_target_object(target_driver, &target_path).await;
+    }
     Ok(moved)
+}
+
+async fn cleanup_unmoved_target_object(target_driver: &dyn StorageDriver, target_path: &str) {
+    if let Err(error) = target_driver.delete(target_path).await {
+        tracing::warn!(
+            target_path,
+            "failed to cleanup migrated target object after blob policy CAS miss: {error}"
+        );
+    }
 }
 
 async fn merge_blob_records(
@@ -716,12 +749,10 @@ async fn verify_target_object(
     let mut hasher = new_sha256();
     let mut buf = vec![0_u8; 64 * 1024];
     loop {
-        let read = tokio::io::AsyncReadExt::read(&mut stream, &mut buf)
-            .await
-            .map_aster_err_ctx(
-                "read target object for hash verification",
-                AsterError::storage_driver_error,
-            )?;
+        let read = stream.read(&mut buf).await.map_aster_err_ctx(
+            "read target object for hash verification",
+            AsterError::storage_driver_error,
+        )?;
         if read == 0 {
             break;
         }

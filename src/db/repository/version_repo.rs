@@ -220,6 +220,10 @@ pub async fn replace_version_blob_refs<C: ConnectionTrait>(
     old_blob_id: i64,
     new_blob_id: i64,
 ) -> Result<u64> {
+    if old_blob_id == new_blob_id {
+        return Ok(0);
+    }
+
     let result = FileVersion::update_many()
         .col_expr(file_version::Column::BlobId, Expr::value(new_blob_id))
         .filter(file_version::Column::BlobId.eq(old_blob_id))

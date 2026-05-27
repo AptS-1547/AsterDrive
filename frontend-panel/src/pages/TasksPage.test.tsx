@@ -33,6 +33,12 @@ vi.mock("react-i18next", () => ({
 			) {
 				return `${key}:${JSON.stringify(options ?? {})}`;
 			}
+			if (key === "tasks:step_storage_policy_migration_prepare_sources") {
+				return "Prepare source policy";
+			}
+			if (key === "tasks:step_storage_policy_migration_finish") {
+				return "Finish migration";
+			}
 			return key;
 		},
 	}),
@@ -708,5 +714,90 @@ describe("TasksPage", () => {
 		expect(
 			screen.queryByRole("button", { name: "tasks:show_details" }),
 		).not.toBeInTheDocument();
+	});
+
+	it("renders storage policy migration summary and result details", async () => {
+		mockState.listInWorkspace.mockResolvedValue({
+			items: [
+				createTask({
+					display_name: "Move blobs to cold storage",
+					kind: "storage_policy_migration",
+					payload: {
+						kind: "storage_policy_migration",
+						source_policy_id: 1,
+						target_policy_id: 2,
+					} as never,
+					progress_current: 8,
+					progress_percent: 100,
+					progress_total: 8,
+					result: {
+						failed_blobs: 1,
+						kind: "storage_policy_migration",
+						merged_blobs: 0,
+						migrated_blobs: 6,
+						migrated_bytes: 4096,
+						scanned_blobs: 8,
+						skipped_blobs: 1,
+						source_policy_id: 1,
+						target_policy_id: 2,
+					} as never,
+					status: "succeeded",
+					status_text: "Migration completed",
+					steps: [
+						{
+							detail: "Source policy ready",
+							finished_at: "2026-04-10T00:01:00Z",
+							key: "prepare_sources",
+							progress_current: 1,
+							progress_total: 1,
+							started_at: "2026-04-10T00:00:30Z",
+							status: "succeeded",
+							title: "Prepare storage policies",
+						},
+						{
+							detail: "Finished",
+							finished_at: "2026-04-10T00:02:00Z",
+							key: "finish",
+							progress_current: 1,
+							progress_total: 1,
+							started_at: "2026-04-10T00:01:30Z",
+							status: "succeeded",
+							title: "Finish migration",
+						},
+					],
+				}),
+			],
+			total: 1,
+		});
+
+		render(<TasksPage />);
+
+		expect(
+			await screen.findByText("tasks:summary_migrate_storage_policy"),
+		).toBeInTheDocument();
+		expect(screen.getAllByText("tasks:summary_policy_id")).toHaveLength(2);
+		expect(
+			screen.getByText("tasks:summary_archive_extract_to"),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "tasks:show_details" }));
+
+		expect(
+			await screen.findByText(/Prepare source policy/),
+		).toBeInTheDocument();
+		expect(screen.getByText(/Finish migration/)).toBeInTheDocument();
+		expect(
+			screen.getByText("tasks:storage_migration_migrated_blobs"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("tasks:storage_migration_skipped_blobs"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("tasks:storage_migration_failed_blobs"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("tasks:storage_migration_migrated_bytes"),
+		).toBeInTheDocument();
+		expect(screen.getByText("4096")).toBeInTheDocument();
 	});
 });

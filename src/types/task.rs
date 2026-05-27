@@ -229,6 +229,10 @@ mod tests {
                 BackgroundTaskKind::StoragePolicyTempCleanup,
                 "storage_policy_temp_cleanup",
             ),
+            (
+                BackgroundTaskKind::StoragePolicyMigration,
+                "storage_policy_migration",
+            ),
             (BackgroundTaskKind::SystemRuntime, "system_runtime"),
         ];
 

@@ -22,6 +22,7 @@
 	"summary_extract_metadata_for": "Extract media metadata for",
 	"summary_purge_trash": "Empty trash",
 	"summary_migrate_storage_policy": "Migrate storage policy",
+	"summary_migrate_to": "to",
 	"summary_policy_id": "Policy #{{id}}",
 	"summary_cleanup_temp_files": "Clean storage temporary files",
 	"summary_system_runtime": "Run system task {{name}}",

@@ -72,6 +72,7 @@ export function StoragePolicyMigrationDialog({
 		dryRun?.source_policy_id === sourceId &&
 		dryRun?.target_policy_id === targetId &&
 		dryRun.can_start &&
+		!dryRunLoading &&
 		!submitting;
 	const canDryRun =
 		Number.isSafeInteger(sourceId) &&

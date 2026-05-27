@@ -133,6 +133,9 @@ export default function AdminPoliciesPage() {
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
 	const [submitting, setSubmitting] = useState(false);
 	const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
+	const [migrationPolicies, setMigrationPolicies] = useState<StoragePolicy[]>(
+		[],
+	);
 	const [migrationSourcePolicyId, setMigrationSourcePolicyId] = useState("");
 	const [migrationTargetPolicyId, setMigrationTargetPolicyId] = useState("");
 	const [migrationDryRun, setMigrationDryRun] =
@@ -298,15 +301,21 @@ export default function AdminPoliciesPage() {
 		setDialogOpen(true);
 	};
 
-	const openMigrationDialog = () => {
-		const firstPolicy = policies[0];
-		const secondPolicy = policies.find(
-			(policy) => policy.id !== firstPolicy?.id,
-		);
-		setMigrationSourcePolicyId(firstPolicy ? String(firstPolicy.id) : "");
-		setMigrationTargetPolicyId(secondPolicy ? String(secondPolicy.id) : "");
-		setMigrationDryRun(null);
-		setMigrationDialogOpen(true);
+	const openMigrationDialog = async () => {
+		try {
+			const allPolicies = await adminPolicyService.listAll();
+			const firstPolicy = allPolicies[0];
+			const secondPolicy = allPolicies.find(
+				(policy) => policy.id !== firstPolicy?.id,
+			);
+			setMigrationPolicies(allPolicies);
+			setMigrationSourcePolicyId(firstPolicy ? String(firstPolicy.id) : "");
+			setMigrationTargetPolicyId(secondPolicy ? String(secondPolicy.id) : "");
+			setMigrationDryRun(null);
+			setMigrationDialogOpen(true);
+		} catch (error) {
+			handleApiError(error);
+		}
 	};
 
 	const handleMigrationSourceChange = (policyId: string) => {
@@ -318,6 +327,12 @@ export default function AdminPoliciesPage() {
 	};
 
 	const handleMigrationTargetChange = (policyId: string) => {
+		if (policyId === migrationSourcePolicyId) {
+			setMigrationTargetPolicyId("");
+			setMigrationDryRun(null);
+			toast.error(t("policy_migration_same_policy_error"));
+			return;
+		}
 		setMigrationTargetPolicyId(policyId);
 		setMigrationDryRun(null);
 	};
@@ -590,15 +605,19 @@ export default function AdminPoliciesPage() {
 			!Number.isSafeInteger(sourcePolicyId) ||
 			!Number.isSafeInteger(targetPolicyId) ||
 			sourcePolicyId <= 0 ||
-			targetPolicyId <= 0 ||
-			sourcePolicyId === targetPolicyId
+			targetPolicyId <= 0
 		) {
+			return;
+		}
+		if (sourcePolicyId === targetPolicyId) {
+			toast.error(t("policy_migration_same_policy_error"));
 			return;
 		}
 		if (
 			migrationDryRun?.source_policy_id !== sourcePolicyId ||
 			migrationDryRun?.target_policy_id !== targetPolicyId ||
-			!migrationDryRun.can_start
+			!migrationDryRun.can_start ||
+			migrationDryRunLoading
 		) {
 			return;
 		}
@@ -630,9 +649,13 @@ export default function AdminPoliciesPage() {
 			!Number.isSafeInteger(sourcePolicyId) ||
 			!Number.isSafeInteger(targetPolicyId) ||
 			sourcePolicyId <= 0 ||
-			targetPolicyId <= 0 ||
-			sourcePolicyId === targetPolicyId
+			targetPolicyId <= 0
 		) {
+			return;
+		}
+		if (sourcePolicyId === targetPolicyId) {
+			setMigrationDryRun(null);
+			toast.error(t("policy_migration_same_policy_error"));
 			return;
 		}
 
@@ -672,8 +695,8 @@ export default function AdminPoliciesPage() {
 								variant="outline"
 								size="sm"
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								onClick={openMigrationDialog}
-								disabled={policies.length < 2}
+								onClick={() => void openMigrationDialog()}
+								disabled={total < 2}
 							>
 								<Icon name="ArrowsClockwise" className="mr-1 size-3.5" />
 								{t("policy_migration_action")}
@@ -700,7 +723,7 @@ export default function AdminPoliciesPage() {
 					deletingPolicyId={deletingPolicyId}
 					onDeletePolicy={requestDeleteConfirm}
 					onEditPolicy={openEdit}
-					policies={policies}
+					policies={migrationPolicies}
 					remoteNodeNameById={remoteNodeNameById}
 					sortBy={sortBy}
 					sortOrder={sortOrder}

@@ -224,6 +224,49 @@ export const adminPolicyService = {
 			}),
 		),
 
+	listAll: async (pageSize = 100) => {
+		if (!Number.isInteger(pageSize) || pageSize <= 0) {
+			throw new Error("pageSize must be a positive integer");
+		}
+
+		const allPolicies: StoragePolicy[] = [];
+		let offset = 0;
+		let total = 0;
+		let pageCount = 0;
+		let maxPages = Number.POSITIVE_INFINITY;
+
+		do {
+			pageCount += 1;
+			if (pageCount > maxPages) {
+				throw new Error("pagination exceeded max iterations");
+			}
+
+			const previousOffset = offset;
+			const previousCount = allPolicies.length;
+			const page = await adminPolicyService.list({
+				limit: pageSize,
+				offset,
+				sort_by: "id",
+				sort_order: "asc",
+			});
+			allPolicies.push(...page.items);
+			total = page.total;
+			maxPages = Math.max(1, Math.ceil(total / pageSize)) + 2;
+			offset += page.items.length;
+			if (page.items.length === 0) {
+				if (allPolicies.length < total) {
+					throw new Error("incomplete pages from adminPolicyService.list");
+				}
+				break;
+			}
+			if (offset <= previousOffset || allPolicies.length <= previousCount) {
+				throw new Error("pagination did not make progress");
+			}
+		} while (allPolicies.length < total);
+
+		return allPolicies;
+	},
+
 	get: (id: number) => api.get<StoragePolicy>(`/admin/policies/${id}`),
 
 	create: (data: CreatePolicyRequest) =>

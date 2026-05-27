@@ -143,8 +143,7 @@ function displayValue(value: string | number | null | undefined) {
 }
 
 function fileBlobSummary(file: AdminFileInfo | null) {
-	return (file as (AdminFileInfo & { blob?: AdminFileInfo["blob"] }) | null)
-		?.blob;
+	return file?.blob;
 }
 
 function buildManagedSearchParams({
@@ -739,11 +738,6 @@ function AdminFilesPageView({ kind }: { kind: AdminFilesPageKind }) {
 										className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-32`}
 									/>
 									<Select
-										items={[
-											{ label: t("admin_deleted_all"), value: "__all__" },
-											{ label: t("admin_deleted_live"), value: "live" },
-											{ label: t("admin_deleted_deleted"), value: "deleted" },
-										]}
 										value={deleted}
 										onValueChange={(value) => {
 											setDeleted(parseDeletedFilter(value));
@@ -994,10 +988,18 @@ function FileRow({
 }) {
 	const { t } = useTranslation("admin");
 	const blob = file.blob;
+	const handleKeyDown = (event: React.KeyboardEvent<HTMLTableRowElement>) => {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			onOpenDetail(file.id);
+		}
+	};
+
 	return (
 		<TableRow
 			className={ADMIN_INTERACTIVE_TABLE_ROW_CLASS}
 			onClick={() => void onOpenDetail(file.id)}
+			onKeyDown={handleKeyDown}
 			tabIndex={0}
 		>
 			<TableCell>
@@ -1055,10 +1057,18 @@ function BlobRow({
 	onOpenDetail: (id: number) => void;
 }) {
 	const { t } = useTranslation("admin");
+	const handleKeyDown = (event: React.KeyboardEvent<HTMLTableRowElement>) => {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			onOpenDetail(blob.id);
+		}
+	};
+
 	return (
 		<TableRow
 			className={ADMIN_INTERACTIVE_TABLE_ROW_CLASS}
 			onClick={() => void onOpenDetail(blob.id)}
+			onKeyDown={handleKeyDown}
 			tabIndex={0}
 		>
 			<TableCell>

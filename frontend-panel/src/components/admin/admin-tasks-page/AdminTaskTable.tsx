@@ -174,6 +174,8 @@ export function AdminTaskTable({
 					<TableBody>
 						{items.map((task) => {
 							const expandable = taskHasExpandableDetails(task);
+							const detailContentId = `admin-task-detail-${task.id}`;
+							const detailOpen = detailTaskId === task.id;
 
 							return (
 								<TableRow
@@ -181,6 +183,9 @@ export function AdminTaskTable({
 									className={cn(
 										expandable ? ADMIN_INTERACTIVE_TABLE_ROW_CLASS : undefined,
 									)}
+									role={expandable ? "button" : undefined}
+									aria-expanded={expandable ? detailOpen : undefined}
+									aria-controls={expandable ? detailContentId : undefined}
 									onClick={() => {
 										if (expandable) {
 											onOpenDetail(task.id);
@@ -272,6 +277,7 @@ export function AdminTaskTable({
 				{detailTask ? (
 					<DialogContent
 						keepMounted
+						id={`admin-task-detail-${detailTask.id}`}
 						className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1040px,calc(100vw-2rem))]"
 					>
 						<DialogHeader className="shrink-0 border-b px-6 pt-5 pb-4 pr-14 max-lg:px-4 max-lg:pt-4">

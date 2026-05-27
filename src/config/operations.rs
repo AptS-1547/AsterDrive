@@ -612,11 +612,14 @@ mod tests {
         ARCHIVE_EXTRACT_MAX_STAGING_BYTES_KEY, AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY,
         BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
         BACKGROUND_TASK_DISPATCH_IDLE_MAX_INTERVAL_SECS_KEY, BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
-        BACKGROUND_TASK_MAX_CONCURRENCY_KEY, BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+        BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+        BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY,
+        BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
         BLOB_RECONCILE_INTERVAL_SECS_KEY, DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
         DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES, DEFAULT_BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY,
         DEFAULT_BACKGROUND_TASK_DISPATCH_IDLE_MAX_INTERVAL_SECS,
         DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS, DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY,
+        DEFAULT_BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY,
         DEFAULT_BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY, DEFAULT_BLOB_RECONCILE_INTERVAL_SECS,
         DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS,
         DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY, DEFAULT_SHARE_STREAM_SESSION_TTL_SECS,
@@ -627,6 +630,7 @@ mod tests {
         archive_extract_max_staging_bytes, avatar_max_upload_size_bytes,
         background_task_archive_max_concurrency, background_task_dispatch_idle_max_interval_secs,
         background_task_max_attempts, background_task_max_concurrency,
+        background_task_storage_migration_max_concurrency,
         background_task_thumbnail_max_concurrency, blob_reconcile_interval_secs,
         normalize_attempts_config_value, normalize_bool_config_value, normalize_bytes_config_value,
         normalize_concurrency_config_value, normalize_interval_config_value,
@@ -808,6 +812,33 @@ mod tests {
         assert_eq!(
             background_task_thumbnail_max_concurrency(&runtime_config),
             DEFAULT_BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY
+        );
+    }
+
+    #[test]
+    fn storage_migration_concurrency_reader_uses_runtime_value_and_default() {
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(
+            background_task_storage_migration_max_concurrency(&runtime_config),
+            DEFAULT_BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY
+        );
+
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY,
+            "3",
+        ));
+        assert_eq!(
+            background_task_storage_migration_max_concurrency(&runtime_config),
+            3usize
+        );
+
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY,
+            "invalid",
+        ));
+        assert_eq!(
+            background_task_storage_migration_max_concurrency(&runtime_config),
+            DEFAULT_BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY
         );
     }
 

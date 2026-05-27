@@ -2,7 +2,8 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, RelationTrait, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
+    RelationTrait, Set, sea_query::Expr,
 };
 
 use crate::entities::storage_migration_checkpoint::{self, Entity as StorageMigrationCheckpoint};
@@ -81,26 +82,60 @@ pub async fn advance<C: ConnectionTrait>(
     delta: CheckpointDelta,
     last_error: Option<&str>,
 ) -> Result<storage_migration_checkpoint::Model> {
-    let checkpoint = get_by_task_id(db, task_id).await?;
     let updated = Utc::now();
-    let active = storage_migration_checkpoint::ActiveModel {
-        task_id: Set(checkpoint.task_id),
-        source_policy_id: Set(checkpoint.source_policy_id),
-        target_policy_id: Set(checkpoint.target_policy_id),
-        plan_hash: Set(checkpoint.plan_hash),
-        stage: Set(stage.to_string()),
-        last_processed_blob_id: Set(last_processed_blob_id),
-        scanned_blobs: Set(checkpoint.scanned_blobs + delta.scanned_blobs),
-        migrated_blobs: Set(checkpoint.migrated_blobs + delta.migrated_blobs),
-        merged_blobs: Set(checkpoint.merged_blobs + delta.merged_blobs),
-        skipped_blobs: Set(checkpoint.skipped_blobs + delta.skipped_blobs),
-        failed_blobs: Set(checkpoint.failed_blobs + delta.failed_blobs),
-        migrated_bytes: Set(checkpoint.migrated_bytes + delta.migrated_bytes),
-        last_error: Set(last_error.map(str::to_string)),
-        created_at: Set(checkpoint.created_at),
-        updated_at: Set(updated),
-    };
-    active.update(db).await.map_err(AsterError::from)
+    let result = StorageMigrationCheckpoint::update_many()
+        .col_expr(
+            storage_migration_checkpoint::Column::Stage,
+            Expr::value(stage.to_string()),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::LastProcessedBlobId,
+            Expr::value(last_processed_blob_id),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::ScannedBlobs,
+            Expr::col(storage_migration_checkpoint::Column::ScannedBlobs).add(delta.scanned_blobs),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::MigratedBlobs,
+            Expr::col(storage_migration_checkpoint::Column::MigratedBlobs)
+                .add(delta.migrated_blobs),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::MergedBlobs,
+            Expr::col(storage_migration_checkpoint::Column::MergedBlobs).add(delta.merged_blobs),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::SkippedBlobs,
+            Expr::col(storage_migration_checkpoint::Column::SkippedBlobs).add(delta.skipped_blobs),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::FailedBlobs,
+            Expr::col(storage_migration_checkpoint::Column::FailedBlobs).add(delta.failed_blobs),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::MigratedBytes,
+            Expr::col(storage_migration_checkpoint::Column::MigratedBytes)
+                .add(delta.migrated_bytes),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::LastError,
+            Expr::value(last_error.map(str::to_string)),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::UpdatedAt,
+            Expr::value(updated),
+        )
+        .filter(storage_migration_checkpoint::Column::TaskId.eq(task_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!(
+            "storage migration checkpoint #{task_id}"
+        )));
+    }
+    get_by_task_id(db, task_id).await
 }
 
 pub async fn set_stage<C: ConnectionTrait>(
@@ -109,25 +144,29 @@ pub async fn set_stage<C: ConnectionTrait>(
     stage: &str,
     last_error: Option<&str>,
 ) -> Result<storage_migration_checkpoint::Model> {
-    let checkpoint = get_by_task_id(db, task_id).await?;
-    let active = storage_migration_checkpoint::ActiveModel {
-        task_id: Set(checkpoint.task_id),
-        source_policy_id: Set(checkpoint.source_policy_id),
-        target_policy_id: Set(checkpoint.target_policy_id),
-        plan_hash: Set(checkpoint.plan_hash),
-        stage: Set(stage.to_string()),
-        last_processed_blob_id: Set(checkpoint.last_processed_blob_id),
-        scanned_blobs: Set(checkpoint.scanned_blobs),
-        migrated_blobs: Set(checkpoint.migrated_blobs),
-        merged_blobs: Set(checkpoint.merged_blobs),
-        skipped_blobs: Set(checkpoint.skipped_blobs),
-        failed_blobs: Set(checkpoint.failed_blobs),
-        migrated_bytes: Set(checkpoint.migrated_bytes),
-        last_error: Set(last_error.map(str::to_string)),
-        created_at: Set(checkpoint.created_at),
-        updated_at: Set(Utc::now()),
-    };
-    active.update(db).await.map_err(AsterError::from)
+    let result = StorageMigrationCheckpoint::update_many()
+        .col_expr(
+            storage_migration_checkpoint::Column::Stage,
+            Expr::value(stage.to_string()),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::LastError,
+            Expr::value(last_error.map(str::to_string)),
+        )
+        .col_expr(
+            storage_migration_checkpoint::Column::UpdatedAt,
+            Expr::value(Utc::now()),
+        )
+        .filter(storage_migration_checkpoint::Column::TaskId.eq(task_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!(
+            "storage migration checkpoint #{task_id}"
+        )));
+    }
+    get_by_task_id(db, task_id).await
 }
 
 pub async fn has_active_for_pair<C: ConnectionTrait>(

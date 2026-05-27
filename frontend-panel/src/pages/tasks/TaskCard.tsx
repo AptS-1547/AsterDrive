@@ -21,8 +21,8 @@ import {
 } from "./taskPresentation";
 
 type SummaryPart =
-	| { kind: "text"; value: string }
-	| { icon: IconName; kind: "chip"; value: string };
+	| { key: string; kind: "text"; value: string }
+	| { icon: IconName; key: string; kind: "chip"; value: string };
 
 interface TaskCardProps {
 	detailsExpanded: boolean;
@@ -65,15 +65,25 @@ function summaryParts(
 	switch (task.payload.kind) {
 		case "archive_extract":
 			return [
-				{ kind: "text", value: t("tasks:summary_action_prefix") },
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_action_prefix"),
+				},
 				{
 					icon: "FileZip",
+					key: "source-file",
 					kind: "chip",
 					value: task.payload.source_file_name,
 				},
-				{ kind: "text", value: t("tasks:summary_archive_extract_to") },
+				{
+					key: "target-label",
+					kind: "text",
+					value: t("tasks:summary_migrate_to"),
+				},
 				{
 					icon: "FolderOpen",
+					key: "target-folder",
 					kind: "chip",
 					value:
 						task.payload.output_folder_name || t("tasks:summary_root_folder"),
@@ -83,15 +93,25 @@ function summaryParts(
 			const selectedCount =
 				task.payload.file_ids.length + task.payload.folder_ids.length;
 			return [
-				{ kind: "text", value: t("tasks:summary_action_prefix") },
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_action_prefix"),
+				},
 				{
 					icon: "Folder",
+					key: "selection",
 					kind: "chip",
 					value: t("tasks:summary_selected_items", { count: selectedCount }),
 				},
-				{ kind: "text", value: t("tasks:summary_archive_compress_to") },
+				{
+					key: "target-label",
+					kind: "text",
+					value: t("tasks:summary_archive_compress_to"),
+				},
 				{
 					icon: "FileZip",
+					key: "archive-file",
 					kind: "chip",
 					value: task.payload.archive_name,
 				},
@@ -99,37 +119,63 @@ function summaryParts(
 		}
 		case "archive_preview_generate":
 			return [
-				{ kind: "text", value: t("tasks:summary_generate_preview_for") },
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_generate_preview_for"),
+				},
 				{
 					icon: "FileZip",
+					key: "source-file",
 					kind: "chip",
 					value: task.payload.source_file_name,
 				},
 			];
 		case "thumbnail_generate":
 			return [
-				{ kind: "text", value: t("tasks:summary_generate_thumbnail_for") },
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_generate_thumbnail_for"),
+				},
 				{
 					icon: "FileImage",
+					key: "source-file",
 					kind: "chip",
 					value: task.payload.source_file_name || task.display_name,
 				},
 			];
 		case "trash_purge_all":
-			return [{ kind: "text", value: t("tasks:summary_purge_trash") }];
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_purge_trash"),
+				},
+			];
 		case "storage_policy_migration":
 			return [
-				{ kind: "text", value: t("tasks:summary_migrate_storage_policy") },
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_migrate_storage_policy"),
+				},
 				{
 					icon: "HardDrive",
+					key: "source-policy",
 					kind: "chip",
 					value: t("tasks:summary_policy_id", {
 						id: task.payload.source_policy_id,
 					}),
 				},
-				{ kind: "text", value: t("tasks:summary_archive_extract_to") },
+				{
+					key: "target-label",
+					kind: "text",
+					value: t("tasks:summary_archive_extract_to"),
+				},
 				{
 					icon: "HardDrive",
+					key: "target-policy",
 					kind: "chip",
 					value: t("tasks:summary_policy_id", {
 						id: task.payload.target_policy_id,
@@ -137,10 +183,17 @@ function summaryParts(
 				},
 			];
 		case "storage_policy_temp_cleanup":
-			return [{ kind: "text", value: t("tasks:summary_cleanup_temp_files") }];
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_cleanup_temp_files"),
+				},
+			];
 		case "system_runtime":
 			return [
 				{
+					key: "action",
 					kind: "text",
 					value: t("tasks:summary_system_runtime", {
 						name: task.payload.task_name,
@@ -148,7 +201,7 @@ function summaryParts(
 				},
 			];
 		default:
-			return [{ kind: "text", value: task.display_name }];
+			return [{ key: "display-name", kind: "text", value: task.display_name }];
 	}
 }
 
@@ -206,15 +259,12 @@ export function TaskCard({
 						{parts.map((part) =>
 							part.kind === "chip" ? (
 								<TaskSummaryChip
-									key={`${part.kind}-${part.icon}-${part.value}`}
+									key={part.key}
 									icon={part.icon}
 									value={part.value}
 								/>
 							) : (
-								<span
-									key={`${part.kind}-${part.value}`}
-									className="text-foreground"
-								>
+								<span key={part.key} className="text-foreground">
 									{part.value}
 								</span>
 							),

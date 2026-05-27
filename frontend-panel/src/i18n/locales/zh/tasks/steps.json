@@ -27,6 +27,6 @@
 	"step_storage_policy_migration_prepare_sources": "准备源策略",
 	"step_storage_policy_migration_scan_blobs": "扫描源对象",
 	"step_storage_policy_migration_migrate_blobs": "迁移对象",
-	"step_storage_policy_migration_finalize": "完成迁移",
-	"step_storage_policy_migration_finish": "完成迁移"
+	"step_storage_policy_migration_finalize": "收尾处理",
+	"step_storage_policy_migration_finish": "迁移完成"
 }
