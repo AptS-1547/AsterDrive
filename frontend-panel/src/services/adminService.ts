@@ -8,6 +8,12 @@ import type {
 	AdminExternalAuthProviderKindInfo,
 	AdminExternalAuthProviderListQuery,
 	AdminExternalAuthProviderPage,
+	AdminFileBlobDetail,
+	AdminFileBlobListQuery,
+	AdminFileBlobPage,
+	AdminFileDetail,
+	AdminFileListQuery,
+	AdminFilePage,
 	AdminLockListQuery,
 	AdminOverview,
 	AdminOverviewQuery,
@@ -31,8 +37,10 @@ import type {
 	CreatePolicyGroupRequest,
 	CreatePolicyRequest,
 	CreateRemoteNodeRequest,
+	CreateStoragePolicyMigrationRequest,
 	CreateUserReq,
 	DeletePolicyQuery,
+	DryRunStoragePolicyMigrationRequest,
 	ExecuteConfigActionRequest,
 	ExecuteConfigActionResponse,
 	ExternalAuthProviderTestParamsInput,
@@ -53,9 +61,11 @@ import type {
 	StoragePolicy,
 	StoragePolicyGroup,
 	StoragePolicyGroupPage,
+	StoragePolicyMigrationDryRun,
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
+	TaskInfo,
 	TaskPage,
 	TeamAuditPage,
 	TeamMemberPage,
@@ -214,6 +224,49 @@ export const adminPolicyService = {
 			}),
 		),
 
+	listAll: async (pageSize = 100) => {
+		if (!Number.isInteger(pageSize) || pageSize <= 0) {
+			throw new Error("pageSize must be a positive integer");
+		}
+
+		const allPolicies: StoragePolicy[] = [];
+		let offset = 0;
+		let total = 0;
+		let pageCount = 0;
+		let maxPages = Number.POSITIVE_INFINITY;
+
+		do {
+			pageCount += 1;
+			if (pageCount > maxPages) {
+				throw new Error("pagination exceeded max iterations");
+			}
+
+			const previousOffset = offset;
+			const previousCount = allPolicies.length;
+			const page = await adminPolicyService.list({
+				limit: pageSize,
+				offset,
+				sort_by: "id",
+				sort_order: "asc",
+			});
+			allPolicies.push(...page.items);
+			total = page.total;
+			maxPages = Math.max(1, Math.ceil(total / pageSize)) + 2;
+			offset += page.items.length;
+			if (page.items.length === 0) {
+				if (allPolicies.length < total) {
+					throw new Error("incomplete pages from adminPolicyService.list");
+				}
+				break;
+			}
+			if (offset <= previousOffset || allPolicies.length <= previousCount) {
+				throw new Error("pagination did not make progress");
+			}
+		} while (allPolicies.length < total);
+
+		return allPolicies;
+	},
+
 	get: (id: number) => api.get<StoragePolicy>(`/admin/policies/${id}`),
 
 	create: (data: CreatePolicyRequest) =>
@@ -233,6 +286,15 @@ export const adminPolicyService = {
 
 	testParams: (data: TestPolicyParamsRequest) =>
 		api.post<void>("/admin/policies/test", data),
+
+	createMigration: (data: CreateStoragePolicyMigrationRequest) =>
+		api.post<TaskInfo>("/admin/storage-migrations", data),
+
+	dryRunMigration: (data: DryRunStoragePolicyMigrationRequest) =>
+		api.post<StoragePolicyMigrationDryRun>(
+			"/admin/storage-migrations/dry-run",
+			data,
+		),
 };
 
 export const adminRemoteNodeService = {
@@ -433,6 +495,46 @@ export const adminShareService = {
 	delete: (id: number) => api.delete<void>(`/admin/shares/${id}`),
 };
 
+export const adminFileService = {
+	listFiles: (params?: AdminFileListQuery) =>
+		api.get<AdminFilePage>(
+			withQuery("/admin/files", {
+				limit: params?.limit,
+				offset: params?.offset,
+				name: params?.name,
+				blob_id: params?.blob_id,
+				policy_id: params?.policy_id,
+				owner_user_id: params?.owner_user_id,
+				team_id: params?.team_id,
+				deleted: params?.deleted,
+				sort_by: params?.sort_by,
+				sort_order: params?.sort_order,
+			}),
+		),
+
+	getFile: (id: number) => api.get<AdminFileDetail>(`/admin/files/${id}`),
+
+	listBlobs: (params?: AdminFileBlobListQuery) =>
+		api.get<AdminFileBlobPage>(
+			withQuery("/admin/file-blobs", {
+				limit: params?.limit,
+				offset: params?.offset,
+				hash: params?.hash,
+				policy_id: params?.policy_id,
+				storage_path: params?.storage_path,
+				ref_count_min: params?.ref_count_min,
+				ref_count_max: params?.ref_count_max,
+				size_min: params?.size_min,
+				size_max: params?.size_max,
+				sort_by: params?.sort_by,
+				sort_order: params?.sort_order,
+			}),
+		),
+
+	getBlob: (id: number) =>
+		api.get<AdminFileBlobDetail>(`/admin/file-blobs/${id}`),
+};
+
 export const adminTaskService = {
 	list: (params?: AdminTaskListQuery) =>
 		api.get<TaskPage>(
@@ -448,6 +550,9 @@ export const adminTaskService = {
 
 	cleanupCompleted: (data: AdminTaskCleanupRequest) =>
 		api.post<RemovedCountResponse>("/admin/tasks/cleanup", data),
+
+	resumeStoragePolicyMigration: (taskId: number) =>
+		api.post<TaskInfo>(`/admin/storage-migrations/${taskId}/resume`),
 };
 
 export const adminLockService = {

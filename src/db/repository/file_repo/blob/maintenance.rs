@@ -60,6 +60,20 @@ pub async fn find_blob_storage_paths_by_storage_paths<C: ConnectionTrait>(
     Ok(paths.into_iter().collect())
 }
 
+pub async fn blob_storage_path_exists_for_policy<C: ConnectionTrait>(
+    db: &C,
+    policy_id: i64,
+    storage_path: &str,
+) -> Result<bool> {
+    let count = FileBlob::find()
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .filter(file_blob::Column::StoragePath.eq(storage_path))
+        .count(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(count > 0)
+}
+
 pub async fn set_thumbnail_metadata<C: ConnectionTrait>(
     db: &C,
     id: i64,
@@ -133,4 +147,66 @@ pub async fn sum_blob_bytes<C: ConnectionTrait>(db: &C) -> Result<i64> {
         .await?
         .flatten()
         .unwrap_or(0))
+}
+
+pub async fn sum_blob_bytes_by_policy<C: ConnectionTrait>(db: &C, policy_id: i64) -> Result<i64> {
+    let type_name = match db.get_database_backend() {
+        DbBackend::Postgres => "bigint",
+        DbBackend::MySql => "signed",
+        _ => "integer",
+    };
+    Ok(FileBlob::find()
+        .select_only()
+        .column_as(
+            Expr::col(file_blob::Column::Size).sum().cast_as(type_name),
+            "sum",
+        )
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .into_tuple::<Option<i64>>()
+        .one(db)
+        .await?
+        .flatten()
+        .unwrap_or(0))
+}
+
+pub async fn move_blob_policy_if_current<C: ConnectionTrait>(
+    db: &C,
+    blob_id: i64,
+    source_policy_id: i64,
+    target_policy_id: i64,
+    target_path: &str,
+) -> Result<bool> {
+    let result = FileBlob::update_many()
+        .col_expr(file_blob::Column::PolicyId, Expr::value(target_policy_id))
+        .col_expr(
+            file_blob::Column::StoragePath,
+            Expr::value(target_path.to_string()),
+        )
+        .col_expr(
+            file_blob::Column::ThumbnailPath,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            file_blob::Column::ThumbnailProcessor,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            file_blob::Column::ThumbnailVersion,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(blob_id))
+        .filter(file_blob::Column::PolicyId.eq(source_policy_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn delete_blob_by_id<C: ConnectionTrait>(db: &C, blob_id: i64) -> Result<bool> {
+    let result = FileBlob::delete_by_id(blob_id)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
 }

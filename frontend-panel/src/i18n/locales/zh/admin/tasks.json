@@ -18,6 +18,9 @@
 	"task_cleanup_confirm_desc": "将删除结束于 {{finishedBefore}} 之前、类型为“{{kind}}”、状态为“{{status}}”的任务记录。",
 	"task_cleanup_confirm_desc_invalid": "请选择有效的结束时间后再执行。",
 	"tasks_cleaned": "已清理 {{count}} 条任务记录",
+	"storage_migration_resume": "从检查点继续",
+	"storage_migration_resuming": "恢复中...",
+	"storage_migration_resume_queued": "迁移任务已重新排队",
 	"no_tasks": "暂时没有后台任务",
 	"no_tasks_desc": "后台任务开始执行并写入记录后，这里会显示完整历史。"
 }

@@ -157,3 +157,24 @@ fn postgres_batch_decrement_blob_ref_counts_sql_uses_floor_case_update() {
     assert!(sql.contains(r#"ELSE "ref_count" - 3 END"#), "{sql}");
     assert!(sql.contains(r#"WHEN ("id" = 4)"#), "{sql}");
 }
+
+#[test]
+fn postgres_move_blob_policy_if_current_sql_uses_policy_cas() {
+    let sql = crate::entities::file_blob::Entity::update_many()
+        .col_expr(
+            file_blob::Column::PolicyId,
+            sea_orm::sea_query::Expr::value(2),
+        )
+        .col_expr(
+            file_blob::Column::StoragePath,
+            sea_orm::sea_query::Expr::value("ab/cd/hash".to_string()),
+        )
+        .filter(file_blob::Column::Id.eq(9))
+        .filter(file_blob::Column::PolicyId.eq(1))
+        .build(DbBackend::Postgres)
+        .to_string();
+
+    assert!(sql.contains(r#""id" = 9"#), "{sql}");
+    assert!(sql.contains(r#""policy_id" = 1"#), "{sql}");
+    assert!(sql.contains(r#""policy_id" = 2"#), "{sql}");
+}

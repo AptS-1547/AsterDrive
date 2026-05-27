@@ -32,6 +32,7 @@ pub mod search_query;
 pub mod search_repo;
 pub mod share_repo;
 pub mod sort;
+pub mod storage_migration_checkpoint_repo;
 pub mod team_member_repo;
 pub mod team_repo;
 pub mod upload_session_part_repo;

@@ -253,6 +253,36 @@ pub enum AdminAuditLogSortBy {
     IpAddress,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AdminFileSortBy {
+    Id,
+    Name,
+    Size,
+    BlobId,
+    PolicyId,
+    OwnerUserId,
+    TeamId,
+    CreatedAt,
+    UpdatedAt,
+    DeletedAt,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AdminFileBlobSortBy {
+    Id,
+    Hash,
+    Size,
+    PolicyId,
+    StoragePath,
+    RefCount,
+    CreatedAt,
+    UpdatedAt,
+}
+
 /// 文件列表分页参数（文件夹用 offset 分页，文件用 cursor 分页）
 #[derive(Debug, Deserialize)]
 #[cfg_attr(

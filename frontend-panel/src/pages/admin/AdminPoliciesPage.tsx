@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { PoliciesTable } from "@/components/admin/admin-policies-page/PoliciesTable";
 import { PolicyDialogs } from "@/components/admin/admin-policies-page/PolicyDialogs";
 import { PROTECTED_POLICY_ID } from "@/components/admin/admin-policies-page/policyPresentation";
+import { StoragePolicyMigrationDialog } from "@/components/admin/admin-policies-page/StoragePolicyMigrationDialog";
 import {
 	buildCreatePolicyPayload,
 	buildPolicyTestPayload,
@@ -51,6 +52,7 @@ import type {
 	DriverType,
 	RemoteNodeInfo,
 	StoragePolicy,
+	StoragePolicyMigrationDryRun,
 } from "@/types/api";
 import { ApiSubcode } from "@/types/api-helpers";
 
@@ -76,27 +78,28 @@ const POLICY_UPLOAD_SESSION_BLOCKER_SUBCODE =
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("policies"));
+	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
-	const [offset, setOffset] = useState(
+	const [offset, setOffset] = useState(() =>
 		parseOffsetSearchParam(searchParams.get("offset")),
 	);
 	const [pageSize, setPageSize] = useState<
 		(typeof POLICY_PAGE_SIZE_OPTIONS)[number]
-	>(
+	>(() =>
 		parsePageSizeSearchParam(
 			searchParams.get("pageSize"),
 			POLICY_PAGE_SIZE_OPTIONS,
 			DEFAULT_POLICY_PAGE_SIZE,
 		),
 	);
-	const [sortBy, setSortBy] = useState<AdminPolicySortBy>(
+	const [sortBy, setSortBy] = useState<AdminPolicySortBy>(() =>
 		parseSortSearchParam(
 			searchParams.get("sortBy"),
 			POLICY_SORT_BY_OPTIONS,
 			DEFAULT_POLICY_SORT_BY,
 		),
 	);
-	const [sortOrder, setSortOrder] = useState<SortOrder>(
+	const [sortOrder, setSortOrder] = useState<SortOrder>(() =>
 		parseSortOrderSearchParam(
 			searchParams.get("sortOrder"),
 			DEFAULT_POLICY_SORT_ORDER,
@@ -129,6 +132,16 @@ export default function AdminPoliciesPage() {
 	);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
 	const [submitting, setSubmitting] = useState(false);
+	const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
+	const [migrationPolicies, setMigrationPolicies] = useState<StoragePolicy[]>(
+		[],
+	);
+	const [migrationSourcePolicyId, setMigrationSourcePolicyId] = useState("");
+	const [migrationTargetPolicyId, setMigrationTargetPolicyId] = useState("");
+	const [migrationDryRun, setMigrationDryRun] =
+		useState<StoragePolicyMigrationDryRun | null>(null);
+	const [migrationDryRunLoading, setMigrationDryRunLoading] = useState(false);
+	const [migrationSubmitting, setMigrationSubmitting] = useState(false);
 	const [validatedConnectionKey, setValidatedConnectionKey] = useState<
 		string | null
 	>(null);
@@ -286,6 +299,42 @@ export default function AdminPoliciesPage() {
 		setForm(emptyForm);
 		void refreshRemoteNodeLookup();
 		setDialogOpen(true);
+	};
+
+	const openMigrationDialog = async () => {
+		try {
+			const allPolicies = await adminPolicyService.listAll();
+			const firstPolicy = allPolicies[0];
+			const secondPolicy = allPolicies.find(
+				(policy) => policy.id !== firstPolicy?.id,
+			);
+			setMigrationPolicies(allPolicies);
+			setMigrationSourcePolicyId(firstPolicy ? String(firstPolicy.id) : "");
+			setMigrationTargetPolicyId(secondPolicy ? String(secondPolicy.id) : "");
+			setMigrationDryRun(null);
+			setMigrationDialogOpen(true);
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
+	const handleMigrationSourceChange = (policyId: string) => {
+		setMigrationSourcePolicyId(policyId);
+		setMigrationDryRun(null);
+		if (policyId === migrationTargetPolicyId) {
+			setMigrationTargetPolicyId("");
+		}
+	};
+
+	const handleMigrationTargetChange = (policyId: string) => {
+		if (policyId === migrationSourcePolicyId) {
+			setMigrationTargetPolicyId("");
+			setMigrationDryRun(null);
+			toast.error(t("policy_migration_same_policy_error"));
+			return;
+		}
+		setMigrationTargetPolicyId(policyId);
+		setMigrationDryRun(null);
 	};
 
 	const openEdit = (policy: StoragePolicy) => {
@@ -548,6 +597,84 @@ export default function AdminPoliciesPage() {
 		}
 	};
 
+	const handleCreateMigration = async () => {
+		if (migrationSubmitting) return;
+		const sourcePolicyId = Number(migrationSourcePolicyId);
+		const targetPolicyId = Number(migrationTargetPolicyId);
+		if (
+			!Number.isSafeInteger(sourcePolicyId) ||
+			!Number.isSafeInteger(targetPolicyId) ||
+			sourcePolicyId <= 0 ||
+			targetPolicyId <= 0
+		) {
+			return;
+		}
+		if (sourcePolicyId === targetPolicyId) {
+			toast.error(t("policy_migration_same_policy_error"));
+			return;
+		}
+		if (
+			migrationDryRun?.source_policy_id !== sourcePolicyId ||
+			migrationDryRun?.target_policy_id !== targetPolicyId ||
+			!migrationDryRun.can_start ||
+			migrationDryRunLoading
+		) {
+			return;
+		}
+
+		setMigrationSubmitting(true);
+		try {
+			const task = await adminPolicyService.createMigration({
+				source_policy_id: sourcePolicyId,
+				target_policy_id: targetPolicyId,
+				delete_source_after_success: false,
+			});
+			setMigrationDialogOpen(false);
+			toast.success(t("policy_migration_created", { id: task.id }));
+			navigate("/admin/tasks?kind=storage_policy_migration", {
+				viewTransition: false,
+			});
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setMigrationSubmitting(false);
+		}
+	};
+
+	const handleDryRunMigration = async () => {
+		if (migrationDryRunLoading || migrationSubmitting) return;
+		const sourcePolicyId = Number(migrationSourcePolicyId);
+		const targetPolicyId = Number(migrationTargetPolicyId);
+		if (
+			!Number.isSafeInteger(sourcePolicyId) ||
+			!Number.isSafeInteger(targetPolicyId) ||
+			sourcePolicyId <= 0 ||
+			targetPolicyId <= 0
+		) {
+			return;
+		}
+		if (sourcePolicyId === targetPolicyId) {
+			setMigrationDryRun(null);
+			toast.error(t("policy_migration_same_policy_error"));
+			return;
+		}
+
+		setMigrationDryRunLoading(true);
+		try {
+			const result = await adminPolicyService.dryRunMigration({
+				source_policy_id: sourcePolicyId,
+				target_policy_id: targetPolicyId,
+				delete_source_after_success: false,
+			});
+			setMigrationDryRun(result);
+		} catch (error) {
+			setMigrationDryRun(null);
+			handleApiError(error);
+		} finally {
+			setMigrationDryRunLoading(false);
+		}
+	};
+
 	return (
 		<AdminLayout>
 			<AdminPageShell>
@@ -563,6 +690,16 @@ export default function AdminPoliciesPage() {
 							>
 								<Icon name="Plus" className="mr-1 size-4" />
 								{t("new_policy")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => void openMigrationDialog()}
+								disabled={total < 2}
+							>
+								<Icon name="ArrowsClockwise" className="mr-1 size-3.5" />
+								{t("policy_migration_action")}
 							</Button>
 							<Button
 								variant="outline"
@@ -631,6 +768,20 @@ export default function AdminPoliciesPage() {
 					onCreateStepChange={handleCreateStepChange}
 					onCreateNext={handleCreateNext}
 					onSyncNormalizedS3Form={syncNormalizedS3Form}
+				/>
+				<StoragePolicyMigrationDialog
+					dryRun={migrationDryRun}
+					dryRunLoading={migrationDryRunLoading}
+					open={migrationDialogOpen}
+					policies={migrationPolicies}
+					sourcePolicyId={migrationSourcePolicyId}
+					targetPolicyId={migrationTargetPolicyId}
+					submitting={migrationSubmitting}
+					onDryRun={() => void handleDryRunMigration()}
+					onOpenChange={setMigrationDialogOpen}
+					onSourcePolicyChange={handleMigrationSourceChange}
+					onTargetPolicyChange={handleMigrationTargetChange}
+					onSubmit={() => void handleCreateMigration()}
 				/>
 			</AdminPageShell>
 		</AdminLayout>

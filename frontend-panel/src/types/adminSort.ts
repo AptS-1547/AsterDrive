@@ -1,5 +1,7 @@
 export type {
 	AdminAuditLogSortBy,
+	AdminFileBlobSortBy,
+	AdminFileSortBy,
 	AdminLockSortBy,
 	AdminPolicyGroupSortBy,
 	AdminPolicySortBy,

@@ -50,6 +50,7 @@ import {
 	PiLinkSimple,
 	PiList,
 	PiListBullets,
+	PiListChecks,
 	PiLock,
 	PiLockOpen,
 	PiMagnifyingGlass,
@@ -142,6 +143,7 @@ export type IconName =
 	| "LinkSimple"
 	| "List"
 	| "ListBullets"
+	| "ListChecks"
 	| "Lock"
 	| "LockOpen"
 	| "MagnifyingGlass"
@@ -233,6 +235,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	LinkSimple: PiLinkSimple,
 	List: PiList,
 	ListBullets: PiListBullets,
+	ListChecks: PiListChecks,
 	Lock: PiLock,
 	LockOpen: PiLockOpen,
 	MagnifyingGlass: PiMagnifyingGlass,

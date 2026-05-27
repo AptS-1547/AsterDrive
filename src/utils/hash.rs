@@ -49,3 +49,7 @@ pub fn bytes_to_hex(bytes: &[u8]) -> String {
 pub fn sha256_digest_to_hex(digest: &[u8]) -> String {
     bytes_to_hex(digest)
 }
+
+pub fn new_sha256() -> Sha256 {
+    Sha256::new()
+}

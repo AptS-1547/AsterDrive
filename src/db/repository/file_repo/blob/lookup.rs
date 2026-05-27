@@ -1,9 +1,12 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set, TryInsertResult,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, FromQueryResult,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TryInsertResult,
 };
 
+use crate::api::pagination::{AdminFileBlobSortBy, SortOrder};
+use crate::db::repository::search_query::lower_like_condition;
+use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::file_blob::{self, Entity as FileBlob};
 use crate::errors::{AsterError, Result};
 
@@ -12,6 +15,36 @@ use super::ref_count::{find_active_blob_by_hash, increment_blob_ref_count};
 pub struct FindOrCreateBlobResult {
     pub model: file_blob::Model,
     pub inserted: bool,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+pub struct StoragePolicyBlobSummary {
+    pub count: i64,
+    pub total_size: i64,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+pub struct StoragePolicyBlobHashKindSummary {
+    pub content_sha256_count: i64,
+    pub opaque_count: i64,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+struct CountRow {
+    count: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AdminFileBlobFilters<'a> {
+    pub hash: Option<&'a str>,
+    pub policy_id: Option<i64>,
+    pub storage_path: Option<&'a str>,
+    pub ref_count_min: Option<i32>,
+    pub ref_count_max: Option<i32>,
+    pub size_min: Option<i64>,
+    pub size_max: Option<i64>,
+    pub sort_by: AdminFileBlobSortBy,
+    pub sort_order: SortOrder,
 }
 
 // `find_or_create_blob()` only retries short-lived races:
@@ -36,6 +69,132 @@ pub async fn find_blob_by_hash<C: ConnectionTrait>(
         .one(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn find_blobs_by_policy_paginated<C: ConnectionTrait>(
+    db: &C,
+    policy_id: i64,
+    after_id: i64,
+    limit: u64,
+) -> Result<Vec<file_blob::Model>> {
+    FileBlob::find()
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .filter(file_blob::Column::Id.gt(after_id))
+        .order_by_asc(file_blob::Column::Id)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn summarize_blobs_by_policy<C: ConnectionTrait>(
+    db: &C,
+    policy_id: i64,
+) -> Result<StoragePolicyBlobSummary> {
+    let backend = db.get_database_backend();
+    let sql = match backend {
+        DbBackend::Postgres => {
+            r#"SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS total_size FROM file_blobs WHERE policy_id = $1"#
+        }
+        DbBackend::MySql => {
+            "SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS total_size FROM file_blobs WHERE policy_id = ?"
+        }
+        DbBackend::Sqlite | _ => {
+            "SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS total_size FROM file_blobs WHERE policy_id = ?"
+        }
+    };
+    StoragePolicyBlobSummary::find_by_statement(sea_orm::Statement::from_sql_and_values(
+        backend,
+        sql,
+        [policy_id.into()],
+    ))
+    .one(db)
+    .await
+    .map_err(AsterError::from)?
+    .ok_or_else(|| AsterError::internal_error("storage policy blob summary query returned no row"))
+}
+
+pub async fn summarize_blob_hash_kinds_by_policy<C: ConnectionTrait>(
+    db: &C,
+    policy_id: i64,
+) -> Result<StoragePolicyBlobHashKindSummary> {
+    let backend = db.get_database_backend();
+    let condition = match backend {
+        DbBackend::Postgres => "hash ~ '^[0-9A-Fa-f]{64}$'",
+        DbBackend::MySql => "hash REGEXP '^[0-9A-Fa-f]{64}$'",
+        DbBackend::Sqlite | _ => "length(hash) = 64 AND hash NOT GLOB '*[^0-9A-Fa-f]*'",
+    };
+    let sql = format!(
+        "SELECT \
+            COALESCE(SUM(CASE WHEN {condition} THEN 1 ELSE 0 END), 0) AS content_sha256_count, \
+            COALESCE(SUM(CASE WHEN {condition} THEN 0 ELSE 1 END), 0) AS opaque_count \
+         FROM file_blobs WHERE policy_id = ?"
+    );
+    let statement = match backend {
+        DbBackend::Postgres => sea_orm::Statement::from_sql_and_values(
+            backend,
+            sql.replace("policy_id = ?", "policy_id = $1"),
+            [policy_id.into()],
+        ),
+        DbBackend::MySql | DbBackend::Sqlite | _ => {
+            sea_orm::Statement::from_sql_and_values(backend, sql, [policy_id.into()])
+        }
+    };
+    StoragePolicyBlobHashKindSummary::find_by_statement(statement)
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .ok_or_else(|| {
+            AsterError::internal_error(
+                "storage policy blob hash kind summary query returned no row",
+            )
+        })
+}
+
+pub async fn count_matching_hashes_between_policies<C: ConnectionTrait>(
+    db: &C,
+    source_policy_id: i64,
+    target_policy_id: i64,
+) -> Result<i64> {
+    let backend = db.get_database_backend();
+    let sql = match backend {
+        DbBackend::Postgres => {
+            r#"SELECT COUNT(*) AS count
+               FROM file_blobs source
+               INNER JOIN file_blobs target
+                 ON target.hash = source.hash
+                AND target.size = source.size
+                AND target.policy_id = $2
+               WHERE source.policy_id = $1"#
+        }
+        DbBackend::MySql | DbBackend::Sqlite | _ => {
+            r#"SELECT COUNT(*) AS count
+               FROM file_blobs source
+               INNER JOIN file_blobs target
+                 ON target.hash = source.hash
+                AND target.size = source.size
+                AND target.policy_id = ?
+               WHERE source.policy_id = ?"#
+        }
+    };
+    let statement = match backend {
+        DbBackend::Postgres => sea_orm::Statement::from_sql_and_values(
+            backend,
+            sql,
+            [source_policy_id.into(), target_policy_id.into()],
+        ),
+        DbBackend::MySql | DbBackend::Sqlite | _ => sea_orm::Statement::from_sql_and_values(
+            backend,
+            sql,
+            [target_policy_id.into(), source_policy_id.into()],
+        ),
+    };
+    CountRow::find_by_statement(statement)
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .map(|row| row.count)
+        .ok_or_else(|| AsterError::internal_error("matching hash count query returned no row"))
 }
 
 pub async fn create_blob<C: ConnectionTrait>(
@@ -143,6 +302,49 @@ pub async fn find_blob_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file
         .ok_or_else(|| AsterError::record_not_found(format!("file_blob #{id}")))
 }
 
+pub async fn find_admin_blobs_paginated<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+    filters: AdminFileBlobFilters<'_>,
+) -> Result<(Vec<file_blob::Model>, u64)> {
+    let mut query = FileBlob::find();
+    if let Some(hash) = filters.hash {
+        query = query.filter(lower_like_condition(file_blob::Column::Hash, hash));
+    }
+    if let Some(policy_id) = filters.policy_id {
+        query = query.filter(file_blob::Column::PolicyId.eq(policy_id));
+    }
+    if let Some(storage_path) = filters.storage_path {
+        query = query.filter(lower_like_condition(
+            file_blob::Column::StoragePath,
+            storage_path,
+        ));
+    }
+    if let Some(ref_count_min) = filters.ref_count_min {
+        query = query.filter(file_blob::Column::RefCount.gte(ref_count_min));
+    }
+    if let Some(ref_count_max) = filters.ref_count_max {
+        query = query.filter(file_blob::Column::RefCount.lte(ref_count_max));
+    }
+    if let Some(size_min) = filters.size_min {
+        query = query.filter(file_blob::Column::Size.gte(size_min));
+    }
+    if let Some(size_max) = filters.size_max {
+        query = query.filter(file_blob::Column::Size.lte(size_max));
+    }
+    query = apply_admin_blob_order(query, filters.sort_by, filters.sort_order);
+
+    let total = query.clone().count(db).await.map_err(AsterError::from)?;
+    let items = query
+        .limit(limit)
+        .offset(offset)
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok((items, total))
+}
+
 pub async fn lock_blob_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file_blob::Model> {
     match db.get_database_backend() {
         DbBackend::Postgres | DbBackend::MySql => FileBlob::find_by_id(id)
@@ -185,4 +387,56 @@ pub async fn find_blobs_paginated<C: ConnectionTrait>(
         query = query.filter(file_blob::Column::Id.gt(last_id));
     }
     query.all(db).await.map_err(AsterError::from)
+}
+
+fn apply_admin_blob_order(
+    query: sea_orm::Select<FileBlob>,
+    sort_by: AdminFileBlobSortBy,
+    sort_order: SortOrder,
+) -> sea_orm::Select<FileBlob> {
+    match sort_by {
+        AdminFileBlobSortBy::Id => order_by_id(query, file_blob::Column::Id, sort_order),
+        AdminFileBlobSortBy::Hash => order_by_column_with_id(
+            query,
+            file_blob::Column::Hash,
+            sort_order,
+            file_blob::Column::Id,
+        ),
+        AdminFileBlobSortBy::Size => order_by_column_with_id(
+            query,
+            file_blob::Column::Size,
+            sort_order,
+            file_blob::Column::Id,
+        ),
+        AdminFileBlobSortBy::PolicyId => order_by_column_with_id(
+            query,
+            file_blob::Column::PolicyId,
+            sort_order,
+            file_blob::Column::Id,
+        ),
+        AdminFileBlobSortBy::StoragePath => order_by_column_with_id(
+            query,
+            file_blob::Column::StoragePath,
+            sort_order,
+            file_blob::Column::Id,
+        ),
+        AdminFileBlobSortBy::RefCount => order_by_column_with_id(
+            query,
+            file_blob::Column::RefCount,
+            sort_order,
+            file_blob::Column::Id,
+        ),
+        AdminFileBlobSortBy::CreatedAt => order_by_column_with_id(
+            query,
+            file_blob::Column::CreatedAt,
+            sort_order,
+            file_blob::Column::Id,
+        ),
+        AdminFileBlobSortBy::UpdatedAt => order_by_column_with_id(
+            query,
+            file_blob::Column::UpdatedAt,
+            sort_order,
+            file_blob::Column::Id,
+        ),
+    }
 }

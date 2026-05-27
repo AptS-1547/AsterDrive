@@ -60,6 +60,10 @@ pub static BUILTIN_AUDIO_METADATA_EXTENSIONS: LazyLock<Vec<&'static str>> = Lazy
     );
     extensions.into_iter().collect()
 });
+pub const BUILTIN_AUDIO_THUMBNAIL_EXTENSIONS: &[&str] = &[
+    "aac", "aif", "aifc", "aiff", "ape", "flac", "m4a", "m4b", "m4p", "m4r", "mp+", "mp1", "mp2",
+    "mp3", "mpc", "mpp", "ogg", "opus", "spx", "wav", "wave", "wv",
+];
 pub const DEFAULT_FFPROBE_EXTENSIONS: &[&str] = DEFAULT_FFMPEG_EXTENSIONS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

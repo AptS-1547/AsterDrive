@@ -8,24 +8,28 @@ use actix_web::web;
 
 // DTO re-exports from unified dto/ module
 pub use crate::api::dto::admin::{
-    AdminAuditLogSortQuery, AdminCreateTeamReq, AdminListQuery, AdminLockListQuery,
-    AdminPatchTeamReq, AdminPolicyGroupListQuery, AdminPolicyListQuery, AdminRemoteNodeListQuery,
-    AdminShareListQuery, AdminTaskCleanupReq, AdminTaskListQuery, AdminTeamListQuery,
-    AdminUserListQuery, CreatePolicyGroupReq, CreatePolicyReq, CreateRemoteNodeReq, CreateUserReq,
-    DeletePolicyQuery, ExecuteConfigActionReq, ExecuteConfigActionResp, MigratePolicyGroupUsersReq,
-    PatchPolicyGroupReq, PatchPolicyReq, PatchRemoteNodeReq, PatchUserReq, PolicyGroupItemReq,
-    ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq, TestRemoteNodeParamsReq,
+    AdminAuditLogSortQuery, AdminCreateTeamReq, AdminFileBlobListQuery, AdminFileListQuery,
+    AdminListQuery, AdminLockListQuery, AdminPatchTeamReq, AdminPolicyGroupListQuery,
+    AdminPolicyListQuery, AdminRemoteNodeListQuery, AdminShareListQuery, AdminTaskCleanupReq,
+    AdminTaskListQuery, AdminTeamListQuery, AdminUserListQuery, CreatePolicyGroupReq,
+    CreatePolicyReq, CreateRemoteNodeReq, CreateStoragePolicyMigrationReq, CreateUserReq,
+    DeletePolicyQuery, DryRunStoragePolicyMigrationReq, ExecuteConfigActionReq,
+    ExecuteConfigActionResp, MigratePolicyGroupUsersReq, PatchPolicyGroupReq, PatchPolicyReq,
+    PatchRemoteNodeReq, PatchUserReq, PolicyGroupItemReq, ResetUserPasswordReq, SetConfigReq,
+    TestPolicyParamsReq, TestRemoteNodeParamsReq,
 };
 
 pub(crate) mod audit_logs;
 pub(crate) mod common;
 pub(crate) mod config;
 pub(crate) mod external_auth;
+pub(crate) mod files;
 pub(crate) mod locks;
 pub(crate) mod overview;
 pub(crate) mod policies;
 pub(crate) mod remote_nodes;
 pub(crate) mod shares;
+pub(crate) mod storage_migrations;
 pub(crate) mod tasks;
 pub(crate) mod teams;
 pub(crate) mod users;
@@ -40,6 +44,7 @@ pub use external_auth::{
     list_external_auth_provider_kinds, list_external_auth_providers, test_external_auth_provider,
     test_external_auth_provider_params, update_external_auth_provider,
 };
+pub use files::{get_file, get_file_blob, list_file_blobs, list_files};
 pub use locks::{cleanup_expired_locks, force_unlock, list_locks};
 pub use overview::get_overview;
 pub use policies::{
@@ -54,6 +59,10 @@ pub use remote_nodes::{
     test_remote_node_params, update_remote_node, update_remote_node_ingress_profile,
 };
 pub use shares::{admin_delete_share, list_all_shares};
+pub use storage_migrations::{
+    create_storage_policy_migration, dry_run_storage_policy_migration,
+    resume_storage_policy_migration,
+};
 pub use tasks::{cleanup_tasks, list_tasks};
 pub use teams::{
     add_team_member, create_team, delete_team, delete_team_member, get_team, list_team_audit_logs,
@@ -199,7 +208,24 @@ pub fn routes(
                     // shares
                     .route("/shares", web::get().to(list_all_shares))
                     .route("/shares/{id}", web::delete().to(admin_delete_share))
+                    // files / blobs observability
+                    .route("/files", web::get().to(list_files))
+                    .route("/files/{id}", web::get().to(get_file))
+                    .route("/file-blobs", web::get().to(list_file_blobs))
+                    .route("/file-blobs/{id}", web::get().to(get_file_blob))
                     // tasks
+                    .route(
+                        "/storage-migrations",
+                        web::post().to(create_storage_policy_migration),
+                    )
+                    .route(
+                        "/storage-migrations/dry-run",
+                        web::post().to(dry_run_storage_policy_migration),
+                    )
+                    .route(
+                        "/storage-migrations/{task_id}/resume",
+                        web::post().to(resume_storage_policy_migration),
+                    )
                     .route("/tasks", web::get().to(list_tasks))
                     .route("/tasks/cleanup", web::post().to(cleanup_tasks))
                     // config

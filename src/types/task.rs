@@ -111,6 +111,8 @@ pub enum BackgroundTaskKind {
     TrashPurgeAll,
     #[sea_orm(string_value = "storage_policy_temp_cleanup")]
     StoragePolicyTempCleanup,
+    #[sea_orm(string_value = "storage_policy_migration")]
+    StoragePolicyMigration,
     #[sea_orm(string_value = "system_runtime")]
     SystemRuntime,
 }
@@ -125,6 +127,7 @@ impl BackgroundTaskKind {
             Self::MediaMetadataExtract => "media_metadata_extract",
             Self::TrashPurgeAll => "trash_purge_all",
             Self::StoragePolicyTempCleanup => "storage_policy_temp_cleanup",
+            Self::StoragePolicyMigration => "storage_policy_migration",
             Self::SystemRuntime => "system_runtime",
         }
     }
@@ -225,6 +228,10 @@ mod tests {
             (
                 BackgroundTaskKind::StoragePolicyTempCleanup,
                 "storage_policy_temp_cleanup",
+            ),
+            (
+                BackgroundTaskKind::StoragePolicyMigration,
+                "storage_policy_migration",
             ),
             (BackgroundTaskKind::SystemRuntime, "system_runtime"),
         ];

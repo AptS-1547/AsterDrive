@@ -150,7 +150,8 @@ where
         }
         operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY
         | operations::BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY
-        | operations::BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY => {
+        | operations::BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY
+        | operations::BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY => {
             operations::normalize_concurrency_config_value(key, value)
         }
         operations::SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY => {

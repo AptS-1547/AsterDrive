@@ -5,14 +5,14 @@ mod common;
 
 use actix_web::test;
 use chrono::{Duration, Utc};
-use sea_orm::Set;
+use sea_orm::{ActiveModelTrait, Set};
 use serde_json::Value;
 use std::io::Cursor;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
 use aster_drive::db::repository::{audit_log_repo, background_task_repo, lock_repo, policy_repo};
-use aster_drive::entities::{audit_log, background_task, resource_lock};
+use aster_drive::entities::{audit_log, background_task, file, file_blob, resource_lock};
 use aster_drive::types::{
     AuditAction, BackgroundTaskKind, BackgroundTaskStatus, EntityType, StoredLockOwnerInfo,
     StoredTaskPayload, StoredTaskResult,
@@ -306,6 +306,247 @@ async fn test_admin_scope_allows_admin_users() {
         archive_preview_enabled["category"],
         "storage.archive_preview"
     );
+}
+
+#[actix_web::test]
+async fn test_admin_files_and_file_blobs_observability() {
+    let state = common::setup().await;
+    let default_policy = policy_repo::find_default(state.writer_db())
+        .await
+        .expect("default policy query should succeed")
+        .expect("default policy should exist");
+    let app = create_test_app!(state.clone());
+    let (admin_token, _) = register_and_login!(app);
+    admin_create_user!(
+        app,
+        admin_token,
+        "fileobserver",
+        "fileobserver@example.com",
+        "password123"
+    );
+    let (user_token, _) = login_user!(app, "fileobserver", "password123");
+
+    let report_id = upload_test_file_named!(app, user_token, "admin-report.txt");
+    let copy_id = upload_test_file_named!(app, user_token, "admin-copy.txt");
+    let notes_id = upload_test_file_named!(app, user_token, "notes.txt");
+
+    let files_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        "/api/v1/admin/files?sort_by=name&sort_order=asc&limit=2&offset=0"
+    );
+    let files = files_body["data"]["items"].as_array().unwrap();
+    assert_eq!(files_body["data"]["limit"], 2);
+    assert_eq!(files_body["data"]["offset"], 0);
+    assert!(files_body["data"]["total"].as_u64().unwrap() >= 3);
+    assert_eq!(files.len(), 2);
+    let names = json_string_values(files, "name");
+    assert_eq!(names, vec!["admin-copy.txt", "admin-report.txt"]);
+    assert_eq!(
+        files[0]["blob"]["policy_id"].as_i64().unwrap(),
+        default_policy.id
+    );
+
+    let filtered_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        "/api/v1/admin/files?name=report&sort_by=id&sort_order=asc"
+    );
+    let filtered_files = filtered_body["data"]["items"].as_array().unwrap();
+    assert_eq!(filtered_body["data"]["total"], 1);
+    assert_eq!(filtered_files[0]["id"], report_id);
+
+    let blob_id = filtered_files[0]["blob_id"].as_i64().unwrap();
+    let copy_detail: Value =
+        admin_get_json!(app, admin_token, &format!("/api/v1/admin/files/{copy_id}"));
+    if copy_detail["data"]["blob_id"].as_i64().unwrap() != blob_id {
+        file::ActiveModel {
+            id: Set(copy_id),
+            blob_id: Set(blob_id),
+            updated_at: Set(Utc::now()),
+            ..Default::default()
+        }
+        .update(state.writer_db())
+        .await
+        .expect("copy file should be repointed to report blob for reference coverage");
+    }
+    let by_blob_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        &format!("/api/v1/admin/files?blob_id={blob_id}&sort_by=id&sort_order=asc")
+    );
+    let by_blob_ids = json_i64_values(by_blob_body["data"]["items"].as_array().unwrap(), "id");
+    assert_eq!(by_blob_ids, vec![report_id, copy_id]);
+
+    let update_req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/{report_id}/content"))
+        .insert_header(("Cookie", common::access_cookie_header(&user_token)))
+        .insert_header(common::csrf_header_for(&user_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload("updated admin report content")
+        .to_request();
+    let update_resp = test::call_service(&app, update_req).await;
+    assert_eq!(update_resp.status(), 200);
+
+    let detail_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        &format!("/api/v1/admin/files/{report_id}")
+    );
+    assert_eq!(detail_body["data"]["id"], report_id);
+    assert_eq!(detail_body["data"]["name"], "admin-report.txt");
+    assert_eq!(detail_body["data"]["versions"].as_array().unwrap().len(), 1);
+    assert_eq!(detail_body["data"]["versions"][0]["blob_id"], blob_id);
+    assert_eq!(detail_body["data"]["versions"][0]["blob"]["id"], blob_id);
+
+    let delete_req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{notes_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&user_token)))
+        .insert_header(common::csrf_header_for(&user_token))
+        .to_request();
+    let delete_resp = test::call_service(&app, delete_req).await;
+    assert_eq!(delete_resp.status(), 200);
+    let deleted_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        "/api/v1/admin/files?deleted=true&name=notes"
+    );
+    assert_eq!(deleted_body["data"]["total"], 1);
+    assert_eq!(deleted_body["data"]["items"][0]["id"], notes_id);
+    let live_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        "/api/v1/admin/files?deleted=false&name=notes"
+    );
+    assert_eq!(live_body["data"]["total"], 0);
+
+    let content_hash_blob = file_blob::ActiveModel {
+        hash: Set("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string()),
+        size: Set(8),
+        policy_id: Set(default_policy.id),
+        storage_path: Set("content/hash.bin".to_string()),
+        thumbnail_path: Set(None),
+        thumbnail_processor: Set(None),
+        thumbnail_version: Set(None),
+        ref_count: Set(0),
+        created_at: Set(Utc::now()),
+        updated_at: Set(Utc::now()),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("content hash blob should insert");
+    let opaque_blob = file_blob::ActiveModel {
+        hash: Set("remote-object-key".to_string()),
+        size: Set(9),
+        policy_id: Set(default_policy.id),
+        storage_path: Set("opaque/path.bin".to_string()),
+        thumbnail_path: Set(None),
+        thumbnail_processor: Set(None),
+        thumbnail_version: Set(None),
+        ref_count: Set(0),
+        created_at: Set(Utc::now()),
+        updated_at: Set(Utc::now()),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("opaque blob should insert");
+
+    let blobs_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        &format!(
+            "/api/v1/admin/file-blobs?policy_id={}&ref_count_min=0&size_min=0&sort_by=id&sort_order=asc&limit=100",
+            default_policy.id
+        )
+    );
+    let blobs = blobs_body["data"]["items"].as_array().unwrap();
+    assert!(blobs.iter().any(|blob| blob["id"] == blob_id));
+    let content_blob = blobs
+        .iter()
+        .find(|blob| blob["id"] == content_hash_blob.id)
+        .unwrap();
+    assert_eq!(content_blob["hash_kind"], "content_sha256");
+    let opaque_item = blobs
+        .iter()
+        .find(|blob| blob["id"] == opaque_blob.id)
+        .unwrap();
+    assert_eq!(opaque_item["hash_kind"], "opaque");
+
+    let blob_filter_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        "/api/v1/admin/file-blobs?hash=remote-object&storage_path=opaque&ref_count_max=0"
+    );
+    assert_eq!(blob_filter_body["data"]["total"], 1);
+    assert_eq!(blob_filter_body["data"]["items"][0]["id"], opaque_blob.id);
+
+    let blob_detail_body: Value = admin_get_json!(
+        app,
+        admin_token,
+        &format!("/api/v1/admin/file-blobs/{blob_id}")
+    );
+    assert_eq!(blob_detail_body["data"]["id"], blob_id);
+    let reference_file_ids =
+        json_i64_values(blob_detail_body["data"]["files"].as_array().unwrap(), "id");
+    assert_eq!(reference_file_ids, vec![copy_id]);
+    let version_refs = blob_detail_body["data"]["file_versions"]
+        .as_array()
+        .unwrap();
+    assert_eq!(version_refs.len(), 1);
+    assert_eq!(version_refs[0]["file_id"], report_id);
+    assert_eq!(version_refs[0]["version"], 1);
+}
+
+#[actix_web::test]
+async fn test_admin_files_endpoints_reject_unauthorized_and_non_admin() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+    admin_create_user!(
+        app,
+        admin_token,
+        "fileviewer",
+        "fileviewer@example.com",
+        "password123"
+    );
+    let (user_token, _) = login_user!(app, "fileviewer", "password123");
+
+    for uri in [
+        "/api/v1/admin/files",
+        "/api/v1/admin/files/1",
+        "/api/v1/admin/file-blobs",
+        "/api/v1/admin/file-blobs/1",
+    ] {
+        let req = test::TestRequest::get().uri(uri).to_request();
+        let err = test::try_call_service(&app, req).await.unwrap_err();
+        assert_eq!(err.error_response().status(), 401, "{uri}");
+
+        let req = test::TestRequest::get()
+            .uri(uri)
+            .insert_header(("Cookie", common::access_cookie_header(&user_token)))
+            .insert_header(common::csrf_header_for(&user_token))
+            .to_request();
+        let err = test::try_call_service(&app, req).await.unwrap_err();
+        assert_eq!(err.error_response().status(), 403, "{uri}");
+    }
+}
+
+#[actix_web::test]
+async fn test_admin_files_and_blobs_not_found() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    for uri in [
+        "/api/v1/admin/files/999999",
+        "/api/v1/admin/file-blobs/999999",
+    ] {
+        let req = admin_get_request(&admin_token, uri).to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 404, "{uri}");
+    }
 }
 
 #[actix_web::test]
@@ -2077,6 +2318,10 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
             ),
             BackgroundTaskKind::StoragePolicyTempCleanup => StoredTaskPayload(
                 r#"{"policy":{"id":1,"name":"Deleted policy","driver_type":"local","endpoint":"","bucket":"","access_key":"","secret_key":"","base_path":"/tmp/asterdrive-deleted-policy","remote_node_id":null,"max_file_size":0,"allowed_types":"[]","options":"{}","is_default":false,"chunk_size":5242880},"remote_node":null,"temp_keys":["files/temp-object"],"multipart_uploads":[]}"#
+                    .to_string(),
+            ),
+            BackgroundTaskKind::StoragePolicyMigration => StoredTaskPayload(
+                r#"{"source_policy_id":1,"target_policy_id":2,"delete_source_after_success":false,"plan_hash":"hash","source_policy_updated_at":"2026-01-01T00:00:00Z","target_policy_updated_at":"2026-01-01T00:00:00Z"}"#
                     .to_string(),
             ),
             BackgroundTaskKind::TrashPurgeAll => {

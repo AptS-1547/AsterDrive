@@ -18,6 +18,9 @@
 	"task_cleanup_confirm_desc": "This deletes task records completed before {{finishedBefore}} with kind \"{{kind}}\" and status \"{{status}}\".",
 	"task_cleanup_confirm_desc_invalid": "Choose a valid completion time before continuing.",
 	"tasks_cleaned": "Removed {{count}} task records",
+	"storage_migration_resume": "Resume from Checkpoint",
+	"storage_migration_resuming": "Resuming...",
+	"storage_migration_resume_queued": "Migration task queued to resume",
 	"no_tasks": "No background tasks yet",
 	"no_tasks_desc": "Recorded background task history will appear here after jobs start running."
 }

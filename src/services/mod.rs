@@ -1,5 +1,6 @@
 //! 服务层模块导出。
 
+pub mod admin_file_service;
 pub mod admin_service;
 pub mod archive_preview_service;
 pub(crate) mod archive_service;

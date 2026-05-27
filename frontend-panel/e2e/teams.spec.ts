@@ -44,7 +44,8 @@ test.describe
 				name: `${uniqueName("pw-team-file")}.txt`,
 			} as const;
 			const folderName = uniqueName("pw-team-folder");
-			const archiveName = `${uniqueName("pw-team-bundle")}.zip`;
+			const archiveNameStem = uniqueName("pw-team-bundle");
+			const archiveName = `${archiveNameStem}.zip`;
 
 			await page.goto(workspacePath);
 			await expect(fileDropZone(page)).toBeVisible({ timeout: 30_000 });
@@ -120,7 +121,7 @@ test.describe
 			await expect(archiveDialog).toBeVisible();
 			await archiveDialog
 				.getByPlaceholder("Enter an archive name")
-				.fill(archiveName);
+				.fill(archiveNameStem);
 			await archiveDialog
 				.getByRole("button", { name: "Create compression task" })
 				.click();
@@ -128,14 +129,11 @@ test.describe
 
 			await page.getByRole("link", { name: "Tasks" }).click();
 			await expect(page).toHaveURL(new RegExp(`${workspacePath}/tasks$`));
-			const taskDisplayName = `Compress ${archiveName}`;
 			const taskCard = page
 				.locator('[data-slot="card"]')
 				.filter({
-					has: page.getByRole("heading", {
-						exact: true,
-						name: taskDisplayName,
-					}),
+					has: page.getByText(archiveName, { exact: true }),
+					hasText: "1 items",
 				})
 				.first();
 			await expect(taskCard).toBeVisible({

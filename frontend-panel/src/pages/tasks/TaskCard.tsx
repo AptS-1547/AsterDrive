@@ -2,28 +2,27 @@ import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Icon } from "@/components/ui/icon";
-import { Progress } from "@/components/ui/progress";
+import { Icon, type IconName } from "@/components/ui/icon";
 import type { TaskInfo } from "@/types/api";
 import { AnimatedTaskDetails } from "./AnimatedTaskDetails";
 import {
-	buildTaskTimeline,
+	TaskDetailsContent,
+	TaskStepsPreview,
+	taskHasExpandableDetails,
+} from "./TaskDetailsPanel";
+import {
 	currentTaskStep,
-	formatProgressCounts,
 	formatTaskKind,
 	formatTaskStatus,
-	formatTaskStepStatus,
-	formatTaskStepTitle,
 	parseTaskResult,
 	statusBadgeVariant,
-	stepCircleClass,
-	stepCircleLabel,
-	stepConnectorClass,
-	stepProgressPercent,
-	stepStatusTextClass,
 	taskMetaTextClass,
 	taskSummaryTimestamp,
 } from "./taskPresentation";
+
+type SummaryPart =
+	| { key: string; kind: "text"; value: string }
+	| { icon: IconName; key: string; kind: "chip"; value: string };
 
 interface TaskCardProps {
 	detailsExpanded: boolean;
@@ -34,78 +33,184 @@ interface TaskCardProps {
 	task: TaskInfo;
 }
 
-function TaskStepsPreview({
-	activeStep,
-	task,
-}: {
-	activeStep: ReturnType<typeof currentTaskStep>;
-	task: TaskInfo;
-}) {
-	const { t } = useTranslation(["core", "tasks"]);
-
-	if (task.steps.length === 0) {
-		return null;
+function taskIcon(task: TaskInfo): IconName {
+	switch (task.kind) {
+		case "archive_extract":
+			return "FileZip";
+		case "archive_compress":
+			return "FileZip";
+		case "archive_preview_generate":
+			return "Eye";
+		case "thumbnail_generate":
+			return "FileImage";
+		case "media_metadata_extract":
+			return "Info";
+		case "trash_purge_all":
+			return "Trash";
+		case "storage_policy_migration":
+			return "HardDrive";
+		case "storage_policy_temp_cleanup":
+			return "Clock";
+		case "system_runtime":
+			return "Gear";
+		default:
+			return "Queue";
 	}
+}
 
+function summaryParts(
+	t: (key: string, options?: Record<string, unknown>) => string,
+	task: TaskInfo,
+): SummaryPart[] {
+	switch (task.payload.kind) {
+		case "archive_extract":
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_action_prefix"),
+				},
+				{
+					icon: "FileZip",
+					key: "source-file",
+					kind: "chip",
+					value: task.payload.source_file_name,
+				},
+				{
+					key: "target-label",
+					kind: "text",
+					value: t("tasks:summary_migrate_to"),
+				},
+				{
+					icon: "FolderOpen",
+					key: "target-folder",
+					kind: "chip",
+					value:
+						task.payload.output_folder_name || t("tasks:summary_root_folder"),
+				},
+			];
+		case "archive_compress": {
+			const selectedCount =
+				task.payload.file_ids.length + task.payload.folder_ids.length;
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_action_prefix"),
+				},
+				{
+					icon: "Folder",
+					key: "selection",
+					kind: "chip",
+					value: t("tasks:summary_selected_items", { count: selectedCount }),
+				},
+				{
+					key: "target-label",
+					kind: "text",
+					value: t("tasks:summary_archive_compress_to"),
+				},
+				{
+					icon: "FileZip",
+					key: "archive-file",
+					kind: "chip",
+					value: task.payload.archive_name,
+				},
+			];
+		}
+		case "archive_preview_generate":
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_generate_preview_for"),
+				},
+				{
+					icon: "FileZip",
+					key: "source-file",
+					kind: "chip",
+					value: task.payload.source_file_name,
+				},
+			];
+		case "thumbnail_generate":
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_generate_thumbnail_for"),
+				},
+				{
+					icon: "FileImage",
+					key: "source-file",
+					kind: "chip",
+					value: task.payload.source_file_name || task.display_name,
+				},
+			];
+		case "trash_purge_all":
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_purge_trash"),
+				},
+			];
+		case "storage_policy_migration":
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_migrate_storage_policy"),
+				},
+				{
+					icon: "HardDrive",
+					key: "source-policy",
+					kind: "chip",
+					value: t("tasks:summary_policy_id", {
+						id: task.payload.source_policy_id,
+					}),
+				},
+				{
+					key: "target-label",
+					kind: "text",
+					value: t("tasks:summary_archive_extract_to"),
+				},
+				{
+					icon: "HardDrive",
+					key: "target-policy",
+					kind: "chip",
+					value: t("tasks:summary_policy_id", {
+						id: task.payload.target_policy_id,
+					}),
+				},
+			];
+		case "storage_policy_temp_cleanup":
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_cleanup_temp_files"),
+				},
+			];
+		case "system_runtime":
+			return [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_system_runtime", {
+						name: task.payload.task_name,
+					}),
+				},
+			];
+		default:
+			return [{ key: "display-name", kind: "text", value: task.display_name }];
+	}
+}
+
+function TaskSummaryChip({ icon, value }: { icon: IconName; value: string }) {
 	return (
-		<div className="space-y-2.5 rounded-lg border bg-muted/15 p-3">
-			<div className="flex flex-wrap items-start justify-between gap-2">
-				<div className="text-sm font-medium">{t("tasks:steps_label")}</div>
-				{activeStep && activeStep.progress_total > 0 ? (
-					<div className="text-right text-xs text-muted-foreground">
-						<div>{t("tasks:step_progress_label")}</div>
-						<div className="font-medium tabular-nums text-foreground">
-							{stepProgressPercent(activeStep)}% ·{" "}
-							{formatProgressCounts(
-								activeStep.progress_current,
-								activeStep.progress_total,
-							)}
-						</div>
-					</div>
-				) : null}
-			</div>
-			<div className="overflow-x-auto pb-0.5">
-				<div className="w-full">
-					<div className="mx-auto flex w-fit min-w-max items-start px-0.5 py-1.5">
-						{task.steps.map((step, index) => (
-							<div key={`${task.id}-${step.key}`} className="contents">
-								<div className="w-32 shrink-0 md:w-36 lg:w-40">
-									<div className="flex flex-col items-center text-center">
-										<div className="relative flex size-10 items-center justify-center md:h-11 md:w-11">
-											{step.status === "active" ? (
-												<span className="absolute inset-0 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
-											) : null}
-											<span
-												className={`relative flex size-8 items-center justify-center rounded-full border text-xs font-semibold transition-colors md:h-9 md:w-9 md:text-sm ${stepCircleClass(step.status)}`}
-											>
-												{stepCircleLabel(index, step.status)}
-											</span>
-										</div>
-										<div className="mt-2 space-y-0.5 md:mt-2.5">
-											<p className="text-xs font-semibold leading-snug md:text-sm">
-												{index + 1}. {formatTaskStepTitle(t, task.kind, step)}
-											</p>
-											<p
-												className={`text-[11px] font-medium ${stepStatusTextClass(step.status)}`}
-											>
-												{formatTaskStepStatus(t, step.status)}
-											</p>
-										</div>
-									</div>
-								</div>
-								{index < task.steps.length - 1 ? (
-									<div className="flex size-10 shrink-0 items-center px-1 md:h-11 md:w-12 md:px-1.5">
-										<div
-											className={`h-1 w-full rounded-full ${stepConnectorClass(step.status)}`}
-										/>
-									</div>
-								) : null}
-							</div>
-						))}
-					</div>
-				</div>
-			</div>
-		</div>
+		<span className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/70 bg-background/55 px-2.5 py-1 font-medium text-foreground">
+			<Icon name={icon} className="size-4 shrink-0 text-muted-foreground" />
+			<span className="truncate">{value}</span>
+		</span>
 	);
 }
 
@@ -120,58 +225,131 @@ export function TaskCard({
 	const { t } = useTranslation(["core", "tasks"]);
 	const parsedResult = parseTaskResult(task);
 	const activeStep = currentTaskStep(task);
-	const taskTimeline = buildTaskTimeline(t, task);
 	const activeStepDetail = activeStep?.detail?.trim() ?? null;
 	const statusText = task.status_text?.trim() ?? null;
 	const summaryTimestamp = taskSummaryTimestamp(t, task);
 	const detailsSectionId = `task-details-${task.id}`;
-	const hasExpandableDetails =
-		task.steps.length > 0 ||
-		task.last_error !== null ||
-		(task.status === "succeeded" && parsedResult !== null);
+	const hasExpandableDetails = taskHasExpandableDetails(task);
+	const parts = summaryParts(t, task);
 	const taskSummaryText =
 		statusText && activeStepDetail
 			? statusText.toLocaleLowerCase() === activeStepDetail.toLocaleLowerCase()
 				? activeStepDetail
 				: statusText
 			: statusText || activeStepDetail;
-	const progressValue =
-		task.status === "succeeded"
-			? 100
-			: Math.max(0, Math.min(100, task.progress_percent));
-	const hasProgressCounts = task.progress_total > 0;
 
 	return (
-		<Card className="p-4 md:p-5">
-			<div className="flex flex-col gap-4">
-				<div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-					<div className="min-w-0 space-y-2">
-						<div className="flex flex-wrap items-center gap-2">
-							<h2 className="truncate text-lg font-semibold">
-								{task.display_name}
-							</h2>
-							<Badge variant={statusBadgeVariant(task.status)}>
-								{formatTaskStatus(t, task.status)}
-							</Badge>
-							<Badge variant="outline">{formatTaskKind(t, task.kind)}</Badge>
-						</div>
-						<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-							<span className="text-muted-foreground">
-								{t("tasks:task_id_label", { id: task.id })}
-							</span>
-							{summaryTimestamp ? (
-								<>
-									<span className="text-border">·</span>
-									<span
-										className={`font-medium ${taskMetaTextClass(task.status)}`}
-									>
-										{summaryTimestamp}
-									</span>
-								</>
-							) : null}
-						</div>
+		<Card className="gap-0 p-0">
+			<div className="flex min-h-16 flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-5">
+				<button
+					type="button"
+					className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
+					aria-controls={hasExpandableDetails ? detailsSectionId : undefined}
+					aria-expanded={hasExpandableDetails ? detailsExpanded : undefined}
+					onClick={() => {
+						if (hasExpandableDetails) {
+							onToggleDetails(task.id);
+						}
+					}}
+				>
+					<span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/25 text-muted-foreground">
+						<Icon name={taskIcon(task)} className="size-4" />
+					</span>
+					<span className="flex min-w-0 flex-wrap items-center gap-2 text-sm md:text-base">
+						{parts.map((part) =>
+							part.kind === "chip" ? (
+								<TaskSummaryChip
+									key={part.key}
+									icon={part.icon}
+									value={part.value}
+								/>
+							) : (
+								<span key={part.key} className="text-foreground">
+									{part.value}
+								</span>
+							),
+						)}
+					</span>
+				</button>
+
+				<div className="flex shrink-0 items-center justify-between gap-2 md:justify-end">
+					<div className="flex items-center gap-2">
+						<Badge variant={statusBadgeVariant(task.status)}>
+							{formatTaskStatus(t, task.status)}
+						</Badge>
+						<Badge variant="outline" className="max-md:hidden">
+							{formatTaskKind(t, task.kind)}
+						</Badge>
 					</div>
-					<div className="flex shrink-0 items-center gap-2">
+					{hasExpandableDetails ? (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							aria-controls={detailsSectionId}
+							aria-expanded={detailsExpanded}
+							aria-label={
+								detailsExpanded
+									? t("tasks:hide_details")
+									: t("tasks:show_details")
+							}
+							title={
+								detailsExpanded
+									? t("tasks:hide_details")
+									: t("tasks:show_details")
+							}
+							onClick={() => onToggleDetails(task.id)}
+						>
+							<Icon
+								name={detailsExpanded ? "CaretUp" : "CaretDown"}
+								className="size-4"
+							/>
+						</Button>
+					) : null}
+				</div>
+			</div>
+
+			<AnimatedTaskDetails open={detailsExpanded} className="border-t">
+				<div id={detailsSectionId} className="space-y-5 px-4 py-4 md:px-5">
+					{task.last_error ? (
+						<div className="flex gap-3 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm text-destructive">
+							<Icon name="CircleAlert" className="mt-0.5 size-4 shrink-0" />
+							<div>{task.last_error}</div>
+						</div>
+					) : null}
+
+					<div className="space-y-3">
+						<h3 className="text-sm font-semibold">
+							{t("tasks:task_progress_title")}
+						</h3>
+						<TaskStepsPreview task={task} />
+					</div>
+
+					{taskSummaryText ? (
+						<p
+							className={`text-sm ${task.last_error ? "text-destructive" : "text-muted-foreground"}`}
+						>
+							{t("tasks:status_text_label")}: {taskSummaryText}
+						</p>
+					) : null}
+
+					<div className="space-y-3 border-t pt-4">
+						<h3 className="text-sm font-semibold">
+							{t("tasks:task_details_title")}
+						</h3>
+						<TaskDetailsContent task={task} />
+					</div>
+
+					<div className="flex flex-wrap items-center gap-2 border-t pt-4">
+						<span className="text-xs text-muted-foreground">
+							{t("tasks:task_id_label", { id: task.id })}
+						</span>
+						{summaryTimestamp ? (
+							<span
+								className={`text-xs font-medium ${taskMetaTextClass(task.status)}`}
+							>
+								{summaryTimestamp}
+							</span>
+						) : null}
 						{task.status === "succeeded" && parsedResult ? (
 							<Button
 								variant="outline"
@@ -182,23 +360,6 @@ export function TaskCard({
 							>
 								<Icon name="FolderOpen" className="mr-1 size-4" />
 								{t("tasks:open_target_folder")}
-							</Button>
-						) : null}
-						{hasExpandableDetails ? (
-							<Button
-								variant="outline"
-								size="sm"
-								aria-controls={detailsSectionId}
-								aria-expanded={detailsExpanded}
-								onClick={() => onToggleDetails(task.id)}
-							>
-								<Icon
-									name={detailsExpanded ? "CaretUp" : "CaretDown"}
-									className="mr-1 size-4"
-								/>
-								{detailsExpanded
-									? t("tasks:hide_details")
-									: t("tasks:show_details")}
 							</Button>
 						) : null}
 						{task.can_retry ? (
@@ -217,90 +378,7 @@ export function TaskCard({
 						) : null}
 					</div>
 				</div>
-
-				<TaskStepsPreview activeStep={activeStep} task={task} />
-
-				{taskSummaryText ? (
-					<div className="space-y-2">
-						<p className="text-sm text-muted-foreground">
-							{t("tasks:status_text_label")}: {taskSummaryText}
-						</p>
-					</div>
-				) : null}
-
-				<AnimatedTaskDetails open={detailsExpanded} className="space-y-2.5">
-					<div id={detailsSectionId} className="space-y-2.5 pt-0.5">
-						<div className="rounded-lg border bg-background/70 p-3">
-							<div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.65fr)] lg:items-start">
-								<div className="space-y-2">
-									<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-										{t("tasks:timeline_label")}
-									</div>
-									<div className="flex flex-wrap gap-2">
-										{taskTimeline.map((entry) => (
-											<div
-												key={`${task.id}-${entry.label}`}
-												className="min-w-[11rem] flex-1 rounded-md bg-muted/25 px-2.5 py-2"
-											>
-												<div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-													{entry.label}
-												</div>
-												<div className="mt-1 text-sm font-medium tabular-nums text-foreground">
-													{entry.value}
-												</div>
-											</div>
-										))}
-									</div>
-								</div>
-								<div className="space-y-2 rounded-lg bg-muted/20 px-3 py-2.5">
-									<div className="flex items-end justify-between gap-3">
-										<div className="space-y-1">
-											<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-												{t("tasks:progress_label")}
-											</div>
-											<div className="text-3xl font-semibold tracking-tight tabular-nums">
-												{progressValue}%
-											</div>
-										</div>
-										{hasProgressCounts ? (
-											<div className="text-right text-xs text-muted-foreground">
-												<div>{t("tasks:progress_ratio_label")}</div>
-												<div className="font-medium text-foreground tabular-nums">
-													{formatProgressCounts(
-														task.progress_current,
-														task.progress_total,
-													)}
-												</div>
-											</div>
-										) : null}
-									</div>
-									<Progress value={progressValue} className="h-2" />
-								</div>
-							</div>
-						</div>
-
-						{task.last_error ? (
-							<div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-								<span className="font-medium">{t("tasks:error_label")}:</span>{" "}
-								{task.last_error}
-							</div>
-						) : null}
-
-						{task.status === "succeeded" && parsedResult ? (
-							<div className="rounded-lg border bg-muted/20 p-3 text-sm">
-								<div className="min-w-0">
-									<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-										{t("tasks:result_path_label")}
-									</div>
-									<div className="mt-1 truncate text-foreground">
-										{parsedResult.target_path}
-									</div>
-								</div>
-							</div>
-						) : null}
-					</div>
-				</AnimatedTaskDetails>
-			</div>
+			</AnimatedTaskDetails>
 		</Card>
 	);
 }

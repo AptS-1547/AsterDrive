@@ -238,6 +238,27 @@ export type AdminRemoteNodeSortBy =
 	components["schemas"]["AdminRemoteNodeSortBy"];
 export type AdminShareSortBy = components["schemas"]["AdminShareSortBy"];
 export type AdminTaskSortBy = components["schemas"]["AdminTaskSortBy"];
+export type AdminFileSortBy = components["schemas"]["AdminFileSortBy"];
+export type AdminFileBlobSortBy = components["schemas"]["AdminFileBlobSortBy"];
+export type AdminFileBlobHashKind =
+	components["schemas"]["AdminFileBlobHashKind"];
+export type AdminFileBlobSummary =
+	components["schemas"]["AdminFileBlobSummary"];
+export type AdminFileInfo = components["schemas"]["AdminFileInfo"];
+export type AdminFileVersionSummary =
+	components["schemas"]["AdminFileVersionSummary"];
+export type AdminFileDetail = components["schemas"]["AdminFileDetail"];
+export type AdminFileBlobInfo = components["schemas"]["AdminFileBlobInfo"];
+export type AdminFileBlobReferenceFile =
+	components["schemas"]["AdminFileBlobReferenceFile"];
+export type AdminFileBlobReferenceVersion =
+	components["schemas"]["AdminFileBlobReferenceVersion"];
+export type AdminFileBlobDetail = components["schemas"]["AdminFileBlobDetail"];
+export type AdminFileListQuery = OperationQuery<"admin_list_files">;
+export type AdminFileBlobListQuery = OperationQuery<"admin_list_file_blobs">;
+export type AdminFilePage = components["schemas"]["OffsetPage_AdminFileInfo"];
+export type AdminFileBlobPage =
+	components["schemas"]["OffsetPage_AdminFileBlobInfo"];
 export type DriverType = components["schemas"]["DriverType"];
 export type MediaProcessorKind = components["schemas"]["MediaProcessorKind"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
@@ -287,6 +308,16 @@ export type ResetUserPasswordRequest =
 export type StoragePolicy = components["schemas"]["StoragePolicy"];
 export type StoragePolicyPage =
 	components["schemas"]["OffsetPage_StoragePolicy"];
+export type CreateStoragePolicyMigrationRequest =
+	components["schemas"]["CreateStoragePolicyMigrationReq"];
+export type DryRunStoragePolicyMigrationRequest =
+	components["schemas"]["DryRunStoragePolicyMigrationReq"];
+export type StoragePolicyMigrationDryRun =
+	OperationData<"dry_run_storage_policy_migration">;
+export type StoragePolicyMigrationTaskPayload =
+	components["schemas"]["StoragePolicyMigrationTaskPayload"];
+export type StoragePolicyMigrationTaskResult =
+	components["schemas"]["StoragePolicyMigrationTaskResult"];
 export type S3DownloadStrategy = components["schemas"]["S3DownloadStrategy"];
 export type StoragePolicyGroupItem =
 	components["schemas"]["StoragePolicyGroupItemInfo"];

@@ -1,16 +1,16 @@
 //! Admin-only DTOs consolidated from `src/api/routes/admin/`.
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 use validator::{Validate, ValidationError};
 
 use crate::api::pagination::{
-    AdminAuditLogSortBy, AdminLockSortBy, AdminPolicyGroupSortBy, AdminPolicySortBy,
-    AdminRemoteNodeSortBy, AdminShareSortBy, AdminTaskSortBy, AdminTeamSortBy, AdminUserSortBy,
-    SortOrder,
+    AdminAuditLogSortBy, AdminFileBlobSortBy, AdminFileSortBy, AdminLockSortBy,
+    AdminPolicyGroupSortBy, AdminPolicySortBy, AdminRemoteNodeSortBy, AdminShareSortBy,
+    AdminTaskSortBy, AdminTeamSortBy, AdminUserSortBy, SortOrder,
 };
 
 // ── Users ──────────────────────────────────────────────────────────────────
@@ -309,6 +309,30 @@ pub struct AdminTaskCleanupReq {
     pub status: Option<crate::types::BackgroundTaskStatus>,
 }
 
+/// Create a background task that migrates blobs from one storage policy to another.
+#[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct CreateStoragePolicyMigrationReq {
+    #[validate(range(min = 1, message = "source_policy_id must be greater than 0"))]
+    pub source_policy_id: i64,
+    #[validate(range(min = 1, message = "target_policy_id must be greater than 0"))]
+    pub target_policy_id: i64,
+    #[serde(default)]
+    pub delete_source_after_success: bool,
+}
+
+/// Check a storage policy migration plan without creating a task.
+#[derive(Debug, Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct DryRunStoragePolicyMigrationReq {
+    #[validate(range(min = 1, message = "source_policy_id must be greater than 0"))]
+    pub source_policy_id: i64,
+    #[validate(range(min = 1, message = "target_policy_id must be greater than 0"))]
+    pub target_policy_id: i64,
+    #[serde(default)]
+    pub delete_source_after_success: bool,
+}
+
 // ── Admin Teams ─────────────────────────────────────────────────────────────
 
 /// Query parameters for the admin team list.
@@ -452,6 +476,183 @@ impl AdminAuditLogSortQuery {
     pub fn sort_order(&self) -> SortOrder {
         self.sort_order.unwrap_or(SortOrder::Desc)
     }
+}
+
+// ── Admin Files / File Blobs ───────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(
+    all(debug_assertions, feature = "openapi"),
+    derive(IntoParams, ToSchema)
+)]
+pub struct AdminFileListQuery {
+    pub name: Option<String>,
+    pub blob_id: Option<i64>,
+    pub policy_id: Option<i64>,
+    pub owner_user_id: Option<i64>,
+    pub team_id: Option<i64>,
+    pub deleted: Option<bool>,
+    pub sort_by: Option<AdminFileSortBy>,
+    pub sort_order: Option<SortOrder>,
+}
+
+impl AdminFileListQuery {
+    pub fn sort_by(&self) -> AdminFileSortBy {
+        self.sort_by.unwrap_or(AdminFileSortBy::CreatedAt)
+    }
+
+    pub fn sort_order(&self) -> SortOrder {
+        self.sort_order.unwrap_or(SortOrder::Desc)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(
+    all(debug_assertions, feature = "openapi"),
+    derive(IntoParams, ToSchema)
+)]
+pub struct AdminFileBlobListQuery {
+    pub hash: Option<String>,
+    pub policy_id: Option<i64>,
+    pub storage_path: Option<String>,
+    pub ref_count_min: Option<i32>,
+    pub ref_count_max: Option<i32>,
+    pub size_min: Option<i64>,
+    pub size_max: Option<i64>,
+    pub sort_by: Option<AdminFileBlobSortBy>,
+    pub sort_order: Option<SortOrder>,
+}
+
+impl AdminFileBlobListQuery {
+    pub fn sort_by(&self) -> AdminFileBlobSortBy {
+        self.sort_by.unwrap_or(AdminFileBlobSortBy::CreatedAt)
+    }
+
+    pub fn sort_order(&self) -> SortOrder {
+        self.sort_order.unwrap_or(SortOrder::Desc)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminFileBlobSummary {
+    pub id: i64,
+    pub hash: String,
+    pub size: i64,
+    pub policy_id: i64,
+    pub storage_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminFileInfo {
+    pub id: i64,
+    pub name: String,
+    pub folder_id: Option<i64>,
+    pub team_id: Option<i64>,
+    pub blob_id: i64,
+    pub size: i64,
+    pub owner_user_id: Option<i64>,
+    pub created_by_user_id: Option<i64>,
+    pub created_by_username: String,
+    pub mime_type: String,
+    pub extension: String,
+    pub compound_extension: Option<String>,
+    pub file_category: crate::types::FileCategory,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: DateTime<Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: DateTime<Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub deleted_at: Option<DateTime<Utc>>,
+    pub is_locked: bool,
+    pub blob: AdminFileBlobSummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminFileVersionSummary {
+    pub id: i64,
+    pub file_id: i64,
+    pub blob_id: i64,
+    pub version: i32,
+    pub size: i64,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: DateTime<Utc>,
+    pub blob: AdminFileBlobSummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminFileDetail {
+    #[serde(flatten)]
+    pub file: AdminFileInfo,
+    pub versions: Vec<AdminFileVersionSummary>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AdminFileBlobHashKind {
+    ContentSha256,
+    Opaque,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminFileBlobInfo {
+    pub id: i64,
+    pub hash: String,
+    pub size: i64,
+    pub policy_id: i64,
+    pub storage_path: String,
+    pub thumbnail_path: Option<String>,
+    pub thumbnail_processor: Option<String>,
+    pub thumbnail_version: Option<String>,
+    pub ref_count: i32,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: DateTime<Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: DateTime<Utc>,
+    pub hash_kind: AdminFileBlobHashKind,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminFileBlobReferenceFile {
+    pub id: i64,
+    pub name: String,
+    pub folder_id: Option<i64>,
+    pub team_id: Option<i64>,
+    pub owner_user_id: Option<i64>,
+    pub size: i64,
+    pub mime_type: String,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: DateTime<Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: DateTime<Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminFileBlobReferenceVersion {
+    pub id: i64,
+    pub file_id: i64,
+    pub version: i32,
+    pub size: i64,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AdminFileBlobDetail {
+    #[serde(flatten)]
+    pub blob: AdminFileBlobInfo,
+    pub files: Vec<AdminFileBlobReferenceFile>,
+    pub file_versions: Vec<AdminFileBlobReferenceVersion>,
 }
 
 /// Create a team (admin operation).

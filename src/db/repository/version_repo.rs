@@ -28,6 +28,18 @@ pub async fn find_by_file_id<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_blob_id<C: ConnectionTrait>(
+    db: &C,
+    blob_id: i64,
+) -> Result<Vec<file_version::Model>> {
+    FileVersion::find()
+        .filter(file_version::Column::BlobId.eq(blob_id))
+        .order_by_asc(file_version::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_id<C: ConnectionTrait>(
     db: &C,
     id: i64,
@@ -201,4 +213,22 @@ pub async fn next_version<C: ConnectionTrait>(db: &C, file_id: i64) -> Result<i3
         .await
         .map_err(AsterError::from)?;
     Ok(latest.map(|v| v.version + 1).unwrap_or(1))
+}
+
+pub async fn replace_version_blob_refs<C: ConnectionTrait>(
+    db: &C,
+    old_blob_id: i64,
+    new_blob_id: i64,
+) -> Result<u64> {
+    if old_blob_id == new_blob_id {
+        return Ok(0);
+    }
+
+    let result = FileVersion::update_many()
+        .col_expr(file_version::Column::BlobId, Expr::value(new_blob_id))
+        .filter(file_version::Column::BlobId.eq(old_blob_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected)
 }

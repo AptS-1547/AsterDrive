@@ -14,11 +14,14 @@ import { ApiSubcode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
+	dryRunMigration: vi.fn(),
+	createMigration: vi.fn(),
 	deletePolicy: vi.fn(),
 	handleApiError: vi.fn(),
 	items: [] as Array<Record<string, unknown>>,
 	listRemoteNodes: vi.fn(),
 	loading: false,
+	navigate: vi.fn(),
 	reload: vi.fn(),
 	remoteNodes: [] as Array<Record<string, unknown>>,
 	searchParams: "",
@@ -26,11 +29,13 @@ const mockState = vi.hoisted(() => ({
 	testConnection: vi.fn(),
 	testParams: vi.fn(),
 	total: 0,
+	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
 	update: vi.fn(),
 }));
 
 vi.mock("react-router-dom", () => ({
+	useNavigate: () => mockState.navigate,
 	useSearchParams: () => [
 		new URLSearchParams(mockState.searchParams),
 		mockState.setSearchParams,
@@ -64,6 +69,7 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("sonner", () => ({
 	toast: {
+		error: (...args: unknown[]) => mockState.toastError(...args),
 		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
 }));
@@ -322,9 +328,11 @@ vi.mock("@/components/ui/select", () => {
 		),
 		SelectItem: ({
 			children,
+			disabled,
 			value,
 		}: {
 			children: React.ReactNode;
+			disabled?: boolean;
 			value: string;
 		}) => {
 			const context = useContext(SelectContext);
@@ -333,7 +341,7 @@ vi.mock("@/components/ui/select", () => {
 				<button
 					type="button"
 					aria-label={`select-item:${value}`}
-					disabled={context.disabled}
+					disabled={context.disabled || disabled}
 					onClick={() => context.onValueChange?.(value)}
 				>
 					{children}
@@ -347,7 +355,13 @@ vi.mock("@/components/ui/select", () => {
 			children: React.ReactNode;
 			className?: string;
 		}) => <div className={className}>{children}</div>,
-		SelectValue: () => <span>select-value</span>,
+		SelectValue: ({
+			children,
+			placeholder,
+		}: {
+			children?: React.ReactNode;
+			placeholder?: string;
+		}) => <span>{children ?? placeholder ?? "select-value"}</span>,
 	};
 });
 
@@ -482,8 +496,11 @@ vi.mock("@/hooks/useApiList", () => ({
 vi.mock("@/services/adminService", () => ({
 	adminPolicyService: {
 		create: (...args: unknown[]) => mockState.create(...args),
+		createMigration: (...args: unknown[]) => mockState.createMigration(...args),
+		dryRunMigration: (...args: unknown[]) => mockState.dryRunMigration(...args),
 		delete: (...args: unknown[]) => mockState.deletePolicy(...args),
 		list: vi.fn(),
+		listAll: async () => mockState.items,
 		testConnection: (...args: unknown[]) => mockState.testConnection(...args),
 		testParams: (...args: unknown[]) => mockState.testParams(...args),
 		update: (...args: unknown[]) => mockState.update(...args),
@@ -529,15 +546,27 @@ function openEditPolicy(name: string) {
 	fireEvent.click(screen.getByText(name));
 }
 
+async function openMigrationDialog() {
+	fireEvent.click(
+		screen.getByRole("button", {
+			name: /policy_migration_action/,
+		}),
+	);
+	await screen.findByText("policy_migration_title");
+}
+
 describe("AdminPoliciesPage", () => {
 	beforeEach(() => {
 		mockState.create.mockReset();
+		mockState.dryRunMigration.mockReset();
+		mockState.createMigration.mockReset();
 		mockState.deletePolicy.mockReset();
 		mockState.handleApiError.mockReset();
 		invalidateAdminRemoteNodeLookup();
 		mockState.items = [];
 		mockState.listRemoteNodes.mockReset();
 		mockState.loading = false;
+		mockState.navigate.mockReset();
 		mockState.reload.mockReset();
 		mockState.remoteNodes = [];
 		mockState.searchParams = "";
@@ -545,6 +574,7 @@ describe("AdminPoliciesPage", () => {
 		mockState.testConnection.mockReset();
 		mockState.testParams.mockReset();
 		mockState.total = 0;
+		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.update.mockReset();
 
@@ -554,6 +584,26 @@ describe("AdminPoliciesPage", () => {
 				id: 99,
 			}),
 		);
+		mockState.createMigration.mockResolvedValue({
+			id: 42,
+			kind: "storage_policy_migration",
+		});
+		mockState.dryRunMigration.mockResolvedValue({
+			can_start: true,
+			content_sha256_blob_count: 2,
+			delete_source_after_success_supported: false,
+			estimated_copy_blob_count: 4,
+			opaque_blob_count: 3,
+			source_blob_count: 5,
+			source_policy_id: 1,
+			source_total_bytes: 1536,
+			target_capacity_check: "unavailable",
+			target_connection_ok: true,
+			target_matching_blob_count: 1,
+			target_policy_id: 2,
+			target_supports_stream_upload: true,
+			warnings: [],
+		});
 		mockState.deletePolicy.mockImplementation(async (id: number) => {
 			mockState.items = mockState.items.filter((policy) => policy.id !== id);
 		});
@@ -608,6 +658,143 @@ describe("AdminPoliciesPage", () => {
 		expect(localBadge).toHaveClass("bg-emerald-500/10", "text-emerald-600");
 		expect(s3Badge).toHaveAttribute("data-variant", "outline");
 		expect(s3Badge).toHaveClass("bg-blue-500/10", "text-blue-600");
+	});
+
+	it("checks a storage policy migration plan before creating the task", async () => {
+		mockState.items = [
+			createPolicy({ id: 1, name: "Hot Local" }),
+			createPolicy({ id: 2, name: "Archive S3", driver_type: "s3" }),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		await openMigrationDialog();
+		expect(screen.getAllByText("#1 · Hot Local").length).toBeGreaterThan(1);
+		expect(screen.getAllByText("#2 · Archive S3").length).toBeGreaterThan(1);
+		expect(
+			screen.getByRole("button", { name: /policy_migration_submit/ }),
+		).toBeDisabled();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /policy_migration_dry_run/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.dryRunMigration).toHaveBeenCalledWith({
+				source_policy_id: 1,
+				target_policy_id: 2,
+				delete_source_after_success: false,
+			});
+		});
+		expect(
+			screen.getByText("policy_migration_dry_run_title"),
+		).toBeInTheDocument();
+		expect(screen.getByText("policy_migration_can_start")).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /policy_migration_submit/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.createMigration).toHaveBeenCalledWith({
+				source_policy_id: 1,
+				target_policy_id: 2,
+				delete_source_after_success: false,
+			});
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"policy_migration_created",
+		);
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			"/admin/tasks?kind=storage_policy_migration",
+			{ viewTransition: false },
+		);
+	});
+
+	it("invalidates a checked migration plan when the target changes", async () => {
+		mockState.items = [
+			createPolicy({ id: 1, name: "Hot Local" }),
+			createPolicy({ id: 2, name: "Archive S3", driver_type: "s3" }),
+			createPolicy({ id: 3, name: "Cold S3", driver_type: "s3" }),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		await openMigrationDialog();
+		fireEvent.click(
+			screen.getByRole("button", { name: /policy_migration_dry_run/ }),
+		);
+
+		await screen.findByText("policy_migration_dry_run_title");
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "select-item:3" })[1],
+		);
+
+		expect(
+			screen.queryByText("policy_migration_dry_run_title"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /policy_migration_submit/ }),
+		).toBeDisabled();
+		expect(mockState.createMigration).not.toHaveBeenCalled();
+	});
+
+	it("disables storage policy migration when there is no distinct target policy", () => {
+		mockState.items = [createPolicy({ id: 1, name: "Only Policy" })];
+
+		render(<AdminPoliciesPage />);
+
+		expect(
+			screen.getByRole("button", { name: /policy_migration_action/ }),
+		).toBeDisabled();
+	});
+
+	it("prevents submitting a storage policy migration with the same source and target", async () => {
+		mockState.items = [
+			createPolicy({ id: 1, name: "Hot Local" }),
+			createPolicy({ id: 2, name: "Archive S3", driver_type: "s3" }),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		await openMigrationDialog();
+
+		expect(
+			screen.getAllByRole("button", { name: "select-item:1" })[1],
+		).toBeDisabled();
+		expect(
+			screen.getByRole("button", { name: /policy_migration_dry_run/ }),
+		).toBeEnabled();
+		expect(
+			screen.getByRole("button", { name: /policy_migration_submit/ }),
+		).toBeDisabled();
+		expect(mockState.createMigration).not.toHaveBeenCalled();
+	});
+
+	it("keeps the storage migration dialog open and reports dry-run API errors", async () => {
+		const error = new Error("migration failed");
+		mockState.dryRunMigration.mockRejectedValueOnce(error);
+		mockState.items = [
+			createPolicy({ id: 1, name: "Hot Local" }),
+			createPolicy({ id: 2, name: "Archive S3", driver_type: "s3" }),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		await openMigrationDialog();
+		fireEvent.click(
+			screen.getByRole("button", { name: /policy_migration_dry_run/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
+		expect(screen.getByText("policy_migration_title")).toBeInTheDocument();
+		expect(mockState.navigate).not.toHaveBeenCalled();
+		expect(mockState.createMigration).not.toHaveBeenCalled();
+		expect(mockState.toastSuccess).not.toHaveBeenCalledWith(
+			"policy_migration_created",
+		);
 	});
 
 	it("renders remote policies with the bound remote node name", async () => {

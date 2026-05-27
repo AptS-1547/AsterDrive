@@ -37,6 +37,12 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 			icon: "ListBullets",
 		},
 		{ to: "/admin/shares", label: t("shares"), icon: "Link" },
+		{ to: "/admin/files", label: t("admin_files"), icon: "File" },
+		{
+			to: "/admin/file-blobs",
+			label: t("admin_file_blobs"),
+			icon: "HardDrive",
+		},
 		{ to: "/admin/tasks", label: t("tasks"), icon: "Clock" },
 		{ to: "/admin/locks", label: t("locks"), icon: "Lock" },
 		{ to: "/admin/settings", label: t("system_settings"), icon: "Gear" },
