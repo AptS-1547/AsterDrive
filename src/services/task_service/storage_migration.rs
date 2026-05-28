@@ -56,16 +56,27 @@ struct BlobMigrationOutcome {
     skipped: i64,
     failed: i64,
     migrated_bytes: i64,
+    renamed_opaque_blobs: i64,
+}
+
+struct StoragePolicyMigrationPreflight {
+    source_policy: storage_policy::Model,
+    target_policy: storage_policy::Model,
+    dry_run: StoragePolicyMigrationDryRun,
 }
 
 pub(crate) async fn create_storage_policy_migration_task(
     state: &PrimaryAppState,
     input: CreateStoragePolicyMigrationInput,
 ) -> Result<super::TaskInfo> {
-    validate_storage_policy_migration_input(input)?;
-
-    let source_policy = policy_repo::find_by_id(state.writer_db(), input.source_policy_id).await?;
-    let target_policy = policy_repo::find_by_id(state.writer_db(), input.target_policy_id).await?;
+    let preflight = build_storage_policy_migration_preflight(state, input).await?;
+    if !preflight.dry_run.can_start {
+        return Err(AsterError::validation_error(
+            "target storage capacity is insufficient for this migration",
+        ));
+    }
+    let source_policy = preflight.source_policy;
+    let target_policy = preflight.target_policy;
     let plan_hash = migration_plan_hash(
         input.source_policy_id,
         input.target_policy_id,
@@ -164,6 +175,15 @@ pub(crate) async fn dry_run_storage_policy_migration(
     state: &PrimaryAppState,
     input: CreateStoragePolicyMigrationInput,
 ) -> Result<StoragePolicyMigrationDryRun> {
+    Ok(build_storage_policy_migration_preflight(state, input)
+        .await?
+        .dry_run)
+}
+
+async fn build_storage_policy_migration_preflight(
+    state: &PrimaryAppState,
+    input: CreateStoragePolicyMigrationInput,
+) -> Result<StoragePolicyMigrationPreflight> {
     validate_storage_policy_migration_input(input)?;
     ensure_no_active_storage_policy_migration(state.writer_db(), input).await?;
     let source_policy = policy_repo::find_by_id(state.writer_db(), input.source_policy_id).await?;
@@ -189,29 +209,88 @@ pub(crate) async fn dry_run_storage_policy_migration(
     let hash_kinds =
         file_repo::summarize_blob_hash_kinds_by_policy(state.writer_db(), input.source_policy_id)
             .await?;
-    let target_matching_blob_count = file_repo::count_matching_hashes_between_policies(
+    let missing_summary = file_repo::summarize_missing_blobs_between_policies(
         state.writer_db(),
         input.source_policy_id,
         input.target_policy_id,
     )
     .await?;
+    let target_matching_blob_count = summary.count.saturating_sub(missing_summary.count);
+    let opaque_key_conflict_count = file_repo::count_opaque_hash_conflicts_between_policies(
+        state.writer_db(),
+        input.source_policy_id,
+        input.target_policy_id,
+    )
+    .await?;
+    let target_capacity = crate::services::policy_service::capacity_info_or_status(
+        target_driver.as_ref(),
+        target_policy.driver_type,
+    )
+    .await;
+    let target_capacity_check =
+        migration_capacity_check(&target_capacity, missing_summary.total_size);
+    let warnings = match target_capacity_check {
+        StoragePolicyMigrationCapacityCheck::Unsupported
+        | StoragePolicyMigrationCapacityCheck::Unavailable => {
+            vec![StoragePolicyMigrationDryRunWarning::TargetCapacityUnavailable]
+        }
+        StoragePolicyMigrationCapacityCheck::Sufficient
+        | StoragePolicyMigrationCapacityCheck::Insufficient => Vec::new(),
+    };
+    let can_start = storage_policy_migration_can_start(&target_capacity_check);
 
-    Ok(StoragePolicyMigrationDryRun {
-        source_policy_id: input.source_policy_id,
-        target_policy_id: input.target_policy_id,
-        source_blob_count: summary.count,
-        source_total_bytes: summary.total_size,
-        content_sha256_blob_count: hash_kinds.content_sha256_count,
-        opaque_blob_count: hash_kinds.opaque_count,
-        target_matching_blob_count,
-        estimated_copy_blob_count: summary.count.saturating_sub(target_matching_blob_count),
-        target_supports_stream_upload,
-        target_connection_ok: true,
-        target_capacity_check: StoragePolicyMigrationCapacityCheck::Unavailable,
-        delete_source_after_success_supported: false,
-        can_start: true,
-        warnings: vec![StoragePolicyMigrationDryRunWarning::TargetCapacityUnavailable],
+    Ok(StoragePolicyMigrationPreflight {
+        source_policy,
+        target_policy,
+        dry_run: StoragePolicyMigrationDryRun {
+            source_policy_id: input.source_policy_id,
+            target_policy_id: input.target_policy_id,
+            source_blob_count: summary.count,
+            source_total_bytes: summary.total_size,
+            content_sha256_blob_count: hash_kinds.content_sha256_count,
+            opaque_blob_count: hash_kinds.opaque_count,
+            target_matching_blob_count,
+            estimated_copy_blob_count: missing_summary.count,
+            opaque_key_conflict_count,
+            target_supports_stream_upload,
+            target_connection_ok: true,
+            target_capacity_check,
+            target_capacity,
+            delete_source_after_success_supported: false,
+            can_start,
+            warnings,
+        },
     })
+}
+
+fn migration_capacity_check(
+    capacity: &crate::storage::StorageCapacityInfo,
+    required_bytes: i64,
+) -> StoragePolicyMigrationCapacityCheck {
+    match capacity.status {
+        crate::storage::StorageCapacityStatus::Supported => match capacity.available_bytes {
+            Some(available) if available >= required_bytes => {
+                StoragePolicyMigrationCapacityCheck::Sufficient
+            }
+            Some(_) => StoragePolicyMigrationCapacityCheck::Insufficient,
+            None => StoragePolicyMigrationCapacityCheck::Unavailable,
+        },
+        crate::storage::StorageCapacityStatus::Unsupported => {
+            StoragePolicyMigrationCapacityCheck::Unsupported
+        }
+        crate::storage::StorageCapacityStatus::Unavailable => {
+            StoragePolicyMigrationCapacityCheck::Unavailable
+        }
+    }
+}
+
+fn storage_policy_migration_can_start(
+    capacity_check: &StoragePolicyMigrationCapacityCheck,
+) -> bool {
+    !matches!(
+        capacity_check,
+        StoragePolicyMigrationCapacityCheck::Insufficient
+    )
 }
 
 fn validate_storage_policy_migration_input(input: CreateStoragePolicyMigrationInput) -> Result<()> {
@@ -455,6 +534,7 @@ pub(super) async fn process_storage_policy_migration_task(
         skipped_blobs: checkpoint.skipped_blobs,
         failed_blobs: checkpoint.failed_blobs,
         migrated_bytes: checkpoint.migrated_bytes,
+        renamed_opaque_blobs: checkpoint.renamed_opaque_blobs,
     };
     let result_json = serialize_task_result(&result)?;
     set_task_step_succeeded(
@@ -522,13 +602,22 @@ async fn migrate_one_blob(
         .await;
     }
 
-    let target_path = crate::utils::storage_path_from_blob_key(&latest.hash);
-    let target_blob =
+    let content_hash = is_content_sha256_blob_key(&latest.hash);
+    let existing_target_blob =
         file_repo::find_blob_by_hash(state.writer_db(), &latest.hash, target_policy_id).await?;
-    if let Some(target_blob) = target_blob {
-        verify_existing_target(target_driver, &target_blob, &latest.hash, latest.size).await?;
-        return merge_blob_records(state, task_id, latest, target_blob).await;
+    if let Some(target_blob) = existing_target_blob.as_ref()
+        && content_hash
+    {
+        verify_existing_target(target_driver, target_blob, &latest.hash, latest.size).await?;
+        return merge_blob_records(state, task_id, latest, target_blob.clone()).await;
     }
+    let renamed_opaque_blob = !content_hash && existing_target_blob.is_some();
+    let target_hash = if content_hash || !renamed_opaque_blob {
+        latest.hash.clone()
+    } else {
+        format!("migration-{}", uuid::Uuid::new_v4())
+    };
+    let target_path = crate::utils::storage_path_from_blob_key(&target_hash);
 
     copy_blob_streaming(
         state,
@@ -545,6 +634,7 @@ async fn migrate_one_blob(
             latest.id,
             source_policy_id,
             target_policy_id,
+            &target_hash,
             &target_path,
         )
         .await?;
@@ -553,6 +643,7 @@ async fn migrate_one_blob(
                 scanned: 1,
                 migrated: 1,
                 migrated_bytes: latest.size,
+                renamed_opaque_blobs: if renamed_opaque_blob { 1 } else { 0 },
                 ..Default::default()
             }
         } else {
@@ -681,6 +772,7 @@ fn checkpoint_delta(
         skipped_blobs: outcome.skipped,
         failed_blobs: outcome.failed,
         migrated_bytes: outcome.migrated_bytes,
+        renamed_opaque_blobs: outcome.renamed_opaque_blobs,
     }
 }
 
@@ -982,5 +1074,73 @@ impl HashDigestHandle {
             .take()
             .ok_or_else(|| AsterError::internal_error("hashing reader digest already finalized"))?;
         Ok(sha256_digest_to_hex(&sha2::Digest::finalize(hasher)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::{StorageCapacityInfo, StorageCapacityStatus};
+
+    fn capacity(
+        status: StorageCapacityStatus,
+        available_bytes: Option<i64>,
+    ) -> StorageCapacityInfo {
+        StorageCapacityInfo {
+            status,
+            total_bytes: available_bytes,
+            available_bytes,
+            used_bytes: None,
+            source: "test".to_string(),
+            observed_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn migration_capacity_check_covers_supported_boundaries() {
+        assert_eq!(
+            migration_capacity_check(&capacity(StorageCapacityStatus::Supported, Some(100)), 100),
+            StoragePolicyMigrationCapacityCheck::Sufficient
+        );
+        assert_eq!(
+            migration_capacity_check(&capacity(StorageCapacityStatus::Supported, Some(101)), 100),
+            StoragePolicyMigrationCapacityCheck::Sufficient
+        );
+        assert_eq!(
+            migration_capacity_check(&capacity(StorageCapacityStatus::Supported, Some(99)), 100),
+            StoragePolicyMigrationCapacityCheck::Insufficient
+        );
+        assert_eq!(
+            migration_capacity_check(&capacity(StorageCapacityStatus::Supported, None), 100),
+            StoragePolicyMigrationCapacityCheck::Unavailable
+        );
+    }
+
+    #[test]
+    fn migration_capacity_check_preserves_unsupported_and_unavailable() {
+        assert_eq!(
+            migration_capacity_check(&capacity(StorageCapacityStatus::Unsupported, None), 100),
+            StoragePolicyMigrationCapacityCheck::Unsupported
+        );
+        assert_eq!(
+            migration_capacity_check(&capacity(StorageCapacityStatus::Unavailable, None), 100),
+            StoragePolicyMigrationCapacityCheck::Unavailable
+        );
+    }
+
+    #[test]
+    fn storage_policy_migration_can_start_only_blocks_confirmed_insufficient_capacity() {
+        assert!(storage_policy_migration_can_start(
+            &StoragePolicyMigrationCapacityCheck::Sufficient
+        ));
+        assert!(storage_policy_migration_can_start(
+            &StoragePolicyMigrationCapacityCheck::Unsupported
+        ));
+        assert!(storage_policy_migration_can_start(
+            &StoragePolicyMigrationCapacityCheck::Unavailable
+        ));
+        assert!(!storage_policy_migration_can_start(
+            &StoragePolicyMigrationCapacityCheck::Insufficient
+        ));
     }
 }

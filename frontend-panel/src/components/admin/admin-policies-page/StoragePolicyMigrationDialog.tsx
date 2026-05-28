@@ -82,6 +82,16 @@ export function StoragePolicyMigrationDialog({
 		sourceId !== targetId &&
 		!dryRunLoading &&
 		!submitting;
+	const targetAvailableBytes = dryRun?.target_capacity.available_bytes;
+	const targetTotalBytes = dryRun?.target_capacity.total_bytes;
+	const targetCapacityDetail =
+		typeof targetAvailableBytes === "number" &&
+		typeof targetTotalBytes === "number"
+			? t("policy_migration_capacity_available_of_total", {
+					available: formatBytes(targetAvailableBytes),
+					total: formatBytes(targetTotalBytes),
+				})
+			: null;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -191,7 +201,7 @@ export function StoragePolicyMigrationDialog({
 										: t("policy_migration_cannot_start")}
 								</span>
 							</div>
-							<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+							<div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
 								{[
 									{
 										label: t("policy_migration_source_objects"),
@@ -208,6 +218,10 @@ export function StoragePolicyMigrationDialog({
 									{
 										label: t("policy_migration_target_matching"),
 										value: dryRun.target_matching_blob_count,
+									},
+									{
+										label: t("policy_migration_opaque_key_conflicts"),
+										value: dryRun.opaque_key_conflict_count,
 									},
 								].map((item) => (
 									<div
@@ -247,6 +261,11 @@ export function StoragePolicyMigrationDialog({
 									{t(
 										`policy_migration_capacity_${dryRun.target_capacity_check}`,
 									)}
+									{targetCapacityDetail ? (
+										<span className="ml-1 text-muted-foreground">
+											{targetCapacityDetail}
+										</span>
+									) : null}
 								</div>
 								<div>
 									<span className="font-medium text-foreground">

@@ -12,7 +12,11 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
-import type { DriverType, RemoteNodeInfo } from "@/types/api";
+import type {
+	DriverType,
+	RemoteNodeInfo,
+	StoragePolicyCapacityInfo,
+} from "@/types/api";
 import { StoragePolicyCreateWizard } from "./storage-policy-dialog/StoragePolicyCreateWizard";
 import type { StoragePolicyDialogStep } from "./storage-policy-dialog/StoragePolicyDialogTypes";
 import { StoragePolicyEditForm } from "./storage-policy-dialog/StoragePolicyEditForm";
@@ -22,6 +26,8 @@ interface StoragePolicyDialogProps {
 	open: boolean;
 	mode: "create" | "edit";
 	form: PolicyFormData;
+	policyCapacity: StoragePolicyCapacityInfo | null;
+	policyCapacityLoading: boolean;
 	remoteNodes: RemoteNodeInfo[];
 	submitting: boolean;
 	createStep: number;
@@ -41,10 +47,16 @@ interface StoragePolicyDialogProps {
 	onSyncNormalizedS3Form: () => void;
 }
 
-export function StoragePolicyDialog({
+export function StoragePolicyDialog(props: StoragePolicyDialogProps) {
+	return useStoragePolicyDialogContent(props);
+}
+
+function useStoragePolicyDialogContent({
 	open,
 	mode,
 	form,
+	policyCapacity,
+	policyCapacityLoading,
 	remoteNodes,
 	submitting,
 	createStep,
@@ -157,20 +169,20 @@ export function StoragePolicyDialog({
 		remoteNodes.find((node) => String(node.id) === form.remote_node_id) ?? null;
 	const s3UploadStrategyLabel =
 		form.s3_upload_strategy === "relay_stream"
-			? t("s3_upload_strategy_relay_stream")
-			: t("s3_upload_strategy_presigned");
+			? t("upload_strategy_relay_stream")
+			: t("upload_strategy_presigned");
 	const s3DownloadStrategyLabel =
 		form.s3_download_strategy === "relay_stream"
-			? t("s3_download_strategy_relay_stream")
-			: t("s3_download_strategy_presigned");
+			? t("download_strategy_relay_stream")
+			: t("download_strategy_presigned");
 	const remoteUploadStrategyLabel =
 		form.remote_upload_strategy === "relay_stream"
-			? t("remote_upload_strategy_relay_stream")
-			: t("remote_upload_strategy_presigned");
+			? t("upload_strategy_relay_stream")
+			: t("upload_strategy_presigned");
 	const remoteDownloadStrategyLabel =
 		form.remote_download_strategy === "relay_stream"
-			? t("remote_download_strategy_relay_stream")
-			: t("remote_download_strategy_presigned");
+			? t("download_strategy_relay_stream")
+			: t("download_strategy_presigned");
 	const contentDedupLabel = form.content_dedup
 		? t("policy_wizard_enabled")
 		: t("policy_wizard_disabled");
@@ -302,6 +314,8 @@ export function StoragePolicyDialog({
 								currentStorageOption={currentStorageOption}
 								endpointValidationMessage={endpointValidationMessage}
 								form={form}
+								policyCapacity={policyCapacity}
+								policyCapacityLoading={policyCapacityLoading}
 								onFieldChange={onFieldChange}
 								onSyncNormalizedS3Form={onSyncNormalizedS3Form}
 								remoteNodes={remoteNodes}

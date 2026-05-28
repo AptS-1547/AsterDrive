@@ -33,6 +33,7 @@ import type {
 	AdminUserListQuery,
 	ConfigActionType,
 	ConfigSchemaItem,
+	CreateBlobMaintenanceTaskRequest,
 	CreateExternalAuthProviderInput,
 	CreatePolicyGroupRequest,
 	CreatePolicyRequest,
@@ -59,6 +60,7 @@ import type {
 	ResetUserPasswordRequest,
 	ShareInfo,
 	StoragePolicy,
+	StoragePolicyCapacityInfo,
 	StoragePolicyGroup,
 	StoragePolicyGroupPage,
 	StoragePolicyMigrationDryRun,
@@ -268,6 +270,9 @@ export const adminPolicyService = {
 	},
 
 	get: (id: number) => api.get<StoragePolicy>(`/admin/policies/${id}`),
+
+	getCapacity: (id: number) =>
+		api.get<StoragePolicyCapacityInfo>(`/admin/policies/${id}/capacity`),
 
 	create: (data: CreatePolicyRequest) =>
 		api.post<StoragePolicy>("/admin/policies", data),
@@ -533,6 +538,9 @@ export const adminFileService = {
 
 	getBlob: (id: number) =>
 		api.get<AdminFileBlobDetail>(`/admin/file-blobs/${id}`),
+
+	createBlobMaintenanceTask: (body: CreateBlobMaintenanceTaskRequest) =>
+		api.post<TaskInfo>("/admin/file-blobs/maintenance", body),
 };
 
 export const adminTaskService = {
