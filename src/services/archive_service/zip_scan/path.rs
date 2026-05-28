@@ -5,7 +5,7 @@ use crate::errors::{AsterError, Result};
 
 use super::{ZipScanLimits, ZipScanNamePolicy};
 
-pub(super) fn validate_archive_entry_path_limits(
+pub(crate) fn validate_archive_entry_path_limits(
     relative_path: &Path,
     limits: ZipScanLimits,
 ) -> Result<()> {
@@ -38,7 +38,7 @@ pub(super) fn validate_archive_entry_path_limits(
     Ok(())
 }
 
-pub(super) fn ensure_archive_entry_path_not_conflicting(
+pub(crate) fn ensure_archive_entry_path_not_conflicting(
     relative_path: &Path,
     is_dir: bool,
     seen_paths: &mut HashSet<PathBuf>,
@@ -97,7 +97,7 @@ pub(super) fn ensure_archive_entry_path_not_conflicting(
     Ok(())
 }
 
-pub(super) fn insert_directory_path_with_limit(
+pub(crate) fn insert_directory_path_with_limit(
     path: &Path,
     directory_paths: &mut HashSet<PathBuf>,
     limits: ZipScanLimits,
@@ -123,7 +123,7 @@ pub(super) fn insert_directory_path_with_limit(
     Ok(())
 }
 
-pub(super) fn validate_archive_entry_compression_ratio(
+pub(crate) fn validate_archive_entry_compression_ratio(
     uncompressed_size: u64,
     compressed_size: u64,
     max_ratio: u64,
@@ -149,7 +149,7 @@ pub(super) fn validate_archive_entry_compression_ratio(
     Ok(())
 }
 
-pub(super) fn validate_total_archive_compression_ratio(
+pub(crate) fn validate_total_archive_compression_ratio(
     total_uncompressed_bytes: i64,
     total_compressed_bytes: u64,
     max_ratio: u64,
@@ -184,7 +184,7 @@ fn compression_ratio_exceeds(
     Ok(u128::from(uncompressed_size) > allowed)
 }
 
-pub(super) fn normalize_archive_entry_path(
+pub(crate) fn normalize_archive_entry_path(
     path: &str,
     name_policy: ZipScanNamePolicy,
 ) -> Result<PathBuf> {

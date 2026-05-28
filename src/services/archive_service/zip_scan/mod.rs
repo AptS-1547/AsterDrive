@@ -12,7 +12,7 @@ use crate::types::ArchiveFilenameEncoding;
 
 mod encoding;
 mod entry;
-mod path;
+pub(crate) mod path;
 mod types;
 
 use encoding::{decode_zip_entry_name, decode_zip_entry_name_parts};
