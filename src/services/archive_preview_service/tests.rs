@@ -516,6 +516,10 @@ fn map_failed_task_error_preserves_archive_preview_subcodes() {
         Some(ApiSubcode::ArchivePreviewInvalidZip)
     );
     assert_eq!(
+        failed_task_subcode("invalid 7z archive"),
+        Some(ApiSubcode::ArchivePreviewInvalidZip)
+    );
+    assert_eq!(
         failed_task_subcode("archive preview manifest for file #1 exceeds server limit 64 bytes"),
         Some(ApiSubcode::ArchivePreviewManifestTooLarge)
     );

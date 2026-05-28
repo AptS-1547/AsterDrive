@@ -2,18 +2,18 @@
 
 use std::collections::HashSet;
 use std::io::{Read, Seek};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
 
 use chrono::{DateTime, Utc};
-use zesven::{Archive, RatioLimit, ResourceLimits, StreamingArchive, StreamingConfig};
+use zesven::{StreamingArchive, StreamingConfig};
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 
 use super::zip_scan::path::{
     ensure_archive_entry_path_not_conflicting, insert_directory_path_with_limit,
-    normalize_archive_entry_path, validate_archive_entry_path_limits,
-    validate_total_archive_compression_ratio,
+    normalize_archive_entry_path, validate_archive_entry_compression_ratio,
+    validate_archive_entry_path_limits, validate_total_archive_compression_ratio,
 };
 use super::zip_scan::{
     ZipRawScanEntry, ZipRawScanResult, ZipScanEntry, ZipScanEntryKind, ZipScanLimits,
@@ -24,31 +24,12 @@ const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
 const UNIX_REGULAR_FILE_MODE: u32 = 0o100000;
 const UNIX_DIRECTORY_MODE: u32 = 0o040000;
 
-pub(crate) fn seven_zip_resource_limits(limits: ZipScanLimits) -> Result<ResourceLimits> {
-    let max_entries =
-        crate::utils::numbers::u64_to_usize(limits.max_entries, "archive entry count")?;
-    let max_total_unpacked = crate::utils::numbers::i64_to_u64(
-        limits.max_uncompressed_bytes,
-        "archive uncompressed size",
-    )?;
-    let max_ratio: u32 = limits
-        .max_compression_ratio
-        .try_into()
-        .map_aster_err_with(|| {
-            AsterError::validation_error("archive compression ratio limit exceeds 7z parser range")
-        })?;
-    Ok(ResourceLimits::new()
-        .max_entries(max_entries)
-        .max_total_unpacked(max_total_unpacked)
-        .max_entry_unpacked(max_total_unpacked)
-        .ratio_limit(Some(RatioLimit::new(max_ratio))))
-}
-
 pub(crate) fn seven_zip_streaming_config(limits: ZipScanLimits) -> Result<StreamingConfig> {
     let max_entries =
         crate::utils::numbers::u64_to_usize(limits.max_entries, "archive entry count")?;
     let max_ratio: u32 = limits
-        .max_compression_ratio
+        .max_entry_compression_ratio
+        .min(limits.max_compression_ratio)
         .try_into()
         .map_aster_err_with(|| {
             AsterError::validation_error("archive compression ratio limit exceeds 7z parser range")
@@ -121,7 +102,9 @@ where
             continue;
         }
 
-        if let Some(parent) = relative_path.parent() {
+        if let Some(parent) = relative_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
             insert_directory_path_with_limit(parent, &mut directory_paths, limits)?;
         }
         file_count = file_count
@@ -136,6 +119,12 @@ where
 
         let entry_size = crate::utils::numbers::u64_to_i64(entry.size, "archive entry size")?;
         ensure_file_size_allowed(entry_size)?;
+        validate_archive_entry_compression_ratio(
+            entry.size,
+            source_archive_size,
+            limits.max_entry_compression_ratio,
+            &relative_path,
+        )?;
         total_uncompressed_bytes = total_uncompressed_bytes
             .checked_add(entry_size)
             .ok_or_else(|| AsterError::internal_error("archive extract size overflow"))?;
@@ -240,6 +229,12 @@ where
         }
 
         let entry_size = crate::utils::numbers::u64_to_i64(entry.size, "archive entry size")?;
+        validate_archive_entry_compression_ratio(
+            entry.size,
+            source_archive_size,
+            limits.max_entry_compression_ratio,
+            Path::new(entry_path),
+        )?;
         total_uncompressed_bytes = total_uncompressed_bytes
             .checked_add(entry_size)
             .ok_or_else(|| AsterError::internal_error("archive extract size overflow"))?;
@@ -274,14 +269,6 @@ where
         total_uncompressed_bytes,
         entries: raw_entries,
     })
-}
-
-pub(crate) fn open_seven_zip_archive<R>(reader: R, limits: ZipScanLimits) -> Result<Archive<R>>
-where
-    R: Read + Seek,
-{
-    Archive::open_with_limits(reader, seven_zip_resource_limits(limits)?)
-        .map_err(map_seven_zip_open_error)
 }
 
 pub(crate) fn open_seven_zip_streaming_archive<R>(
@@ -428,3 +415,6 @@ fn format_system_time(value: SystemTime) -> String {
     let datetime: DateTime<Utc> = value.into();
     datetime.to_rfc3339()
 }
+
+#[cfg(test)]
+mod tests;

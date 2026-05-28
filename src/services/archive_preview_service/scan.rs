@@ -274,7 +274,12 @@ pub(super) fn build_manifest_from_raw(
 }
 
 fn map_seven_zip_preview_open_error(error: AsterError) -> AsterError {
-    if matches!(error, AsterError::ValidationError(_)) && error.message() == "invalid 7z archive" {
+    if matches!(error, AsterError::ValidationError(_))
+        && error
+            .message()
+            .to_ascii_lowercase()
+            .contains("invalid 7z archive")
+    {
         return archive_preview_validation_error(
             ApiSubcode::ArchivePreviewInvalidZip,
             "invalid 7z archive",

@@ -20,7 +20,7 @@
 	"settings_item_archive_extract_max_compression_ratio_label": "在线解压整体压缩比上限",
 	"settings_item_archive_extract_max_compression_ratio_desc": "单个压缩包整体“解压后字节数 / 压缩后字节数”的最大允许比例。",
 	"settings_item_archive_extract_max_entry_compression_ratio_label": "在线解压单文件压缩比上限",
-	"settings_item_archive_extract_max_entry_compression_ratio_desc": "ZIP 内单个文件条目“解压后字节数 / 压缩后字节数”的最大允许比例。",
+	"settings_item_archive_extract_max_entry_compression_ratio_desc": "压缩包内单个文件条目“解压后字节数 / 压缩后字节数”的最大允许比例。",
 	"settings_item_archive_extract_max_duration_secs_label": "在线解压耗时上限",
 	"settings_item_archive_extract_max_duration_secs_desc": "单个在线解压任务允许运行的最长秒数。超过后会停止任务，避免长时间占用后台归档 worker。",
 	"settings_item_archive_preview_enabled_label": "启用压缩包预览",

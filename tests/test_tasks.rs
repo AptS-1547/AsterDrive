@@ -2564,6 +2564,8 @@ async fn test_archive_extract_task_extracts_7z_archive() {
     let archive_bytes = create_7z_bytes(&[
         ("docs", None),
         ("docs/note.txt", Some("7z extract payload".as_bytes())),
+        ("docs/second.txt", Some("second 7z payload".as_bytes())),
+        ("root.txt", Some("root 7z payload".as_bytes())),
     ]);
     let req = test::TestRequest::put()
         .uri(&format!("/api/v1/files/{archive_file_id}/content"))
@@ -2630,8 +2632,24 @@ async fn test_archive_extract_task_extracts_7z_archive() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     let files = body["data"]["files"].as_array().unwrap();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0]["name"], "note.txt");
+    let mut file_names = files
+        .iter()
+        .map(|file| file["name"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    file_names.sort();
+    assert_eq!(file_names, vec!["note.txt", "second.txt"]);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{extracted_root_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let root_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(root_files.len(), 1);
+    assert_eq!(root_files[0]["name"], "root.txt");
 }
 
 #[actix_web::test]

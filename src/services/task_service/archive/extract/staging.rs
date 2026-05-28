@@ -1,10 +1,13 @@
 //! 归档解包任务子模块：`staging`。
 
-use std::io::{Cursor, Read};
+use std::io::{Read, Seek, Write};
 use std::path::Path;
 use std::time::Instant;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use zesven::format::parser::ArchiveHeader as SevenZipArchiveHeader;
+use zesven::format::streams::SubStreamsInfo as SevenZipSubStreamsInfo;
+use zesven::streaming::SolidBlockStreamReader;
 
 use crate::config::operations;
 use crate::db::repository::file_repo;
@@ -12,8 +15,8 @@ use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::archive_service::seven_zip_scan::{
-    map_seven_zip_entry_error, open_seven_zip_archive, open_seven_zip_streaming_archive,
-    scan_seven_zip_archive,
+    map_seven_zip_entry_error, open_seven_zip_streaming_archive, scan_seven_zip_archive,
+    seven_zip_streaming_config,
 };
 use crate::services::archive_service::zip_scan::{
     ZipScanEntry, ZipScanLimits, ZipScanNamePolicy, ensure_zip_scan_deadline, scan_zip_archive,
@@ -35,6 +38,18 @@ pub(super) struct StagedArchiveStats {
     pub(super) total_progress: i64,
     pub(super) file_count: i64,
     pub(super) directory_count: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SevenZipStreamPosition {
+    folder_index: usize,
+    stream_index: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SevenZipFileWork<'a> {
+    manifest_entry: &'a ZipScanEntry,
+    stream_position: Option<SevenZipStreamPosition>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -453,104 +468,44 @@ pub(super) fn stage_seven_zip_archive_for_extract(
     })?;
     drop(scan_archive);
 
-    let file = std::fs::File::open(archive_path)
-        .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
-    let mut archive = open_seven_zip_archive(file, scan_limits)?;
-
     let mut processed_bytes = 0_i64;
     let mut file_count = 0_i64;
 
-    let preflight_entry_count = preflight.entries.len();
-    if preflight_entry_count != archive.len() {
-        return Err(AsterError::internal_error(format!(
-            "archive preflight entry count {} differs from archive entry count {}",
-            preflight_entry_count,
-            archive.len()
-        )));
-    }
+    let scan_file = std::fs::File::open(archive_path)
+        .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
+    let archive = open_seven_zip_streaming_archive(scan_file, scan_limits)?;
+    ensure_seven_zip_entry_count_matches_preflight(
+        preflight.entries.len(),
+        archive.entries_list().len(),
+    )?;
+    let stream_header = seven_zip_block_stream_header(archive.header())?;
+    let stream_positions = seven_zip_entry_stream_positions(&stream_header)?;
+    let file_work = seven_zip_file_work(
+        &preflight.entries,
+        archive.entries_list(),
+        &stream_positions,
+    )?;
+    drop(archive);
 
-    for manifest_entry in &preflight.entries {
-        lease_guard.ensure_active()?;
-        ensure_zip_scan_deadline(deadline)?;
-        let entry = archive
-            .entries()
-            .get(manifest_entry.index)
-            .ok_or_else(|| AsterError::validation_error("invalid 7z archive entry"))?
-            .clone();
-        ensure_seven_zip_entry_matches_preflight(&entry, manifest_entry)?;
-        let relative_path = &manifest_entry.relative_path;
-        let target_path = Path::new(stage_root).join(relative_path);
-        if manifest_entry.kind.is_dir() {
-            std::fs::create_dir_all(&target_path).map_aster_err_ctx(
-                "create extracted directory",
-                AsterError::storage_driver_error,
-            )?;
-            continue;
-        }
-
-        if let Some(parent) = target_path.parent() {
-            std::fs::create_dir_all(parent).map_aster_err_ctx(
-                "create extracted parent directory",
-                AsterError::storage_driver_error,
-            )?;
-        }
-
-        let data = archive
-            .extract_entry_to_vec_by_index(manifest_entry.index)
-            .map_err(map_seven_zip_entry_error)?;
-        let mut reader = Cursor::new(data);
-        let mut output = std::fs::File::create(&target_path)
-            .map_aster_err_ctx("create extracted file", AsterError::storage_driver_error)?;
-        let entry_context = format!("archive entry '{}'", relative_path.display());
-        let copied = copy_reader_to_writer_with_lease_and_expected_size(
-            Some(lease_guard),
-            &mut reader,
-            &mut output,
-            crate::utils::numbers::i64_to_u64(manifest_entry.size, "archive entry size")?,
-            &entry_context,
-            deadline,
-        )?;
-        processed_bytes = processed_bytes
-            .checked_add(crate::utils::numbers::u64_to_i64(
-                copied,
-                "extracted bytes",
-            )?)
-            .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
-        if processed_bytes > total_bytes {
-            return Err(AsterError::validation_error(format!(
-                "archive extracted {} bytes, exceeds preflight total {}",
-                processed_bytes, total_bytes
-            )));
-        }
-        file_count += 1;
-        if file_count
-            > crate::utils::numbers::u64_to_i64(options.limits.max_files, "archive max file count")?
-        {
-            return Err(AsterError::validation_error(format!(
-                "archive extracted {} files, exceeds preflight limit {}",
-                file_count, options.limits.max_files
-            )));
-        }
-
-        let status_text = format!("Extracting {}", relative_path.to_string_lossy());
-        set_task_step_active(
-            steps,
-            TASK_STEP_EXTRACT_ARCHIVE,
-            Some(&status_text),
-            Some((processed_bytes, total_bytes)),
-        )?;
-        handle.block_on(async {
-            super::super::super::update_task_progress_db(
-                db,
-                lease_guard,
-                processed_bytes,
-                total_progress,
-                Some(&status_text),
-                steps,
-            )
-            .await
-        })?;
-    }
+    let mut source_file = std::fs::File::open(archive_path)
+        .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
+    extract_seven_zip_file_work(
+        &stream_header,
+        &mut source_file,
+        file_work,
+        stage_root,
+        handle,
+        db,
+        lease_guard,
+        steps,
+        &mut processed_bytes,
+        &mut file_count,
+        total_bytes,
+        total_progress,
+        options.limits.max_files,
+        deadline,
+        scan_limits,
+    )?;
 
     set_task_step_succeeded(
         steps,
@@ -568,6 +523,459 @@ pub(super) fn stage_seven_zip_archive_for_extract(
             "archive directory count",
         )?,
     })
+}
+
+fn seven_zip_block_stream_header(header: &SevenZipArchiveHeader) -> Result<SevenZipArchiveHeader> {
+    let mut header = header.clone();
+    if header.substreams_info.is_some() {
+        return Ok(header);
+    }
+
+    let Some(unpack_info) = header.unpack_info.as_ref() else {
+        return Ok(header);
+    };
+    header.substreams_info = Some(SevenZipSubStreamsInfo {
+        num_unpack_streams_in_folders: vec![1; unpack_info.folders.len()],
+        unpack_sizes: unpack_info
+            .folders
+            .iter()
+            .map(|folder| folder.final_unpack_size().unwrap_or(0))
+            .collect(),
+        digests: unpack_info
+            .folders
+            .iter()
+            .map(|folder| folder.unpack_crc)
+            .collect(),
+    });
+    Ok(header)
+}
+
+fn seven_zip_entry_stream_positions(
+    header: &SevenZipArchiveHeader,
+) -> Result<Vec<Option<SevenZipStreamPosition>>> {
+    let Some(files_info) = header.files_info.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let substreams = header
+        .substreams_info
+        .as_ref()
+        .ok_or_else(|| AsterError::validation_error("invalid 7z archive stream layout"))?;
+    let mut positions = Vec::with_capacity(files_info.entries.len());
+    let mut folder_index = 0_usize;
+    let mut stream_index = 0_usize;
+
+    for entry in &files_info.entries {
+        if !entry.has_stream {
+            positions.push(None);
+            continue;
+        }
+        let streams_in_folder = substreams
+            .num_unpack_streams_in_folders
+            .get(folder_index)
+            .copied()
+            .ok_or_else(|| AsterError::validation_error("invalid 7z archive stream layout"))?;
+        if streams_in_folder == 0 {
+            return Err(AsterError::validation_error(
+                "invalid 7z archive stream layout",
+            ));
+        }
+        positions.push(Some(SevenZipStreamPosition {
+            folder_index,
+            stream_index,
+        }));
+
+        stream_index = stream_index
+            .checked_add(1)
+            .ok_or_else(|| AsterError::internal_error("7z stream index overflow"))?;
+        if stream_index
+            >= crate::utils::numbers::u64_to_usize(streams_in_folder, "7z folder stream count")?
+        {
+            stream_index = 0;
+            folder_index = folder_index
+                .checked_add(1)
+                .ok_or_else(|| AsterError::internal_error("7z folder index overflow"))?;
+        }
+    }
+
+    Ok(positions)
+}
+
+fn seven_zip_file_work<'a>(
+    preflight_entries: &'a [ZipScanEntry],
+    archive_entries: &[zesven::Entry],
+    stream_positions: &[Option<SevenZipStreamPosition>],
+) -> Result<Vec<SevenZipFileWork<'a>>> {
+    let mut work = Vec::with_capacity(preflight_entries.len());
+    for manifest_entry in preflight_entries {
+        let entry = archive_entries
+            .get(manifest_entry.index)
+            .ok_or_else(|| AsterError::validation_error("invalid 7z archive entry"))?;
+        ensure_seven_zip_entry_matches_preflight(entry, manifest_entry)?;
+        let stream_position = stream_positions
+            .get(manifest_entry.index)
+            .copied()
+            .ok_or_else(|| AsterError::validation_error("invalid 7z archive entry"))?;
+        if !manifest_entry.kind.is_dir() && stream_position.is_none() && manifest_entry.size != 0 {
+            return Err(AsterError::validation_error(
+                "invalid 7z archive entry stream",
+            ));
+        }
+        work.push(SevenZipFileWork {
+            manifest_entry,
+            stream_position,
+        });
+    }
+    Ok(work)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn extract_seven_zip_file_work<R>(
+    stream_header: &SevenZipArchiveHeader,
+    source_file: &mut R,
+    file_work: Vec<SevenZipFileWork<'_>>,
+    stage_root: &Path,
+    handle: &tokio::runtime::Handle,
+    db: &sea_orm::DatabaseConnection,
+    lease_guard: &TaskLeaseGuard,
+    steps: &mut [TaskStepInfo],
+    processed_bytes: &mut i64,
+    file_count: &mut i64,
+    total_bytes: i64,
+    total_progress: i64,
+    max_files: u64,
+    deadline: Option<Instant>,
+    scan_limits: ZipScanLimits,
+) -> Result<()>
+where
+    R: Read + Seek + Send,
+{
+    let mut work_index = 0_usize;
+    while work_index < file_work.len() {
+        lease_guard.ensure_active()?;
+        ensure_zip_scan_deadline(deadline)?;
+        let work = file_work[work_index];
+
+        if work.manifest_entry.kind.is_dir() {
+            create_seven_zip_stage_output(stage_root, work.manifest_entry)?;
+            work_index += 1;
+            continue;
+        }
+
+        let Some(stream_position) = work.stream_position else {
+            let copied = create_empty_seven_zip_stage_file(stage_root, work.manifest_entry)?;
+            record_seven_zip_file_progress(
+                handle,
+                db,
+                lease_guard,
+                steps,
+                &work.manifest_entry.relative_path,
+                copied,
+                processed_bytes,
+                file_count,
+                total_bytes,
+                total_progress,
+                max_files,
+            )?;
+            work_index += 1;
+            continue;
+        };
+
+        let mut block_reader = SolidBlockStreamReader::new(
+            stream_header,
+            source_file,
+            stream_position.folder_index,
+            seven_zip_stream_reader_config(scan_limits)?,
+        )
+        .map_err(map_seven_zip_entry_error)?;
+
+        while work_index < file_work.len() {
+            lease_guard.ensure_active()?;
+            ensure_zip_scan_deadline(deadline)?;
+            let work = file_work[work_index];
+            if work.manifest_entry.kind.is_dir() {
+                create_seven_zip_stage_output(stage_root, work.manifest_entry)?;
+                work_index += 1;
+                continue;
+            }
+            let Some(position) = work.stream_position else {
+                let copied = create_empty_seven_zip_stage_file(stage_root, work.manifest_entry)?;
+                record_seven_zip_file_progress(
+                    handle,
+                    db,
+                    lease_guard,
+                    steps,
+                    &work.manifest_entry.relative_path,
+                    copied,
+                    processed_bytes,
+                    file_count,
+                    total_bytes,
+                    total_progress,
+                    max_files,
+                )?;
+                work_index += 1;
+                continue;
+            };
+            if position.folder_index != stream_position.folder_index {
+                break;
+            }
+            extract_seven_zip_block_stream_entry(
+                &mut block_reader,
+                position,
+                work.manifest_entry,
+                stage_root,
+                handle,
+                db,
+                lease_guard,
+                steps,
+                processed_bytes,
+                file_count,
+                total_bytes,
+                total_progress,
+                max_files,
+                deadline,
+            )?;
+            work_index += 1;
+        }
+    }
+
+    Ok(())
+}
+
+fn seven_zip_stream_reader_config(limits: ZipScanLimits) -> Result<zesven::StreamingConfig> {
+    seven_zip_streaming_config(limits)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn extract_seven_zip_block_stream_entry<R>(
+    block_reader: &mut SolidBlockStreamReader<'_, R>,
+    stream_position: SevenZipStreamPosition,
+    manifest_entry: &ZipScanEntry,
+    stage_root: &Path,
+    handle: &tokio::runtime::Handle,
+    db: &sea_orm::DatabaseConnection,
+    lease_guard: &TaskLeaseGuard,
+    steps: &mut [TaskStepInfo],
+    processed_bytes: &mut i64,
+    file_count: &mut i64,
+    total_bytes: i64,
+    total_progress: i64,
+    max_files: u64,
+    deadline: Option<Instant>,
+) -> Result<()>
+where
+    R: Read + Seek + Send,
+{
+    while block_reader.current_index() < stream_position.stream_index {
+        block_reader
+            .next_entry()
+            .ok_or_else(|| AsterError::validation_error("invalid 7z archive stream"))?
+            .map_err(map_seven_zip_entry_error)?;
+        block_reader
+            .skip_current_entry()
+            .map_err(map_seven_zip_entry_error)?;
+    }
+
+    let (stream_index, declared_size) = block_reader
+        .next_entry()
+        .ok_or_else(|| AsterError::validation_error("invalid 7z archive stream"))?
+        .map_err(map_seven_zip_entry_error)?;
+    if stream_index != stream_position.stream_index {
+        return Err(AsterError::validation_error(
+            "invalid 7z archive stream order",
+        ));
+    }
+    let expected_size =
+        crate::utils::numbers::i64_to_u64(manifest_entry.size, "archive entry size")?;
+    if declared_size != expected_size {
+        return Err(AsterError::validation_error(format!(
+            "archive entry '{}' declared size changed after preflight",
+            manifest_entry.relative_path.display()
+        )));
+    }
+
+    let Some(mut output) = create_seven_zip_stage_output(stage_root, manifest_entry)? else {
+        return Err(AsterError::validation_error("invalid 7z archive entry"));
+    };
+    let entry_context = format!("archive entry '{}'", manifest_entry.relative_path.display());
+    let copied = extract_current_seven_zip_block_entry_to_writer(
+        block_reader,
+        &mut output,
+        lease_guard,
+        expected_size,
+        &entry_context,
+        deadline,
+    )?;
+    block_reader
+        .finish_entry()
+        .map_err(map_seven_zip_entry_error)?;
+    record_seven_zip_file_progress(
+        handle,
+        db,
+        lease_guard,
+        steps,
+        &manifest_entry.relative_path,
+        copied,
+        processed_bytes,
+        file_count,
+        total_bytes,
+        total_progress,
+        max_files,
+    )
+}
+
+fn extract_current_seven_zip_block_entry_to_writer<R, W>(
+    block_reader: &mut SolidBlockStreamReader<'_, R>,
+    writer: &mut W,
+    lease_guard: &TaskLeaseGuard,
+    expected_bytes: u64,
+    context: &str,
+    deadline: Option<Instant>,
+) -> Result<u64>
+where
+    R: Read + Seek + Send,
+    W: Write,
+{
+    let mut copied = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        lease_guard.ensure_active()?;
+        ensure_zip_scan_deadline(deadline)?;
+        let read = block_reader
+            .read_entry_data(&mut buffer)
+            .map_aster_err_ctx(
+                "read 7z archive stream chunk",
+                AsterError::storage_driver_error,
+            )?;
+        if read == 0 {
+            break;
+        }
+        let read_u64 = crate::utils::numbers::usize_to_u64(read, "archive stream chunk size")?;
+        let next_copied = copied
+            .checked_add(read_u64)
+            .ok_or_else(|| AsterError::internal_error("archive stream byte counter overflow"))?;
+        if next_copied > expected_bytes {
+            return Err(AsterError::validation_error(format!(
+                "{context} expands beyond declared size: declared {expected_bytes} bytes"
+            )));
+        }
+        writer.write_all(&buffer[..read]).map_aster_err_ctx(
+            "write 7z archive stream chunk",
+            AsterError::storage_driver_error,
+        )?;
+        copied = next_copied;
+    }
+
+    if copied != expected_bytes {
+        return Err(AsterError::validation_error(format!(
+            "{context} size mismatch: declared {expected_bytes} bytes, extracted {copied} bytes"
+        )));
+    }
+
+    Ok(copied)
+}
+
+fn create_empty_seven_zip_stage_file(
+    stage_root: &Path,
+    manifest_entry: &ZipScanEntry,
+) -> Result<u64> {
+    if manifest_entry.size != 0 {
+        return Err(AsterError::validation_error("invalid 7z archive entry"));
+    }
+    create_seven_zip_stage_output(stage_root, manifest_entry)?;
+    Ok(0)
+}
+
+fn create_seven_zip_stage_output(
+    stage_root: &Path,
+    manifest_entry: &ZipScanEntry,
+) -> Result<Option<std::fs::File>> {
+    let target_path = Path::new(stage_root).join(&manifest_entry.relative_path);
+    if manifest_entry.kind.is_dir() {
+        std::fs::create_dir_all(&target_path).map_aster_err_ctx(
+            "create extracted directory",
+            AsterError::storage_driver_error,
+        )?;
+        return Ok(None);
+    }
+
+    if let Some(parent) = target_path.parent() {
+        std::fs::create_dir_all(parent).map_aster_err_ctx(
+            "create extracted parent directory",
+            AsterError::storage_driver_error,
+        )?;
+    }
+
+    std::fs::File::create(&target_path)
+        .map(Some)
+        .map_aster_err_ctx("create extracted file", AsterError::storage_driver_error)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_seven_zip_file_progress(
+    handle: &tokio::runtime::Handle,
+    db: &sea_orm::DatabaseConnection,
+    lease_guard: &TaskLeaseGuard,
+    steps: &mut [TaskStepInfo],
+    relative_path: &Path,
+    copied: u64,
+    processed_bytes: &mut i64,
+    file_count: &mut i64,
+    total_bytes: i64,
+    total_progress: i64,
+    max_files: u64,
+) -> Result<()> {
+    *processed_bytes = processed_bytes
+        .checked_add(crate::utils::numbers::u64_to_i64(
+            copied,
+            "extracted bytes",
+        )?)
+        .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
+    if *processed_bytes > total_bytes {
+        return Err(AsterError::validation_error(format!(
+            "archive extracted {} bytes, exceeds preflight total {}",
+            *processed_bytes, total_bytes
+        )));
+    }
+    *file_count += 1;
+    if *file_count > crate::utils::numbers::u64_to_i64(max_files, "archive max file count")? {
+        return Err(AsterError::validation_error(format!(
+            "archive extracted {} files, exceeds preflight limit {}",
+            *file_count, max_files
+        )));
+    }
+
+    let status_text = format!("Extracting {}", relative_path.to_string_lossy());
+    set_task_step_active(
+        steps,
+        TASK_STEP_EXTRACT_ARCHIVE,
+        Some(&status_text),
+        Some((*processed_bytes, total_bytes)),
+    )?;
+    handle.block_on(async {
+        super::super::super::update_task_progress_db(
+            db,
+            lease_guard,
+            *processed_bytes,
+            total_progress,
+            Some(&status_text),
+            steps,
+        )
+        .await
+    })
+}
+
+fn ensure_seven_zip_entry_count_matches_preflight(
+    preflight_entry_count: usize,
+    archive_entry_count: usize,
+) -> Result<()> {
+    if preflight_entry_count != archive_entry_count {
+        return Err(AsterError::internal_error(format!(
+            "archive preflight entry count {} differs from archive entry count {}",
+            preflight_entry_count, archive_entry_count
+        )));
+    }
+    Ok(())
 }
 
 fn ensure_archive_entry_matches_preflight<R: Read>(

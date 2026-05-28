@@ -37,8 +37,6 @@ const CACHE_NAMESPACE: &str = "system.archive_preview";
 #[cfg(test)]
 const FORMAT_ZIP: &str = ArchiveFormat::Zip.as_str();
 #[cfg(test)]
-const FORMAT_SEVEN_ZIP: &str = ArchiveFormat::SevenZip.as_str();
-#[cfg(test)]
 const ZIP_RAW_MANIFEST_CACHE_NAME: &str = ArchiveFormat::Zip.raw_manifest_cache_name();
 #[cfg(test)]
 const SEVEN_ZIP_RAW_MANIFEST_CACHE_NAME: &str = ArchiveFormat::SevenZip.raw_manifest_cache_name();
