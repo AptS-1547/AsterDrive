@@ -22,6 +22,7 @@ use aster_drive::services::{
     managed_ingress_profile_service, master_binding_service, policy_service, upload_service,
 };
 use aster_drive::storage::remote_protocol::{
+    INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL, INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL,
     RemoteCreateIngressProfileRequest, RemoteCreateLocalIngressProfileRequest,
     RemoteStorageCapabilities, RemoteStorageClient, RemoteStorageComposeRequest,
     sign_internal_request, sign_presigned_request,
@@ -1306,7 +1307,10 @@ async fn test_remote_node_probe_rejects_incompatible_protocol_version() {
         Some(aster_drive::storage::StorageErrorKind::Misconfigured)
     );
     assert!(error.message().contains("protocol incompatible"));
-    assert!(error.message().contains("local supports v2-v2"));
+    let expected_protocol_range = format!(
+        "local supports {INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL}-{INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL}"
+    );
+    assert!(error.message().contains(&expected_protocol_range));
 
     let stored = managed_follower_repo::find_by_id(state.writer_db(), node.id)
         .await
@@ -1381,11 +1385,9 @@ async fn test_remote_node_probe_rejects_presigned_download_when_range_cors_missi
             .last_error
             .contains("browser CORS contract is incomplete")
     );
-    assert!(
-        stored
-            .last_capabilities
-            .contains("\"protocol_version\":\"v2\"")
-    );
+    let expected_protocol_marker =
+        format!("\"protocol_version\":\"{INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL}\"");
+    assert!(stored.last_capabilities.contains(&expected_protocol_marker));
 
     capabilities_server.stop().await;
 }
@@ -1480,8 +1482,14 @@ async fn test_internal_storage_capabilities_probe_does_not_require_ingress_profi
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     let body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
-    assert_eq!(body["data"]["protocol_version"], "v2");
-    assert_eq!(body["data"]["min_supported_protocol_version"], "v2");
+    assert_eq!(
+        body["data"]["protocol_version"],
+        INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL
+    );
+    assert_eq!(
+        body["data"]["min_supported_protocol_version"],
+        INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL
+    );
     assert_eq!(body["data"]["features"]["object_get"], true);
     assert_eq!(body["data"]["features"]["object_head"], true);
     assert_eq!(body["data"]["features"]["browser_presigned_cors"], true);
@@ -1727,8 +1735,14 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
     .await;
 
     let probed = wait_for_remote_probe(&consumer_state, consumer_node.id).await;
-    assert_eq!(probed.capabilities.protocol_version, "v2");
-    assert_eq!(probed.capabilities.min_supported_protocol_version, "v2");
+    assert_eq!(
+        probed.capabilities.protocol_version,
+        INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL
+    );
+    assert_eq!(
+        probed.capabilities.min_supported_protocol_version,
+        INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL
+    );
     assert!(probed.capabilities.features.object_get);
     assert!(probed.capabilities.features.object_head);
     assert!(probed.capabilities.features.range_get);
