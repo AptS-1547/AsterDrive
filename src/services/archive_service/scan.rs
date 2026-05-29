@@ -80,6 +80,7 @@ pub(crate) struct ArchiveRawScanResult {
     pub(crate) file_count: u64,
     pub(crate) directory_count: u64,
     pub(crate) total_uncompressed_bytes: i64,
+    pub(crate) total_compressed_base: u64,
     pub(crate) entries: Vec<ArchiveRawScanEntry>,
 }
 

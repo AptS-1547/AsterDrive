@@ -204,6 +204,7 @@ fn preview_test_raw_manifest() -> ArchiveRawManifest {
         file_count: 1,
         directory_count: 0,
         total_uncompressed_size: 5,
+        total_compressed_base: 5,
         entries: vec![ArchiveRawEntry {
             index: 0,
             raw_name: base64::engine::general_purpose::STANDARD.encode(b"readme.txt"),
@@ -401,6 +402,7 @@ fn seven_zip_raw_manifest_ignores_zip_filename_encoding_on_replay() {
         file_count: 1,
         directory_count: 1,
         total_uncompressed_size: 5,
+        total_compressed_base: 64,
         entries: vec![ArchiveRawEntry {
             index: 0,
             raw_name: base64::engine::general_purpose::STANDARD.encode(entry_name.as_bytes()),
@@ -422,6 +424,49 @@ fn seven_zip_raw_manifest_ignores_zip_filename_encoding_on_replay() {
     assert_eq!(manifest.format, "7z");
     assert_eq!(manifest.entries[0].path, entry_name);
     assert_eq!(manifest.entries[0].name, "测试.txt");
+}
+
+#[test]
+fn seven_zip_raw_manifest_falls_back_to_legacy_compressed_base() {
+    let raw_manifest = ArchiveRawManifest {
+        format: ArchiveFormat::SevenZip.as_str().to_string(),
+        entry_count: 2,
+        file_count: 2,
+        directory_count: 0,
+        total_uncompressed_size: 10,
+        total_compressed_base: 0,
+        entries: vec![
+            ArchiveRawEntry {
+                index: 0,
+                raw_name: base64::engine::general_purpose::STANDARD.encode(b"first.txt"),
+                display_name: "first.txt".to_string(),
+                raw_name_utf8: true,
+                kind: ArchivePreviewEntryKind::File,
+                size: 5,
+                compressed_size: 64,
+                modified_at: None,
+            },
+            ArchiveRawEntry {
+                index: 1,
+                raw_name: base64::engine::general_purpose::STANDARD.encode(b"second.txt"),
+                display_name: "second.txt".to_string(),
+                raw_name_utf8: true,
+                kind: ArchivePreviewEntryKind::File,
+                size: 5,
+                compressed_size: 64,
+                modified_at: None,
+            },
+        ],
+        ..preview_test_raw_manifest()
+    };
+    let mut limits = preview_test_limits();
+    limits.archive_format = ArchiveFormat::SevenZip;
+
+    let manifest = build_manifest_from_raw(7, &raw_manifest, &limits)
+        .expect("legacy 7z raw cache should infer the source compressed base");
+
+    assert_eq!(manifest.format, "7z");
+    assert_eq!(manifest.entries.len(), 2);
 }
 
 #[test]

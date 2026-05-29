@@ -268,12 +268,14 @@ where
         file_count,
         directory_count,
         total_uncompressed_bytes,
+        total_compressed_base: source_archive_size,
         entries: raw_entries,
     })
 }
 
 pub(crate) fn build_seven_zip_scan_result_from_raw_entries<F>(
     raw_entries: &[ArchiveRawScanEntry],
+    total_compressed_base: u64,
     limits: ArchiveScanLimits,
     deadline: Option<Instant>,
     name_policy: ArchiveScanNamePolicy,
@@ -292,7 +294,6 @@ where
     }
 
     let mut total_uncompressed_bytes = 0_i64;
-    let mut total_compressed_bytes = 0_u64;
     let mut file_count = 0_u64;
     let mut extract_compatible = true;
     let mut seen_paths = HashSet::new();
@@ -368,10 +369,6 @@ where
                 total_uncompressed_bytes, limits.max_uncompressed_bytes
             )));
         }
-        total_compressed_bytes = total_compressed_bytes
-            .checked_add(compressed_size)
-            .ok_or_else(|| AsterError::internal_error("archive compressed size overflow"))?;
-
         file_paths.insert(relative_path.clone());
         entries.push(build_scan_entry_from_parts(
             raw_entry.index,
@@ -385,7 +382,7 @@ where
 
     validate_total_archive_compression_ratio(
         total_uncompressed_bytes,
-        total_compressed_bytes,
+        total_compressed_base,
         limits.max_compression_ratio,
     )?;
 

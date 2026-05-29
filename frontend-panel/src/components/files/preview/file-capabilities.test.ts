@@ -537,6 +537,20 @@ describe("file preview capabilities", () => {
 		);
 	});
 
+	it("does not expose archive preview for unsupported archive MIME types", () => {
+		const rar = {
+			name: "bundle.rar",
+			mime_type: "application/x-rar",
+		};
+
+		expect(getFileTypeInfo(rar)).toMatchObject({ category: "archive" });
+		expect(detectFilePreviewProfile(rar)).toMatchObject({
+			category: "archive",
+			defaultMode: null,
+			options: [],
+		});
+	});
+
 	it("uses configured builtins as defaults when their built-in bindings match", () => {
 		const json = { name: "data.json", mime_type: "application/json" };
 		const previewApps = {

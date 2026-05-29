@@ -633,8 +633,11 @@ async fn test_archive_preview_returns_7z_manifest_and_caches_it() {
         "7z archive preview manifest should be cached"
     );
 
+    let tasks_before_replay = archive_preview_tasks(&state).await.len();
     let resp =
         request_personal_archive_preview_with_encoding(&app, &token, file_id, Some("cp437")).await;
+    let tasks_after_replay = archive_preview_tasks(&state).await.len();
+    assert_eq!(tasks_after_replay, tasks_before_replay);
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = test::read_body_json(resp).await;
     let encoded_data = &body["data"];

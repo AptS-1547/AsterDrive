@@ -145,6 +145,7 @@ where
                 "archive preview directory count",
             )?,
             total_uncompressed_size: scanned.total_uncompressed_bytes,
+            total_compressed_base: scanned.total_compressed_base,
             entries,
         })
     })
@@ -202,6 +203,8 @@ pub(super) fn build_manifest_from_raw(
     raw_manifest: &ArchiveRawManifest,
     limits: &ArchivePreviewLimits,
 ) -> Result<ArchivePreviewManifest> {
+    debug_assert_eq!(raw_manifest.format, limits.archive_format.as_str());
+
     let raw_entries = raw_manifest
         .entries
         .iter()
@@ -219,6 +222,7 @@ pub(super) fn build_manifest_from_raw(
         ),
         ArchiveFormat::SevenZip => build_seven_zip_scan_result_from_raw_entries(
             &raw_entries,
+            seven_zip_total_compressed_base(raw_manifest, &raw_entries)?,
             scan_limits,
             None,
             ArchiveScanNamePolicy::PreviewDisplayName,
@@ -284,6 +288,26 @@ pub(super) fn build_manifest_from_raw(
     };
 
     fit_manifest_to_limit(source_file_id, manifest, limits.max_manifest_bytes)
+}
+
+fn seven_zip_total_compressed_base(
+    raw_manifest: &ArchiveRawManifest,
+    raw_entries: &[ArchiveRawScanEntry],
+) -> Result<u64> {
+    if raw_manifest.total_compressed_base > 0 {
+        return Ok(raw_manifest.total_compressed_base);
+    }
+
+    raw_entries.iter().try_fold(0_u64, |base, entry| {
+        if entry.kind.is_dir() {
+            return Ok(base);
+        }
+        let compressed_size = crate::utils::numbers::i64_to_u64(
+            entry.compressed_size,
+            "archive entry compressed size",
+        )?;
+        Ok(base.max(compressed_size))
+    })
 }
 
 fn map_seven_zip_preview_open_error(error: AsterError) -> AsterError {

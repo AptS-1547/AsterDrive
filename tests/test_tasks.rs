@@ -3030,6 +3030,16 @@ async fn test_archive_extract_task_extracts_7z_archive() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     let files = body["data"]["files"].as_array().unwrap();
+    let note_file_id = files
+        .iter()
+        .find(|file| file["name"] == "note.txt")
+        .and_then(|file| file["id"].as_i64())
+        .expect("docs/note.txt should exist");
+    let second_file_id = files
+        .iter()
+        .find(|file| file["name"] == "second.txt")
+        .and_then(|file| file["id"].as_i64())
+        .expect("docs/second.txt should exist");
     let mut file_names = files
         .iter()
         .map(|file| file["name"].as_str().unwrap().to_string())
@@ -3048,6 +3058,26 @@ async fn test_archive_extract_task_extracts_7z_archive() {
     let root_files = body["data"]["files"].as_array().unwrap();
     assert_eq!(root_files.len(), 1);
     assert_eq!(root_files[0]["name"], "root.txt");
+    let root_file_id = root_files[0]["id"].as_i64().unwrap();
+
+    for (file_id, expected) in [
+        (note_file_id, b"7z extract payload".as_slice()),
+        (second_file_id, b"second 7z payload".as_slice()),
+        (root_file_id, b"root 7z payload".as_slice()),
+    ] {
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/files/{file_id}/download"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .to_request();
+        let resp = assert_response_status(
+            test::call_service(&app, req).await,
+            actix_web::http::StatusCode::OK,
+        )
+        .await;
+        let bytes = test::read_body(resp).await;
+        assert_eq!(bytes.as_ref(), expected);
+    }
 }
 
 #[actix_web::test]

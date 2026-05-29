@@ -348,6 +348,47 @@ fn scan_seven_zip_rejects_entry_compression_ratio_against_source_size() {
 }
 
 #[test]
+fn build_seven_zip_scan_result_uses_single_source_size_for_total_ratio() {
+    let mut limits = scan_limits();
+    limits.max_entry_compression_ratio = u64::MAX;
+    limits.max_compression_ratio = 1;
+    let raw_entries = vec![
+        ArchiveRawScanEntry {
+            index: 0,
+            raw_name: b"first.txt".to_vec(),
+            display_name: "first.txt".to_string(),
+            raw_name_utf8: true,
+            kind: ArchiveScanEntryKind::File,
+            size: 60,
+            compressed_size: 100,
+            modified_at: None,
+        },
+        ArchiveRawScanEntry {
+            index: 1,
+            raw_name: b"second.txt".to_vec(),
+            display_name: "second.txt".to_string(),
+            raw_name_utf8: true,
+            kind: ArchiveScanEntryKind::File,
+            size: 60,
+            compressed_size: 100,
+            modified_at: None,
+        },
+    ];
+
+    let error = build_seven_zip_scan_result_from_raw_entries(
+        &raw_entries,
+        100,
+        limits,
+        None,
+        ArchiveScanNamePolicy::StrictAsterName,
+        |_| Ok(()),
+    )
+    .expect_err("7z raw replay should reject against the source archive size once");
+
+    assert!(error.message().contains("total compression ratio"));
+}
+
+#[test]
 fn scan_seven_zip_accepts_solid_archive() {
     let bytes = create_7z_bytes(
         &[

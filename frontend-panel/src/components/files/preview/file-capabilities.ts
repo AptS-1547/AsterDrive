@@ -297,7 +297,7 @@ function detectBuiltinFilePreviewProfile(
 			options: BUILTIN_PREVIEW_OPTIONS.xml,
 		};
 	}
-	if (isSupportedArchivePreviewFile(file) || typeInfo.category === "archive") {
+	if (isSupportedArchivePreviewFile(file)) {
 		return {
 			category: "archive",
 			isBlobPreview: false,

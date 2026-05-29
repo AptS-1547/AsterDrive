@@ -123,7 +123,7 @@
 - `GET /files/{id}/image-preview`：为图片预览返回 WebP 原始响应，不走统一 JSON 包装；成功响应带 `ETag`，支持 `If-None-Match` 命中返回 `304`
 - `GET /files/{id}/media-metadata`：读取按 blob 缓存的媒体元数据；缓存未生成时返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
-- `POST /files/{id}/extract`：把 ZIP 文件解包成后台任务，结果会出现在 `/tasks`
+- `POST /files/{id}/extract`：把 .zip 和 .7z 文件解包成后台任务，结果会出现在 `/tasks`
 - `PATCH /files/{id}`：改名或移动
 - `DELETE /files/{id}`：软删除到回收站
 

@@ -264,6 +264,7 @@ where
         file_count,
         directory_count,
         total_uncompressed_bytes,
+        total_compressed_base: total_compressed_bytes,
         entries,
     })
 }
