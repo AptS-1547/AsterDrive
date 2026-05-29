@@ -115,8 +115,24 @@ vi.mock("@/components/ui/dropdown-menu", () => {
 	};
 
 	return {
-		DropdownMenu: ({ children }: { children: React.ReactNode }) => (
-			<div>{children}</div>
+		DropdownMenu: ({
+			children,
+			onOpenChange,
+			open,
+		}: {
+			children: React.ReactNode;
+			onOpenChange?: (open: boolean) => void;
+			open?: boolean;
+		}) => (
+			<div data-open={String(open ?? false)} data-testid="workspace-menu-root">
+				<button type="button" onClick={() => onOpenChange?.(!(open ?? false))}>
+					toggle-workspace-menu
+				</button>
+				<button type="button" onClick={() => onOpenChange?.(false)}>
+					close-workspace-menu
+				</button>
+				{children}
+			</div>
 		),
 		DropdownMenuTrigger: ({
 			render,
@@ -261,6 +277,44 @@ describe("WorkspaceSwitcher", () => {
 		fireEvent.click(screen.getByRole("button", { name: /^Design/ }));
 
 		expect(mockState.navigate).toHaveBeenCalledWith("/teams/9");
+	});
+
+	it("restores the open menu after personal and team route branches remount", () => {
+		mockState.teams = [{ id: 9, name: "Design" }];
+		const { unmount } = render(<WorkspaceSwitcher variant="sidebar" />);
+
+		expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
+			"data-open",
+			"false",
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "toggle-workspace-menu" }),
+		);
+		expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
+			"data-open",
+			"true",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /^Design/ }));
+		expect(mockState.navigate).toHaveBeenCalledWith("/teams/9");
+
+		unmount();
+		mockState.workspace = { kind: "team", teamId: 9 };
+		render(<WorkspaceSwitcher variant="sidebar" />);
+
+		expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
+			"data-open",
+			"true",
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "close-workspace-menu" }),
+		);
+		expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
+			"data-open",
+			"false",
+		);
 	});
 
 	it("searches team options with the backend after debounce", async () => {
