@@ -60,7 +60,7 @@ describe("admin remote nodes shared helpers", () => {
 		fireEvent.click(screen.getByRole("button", { name: "test_connection" }));
 
 		await waitFor(() => {
-			expect(screen.getByTestId("WifiHigh")).toBeInTheDocument();
+			expect(screen.getByTestId("WifiX")).toBeInTheDocument();
 		});
 
 		fireEvent.click(screen.getByRole("button", { name: "test_connection" }));

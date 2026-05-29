@@ -121,10 +121,16 @@ vi.mock("@/components/ui/label", () => ({
 	Label: ({
 		children,
 		htmlFor,
+		...props
 	}: {
 		children: React.ReactNode;
 		htmlFor?: string;
-	}) => <label htmlFor={htmlFor}>{children}</label>,
+		[key: string]: unknown;
+	}) => (
+		<label htmlFor={htmlFor} {...props}>
+			{children}
+		</label>
+	),
 }));
 
 vi.mock("@/components/ui/switch", () => ({
@@ -263,6 +269,14 @@ describe("RemoteNodeDialog", () => {
 	it("shows the reverse tunnel test badge and explicit auto semantics in create mode", () => {
 		render(<RemoteNodeDialog {...baseProps} createStep={1} mode="create" />);
 
+		expect(
+			screen.getByRole("radiogroup", {
+				name: "remote_node_transport_mode",
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("radio", { name: /remote_node_transport_direct/ }),
+		).toBeChecked();
 		expect(
 			screen.getByText("remote_node_transport_test_badge"),
 		).toBeInTheDocument();

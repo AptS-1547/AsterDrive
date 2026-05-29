@@ -194,8 +194,11 @@ export function RemoteNodeCreateWizard({
 											/>
 											<div className="space-y-4">
 												<div className="space-y-3">
-													<Label>{t("remote_node_transport_mode")}</Label>
+													<Label id="remote-node-create-transport-mode-label">
+														{t("remote_node_transport_mode")}
+													</Label>
 													<TransportModeSelector
+														ariaLabelledBy="remote-node-create-transport-mode-label"
 														options={transportOptions}
 														value={form.transport_mode}
 														onChange={(value) =>

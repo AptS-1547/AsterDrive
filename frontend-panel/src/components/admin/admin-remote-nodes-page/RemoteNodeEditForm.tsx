@@ -92,8 +92,11 @@ export function RemoteNodeEditForm({
 							</p>
 						</div>
 						<div className="space-y-3 md:col-span-2">
-							<Label>{t("remote_node_transport_mode")}</Label>
+							<Label id="remote-node-edit-transport-mode-label">
+								{t("remote_node_transport_mode")}
+							</Label>
 							<TransportModeSelector
+								ariaLabelledBy="remote-node-edit-transport-mode-label"
 								options={transportOptions}
 								value={form.transport_mode}
 								onChange={(value) => onFieldChange("transport_mode", value)}

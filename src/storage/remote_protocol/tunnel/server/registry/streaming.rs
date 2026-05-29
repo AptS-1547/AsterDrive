@@ -368,7 +368,6 @@ impl RemoteTunnelRegistry {
                 let status = frame.status.ok_or_else(|| {
                     AsterError::validation_error("stream response_start missing status")
                 })?;
-                let registry = pending._lane_lease.registry.clone();
                 let lane_request_tx = pending._lane_lease.lane.request_tx.clone();
                 let start = PendingStreamStart {
                     status: StatusCode::from_u16(status).map_err(|error| {
@@ -388,7 +387,6 @@ impl RemoteTunnelRegistry {
                 };
                 if sender.send(Ok(start)).is_err() {
                     spawn_stream_abort_to_follower(
-                        registry,
                         lane_request_tx,
                         request_id,
                         "reverse tunnel local response reader closed before start",
@@ -401,7 +399,6 @@ impl RemoteTunnelRegistry {
             }
             RemoteTunnelStreamFrameKind::ResponseBody => {
                 let body_tx = pending.body_tx.clone();
-                let registry = pending._lane_lease.registry.clone();
                 let lane_request_tx = pending._lane_lease.lane.request_tx.clone();
                 drop(pending);
                 if body_tx
@@ -410,7 +407,6 @@ impl RemoteTunnelRegistry {
                     .is_err()
                 {
                     spawn_stream_abort_to_follower(
-                        registry,
                         lane_request_tx,
                         request_id,
                         "reverse tunnel local response reader closed",
@@ -424,12 +420,10 @@ impl RemoteTunnelRegistry {
             RemoteTunnelStreamFrameKind::ResponseEnd => {
                 let body_tx = pending.body_tx.clone();
                 pending.response_complete.store(true, Ordering::Release);
-                let registry = pending._lane_lease.registry.clone();
                 let lane_request_tx = pending._lane_lease.lane.request_tx.clone();
                 drop(pending);
                 if body_tx.send(PendingStreamBodyFrame::End).await.is_err() {
                     spawn_stream_abort_to_follower(
-                        registry,
                         lane_request_tx,
                         request_id,
                         "reverse tunnel local response reader closed",
@@ -505,12 +499,13 @@ impl RemoteTunnelRegistry {
 }
 
 fn spawn_stream_abort_to_follower(
-    registry: Arc<RemoteTunnelRegistry>,
     request_tx: mpsc::Sender<RemoteTunnelStreamFrame>,
     request_id: String,
     message: &'static str,
 ) {
     tokio::spawn(async move {
+        // stream_pending removal is single-owner: startup failures remove before
+        // response creation, and PinnedAsyncRead::drop owns response-reader cleanup.
         if let Err(error) = request_tx
             .send(RemoteTunnelStreamFrame::error(
                 request_id.clone(),
@@ -523,7 +518,6 @@ fn spawn_stream_abort_to_follower(
                 "failed to notify reverse tunnel follower about aborted stream: {error}"
             );
         }
-        registry.stream_pending.remove(&request_id);
     });
 }
 

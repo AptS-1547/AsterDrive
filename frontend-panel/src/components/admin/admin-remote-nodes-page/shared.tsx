@@ -39,6 +39,8 @@ export function TestConnectionButton({
 				<Icon name="Spinner" className="mr-1 size-4 animate-spin" />
 			) : result === true ? (
 				<Icon name="Check" className="mr-1 size-4 text-green-600" />
+			) : result === false ? (
+				<Icon name="WifiX" className="mr-1 size-4 text-destructive" />
 			) : (
 				<Icon name="WifiHigh" className="mr-1 size-4" />
 			)}
