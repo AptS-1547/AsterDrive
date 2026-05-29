@@ -101,10 +101,6 @@ impl StorageDriver for PreviewMemoryRangeDriver {
     }
 }
 
-fn failed_task_subcode(message: &str) -> Option<ApiSubcode> {
-    map_failed_task_error(Some(message)).api_error_subcode()
-}
-
 fn preview_test_limits() -> ArchivePreviewLimits {
     let raw_signature = "raw-test".to_string();
     ArchivePreviewLimits {
@@ -212,7 +208,7 @@ fn preview_test_raw_manifest() -> ArchiveRawManifest {
             index: 0,
             raw_name: base64::engine::general_purpose::STANDARD.encode(b"readme.txt"),
             display_name: "readme.txt".to_string(),
-            zip_utf8: false,
+            raw_name_utf8: false,
             kind: ArchivePreviewEntryKind::File,
             size: 5,
             compressed_size: 5,
@@ -224,7 +220,7 @@ fn preview_test_raw_manifest() -> ArchiveRawManifest {
 #[test]
 fn map_failed_task_error_reads_persisted_subcode_without_text_matching() {
     let stored = crate::errors::encode_api_error_subcode_message(
-        ApiSubcode::ArchivePreviewInvalidZip,
+        ApiSubcode::ArchivePreviewInvalidArchive,
         "worker changed this wording".to_string(),
     );
 
@@ -232,7 +228,7 @@ fn map_failed_task_error_reads_persisted_subcode_without_text_matching() {
 
     assert_eq!(
         error.api_error_subcode(),
-        Some(ApiSubcode::ArchivePreviewInvalidZip)
+        Some(ApiSubcode::ArchivePreviewInvalidArchive)
     );
     assert_eq!(error.message(), "invalid archive");
 }
@@ -245,17 +241,19 @@ fn serialized_cache_uses_current_raw_schema_and_signature() {
     let value: serde_json::Value =
         serde_json::from_str(&serialized).expect("cache should parse as JSON");
 
-    assert_eq!(RAW_CACHE_SCHEMA_VERSION, 1);
-    assert_eq!(ZIP_RAW_MANIFEST_CACHE_NAME, "zip_raw_manifest.v1");
-    assert_eq!(SEVEN_ZIP_RAW_MANIFEST_CACHE_NAME, "7z_raw_manifest.v1");
-    assert_eq!(value["schema_version"], 1);
+    assert_eq!(RAW_CACHE_SCHEMA_VERSION, 2);
+    assert_eq!(ZIP_RAW_MANIFEST_CACHE_NAME, "zip_raw_manifest.v2");
+    assert_eq!(SEVEN_ZIP_RAW_MANIFEST_CACHE_NAME, "7z_raw_manifest.v2");
+    assert_eq!(value["schema_version"], 2);
     assert_eq!(value["limit_signature"], "raw-limits");
     assert!(value.get("filename_encoding").is_none());
-    assert_eq!(value["manifest"]["schema_version"], 1);
+    assert_eq!(value["manifest"]["schema_version"], 2);
     assert_eq!(
         value["manifest"]["entries"][0]["raw_name"],
         "cmVhZG1lLnR4dA=="
     );
+    assert_eq!(value["manifest"]["entries"][0]["raw_name_utf8"], false);
+    assert!(value["manifest"]["entries"][0].get("zip_utf8").is_none());
 }
 
 #[test]
@@ -407,7 +405,7 @@ fn seven_zip_raw_manifest_ignores_zip_filename_encoding_on_replay() {
             index: 0,
             raw_name: base64::engine::general_purpose::STANDARD.encode(entry_name.as_bytes()),
             display_name: entry_name.to_string(),
-            zip_utf8: true,
+            raw_name_utf8: true,
             kind: ArchivePreviewEntryKind::File,
             size: 5,
             compressed_size: 64,
@@ -433,7 +431,7 @@ fn raw_manifest_preserves_utf8_flag_validation_on_redecode() {
             index: 0,
             raw_name: base64::engine::general_purpose::STANDARD.encode(b"\x82ber.txt"),
             display_name: "�ber.txt".to_string(),
-            zip_utf8: true,
+            raw_name_utf8: true,
             kind: ArchivePreviewEntryKind::File,
             size: 5,
             compressed_size: 5,
@@ -461,7 +459,7 @@ fn raw_manifest_cache_can_be_redecoded_after_count_limits_are_lowered() {
         index: 1,
         raw_name: base64::engine::general_purpose::STANDARD.encode(b"second.txt"),
         display_name: "second.txt".to_string(),
-        zip_utf8: false,
+        raw_name_utf8: false,
         kind: ArchivePreviewEntryKind::File,
         size: 5,
         compressed_size: 5,
@@ -494,7 +492,7 @@ fn raw_manifest_cache_trims_entries_to_property_limit() {
                 "x".repeat(512)
             )),
             display_name: format!("very-long-cache-entry-{index:04}.txt"),
-            zip_utf8: false,
+            raw_name_utf8: false,
             kind: ArchivePreviewEntryKind::File,
             size: 1,
             compressed_size: 1,
@@ -534,38 +532,6 @@ fn manifest_from_truncated_raw_cache_keeps_totals_and_marks_truncated() {
 }
 
 #[test]
-fn map_failed_task_error_preserves_archive_preview_subcodes() {
-    assert_eq!(
-        failed_task_subcode("archive preview currently supports .zip files only"),
-        Some(ApiSubcode::ArchivePreviewUnsupportedType)
-    );
-    assert_eq!(
-        failed_task_subcode("source archive size 135064658 exceeds archive preview limit 67108864"),
-        Some(ApiSubcode::ArchivePreviewSourceTooLarge)
-    );
-    assert_eq!(
-        failed_task_subcode("invalid zip archive"),
-        Some(ApiSubcode::ArchivePreviewInvalidZip)
-    );
-    assert_eq!(
-        failed_task_subcode("invalid 7z archive"),
-        Some(ApiSubcode::ArchivePreviewInvalidZip)
-    );
-    assert_eq!(
-        failed_task_subcode("archive preview manifest for file #1 exceeds server limit 64 bytes"),
-        Some(ApiSubcode::ArchivePreviewManifestTooLarge)
-    );
-    assert_eq!(
-        failed_task_subcode("source archive size mismatch: declared 3 bytes, downloaded 2 bytes"),
-        Some(ApiSubcode::ArchivePreviewSourceSizeMismatch)
-    );
-    assert_eq!(
-        failed_task_subcode("archive contains 2 entries, exceeds server limit 1"),
-        Some(ApiSubcode::ArchivePreviewRejected)
-    );
-}
-
-#[test]
 fn map_failed_task_error_falls_back_to_unavailable_when_unknown() {
     let error = map_failed_task_error(Some("worker disappeared"));
 
@@ -592,6 +558,9 @@ async fn bounded_copy_accepts_exact_size_and_preserves_bytes() {
         &mut output,
         3,
         "source archive",
+        |message| {
+            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+        },
     )
     .await
     .expect("exact-size stream should copy");
@@ -610,6 +579,9 @@ async fn bounded_copy_rejects_short_and_long_streams() {
         &mut short_output,
         1,
         "source archive",
+        |message| {
+            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+        },
     )
     .await
     .expect_err("short stream should fail");
@@ -632,6 +604,9 @@ async fn bounded_copy_rejects_short_and_long_streams() {
         &mut long_output,
         3,
         "source archive",
+        |message| {
+            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+        },
     )
     .await
     .expect_err("long stream should fail");

@@ -4,7 +4,7 @@ use std::io::{Read, Seek, Write};
 use std::path::Path;
 use std::time::Instant;
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use zesven::format::parser::ArchiveHeader as SevenZipArchiveHeader;
 use zesven::format::streams::SubStreamsInfo as SevenZipSubStreamsInfo;
 use zesven::streaming::SolidBlockStreamReader;
@@ -14,6 +14,7 @@ use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
+use crate::services::archive_service::io::copy_async_reader_to_writer_with_expected_size;
 use crate::services::archive_service::scan::{
     ArchiveScanEntry, ArchiveScanLimits, ArchiveScanNamePolicy, ensure_archive_scan_deadline,
 };
@@ -41,6 +42,75 @@ pub(super) struct StagedArchiveStats {
     pub(super) directory_count: i64,
 }
 
+#[derive(Debug)]
+struct ArchiveStagingProgress {
+    total_bytes: i64,
+    total_progress: i64,
+    processed_bytes: i64,
+    file_count: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ArchiveStagingRuntime<'a> {
+    handle: &'a tokio::runtime::Handle,
+    db: &'a sea_orm::DatabaseConnection,
+    lease_guard: &'a TaskLeaseGuard,
+}
+
+struct ArchiveStagingProgressSink<'a, 'b> {
+    runtime: ArchiveStagingRuntime<'a>,
+    steps: &'b mut [TaskStepInfo],
+    progress: &'b mut ArchiveStagingProgress,
+    max_files: u64,
+}
+
+impl ArchiveStagingProgressSink<'_, '_> {
+    fn record_file(&mut self, relative_path: &Path, copied: u64) -> Result<()> {
+        self.progress.processed_bytes = self
+            .progress
+            .processed_bytes
+            .checked_add(crate::utils::numbers::u64_to_i64(
+                copied,
+                "extracted bytes",
+            )?)
+            .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
+        if self.progress.processed_bytes > self.progress.total_bytes {
+            return Err(AsterError::validation_error(format!(
+                "archive extracted {} bytes, exceeds preflight total {}",
+                self.progress.processed_bytes, self.progress.total_bytes
+            )));
+        }
+        self.progress.file_count += 1;
+        if self.progress.file_count
+            > crate::utils::numbers::u64_to_i64(self.max_files, "archive max file count")?
+        {
+            return Err(AsterError::validation_error(format!(
+                "archive extracted {} files, exceeds preflight limit {}",
+                self.progress.file_count, self.max_files
+            )));
+        }
+
+        let status_text = format!("Extracting {}", relative_path.to_string_lossy());
+        set_task_step_active(
+            self.steps,
+            TASK_STEP_EXTRACT_ARCHIVE,
+            Some(&status_text),
+            Some((self.progress.processed_bytes, self.progress.total_bytes)),
+        )?;
+        self.runtime.handle.block_on(async {
+            super::super::super::update_task_progress_db(
+                self.runtime.db,
+                self.runtime.lease_guard,
+                self.progress.processed_bytes,
+                self.progress.total_progress,
+                Some(&status_text),
+                self.steps,
+            )
+            .await
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct SevenZipStreamPosition {
     folder_index: usize,
@@ -51,6 +121,15 @@ struct SevenZipStreamPosition {
 struct SevenZipFileWork<'a> {
     manifest_entry: &'a ArchiveScanEntry,
     stream_position: Option<SevenZipStreamPosition>,
+}
+
+struct SevenZipExtractionContext<'a, 'b> {
+    stream_header: &'a SevenZipArchiveHeader,
+    file_work: Vec<SevenZipFileWork<'a>>,
+    stage_root: &'a Path,
+    deadline: Option<Instant>,
+    scan_limits: ArchiveScanLimits,
+    progress_sink: ArchiveStagingProgressSink<'a, 'b>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -176,6 +255,7 @@ pub(super) async fn download_file_to_temp(
         &mut output,
         crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
         "source archive",
+        AsterError::validation_error,
     )
     .await?;
     output.flush().await.map_aster_err_ctx(
@@ -203,23 +283,7 @@ pub(super) fn stage_zip_archive_for_extract(
     let mut archive = zip::ZipArchive::new(file)
         .map_aster_err_with(|| AsterError::validation_error("invalid zip archive"))?;
     let deadline = options.limits.deadline();
-    set_task_step_active(
-        steps,
-        TASK_STEP_EXTRACT_ARCHIVE,
-        Some("Reading archive"),
-        None,
-    )?;
-    handle.block_on(async {
-        super::super::super::update_task_progress_db(
-            db,
-            lease_guard,
-            0,
-            0,
-            Some("Reading archive"),
-            steps,
-        )
-        .await
-    })?;
+    set_archive_staging_reading_step(handle, db, lease_guard, steps, None, 0)?;
     let preflight = scan_zip_archive(
         &mut archive,
         options.limits.scan_limits(),
@@ -232,48 +296,14 @@ pub(super) fn stage_zip_archive_for_extract(
                 .ensure_entry_size_allowed(policy_snapshot, entry_size)
         },
     )?;
-    let total_bytes = preflight.total_uncompressed_bytes;
-    let total_staging_bytes = options
-        .source_archive_size
-        .checked_add(total_bytes)
-        .ok_or_else(|| AsterError::internal_error("archive extract staging size overflow"))?;
-    if total_staging_bytes > options.max_staging_bytes {
-        return Err(AsterError::validation_error(format!(
-            "archive extract staging requires {} bytes (source {} + extracted {}), exceeds server limit {}",
-            total_staging_bytes,
-            options.source_archive_size,
-            total_bytes,
-            options.max_staging_bytes
-        )));
-    }
-    if total_bytes > 0 {
-        handle.block_on(async {
-            workspace_storage_service::check_quota(db, options.scope, total_bytes).await
-        })?;
-    }
-    let total_progress = total_bytes
-        .checked_mul(2)
-        .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
-    set_task_step_active(
+    let mut progress = prepare_archive_staging_after_preflight(
+        handle,
+        db,
+        lease_guard,
         steps,
-        TASK_STEP_EXTRACT_ARCHIVE,
-        Some("Reading archive"),
-        Some((0, total_bytes)),
+        options,
+        preflight.total_uncompressed_bytes,
     )?;
-    handle.block_on(async {
-        super::super::super::update_task_progress_db(
-            db,
-            lease_guard,
-            0,
-            total_progress,
-            Some("Reading archive"),
-            steps,
-        )
-        .await
-    })?;
-
-    let mut processed_bytes = 0_i64;
-    let mut file_count = 0_i64;
 
     let preflight_entry_count = preflight.entries.len();
     if preflight_entry_count != archive.len() {
@@ -284,94 +314,59 @@ pub(super) fn stage_zip_archive_for_extract(
         )));
     }
 
-    for manifest_entry in &preflight.entries {
-        lease_guard.ensure_active()?;
-        ensure_archive_scan_deadline(deadline)?;
-        let mut entry = archive
-            .by_index(manifest_entry.index)
-            .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
-        ensure_archive_entry_matches_preflight(&entry, manifest_entry)?;
-        let relative_path = &manifest_entry.relative_path;
-        let target_path = Path::new(stage_root).join(relative_path);
-        if manifest_entry.kind.is_dir() {
-            std::fs::create_dir_all(&target_path).map_aster_err_ctx(
-                "create extracted directory",
-                AsterError::storage_driver_error,
-            )?;
-            continue;
-        }
-
-        if let Some(parent) = target_path.parent() {
-            std::fs::create_dir_all(parent).map_aster_err_ctx(
-                "create extracted parent directory",
-                AsterError::storage_driver_error,
-            )?;
-        }
-
-        let mut output = std::fs::File::create(&target_path)
-            .map_aster_err_ctx("create extracted file", AsterError::storage_driver_error)?;
-        let entry_context = format!("archive entry '{}'", relative_path.display());
-        let copied = copy_reader_to_writer_with_lease_and_expected_size(
-            Some(lease_guard),
-            &mut entry,
-            &mut output,
-            crate::utils::numbers::i64_to_u64(manifest_entry.size, "archive entry size")?,
-            &entry_context,
-            deadline,
-        )?;
-        processed_bytes = processed_bytes
-            .checked_add(crate::utils::numbers::u64_to_i64(
-                copied,
-                "extracted bytes",
-            )?)
-            .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
-        if processed_bytes > total_bytes {
-            return Err(AsterError::validation_error(format!(
-                "archive extracted {} bytes, exceeds preflight total {}",
-                processed_bytes, total_bytes
-            )));
-        }
-        file_count += 1;
-        if file_count
-            > crate::utils::numbers::u64_to_i64(options.limits.max_files, "archive max file count")?
-        {
-            return Err(AsterError::validation_error(format!(
-                "archive extracted {} files, exceeds preflight limit {}",
-                file_count, options.limits.max_files
-            )));
-        }
-
-        let status_text = format!("Extracting {}", relative_path.to_string_lossy());
-        set_task_step_active(
+    {
+        let runtime = ArchiveStagingRuntime {
+            handle,
+            db,
+            lease_guard,
+        };
+        let mut progress_sink = ArchiveStagingProgressSink {
+            runtime,
             steps,
-            TASK_STEP_EXTRACT_ARCHIVE,
-            Some(&status_text),
-            Some((processed_bytes, total_bytes)),
-        )?;
-        handle.block_on(async {
-            super::super::super::update_task_progress_db(
-                db,
-                lease_guard,
-                processed_bytes,
-                total_progress,
-                Some(&status_text),
-                steps,
-            )
-            .await
-        })?;
+            progress: &mut progress,
+            max_files: options.limits.max_files,
+        };
+
+        for manifest_entry in &preflight.entries {
+            lease_guard.ensure_active()?;
+            ensure_archive_scan_deadline(deadline)?;
+            let mut entry = archive
+                .by_index(manifest_entry.index)
+                .map_aster_err_with(|| AsterError::validation_error("invalid zip archive entry"))?;
+            ensure_archive_entry_matches_preflight(&entry, manifest_entry)?;
+            let relative_path = &manifest_entry.relative_path;
+            if manifest_entry.kind.is_dir() {
+                create_archive_stage_output(stage_root, manifest_entry)?;
+                continue;
+            }
+
+            let Some(mut output) = create_archive_stage_output(stage_root, manifest_entry)? else {
+                return Err(AsterError::validation_error("invalid zip archive entry"));
+            };
+            let entry_context = format!("archive entry '{}'", relative_path.display());
+            let copied = copy_reader_to_writer_with_lease_and_expected_size(
+                Some(lease_guard),
+                &mut entry,
+                &mut output,
+                crate::utils::numbers::i64_to_u64(manifest_entry.size, "archive entry size")?,
+                &entry_context,
+                deadline,
+            )?;
+            progress_sink.record_file(relative_path, copied)?;
+        }
     }
 
     set_task_step_succeeded(
         steps,
         TASK_STEP_EXTRACT_ARCHIVE,
         Some("Archive extracted to staging"),
-        Some((total_bytes, total_bytes)),
+        Some((progress.total_bytes, progress.total_bytes)),
     )?;
 
     Ok(StagedArchiveStats {
-        total_bytes,
-        total_progress,
-        file_count,
+        total_bytes: progress.total_bytes,
+        total_progress: progress.total_progress,
+        file_count: progress.file_count,
         directory_count: crate::utils::numbers::u64_to_i64(
             preflight.directory_count,
             "archive directory count",
@@ -399,23 +394,7 @@ pub(super) fn stage_seven_zip_archive_for_extract(
     let source_archive_size =
         crate::utils::numbers::i64_to_u64(options.source_archive_size, "source archive size")?;
     let deadline = options.limits.deadline();
-    set_task_step_active(
-        steps,
-        TASK_STEP_EXTRACT_ARCHIVE,
-        Some("Reading archive"),
-        None,
-    )?;
-    handle.block_on(async {
-        super::super::super::update_task_progress_db(
-            db,
-            lease_guard,
-            0,
-            0,
-            Some("Reading archive"),
-            steps,
-        )
-        .await
-    })?;
+    set_archive_staging_reading_step(handle, db, lease_guard, steps, None, 0)?;
     let preflight = scan_seven_zip_archive(
         &scan_archive,
         scan_limits,
@@ -428,7 +407,110 @@ pub(super) fn stage_seven_zip_archive_for_extract(
                 .ensure_entry_size_allowed(policy_snapshot, entry_size)
         },
     )?;
-    let total_bytes = preflight.total_uncompressed_bytes;
+    let mut progress = prepare_archive_staging_after_preflight(
+        handle,
+        db,
+        lease_guard,
+        steps,
+        options,
+        preflight.total_uncompressed_bytes,
+    )?;
+    drop(scan_archive);
+
+    let scan_file = std::fs::File::open(archive_path)
+        .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
+    let archive = open_seven_zip_streaming_archive(scan_file, scan_limits)?;
+    ensure_seven_zip_entry_count_matches_preflight(
+        preflight.entries.len(),
+        archive.entries_list().len(),
+    )?;
+    let stream_header = seven_zip_block_stream_header(archive.header())?;
+    let stream_positions = seven_zip_entry_stream_positions(&stream_header)?;
+    let file_work = seven_zip_file_work(
+        &preflight.entries,
+        archive.entries_list(),
+        &stream_positions,
+    )?;
+    drop(archive);
+
+    let mut source_file = std::fs::File::open(archive_path)
+        .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
+    {
+        let runtime = ArchiveStagingRuntime {
+            handle,
+            db,
+            lease_guard,
+        };
+        let progress_sink = ArchiveStagingProgressSink {
+            runtime,
+            steps,
+            progress: &mut progress,
+            max_files: options.limits.max_files,
+        };
+        let mut context = SevenZipExtractionContext {
+            stream_header: &stream_header,
+            file_work,
+            stage_root,
+            deadline,
+            scan_limits,
+            progress_sink,
+        };
+        extract_seven_zip_file_work(&mut source_file, &mut context)?;
+    }
+
+    set_task_step_succeeded(
+        steps,
+        TASK_STEP_EXTRACT_ARCHIVE,
+        Some("Archive extracted to staging"),
+        Some((progress.total_bytes, progress.total_bytes)),
+    )?;
+
+    Ok(StagedArchiveStats {
+        total_bytes: progress.total_bytes,
+        total_progress: progress.total_progress,
+        file_count: progress.file_count,
+        directory_count: crate::utils::numbers::u64_to_i64(
+            preflight.directory_count,
+            "archive directory count",
+        )?,
+    })
+}
+
+fn set_archive_staging_reading_step(
+    handle: &tokio::runtime::Handle,
+    db: &sea_orm::DatabaseConnection,
+    lease_guard: &TaskLeaseGuard,
+    steps: &mut [TaskStepInfo],
+    step_progress: Option<(i64, i64)>,
+    total_progress: i64,
+) -> Result<()> {
+    set_task_step_active(
+        steps,
+        TASK_STEP_EXTRACT_ARCHIVE,
+        Some("Reading archive"),
+        step_progress,
+    )?;
+    handle.block_on(async {
+        super::super::super::update_task_progress_db(
+            db,
+            lease_guard,
+            0,
+            total_progress,
+            Some("Reading archive"),
+            steps,
+        )
+        .await
+    })
+}
+
+fn prepare_archive_staging_after_preflight(
+    handle: &tokio::runtime::Handle,
+    db: &sea_orm::DatabaseConnection,
+    lease_guard: &TaskLeaseGuard,
+    steps: &mut [TaskStepInfo],
+    options: ArchiveExtractStageOptions,
+    total_bytes: i64,
+) -> Result<ArchiveStagingProgress> {
     let total_staging_bytes = options
         .source_archive_size
         .checked_add(total_bytes)
@@ -450,79 +532,20 @@ pub(super) fn stage_seven_zip_archive_for_extract(
     let total_progress = total_bytes
         .checked_mul(2)
         .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
-    set_task_step_active(
-        steps,
-        TASK_STEP_EXTRACT_ARCHIVE,
-        Some("Reading archive"),
-        Some((0, total_bytes)),
-    )?;
-    handle.block_on(async {
-        super::super::super::update_task_progress_db(
-            db,
-            lease_guard,
-            0,
-            total_progress,
-            Some("Reading archive"),
-            steps,
-        )
-        .await
-    })?;
-    drop(scan_archive);
-
-    let mut processed_bytes = 0_i64;
-    let mut file_count = 0_i64;
-
-    let scan_file = std::fs::File::open(archive_path)
-        .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
-    let archive = open_seven_zip_streaming_archive(scan_file, scan_limits)?;
-    ensure_seven_zip_entry_count_matches_preflight(
-        preflight.entries.len(),
-        archive.entries_list().len(),
-    )?;
-    let stream_header = seven_zip_block_stream_header(archive.header())?;
-    let stream_positions = seven_zip_entry_stream_positions(&stream_header)?;
-    let file_work = seven_zip_file_work(
-        &preflight.entries,
-        archive.entries_list(),
-        &stream_positions,
-    )?;
-    drop(archive);
-
-    let mut source_file = std::fs::File::open(archive_path)
-        .map_aster_err_ctx("open source archive", AsterError::storage_driver_error)?;
-    extract_seven_zip_file_work(
-        &stream_header,
-        &mut source_file,
-        file_work,
-        stage_root,
+    set_archive_staging_reading_step(
         handle,
         db,
         lease_guard,
         steps,
-        &mut processed_bytes,
-        &mut file_count,
-        total_bytes,
+        Some((0, total_bytes)),
         total_progress,
-        options.limits.max_files,
-        deadline,
-        scan_limits,
     )?;
 
-    set_task_step_succeeded(
-        steps,
-        TASK_STEP_EXTRACT_ARCHIVE,
-        Some("Archive extracted to staging"),
-        Some((total_bytes, total_bytes)),
-    )?;
-
-    Ok(StagedArchiveStats {
+    Ok(ArchiveStagingProgress {
         total_bytes,
         total_progress,
-        file_count,
-        directory_count: crate::utils::numbers::u64_to_i64(
-            preflight.directory_count,
-            "archive directory count",
-        )?,
+        processed_bytes: 0,
+        file_count: 0,
     })
 }
 
@@ -629,90 +652,58 @@ fn seven_zip_file_work<'a>(
     Ok(work)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn extract_seven_zip_file_work<R>(
-    stream_header: &SevenZipArchiveHeader,
     source_file: &mut R,
-    file_work: Vec<SevenZipFileWork<'_>>,
-    stage_root: &Path,
-    handle: &tokio::runtime::Handle,
-    db: &sea_orm::DatabaseConnection,
-    lease_guard: &TaskLeaseGuard,
-    steps: &mut [TaskStepInfo],
-    processed_bytes: &mut i64,
-    file_count: &mut i64,
-    total_bytes: i64,
-    total_progress: i64,
-    max_files: u64,
-    deadline: Option<Instant>,
-    scan_limits: ArchiveScanLimits,
+    context: &mut SevenZipExtractionContext<'_, '_>,
 ) -> Result<()>
 where
     R: Read + Seek + Send,
 {
     let mut work_index = 0_usize;
-    while work_index < file_work.len() {
-        lease_guard.ensure_active()?;
-        ensure_archive_scan_deadline(deadline)?;
-        let work = file_work[work_index];
+    while work_index < context.file_work.len() {
+        context.progress_sink.runtime.lease_guard.ensure_active()?;
+        ensure_archive_scan_deadline(context.deadline)?;
+        let work = context.file_work[work_index];
 
         if work.manifest_entry.kind.is_dir() {
-            create_seven_zip_stage_output(stage_root, work.manifest_entry)?;
+            create_archive_stage_output(context.stage_root, work.manifest_entry)?;
             work_index += 1;
             continue;
         }
 
         let Some(stream_position) = work.stream_position else {
-            let copied = create_empty_seven_zip_stage_file(stage_root, work.manifest_entry)?;
-            record_seven_zip_file_progress(
-                handle,
-                db,
-                lease_guard,
-                steps,
-                &work.manifest_entry.relative_path,
-                copied,
-                processed_bytes,
-                file_count,
-                total_bytes,
-                total_progress,
-                max_files,
-            )?;
+            let copied =
+                create_empty_seven_zip_stage_file(context.stage_root, work.manifest_entry)?;
+            context
+                .progress_sink
+                .record_file(&work.manifest_entry.relative_path, copied)?;
             work_index += 1;
             continue;
         };
 
         let mut block_reader = SolidBlockStreamReader::new(
-            stream_header,
+            context.stream_header,
             source_file,
             stream_position.folder_index,
-            seven_zip_stream_reader_config(scan_limits)?,
+            seven_zip_stream_reader_config(context.scan_limits)?,
         )
         .map_err(map_seven_zip_entry_error)?;
 
-        while work_index < file_work.len() {
-            lease_guard.ensure_active()?;
-            ensure_archive_scan_deadline(deadline)?;
-            let work = file_work[work_index];
+        while work_index < context.file_work.len() {
+            context.progress_sink.runtime.lease_guard.ensure_active()?;
+            ensure_archive_scan_deadline(context.deadline)?;
+            let work = context.file_work[work_index];
             if work.manifest_entry.kind.is_dir() {
-                create_seven_zip_stage_output(stage_root, work.manifest_entry)?;
+                create_archive_stage_output(context.stage_root, work.manifest_entry)?;
                 work_index += 1;
                 continue;
             }
             let Some(position) = work.stream_position else {
-                let copied = create_empty_seven_zip_stage_file(stage_root, work.manifest_entry)?;
-                record_seven_zip_file_progress(
-                    handle,
-                    db,
-                    lease_guard,
-                    steps,
-                    &work.manifest_entry.relative_path,
-                    copied,
-                    processed_bytes,
-                    file_count,
-                    total_bytes,
-                    total_progress,
-                    max_files,
-                )?;
+                let copied =
+                    create_empty_seven_zip_stage_file(context.stage_root, work.manifest_entry)?;
+                context
+                    .progress_sink
+                    .record_file(&work.manifest_entry.relative_path, copied)?;
                 work_index += 1;
                 continue;
             };
@@ -723,17 +714,7 @@ where
                 &mut block_reader,
                 position,
                 work.manifest_entry,
-                stage_root,
-                handle,
-                db,
-                lease_guard,
-                steps,
-                processed_bytes,
-                file_count,
-                total_bytes,
-                total_progress,
-                max_files,
-                deadline,
+                context,
             )?;
             work_index += 1;
         }
@@ -746,22 +727,11 @@ fn seven_zip_stream_reader_config(limits: ArchiveScanLimits) -> Result<zesven::S
     seven_zip_streaming_config(limits)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn extract_seven_zip_block_stream_entry<R>(
     block_reader: &mut SolidBlockStreamReader<'_, R>,
     stream_position: SevenZipStreamPosition,
     manifest_entry: &ArchiveScanEntry,
-    stage_root: &Path,
-    handle: &tokio::runtime::Handle,
-    db: &sea_orm::DatabaseConnection,
-    lease_guard: &TaskLeaseGuard,
-    steps: &mut [TaskStepInfo],
-    processed_bytes: &mut i64,
-    file_count: &mut i64,
-    total_bytes: i64,
-    total_progress: i64,
-    max_files: u64,
-    deadline: Option<Instant>,
+    context: &mut SevenZipExtractionContext<'_, '_>,
 ) -> Result<()>
 where
     R: Read + Seek + Send,
@@ -794,34 +764,24 @@ where
         )));
     }
 
-    let Some(mut output) = create_seven_zip_stage_output(stage_root, manifest_entry)? else {
+    let Some(mut output) = create_archive_stage_output(context.stage_root, manifest_entry)? else {
         return Err(AsterError::validation_error("invalid 7z archive entry"));
     };
     let entry_context = format!("archive entry '{}'", manifest_entry.relative_path.display());
     let copied = extract_current_seven_zip_block_entry_to_writer(
         block_reader,
         &mut output,
-        lease_guard,
+        context.progress_sink.runtime.lease_guard,
         expected_size,
         &entry_context,
-        deadline,
+        context.deadline,
     )?;
     block_reader
         .finish_entry()
         .map_err(map_seven_zip_entry_error)?;
-    record_seven_zip_file_progress(
-        handle,
-        db,
-        lease_guard,
-        steps,
-        &manifest_entry.relative_path,
-        copied,
-        processed_bytes,
-        file_count,
-        total_bytes,
-        total_progress,
-        max_files,
-    )
+    context
+        .progress_sink
+        .record_file(&manifest_entry.relative_path, copied)
 }
 
 fn extract_current_seven_zip_block_entry_to_writer<R, W>(
@@ -894,11 +854,11 @@ fn create_empty_seven_zip_stage_file(
     if manifest_entry.size != 0 {
         return Err(AsterError::validation_error("invalid 7z archive entry"));
     }
-    create_seven_zip_stage_output(stage_root, manifest_entry)?;
+    create_archive_stage_output(stage_root, manifest_entry)?;
     Ok(0)
 }
 
-fn create_seven_zip_stage_output(
+fn create_archive_stage_output(
     stage_root: &Path,
     manifest_entry: &ArchiveScanEntry,
 ) -> Result<Option<std::fs::File>> {
@@ -921,60 +881,6 @@ fn create_seven_zip_stage_output(
     std::fs::File::create(&target_path)
         .map(Some)
         .map_aster_err_ctx("create extracted file", AsterError::storage_driver_error)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn record_seven_zip_file_progress(
-    handle: &tokio::runtime::Handle,
-    db: &sea_orm::DatabaseConnection,
-    lease_guard: &TaskLeaseGuard,
-    steps: &mut [TaskStepInfo],
-    relative_path: &Path,
-    copied: u64,
-    processed_bytes: &mut i64,
-    file_count: &mut i64,
-    total_bytes: i64,
-    total_progress: i64,
-    max_files: u64,
-) -> Result<()> {
-    *processed_bytes = processed_bytes
-        .checked_add(crate::utils::numbers::u64_to_i64(
-            copied,
-            "extracted bytes",
-        )?)
-        .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
-    if *processed_bytes > total_bytes {
-        return Err(AsterError::validation_error(format!(
-            "archive extracted {} bytes, exceeds preflight total {}",
-            *processed_bytes, total_bytes
-        )));
-    }
-    *file_count += 1;
-    if *file_count > crate::utils::numbers::u64_to_i64(max_files, "archive max file count")? {
-        return Err(AsterError::validation_error(format!(
-            "archive extracted {} files, exceeds preflight limit {}",
-            *file_count, max_files
-        )));
-    }
-
-    let status_text = format!("Extracting {}", relative_path.to_string_lossy());
-    set_task_step_active(
-        steps,
-        TASK_STEP_EXTRACT_ARCHIVE,
-        Some(&status_text),
-        Some((*processed_bytes, total_bytes)),
-    )?;
-    handle.block_on(async {
-        super::super::super::update_task_progress_db(
-            db,
-            lease_guard,
-            *processed_bytes,
-            total_progress,
-            Some(&status_text),
-            steps,
-        )
-        .await
-    })
 }
 
 fn ensure_seven_zip_entry_count_matches_preflight(
@@ -1034,52 +940,4 @@ fn ensure_seven_zip_entry_matches_preflight(
         }
     }
     Ok(())
-}
-
-async fn copy_async_reader_to_writer_with_expected_size<R, W>(
-    reader: &mut R,
-    writer: &mut W,
-    expected_bytes: u64,
-    context: &str,
-) -> Result<u64>
-where
-    R: AsyncRead + Unpin + ?Sized,
-    W: AsyncWrite + Unpin,
-{
-    let mut copied = 0_u64;
-    let mut buffer = [0_u8; 64 * 1024];
-
-    loop {
-        let read = reader.read(&mut buffer).await.map_aster_err_ctx(
-            "read bounded archive stream chunk",
-            AsterError::storage_driver_error,
-        )?;
-        if read == 0 {
-            break;
-        }
-
-        let read_u64 = crate::utils::numbers::usize_to_u64(read, "archive stream chunk size")?;
-        let next_copied = copied
-            .checked_add(read_u64)
-            .ok_or_else(|| AsterError::internal_error("archive stream byte counter overflow"))?;
-        if next_copied > expected_bytes {
-            return Err(AsterError::validation_error(format!(
-                "{context} expands beyond declared size: declared {expected_bytes} bytes"
-            )));
-        }
-
-        writer.write_all(&buffer[..read]).await.map_aster_err_ctx(
-            "write bounded archive stream chunk",
-            AsterError::storage_driver_error,
-        )?;
-        copied = next_copied;
-    }
-
-    if copied != expected_bytes {
-        return Err(AsterError::validation_error(format!(
-            "{context} size mismatch: declared {expected_bytes} bytes, downloaded {copied} bytes"
-        )));
-    }
-
-    Ok(copied)
 }

@@ -29,8 +29,8 @@ use super::model::{
 };
 use super::{
     ArchivePreviewLimits, CACHE_SCHEMA_VERSION, ENTITY_PROPERTY_VALUE_MAX_BYTES,
-    RAW_CACHE_SCHEMA_VERSION, archive_preview_validation_error, map_archive_open_error,
-    map_archive_preview_scan_error,
+    RAW_CACHE_SCHEMA_VERSION, archive_preview_validation_error, map_archive_preview_scan_error,
+    map_zip_preview_open_error,
 };
 
 pub(crate) async fn scan_manifest_from_temp(
@@ -108,7 +108,8 @@ where
         let reader = make_reader()?;
         let scanned = match archive_format {
             ArchiveFormat::Zip => {
-                let mut archive = zip::ZipArchive::new(reader).map_err(map_archive_open_error)?;
+                let mut archive =
+                    zip::ZipArchive::new(reader).map_err(map_zip_preview_open_error)?;
                 scan_zip_archive_raw(&mut archive, scan_limits, deadline)
                     .map_err(map_archive_preview_scan_error)?
             }
@@ -166,7 +167,7 @@ fn raw_entry_to_cache_entry(entry: ArchiveRawScanEntry) -> Result<ArchiveRawEntr
         index: entry.index,
         raw_name: base64::engine::general_purpose::STANDARD.encode(entry.raw_name),
         display_name: entry.display_name,
-        zip_utf8: entry.zip_utf8,
+        raw_name_utf8: entry.raw_name_utf8,
         kind: match entry.kind {
             ArchiveScanEntryKind::File => ArchivePreviewEntryKind::File,
             ArchiveScanEntryKind::Directory => ArchivePreviewEntryKind::Directory,
@@ -185,7 +186,7 @@ fn cache_entry_to_raw_scan_entry(entry: &ArchiveRawEntry) -> Result<ArchiveRawSc
         index: entry.index,
         raw_name,
         display_name: entry.display_name.clone(),
-        zip_utf8: entry.zip_utf8,
+        raw_name_utf8: entry.raw_name_utf8,
         kind: match entry.kind {
             ArchivePreviewEntryKind::File => ArchiveScanEntryKind::File,
             ArchivePreviewEntryKind::Directory => ArchiveScanEntryKind::Directory,
@@ -293,8 +294,8 @@ fn map_seven_zip_preview_open_error(error: AsterError) -> AsterError {
             .contains("invalid 7z archive")
     {
         return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewInvalidZip,
-            "invalid 7z archive",
+            ApiSubcode::ArchivePreviewInvalidArchive,
+            "invalid archive",
         );
     }
     map_archive_preview_scan_error(error)

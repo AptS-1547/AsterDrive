@@ -1,8 +1,8 @@
-//! ZIP 文件只读预览服务。
+//! 归档文件只读预览服务。
 
 use std::path::Path;
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 use crate::api::subcode::ApiSubcode;
 use crate::config::operations;
@@ -13,6 +13,7 @@ use crate::errors::{
 };
 use crate::runtime::PrimaryAppState;
 use crate::services::archive_service::format::{ArchiveFormat, detect_archive_preview_format};
+use crate::services::archive_service::io::copy_async_reader_to_writer_with_expected_size;
 use crate::services::archive_service::scan::ArchiveScanLimits;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::services::{share_service, task_service, workspace_storage_service};
@@ -32,7 +33,7 @@ use scan::build_manifest_from_raw;
 pub(crate) use scan::{scan_manifest_from_storage_range, scan_manifest_from_temp};
 
 const CACHE_SCHEMA_VERSION: u32 = 3;
-const RAW_CACHE_SCHEMA_VERSION: u32 = 1;
+const RAW_CACHE_SCHEMA_VERSION: u32 = 2;
 const CACHE_NAMESPACE: &str = "system.archive_preview";
 #[cfg(test)]
 const FORMAT_ZIP: &str = ArchiveFormat::Zip.as_str();
@@ -219,7 +220,7 @@ impl ArchivePreviewLimits {
             configured_max_manifest_bytes.min(ARCHIVE_PREVIEW_MAX_CACHEABLE_MANIFEST_BYTES);
         let max_source_bytes = operations::archive_preview_max_source_bytes(runtime_config);
         let raw_signature = format!(
-            "source={};uncompressed={};ratio={};entry_ratio={};raw-manifest-v1",
+            "source={};uncompressed={};ratio={};entry_ratio={};raw-manifest-v2",
             max_source_bytes,
             scan_limits.max_uncompressed_bytes,
             scan_limits.max_compression_ratio,
@@ -264,6 +265,9 @@ pub(crate) async fn download_blob_to_temp(
         &mut output,
         crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
         "source archive",
+        |message| {
+            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+        },
     )
     .await?;
     output.flush().await.map_aster_err_ctx(
@@ -310,9 +314,9 @@ pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
                 crate::errors::task_error_display_message(message).to_string(),
             );
         }
-        Some(ApiSubcode::ArchivePreviewInvalidZip) => {
+        Some(ApiSubcode::ArchivePreviewInvalidArchive) => {
             return archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewInvalidZip,
+                ApiSubcode::ArchivePreviewInvalidArchive,
                 "invalid archive",
             );
         }
@@ -337,51 +341,6 @@ pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
         _ => {}
     }
 
-    // Backward compatibility for tasks failed before subcodes were encoded in last_error.
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("archive preview currently supports")
-        || (lower.contains("supports .zip") && lower.contains("archive preview"))
-    {
-        return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewUnsupportedType,
-            "archive preview currently supports .zip and .7z files only",
-        );
-    }
-    if lower.contains("source archive size") && lower.contains("archive preview limit") {
-        return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewSourceTooLarge,
-            message.to_string(),
-        );
-    }
-    if lower.contains("invalid zip archive") || lower.contains("invalid 7z archive") {
-        return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewInvalidZip,
-            "invalid archive",
-        );
-    }
-    if lower.contains("manifest") && lower.contains("exceeds") {
-        return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewManifestTooLarge,
-            message.to_string(),
-        );
-    }
-    if lower.contains("size mismatch") || lower.contains("expands beyond declared size") {
-        return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewSourceSizeMismatch,
-            message.to_string(),
-        );
-    }
-    if lower.contains("archive contains")
-        || lower.contains("archive uncompressed size")
-        || lower.contains("compression ratio")
-        || lower.contains("unsafe path")
-    {
-        return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewRejected,
-            message.to_string(),
-        );
-    }
-
     AsterError::record_not_found("archive preview is unavailable for this file")
 }
 
@@ -395,7 +354,7 @@ fn map_archive_preview_scan_error(error: AsterError) -> AsterError {
     error
 }
 
-fn map_archive_open_error(error: zip::result::ZipError) -> AsterError {
+fn map_zip_preview_open_error(error: zip::result::ZipError) -> AsterError {
     if let zip::result::ZipError::Io(io_error) = error
         && let Some(source) = io_error
             .get_ref()
@@ -404,60 +363,7 @@ fn map_archive_open_error(error: zip::result::ZipError) -> AsterError {
         return source.clone();
     }
 
-    archive_preview_validation_error(ApiSubcode::ArchivePreviewInvalidZip, "invalid zip archive")
-}
-
-async fn copy_async_reader_to_writer_with_expected_size<R, W>(
-    reader: &mut R,
-    writer: &mut W,
-    expected_bytes: u64,
-    context: &str,
-) -> Result<u64>
-where
-    R: AsyncRead + Unpin + ?Sized,
-    W: AsyncWrite + Unpin,
-{
-    let mut copied = 0_u64;
-    let mut buffer = [0_u8; 64 * 1024];
-
-    loop {
-        let read = reader.read(&mut buffer).await.map_aster_err_ctx(
-            "read bounded archive preview stream chunk",
-            AsterError::storage_driver_error,
-        )?;
-        if read == 0 {
-            break;
-        }
-
-        let read_u64 =
-            crate::utils::numbers::usize_to_u64(read, "archive preview stream chunk size")?;
-        let next_copied = copied.checked_add(read_u64).ok_or_else(|| {
-            AsterError::internal_error("archive preview stream byte counter overflow")
-        })?;
-        if next_copied > expected_bytes {
-            return Err(archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewSourceSizeMismatch,
-                format!("{context} expands beyond declared size: declared {expected_bytes} bytes"),
-            ));
-        }
-
-        writer.write_all(&buffer[..read]).await.map_aster_err_ctx(
-            "write bounded archive preview stream chunk",
-            AsterError::storage_driver_error,
-        )?;
-        copied = next_copied;
-    }
-
-    if copied != expected_bytes {
-        return Err(archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewSourceSizeMismatch,
-            format!(
-                "{context} size mismatch: declared {expected_bytes} bytes, downloaded {copied} bytes"
-            ),
-        ));
-    }
-
-    Ok(copied)
+    archive_preview_validation_error(ApiSubcode::ArchivePreviewInvalidArchive, "invalid archive")
 }
 
 #[cfg(test)]

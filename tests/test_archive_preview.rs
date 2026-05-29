@@ -509,7 +509,7 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_raw_manifest.v1",
+        "zip_raw_manifest.v2",
     )
     .await
     .expect("cache lookup should succeed");
@@ -624,7 +624,7 @@ async fn test_archive_preview_returns_7z_manifest_and_caches_it() {
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "7z_raw_manifest.v1",
+        "7z_raw_manifest.v2",
     )
     .await
     .expect("cache lookup should succeed");
@@ -831,7 +831,7 @@ async fn test_archive_preview_limit_reduction_keeps_generated_cache() {
 }
 
 #[actix_web::test]
-async fn test_archive_preview_rejects_non_zip_and_source_limit() {
+async fn test_archive_preview_rejects_unsupported_type_and_source_limit() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
     aster_drive::services::config_service::set(&state, "archive_preview_max_source_bytes", "1", 1)
@@ -919,7 +919,7 @@ async fn test_archive_preview_rejects_7z_source_limit() {
 }
 
 #[actix_web::test]
-async fn test_archive_preview_reports_invalid_zip_with_subcode() {
+async fn test_archive_preview_reports_invalid_archive_with_subcode() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
     let app = create_test_app!(state.clone());
@@ -942,7 +942,7 @@ async fn test_archive_preview_reports_invalid_zip_with_subcode() {
     let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.invalid_zip");
+    assert_eq!(body["error"]["subcode"], "archive_preview.invalid_archive");
 }
 
 #[actix_web::test]
@@ -975,7 +975,7 @@ async fn test_archive_preview_failed_task_is_reused_as_friendly_error_without_re
     assert!(
         task.last_error
             .as_deref()
-            .is_some_and(|error| error.contains("invalid zip archive"))
+            .is_some_and(|error| error.contains("invalid archive"))
     );
     let steps: Value = serde_json::from_str(
         task.steps_json
@@ -996,7 +996,7 @@ async fn test_archive_preview_failed_task_is_reused_as_friendly_error_without_re
     let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.invalid_zip");
+    assert_eq!(body["error"]["subcode"], "archive_preview.invalid_archive");
     assert_eq!(
         archive_preview_tasks(&state).await.len(),
         1,
@@ -1127,7 +1127,7 @@ async fn test_archive_preview_caps_high_manifest_limit_to_cache_storage_limit() 
         EntityType::File,
         file_id,
         "system.archive_preview",
-        "zip_raw_manifest.v1",
+        "zip_raw_manifest.v2",
     )
     .await
     .expect("cache lookup should succeed")

@@ -67,7 +67,7 @@ pub(crate) struct ArchiveRawScanEntry {
     pub(crate) index: usize,
     pub(crate) raw_name: Vec<u8>,
     pub(crate) display_name: String,
-    pub(crate) zip_utf8: bool,
+    pub(crate) raw_name_utf8: bool,
     pub(crate) kind: ArchiveScanEntryKind,
     pub(crate) size: i64,
     pub(crate) compressed_size: i64,

@@ -16,8 +16,8 @@ impl ArchiveFormat {
 
     pub(crate) const fn raw_manifest_cache_name(self) -> &'static str {
         match self {
-            Self::Zip => "zip_raw_manifest.v1",
-            Self::SevenZip => "7z_raw_manifest.v1",
+            Self::Zip => "zip_raw_manifest.v2",
+            Self::SevenZip => "7z_raw_manifest.v2",
         }
     }
 

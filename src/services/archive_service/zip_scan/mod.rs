@@ -184,7 +184,7 @@ where
         validate_zip_entry_supported(&entry, entry.name())?;
         let raw_name = entry.name_raw().to_vec();
         let display_name = entry.name().to_string();
-        let zip_utf8 = entry.get_metadata().is_utf8;
+        let raw_name_utf8 = entry.get_metadata().is_utf8;
 
         if entry.is_dir() {
             directory_count = directory_count
@@ -200,7 +200,7 @@ where
                 index,
                 raw_name,
                 display_name,
-                zip_utf8,
+                raw_name_utf8,
                 kind: ArchiveScanEntryKind::Directory,
                 size: 0,
                 compressed_size: 0,
@@ -242,7 +242,7 @@ where
             index,
             raw_name,
             display_name,
-            zip_utf8,
+            raw_name_utf8,
             kind: ArchiveScanEntryKind::File,
             size: entry_size,
             compressed_size: crate::utils::numbers::u64_to_i64(
@@ -302,7 +302,7 @@ where
         let decoded_name = decode_zip_entry_name_parts(
             &raw_entry.raw_name,
             &raw_entry.display_name,
-            raw_entry.zip_utf8,
+            raw_entry.raw_name_utf8,
             filename_encoding,
         )?;
         if matches!(name_policy, ArchiveScanNamePolicy::PreviewDisplayName)
