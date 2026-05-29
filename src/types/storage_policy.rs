@@ -114,6 +114,44 @@ pub enum RemoteUploadStrategy {
     Presigned,
 }
 
+/// Remote node transport mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(32))")]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum RemoteNodeTransportMode {
+    #[sea_orm(string_value = "direct")]
+    #[default]
+    Direct,
+    #[sea_orm(string_value = "reverse_tunnel")]
+    ReverseTunnel,
+    #[sea_orm(string_value = "auto")]
+    Auto,
+}
+
+impl RemoteNodeTransportMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::ReverseTunnel => "reverse_tunnel",
+            Self::Auto => "auto",
+        }
+    }
+
+    pub const fn requires_direct_base_url(self) -> bool {
+        matches!(self, Self::Direct)
+    }
+
+    pub fn resolves_to_reverse_tunnel(self, base_url: &str) -> bool {
+        match self {
+            Self::Direct => false,
+            Self::ReverseTunnel => true,
+            Self::Auto => base_url.trim().is_empty(),
+        }
+    }
+}
+
 /// 统一媒体处理器类型（system_config / storage_policy.options）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]

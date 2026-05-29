@@ -25,6 +25,7 @@ pub fn configure_primary(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseCon
             .service(routes::tasks::routes(rl, network_trust))
             .service(routes::teams::routes(rl, network_trust))
             .service(routes::public::routes())
+            .service(routes::remote_tunnel::routes())
             .service(routes::wopi::routes())
             .default_service(web::to(api_not_found)),
     )

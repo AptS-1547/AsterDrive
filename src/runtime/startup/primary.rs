@@ -29,6 +29,12 @@ pub async fn prepare_primary() -> Result<PreparedPrimaryRuntime> {
         );
     crate::services::audit_service::init_global_audit_log_manager(common.database.clone());
 
+    let remote_protocol = crate::runtime::PrimaryAppState::new_remote_protocol();
+    remote_protocol.set_persistence_db(common.database.clone());
+    common
+        .driver_registry
+        .set_remote_protocol(remote_protocol.clone());
+
     tracing::info!(
         mode = NodeRuntimeMode::Primary.as_str(),
         "startup complete — listening on {}:{}",
@@ -50,6 +56,7 @@ pub async fn prepare_primary() -> Result<PreparedPrimaryRuntime> {
             share_download_rollback,
             background_task_dispatch_wakeup:
                 crate::runtime::PrimaryAppState::new_background_task_dispatch_wakeup(),
+            remote_protocol,
         },
         share_download_rollback_worker,
     })

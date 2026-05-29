@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
 	formatLastChecked,
 	getRemoteNodeEnrollmentStatusLabel,
+	getRemoteNodeTransportBadge,
+	getRemoteNodeTransportLabel,
+	getRemoteNodeTunnelLabel,
 	hasCompletedRemoteNodeEnrollment,
 } from "@/components/admin/admin-remote-nodes-page/shared";
 import { getActiveDisplayTimeZone } from "@/stores/displayTimeZoneStore";
@@ -44,6 +47,59 @@ describe("admin remote nodes shared helpers", () => {
 		expect(getRemoteNodeEnrollmentStatusLabel(t, "expired")).toBe(
 			"remote_node_enrollment_status_expired",
 		);
+	});
+
+	it("maps transport modes to dedicated labels", () => {
+		expect(getRemoteNodeTransportLabel(t, "direct")).toBe(
+			"remote_node_transport_direct",
+		);
+		expect(getRemoteNodeTransportLabel(t, "reverse_tunnel")).toBe(
+			"remote_node_transport_reverse_tunnel",
+		);
+		expect(getRemoteNodeTransportLabel(t, "auto")).toBe(
+			"remote_node_transport_auto",
+		);
+	});
+
+	it("marks reverse tunnel as a test transport", () => {
+		expect(getRemoteNodeTransportBadge(t, "direct")).toBeNull();
+		expect(getRemoteNodeTransportBadge(t, "reverse_tunnel")).toBe(
+			"remote_node_transport_test_badge",
+		);
+		expect(getRemoteNodeTransportBadge(t, "auto")).toBeNull();
+	});
+
+	it("maps tunnel status from node transport state", () => {
+		expect(
+			getRemoteNodeTunnelLabel(t, {
+				transport_mode: "direct",
+				tunnel: {
+					status: "online",
+					last_error: "",
+					last_seen_at: "2026-05-29T08:00:00Z",
+				},
+			} as RemoteNodeInfo),
+		).toBe("remote_node_tunnel_not_used");
+		expect(
+			getRemoteNodeTunnelLabel(t, {
+				transport_mode: "reverse_tunnel",
+				tunnel: {
+					status: "online",
+					last_error: "",
+					last_seen_at: "2026-05-29T08:00:00Z",
+				},
+			} as RemoteNodeInfo),
+		).toBe("remote_node_tunnel_online");
+		expect(
+			getRemoteNodeTunnelLabel(t, {
+				transport_mode: "auto",
+				tunnel: {
+					status: "offline",
+					last_error: "poll timeout",
+					last_seen_at: null,
+				},
+			} as RemoteNodeInfo),
+		).toBe("remote_node_tunnel_offline");
 	});
 
 	it("detects completed enrollment separately from health status", () => {

@@ -66,6 +66,12 @@ const DEFAULT_REMOTE_NODE_SORT_BY =
 	"created_at" as const satisfies AdminRemoteNodeSortBy;
 const DEFAULT_REMOTE_NODE_SORT_ORDER = "desc" as const satisfies SortOrder;
 
+function requiresDirectIngressProfileBaseUrl(node: RemoteNodeInfo) {
+	return (
+		(node.transport_mode ?? "direct") === "direct" && !node.base_url.trim()
+	);
+}
+
 export default function AdminRemoteNodesPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("remote_nodes"));
@@ -251,7 +257,7 @@ export default function AdminRemoteNodesPage() {
 		setForm(getRemoteNodeForm(node));
 		resetDialogState();
 		resetManagedIngressState();
-		if (!node.base_url.trim()) {
+		if (requiresDirectIngressProfileBaseUrl(node)) {
 			setManagedIngressProfilesError(
 				t("remote_node_ingress_profiles_base_url_required"),
 			);

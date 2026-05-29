@@ -14,7 +14,7 @@ use crate::services::{
     mail_service::MailSender, share_service::ShareDownloadRollbackQueue,
     storage_change_service::StorageChangeEvent,
 };
-use crate::storage::{DriverRegistry, PolicySnapshot};
+use crate::storage::{DriverRegistry, PolicySnapshot, remote_protocol::RemoteProtocolRuntime};
 use actix_web::web;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
@@ -36,6 +36,8 @@ pub struct PrimaryAppState {
     pub share_download_rollback: ShareDownloadRollbackQueue,
     /// 后台任务 dispatcher 唤醒信号。任务创建/重试后用它打断空闲退避 sleep。
     pub background_task_dispatch_wakeup: Arc<Notify>,
+    /// Remote storage protocol runtime, including reverse tunnel state.
+    pub remote_protocol: Arc<RemoteProtocolRuntime>,
 }
 
 #[derive(Clone)]
@@ -63,6 +65,7 @@ pub trait PrimaryRuntimeState: SharedRuntimeState {
     fn mail_sender(&self) -> &Arc<dyn MailSender>;
     fn storage_change_tx(&self) -> &tokio::sync::broadcast::Sender<StorageChangeEvent>;
     fn share_download_rollback(&self) -> &ShareDownloadRollbackQueue;
+    fn remote_protocol(&self) -> &Arc<RemoteProtocolRuntime>;
 }
 
 pub trait FollowerRuntimeState: SharedRuntimeState {}
@@ -70,6 +73,10 @@ pub trait FollowerRuntimeState: SharedRuntimeState {}
 impl PrimaryAppState {
     pub fn new_background_task_dispatch_wakeup() -> Arc<Notify> {
         Arc::new(Notify::new())
+    }
+
+    pub fn new_remote_protocol() -> Arc<RemoteProtocolRuntime> {
+        Arc::new(RemoteProtocolRuntime::new())
     }
 
     pub fn writer_db(&self) -> &DatabaseConnection {
@@ -166,6 +173,10 @@ impl PrimaryRuntimeState for PrimaryAppState {
     fn share_download_rollback(&self) -> &ShareDownloadRollbackQueue {
         &self.share_download_rollback
     }
+
+    fn remote_protocol(&self) -> &Arc<RemoteProtocolRuntime> {
+        &self.remote_protocol
+    }
 }
 
 impl SharedRuntimeState for FollowerAppState {
@@ -246,6 +257,10 @@ impl<T: PrimaryRuntimeState> PrimaryRuntimeState for web::Data<T> {
     fn share_download_rollback(&self) -> &ShareDownloadRollbackQueue {
         self.get_ref().share_download_rollback()
     }
+
+    fn remote_protocol(&self) -> &Arc<RemoteProtocolRuntime> {
+        self.get_ref().remote_protocol()
+    }
 }
 
 impl<T: FollowerRuntimeState> FollowerRuntimeState for web::Data<T> {}
@@ -288,7 +303,7 @@ mod tests {
             crate::metrics_core::NoopMetrics::arc(),
         );
 
-        PrimaryAppState {
+        let state = PrimaryAppState {
             db_handles: crate::db::DbHandles::single(db),
             driver_registry: Arc::new(DriverRegistry::noop()),
             runtime_config,
@@ -301,7 +316,12 @@ mod tests {
             share_download_rollback,
             background_task_dispatch_wakeup:
                 crate::runtime::PrimaryAppState::new_background_task_dispatch_wakeup(),
-        }
+            remote_protocol: crate::runtime::PrimaryAppState::new_remote_protocol(),
+        };
+        state
+            .driver_registry
+            .set_remote_protocol(state.remote_protocol.clone());
+        state
     }
 
     #[tokio::test]

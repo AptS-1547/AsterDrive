@@ -55,6 +55,7 @@ impl From<CreateRemoteNodeReq> for managed_follower_service::CreateRemoteNodeInp
         Self {
             name: value.name,
             base_url: value.base_url.unwrap_or_default(),
+            transport_mode: value.transport_mode,
             is_enabled: value.is_enabled,
         }
     }
@@ -65,6 +66,7 @@ impl From<PatchRemoteNodeReq> for managed_follower_service::UpdateRemoteNodeInpu
         Self {
             name: value.name,
             base_url: value.base_url,
+            transport_mode: value.transport_mode,
             is_enabled: value.is_enabled,
         }
     }

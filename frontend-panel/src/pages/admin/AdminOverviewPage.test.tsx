@@ -64,6 +64,12 @@ vi.mock("react-i18next", () => ({
 			const translations: Record<string, string> = {
 				"admin:audit_action_share_create": "Created share",
 				"admin:audit_entity_type_file": "File",
+				"admin:overview_system_health_component_cache": "Cache",
+				"admin:overview_system_health_component_remote_nodes": "Remote nodes",
+				"admin:overview_system_health_issue_component": `${options?.component}: ${options?.status}`,
+				"admin:overview_system_health_issue_summary": `Issues detected in: ${options?.components}.`,
+				"admin:overview_system_health_status_degraded": "Degraded",
+				"admin:overview_system_health_status_unhealthy": "Unhealthy",
 			};
 			const translated = translations[`${namespace}:${key}`];
 			if (translated) {
@@ -463,8 +469,8 @@ describe("AdminOverviewPage", () => {
 		expect(
 			screen.getByText("overview_system_health_degraded"),
 		).toBeInTheDocument();
-		expect(screen.getByText("cache degraded")).toBeInTheDocument();
-		expect(screen.getByText("cache: degraded")).toBeInTheDocument();
+		expect(screen.getByText("Issues detected in: Cache.")).toBeInTheDocument();
+		expect(screen.getByText("Cache: Degraded")).toBeInTheDocument();
 		expect(screen.queryByText("database: healthy")).not.toBeInTheDocument();
 		expect(screen.queryByText(/database healthy/)).not.toBeInTheDocument();
 		expect(
@@ -526,6 +532,42 @@ describe("AdminOverviewPage", () => {
 		expect(mockState.navigate).toHaveBeenCalledWith(
 			"/admin/tasks?kind=system_runtime",
 		);
+	});
+
+	it("localizes unhealthy remote node health components", async () => {
+		const overview = createOverview();
+		overview.system_health = {
+			checked_at: "2026-03-29T09:22:00Z",
+			components: [
+				{
+					message: "checked 1 remote node: 0 healthy, 1 failed, 0 skipped",
+					name: "remote_nodes",
+					status: "unhealthy",
+				},
+			],
+			details:
+				"remote_nodes=unhealthy: checked 1 remote node: 0 healthy, 1 failed, 0 skipped",
+			status: "unhealthy",
+			summary: "remote_nodes unhealthy",
+			task_id: 18,
+		};
+		mockState.get.mockResolvedValueOnce(overview);
+
+		render(<AdminOverviewPage />);
+
+		expect(
+			await screen.findByText("overview_system_health_unhealthy"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("Issues detected in: Remote nodes."),
+		).toBeInTheDocument();
+		expect(screen.getByText("Remote nodes: Unhealthy")).toBeInTheDocument();
+		expect(
+			screen.queryByText("remote_nodes unhealthy"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByText("remote_nodes: unhealthy"),
+		).not.toBeInTheDocument();
 	});
 
 	it("labels trash purge background tasks in the overview", async () => {

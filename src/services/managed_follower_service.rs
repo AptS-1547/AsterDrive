@@ -13,7 +13,7 @@ use crate::storage::remote_protocol::{
     RemoteBindingSyncRequest, RemoteStorageCapabilities, RemoteStorageClient,
     normalize_remote_base_url,
 };
-use crate::types::parse_storage_policy_options;
+use crate::types::{RemoteNodeTransportMode, parse_storage_policy_options};
 use chrono::Utc;
 use futures::{StreamExt, stream};
 use sea_orm::{ActiveModelTrait, DbErr, Set, SqlErr};
@@ -45,11 +45,13 @@ pub struct RemoteNodeInfo {
     pub id: i64,
     pub name: String,
     pub base_url: String,
+    pub transport_mode: RemoteNodeTransportMode,
     pub is_enabled: bool,
     pub enrollment_status: RemoteNodeEnrollmentStatus,
     pub last_error: String,
     pub capabilities: RemoteStorageCapabilities,
     pub last_checked_at: Option<chrono::DateTime<Utc>>,
+    pub tunnel: crate::storage::remote_protocol::tunnel::server::RemoteTunnelInfo,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -57,19 +59,24 @@ pub struct RemoteNodeInfo {
 }
 
 impl RemoteNodeInfo {
-    fn from_model(
+    fn from_model<S: PrimaryRuntimeState>(
+        state: &S,
         model: managed_follower::Model,
         enrollment_status: RemoteNodeEnrollmentStatus,
     ) -> Self {
         Self {
             id: model.id,
-            name: model.name,
-            base_url: model.base_url,
+            name: model.name.clone(),
+            base_url: model.base_url.clone(),
+            transport_mode: model.transport_mode,
             is_enabled: model.is_enabled,
             enrollment_status,
-            last_error: model.last_error,
+            last_error: model.last_error.clone(),
             capabilities: parse_capabilities(&model.last_capabilities),
             last_checked_at: model.last_checked_at,
+            tunnel: crate::storage::remote_protocol::tunnel::server::tunnel_info_for_node(
+                state, &model,
+            ),
             created_at: model.created_at,
             updated_at: model.updated_at,
         }
@@ -80,6 +87,7 @@ impl RemoteNodeInfo {
 pub struct CreateRemoteNodeInput {
     pub name: String,
     pub base_url: String,
+    pub transport_mode: RemoteNodeTransportMode,
     pub is_enabled: bool,
 }
 
@@ -87,6 +95,7 @@ pub struct CreateRemoteNodeInput {
 pub struct UpdateRemoteNodeInput {
     pub name: Option<String>,
     pub base_url: Option<String>,
+    pub transport_mode: Option<RemoteNodeTransportMode>,
     pub is_enabled: Option<bool>,
 }
 
@@ -146,7 +155,7 @@ pub async fn list_paginated<S: PrimaryRuntimeState>(
                 .get(&model.id)
                 .copied()
                 .unwrap_or(RemoteNodeEnrollmentStatus::NotStarted);
-            RemoteNodeInfo::from_model(model, enrollment_status)
+            RemoteNodeInfo::from_model(state, model, enrollment_status)
         })
         .collect();
     Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
@@ -170,9 +179,12 @@ pub async fn create<S: PrimaryRuntimeState>(
         access_key: Set(access_key),
         secret_key: Set(secret_key),
         is_enabled: Set(normalized.is_enabled),
+        transport_mode: Set(normalized.transport_mode),
         last_capabilities: Set("{}".to_string()),
         last_error: Set(String::new()),
         last_checked_at: Set(None),
+        tunnel_last_error: Set(String::new()),
+        tunnel_last_seen_at: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()
@@ -192,6 +204,18 @@ pub async fn update<S: PrimaryRuntimeState>(
 ) -> Result<RemoteNodeInfo> {
     let existing = managed_follower_repo::find_by_id(state.writer_db(), id).await?;
     let normalized = normalize_update_input(input)?;
+    let next_base_url = normalized
+        .base_url
+        .as_deref()
+        .unwrap_or(existing.base_url.as_str());
+    let next_transport_mode = normalized.transport_mode.unwrap_or(existing.transport_mode);
+    ensure_transport_change_keeps_referencing_policies_valid(
+        state,
+        id,
+        next_transport_mode,
+        next_base_url,
+    )
+    .await?;
 
     let mut active: managed_follower::ActiveModel = existing.into();
     if let Some(value) = normalized.name {
@@ -199,6 +223,9 @@ pub async fn update<S: PrimaryRuntimeState>(
     }
     if let Some(value) = normalized.base_url {
         active.base_url = Set(value);
+    }
+    if let Some(value) = normalized.transport_mode {
+        active.transport_mode = Set(value);
     }
     if let Some(value) = normalized.is_enabled {
         active.is_enabled = Set(value);
@@ -212,7 +239,8 @@ pub async fn update<S: PrimaryRuntimeState>(
     refresh_registry(state).await?;
     if enrollment_status_for_node(state, updated.id).await? == RemoteNodeEnrollmentStatus::Completed
         && let Err(error) =
-            sync_remote_binding_config_with_timeout(&updated, REMOTE_BINDING_SYNC_TIMEOUT).await
+            sync_remote_binding_config_with_timeout(state, &updated, REMOTE_BINDING_SYNC_TIMEOUT)
+                .await
     {
         tracing::warn!(
             remote_node_id = updated.id,
@@ -270,7 +298,7 @@ async fn remote_node_info<S: PrimaryRuntimeState>(
     model: managed_follower::Model,
 ) -> Result<RemoteNodeInfo> {
     let enrollment_status = enrollment_status_for_node(state, model.id).await?;
-    Ok(RemoteNodeInfo::from_model(model, enrollment_status))
+    Ok(RemoteNodeInfo::from_model(state, model, enrollment_status))
 }
 
 async fn enrollment_statuses_for_nodes<S: PrimaryRuntimeState>(
@@ -406,6 +434,13 @@ async fn probe_connection(input: &TestRemoteNodeInput) -> Result<RemoteStorageCa
     client.probe_capabilities().await
 }
 
+pub(crate) fn remote_storage_client_for_node<S: PrimaryRuntimeState>(
+    state: &S,
+    node: &managed_follower::Model,
+) -> Result<crate::storage::remote_protocol::RemoteStorageClient> {
+    state.remote_protocol().client_for_node(node)
+}
+
 async fn policy_requirements_for_node<S: PrimaryRuntimeState>(
     state: &S,
     remote_node_id: i64,
@@ -422,16 +457,37 @@ async fn policy_requirements_for_node<S: PrimaryRuntimeState>(
         .collect())
 }
 
+async fn ensure_transport_change_keeps_referencing_policies_valid<S: PrimaryRuntimeState>(
+    state: &S,
+    remote_node_id: i64,
+    transport_mode: RemoteNodeTransportMode,
+    base_url: &str,
+) -> Result<()> {
+    if !transport_mode.resolves_to_reverse_tunnel(base_url) {
+        return Ok(());
+    }
+
+    for (policy_id, options) in policy_requirements_for_node(state, remote_node_id).await? {
+        if options.effective_remote_download_strategy()
+            == crate::types::RemoteDownloadStrategy::Presigned
+            || options.effective_remote_upload_strategy()
+                == crate::types::RemoteUploadStrategy::Presigned
+        {
+            return Err(AsterError::validation_error(format!(
+                "cannot switch remote node #{remote_node_id} to reverse tunnel while storage policy #{policy_id} uses presigned browser transfer strategies",
+            )));
+        }
+    }
+    Ok(())
+}
+
 async fn probe_and_persist_node<S: PrimaryRuntimeState>(
     state: &S,
     node: &managed_follower::Model,
 ) -> Result<ProbedRemoteNode> {
-    let capabilities = probe_connection(&TestRemoteNodeInput {
-        base_url: node.base_url.clone(),
-        access_key: node.access_key.clone(),
-        secret_key: node.secret_key.clone(),
-    })
-    .await;
+    let capabilities = remote_storage_client_for_node(state, node)?
+        .probe_capabilities()
+        .await;
 
     let (last_capabilities, last_error, probe_error) = match capabilities {
         Ok(capabilities) => {
@@ -490,10 +546,6 @@ async fn run_health_test_for_node<S: PrimaryRuntimeState>(
     node: managed_follower::Model,
     enrollment_status: RemoteNodeEnrollmentStatus,
 ) -> Result<RemoteNodeHealthTestOutcome> {
-    if node.base_url.trim().is_empty() {
-        return Ok(RemoteNodeHealthTestOutcome::Skipped);
-    }
-
     if !node.is_enabled {
         return Ok(RemoteNodeHealthTestOutcome::Skipped);
     }
@@ -502,8 +554,12 @@ async fn run_health_test_for_node<S: PrimaryRuntimeState>(
         return Ok(RemoteNodeHealthTestOutcome::Skipped);
     }
 
+    if node.transport_mode == RemoteNodeTransportMode::Direct && node.base_url.trim().is_empty() {
+        return Ok(RemoteNodeHealthTestOutcome::Skipped);
+    }
+
     if let Err(error) =
-        sync_remote_binding_config_with_timeout(&node, REMOTE_BINDING_SYNC_TIMEOUT).await
+        sync_remote_binding_config_with_timeout(state, &node, REMOTE_BINDING_SYNC_TIMEOUT).await
     {
         tracing::warn!(
             remote_node_id = node.id,
@@ -523,6 +579,7 @@ fn normalize_create_input(input: CreateRemoteNodeInput) -> Result<CreateRemoteNo
     Ok(CreateRemoteNodeInput {
         name: normalize_non_blank("name", &input.name)?,
         base_url: normalize_remote_base_url(&input.base_url)?,
+        transport_mode: input.transport_mode,
         is_enabled: input.is_enabled,
     })
 }
@@ -550,6 +607,7 @@ fn normalize_update_input(input: UpdateRemoteNodeInput) -> Result<UpdateRemoteNo
             .as_deref()
             .map(normalize_remote_base_url)
             .transpose()?,
+        transport_mode: input.transport_mode,
         is_enabled: input.is_enabled,
     })
 }
@@ -574,12 +632,15 @@ async fn refresh_registry<S: PrimaryRuntimeState>(state: &S) -> Result<()> {
     Ok(())
 }
 
-async fn sync_remote_binding_config(node: &managed_follower::Model) -> Result<()> {
-    if node.base_url.trim().is_empty() {
+async fn sync_remote_binding_config<S: PrimaryRuntimeState>(
+    state: &S,
+    node: &managed_follower::Model,
+) -> Result<()> {
+    if node.transport_mode.requires_direct_base_url() && node.base_url.trim().is_empty() {
         return Ok(());
     }
 
-    let client = RemoteStorageClient::new(&node.base_url, &node.access_key, &node.secret_key)?;
+    let client = remote_storage_client_for_node(state, node)?;
     client
         .sync_binding(&RemoteBindingSyncRequest {
             name: node.name.clone(),
@@ -588,11 +649,12 @@ async fn sync_remote_binding_config(node: &managed_follower::Model) -> Result<()
         .await
 }
 
-async fn sync_remote_binding_config_with_timeout(
+async fn sync_remote_binding_config_with_timeout<S: PrimaryRuntimeState>(
+    state: &S,
     node: &managed_follower::Model,
     timeout: Duration,
 ) -> Result<()> {
-    tokio::time::timeout(timeout, sync_remote_binding_config(node))
+    tokio::time::timeout(timeout, sync_remote_binding_config(state, node))
         .await
         .map_err(|_| {
             storage_driver_error(
@@ -622,12 +684,14 @@ mod tests {
         CreateRemoteNodeInput, UpdateRemoteNodeInput, generate_managed_credentials,
         normalize_create_input, normalize_update_input,
     };
+    use crate::types::RemoteNodeTransportMode;
 
     #[test]
     fn normalize_create_input_ignores_managed_credentials() {
         let normalized = normalize_create_input(CreateRemoteNodeInput {
             name: " Edge ".to_string(),
             base_url: " https://remote.example.com/ ".to_string(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         })
         .unwrap();
@@ -652,6 +716,7 @@ mod tests {
         let normalized = normalize_update_input(UpdateRemoteNodeInput {
             name: Some(" Edge ".to_string()),
             base_url: Some(" https://remote.example.com/ ".to_string()),
+            transport_mode: None,
             is_enabled: Some(true),
         })
         .unwrap();

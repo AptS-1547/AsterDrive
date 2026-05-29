@@ -19,12 +19,15 @@ import type {
 import {
 	getRemoteNodeBaseUrlValidationMessage,
 	type RemoteNodeFormData,
+	type RemoteNodeTransportMode,
 } from "../remoteNodeDialogShared";
 import { RemoteNodeCreateWizard } from "./RemoteNodeCreateWizard";
 import type { RemoteNodeDialogStep } from "./RemoteNodeDialogTypes";
 import { RemoteNodeEditForm } from "./RemoteNodeEditForm";
 import {
 	getRemoteNodeEnrollmentStatusLabel,
+	getRemoteNodeTransportLabel,
+	getRemoteNodeTransportTone,
 	hasCompletedRemoteNodeEnrollment,
 	TestConnectionButton,
 } from "./shared";
@@ -109,6 +112,12 @@ export function RemoteNodeDialog({
 		form.base_url,
 		t,
 	);
+	const normalizedTransportMode =
+		form.transport_mode === "direct" ||
+		form.transport_mode === "reverse_tunnel" ||
+		form.transport_mode === "auto"
+			? form.transport_mode
+			: "direct";
 	const previousCreateStepRef = useRef(createStep);
 	const stepAnimationRef = useRef<{
 		direction: "idle" | "forward" | "backward";
@@ -126,22 +135,24 @@ export function RemoteNodeDialog({
 	}
 	const createStepDirection = stepAnimationRef.current.direction;
 	const stepAnimationKey = `${stepAnimationRef.current.step}-${stepAnimationRef.current.direction}`;
-	const modeToneClass = form.base_url.trim()
-		? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
-		: "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300";
+	const modeToneClass = getRemoteNodeTransportTone(normalizedTransportMode);
 	const enabledToneClass = form.is_enabled
 		? "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
 		: "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-300";
-	const remoteNodeModeLabel = form.base_url.trim()
-		? t("remote_node_endpoint_configured")
-		: t("remote_node_endpoint_pending");
+	const remoteNodeModeLabel = getRemoteNodeTransportLabel(
+		t,
+		normalizedTransportMode,
+	);
 	const hasConnectionFieldChanges =
-		editingNode == null ? true : form.base_url !== editingNode.base_url;
+		editingNode == null
+			? true
+			: form.base_url !== editingNode.base_url ||
+				normalizedTransportMode !== (editingNode.transport_mode ?? "direct");
 	const canRunConnectionTest =
 		editingNode !== null &&
 		hasCompletedRemoteNodeEnrollment(editingNode) &&
 		!hasConnectionFieldChanges &&
-		Boolean(form.base_url.trim()) &&
+		(normalizedTransportMode !== "direct" || Boolean(form.base_url.trim())) &&
 		!baseUrlValidationMessage;
 	const isSubmitDisabled =
 		submitting || !form.name.trim() || Boolean(baseUrlValidationMessage);
@@ -150,6 +161,10 @@ export function RemoteNodeDialog({
 			? t("remote_node_wizard_name_required")
 			: null;
 	const createSummaryItems = [
+		{
+			label: t("remote_node_transport_mode"),
+			value: getRemoteNodeTransportLabel(t, normalizedTransportMode),
+		},
 		{
 			label: t("base_url"),
 			value: form.base_url || t("remote_node_base_url_empty"),
@@ -175,6 +190,29 @@ export function RemoteNodeDialog({
 			value: form.is_enabled
 				? t("remote_node_status_enabled")
 				: t("remote_node_status_disabled"),
+		},
+	];
+	const transportOptions: {
+		badge?: string;
+		description: string;
+		label: string;
+		value: RemoteNodeTransportMode;
+	}[] = [
+		{
+			value: "direct",
+			label: t("remote_node_transport_direct"),
+			description: t("remote_node_transport_direct_desc"),
+		},
+		{
+			value: "reverse_tunnel",
+			label: t("remote_node_transport_reverse_tunnel"),
+			description: t("remote_node_transport_reverse_tunnel_desc"),
+			badge: t("remote_node_transport_test_badge"),
+		},
+		{
+			value: "auto",
+			label: t("remote_node_transport_auto"),
+			description: t("remote_node_transport_auto_desc"),
 		},
 	];
 
@@ -222,6 +260,7 @@ export function RemoteNodeDialog({
 								remoteNodeModeLabel={remoteNodeModeLabel}
 								stepAnimationKey={stepAnimationKey}
 								summaryItems={createSummaryItems}
+								transportOptions={transportOptions}
 							/>
 						) : (
 							<RemoteNodeEditForm
@@ -240,6 +279,7 @@ export function RemoteNodeDialog({
 								onUpdateManagedIngressProfile={onUpdateManagedIngressProfile}
 								remoteNodeModeLabel={remoteNodeModeLabel}
 								summaryItems={createSummaryItems}
+								transportOptions={transportOptions}
 							/>
 						)}
 					</div>

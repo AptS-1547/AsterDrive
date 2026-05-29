@@ -335,9 +335,12 @@ fn driver_from_payload(
                 access_key: remote.access_key.clone(),
                 secret_key: remote.secret_key.clone(),
                 is_enabled: true,
+                transport_mode: crate::types::RemoteNodeTransportMode::Direct,
                 last_capabilities: String::new(),
                 last_error: String::new(),
                 last_checked_at: None,
+                tunnel_last_error: String::new(),
+                tunnel_last_seen_at: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             };

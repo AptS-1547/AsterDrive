@@ -376,5 +376,6 @@ async fn test_state_with_driver(driver: Arc<dyn StorageDriver>) -> PrimaryAppSta
         share_download_rollback,
         background_task_dispatch_wakeup:
             crate::runtime::PrimaryAppState::new_background_task_dispatch_wakeup(),
+        remote_protocol: crate::runtime::PrimaryAppState::new_remote_protocol(),
     }
 }

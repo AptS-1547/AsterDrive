@@ -37,10 +37,10 @@ pub use preferences::{
     UserPreferences,
 };
 pub use storage_policy::{
-    DriverType, MediaProcessorKind, RemoteDownloadStrategy, RemoteUploadStrategy,
-    S3_MULTIPART_MIN_PART_SIZE, S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions,
-    StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, UploadMode, UploadSessionStatus,
-    effective_s3_multipart_chunk_size, parse_storage_policy_allowed_types,
+    DriverType, MediaProcessorKind, RemoteDownloadStrategy, RemoteNodeTransportMode,
+    RemoteUploadStrategy, S3_MULTIPART_MIN_PART_SIZE, S3DownloadStrategy, S3UploadStrategy,
+    StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, UploadMode,
+    UploadSessionStatus, effective_s3_multipart_chunk_size, parse_storage_policy_allowed_types,
     parse_storage_policy_options, serialize_storage_policy_allowed_types,
     serialize_storage_policy_options,
 };

@@ -54,6 +54,25 @@ export function SystemHealthBanner({
 	const { t } = useTranslation("admin");
 	const navigate = useNavigate();
 	const presentation = systemHealthPresentation(health.status);
+	const formatComponentName = (name: string) =>
+		t(`overview_system_health_component_${name}`, {
+			defaultValue: name,
+		});
+	const formatComponentStatus = (status: AdminSystemHealthSummary["status"]) =>
+		t(`overview_system_health_status_${status}`, {
+			defaultValue: status,
+		});
+	const formatIssueComponent = (
+		component: AdminSystemHealthSummary["components"][number],
+	) => {
+		const componentName = formatComponentName(component.name);
+		const status = formatComponentStatus(component.status);
+		return t("overview_system_health_issue_component", {
+			component: componentName,
+			defaultValue: `${componentName}: ${status}`,
+			status,
+		});
+	};
 	const checkedAt = health.checked_at
 		? t("overview_system_health_checked_at", {
 				date: formatDateAbsolute(health.checked_at),
@@ -63,8 +82,20 @@ export function SystemHealthBanner({
 	const issueComponents = health.components.filter(
 		(component) => component.status !== "healthy",
 	);
+	const issueSummary =
+		issueComponents.length > 0
+			? t("overview_system_health_issue_summary", {
+					components: issueComponents
+						.map((component) => formatComponentName(component.name))
+						.join(
+							t("overview_system_health_issue_separator", {
+								defaultValue: ", ",
+							}),
+						),
+				})
+			: null;
 	const message = isIssue
-		? (health.summary ?? t("overview_system_health_no_summary"))
+		? (issueSummary ?? health.summary ?? t("overview_system_health_no_summary"))
 		: health.status === "healthy"
 			? t("overview_system_health_healthy_desc")
 			: t("overview_system_health_unknown_desc");
@@ -106,7 +137,7 @@ export function SystemHealthBanner({
 									title={component.message}
 								>
 									<span className="truncate">
-										{component.name}: {component.status}
+										{formatIssueComponent(component)}
 									</span>
 								</Badge>
 							))}

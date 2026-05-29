@@ -5,7 +5,10 @@ import { Switch } from "@/components/ui/switch";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { RemoteNodeInfo } from "@/types/api";
-import type { RemoteNodeFormData } from "../remoteNodeDialogShared";
+import type {
+	RemoteNodeFormData,
+	RemoteNodeTransportMode,
+} from "../remoteNodeDialogShared";
 import {
 	RemoteNodeDocsCard,
 	RemoteNodeSectionIntro,
@@ -32,6 +35,12 @@ interface RemoteNodeCreateWizardProps {
 	remoteNodeModeLabel: string;
 	stepAnimationKey: string;
 	summaryItems: RemoteNodeSummaryItem[];
+	transportOptions: {
+		badge?: string;
+		description: string;
+		label: string;
+		value: RemoteNodeTransportMode;
+	}[];
 }
 
 export function RemoteNodeCreateWizard({
@@ -49,6 +58,7 @@ export function RemoteNodeCreateWizard({
 	remoteNodeModeLabel,
 	stepAnimationKey,
 	summaryItems,
+	transportOptions,
 }: RemoteNodeCreateWizardProps) {
 	const { t } = useTranslation("admin");
 	const createLastStep = createSteps.length - 1;
@@ -190,6 +200,41 @@ export function RemoteNodeCreateWizard({
 												)}
 											/>
 											<div className="space-y-4">
+												<div className="space-y-3">
+													<Label>{t("remote_node_transport_mode")}</Label>
+													<div className="grid gap-2 md:grid-cols-3">
+														{transportOptions.map((option) => (
+															<button
+																key={option.value}
+																type="button"
+																aria-pressed={
+																	form.transport_mode === option.value
+																}
+																onClick={() =>
+																	onFieldChange("transport_mode", option.value)
+																}
+																className={cn(
+																	"min-h-24 rounded-xl border p-3 text-left transition",
+																	form.transport_mode === option.value
+																		? "border-primary bg-primary/5"
+																		: "border-border/70 bg-background hover:border-primary/40",
+																)}
+															>
+																<span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+																	<span>{option.label}</span>
+																	{option.badge ? (
+																		<span className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+																			{option.badge}
+																		</span>
+																	) : null}
+																</span>
+																<span className="mt-1 block text-xs leading-5 text-muted-foreground">
+																	{option.description}
+																</span>
+															</button>
+														))}
+													</div>
+												</div>
 												<div className="space-y-2">
 													<Label htmlFor="remote-node-base-url">
 														{t("base_url")}

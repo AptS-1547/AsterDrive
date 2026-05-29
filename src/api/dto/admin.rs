@@ -163,6 +163,8 @@ pub struct CreateRemoteNodeReq {
     #[validate(custom(function = "crate::api::dto::validation::validate_non_blank"))]
     pub name: String,
     pub base_url: Option<String>,
+    #[serde(default)]
+    pub transport_mode: crate::types::RemoteNodeTransportMode,
     #[serde(default = "default_true")]
     pub is_enabled: bool,
 }
@@ -173,6 +175,7 @@ pub struct CreateRemoteNodeReq {
 pub struct PatchRemoteNodeReq {
     pub name: Option<String>,
     pub base_url: Option<String>,
+    pub transport_mode: Option<crate::types::RemoteNodeTransportMode>,
     pub is_enabled: Option<bool>,
 }
 

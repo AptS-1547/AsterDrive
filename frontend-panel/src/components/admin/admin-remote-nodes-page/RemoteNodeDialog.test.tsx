@@ -153,6 +153,7 @@ const baseProps = {
 	form: {
 		name: "",
 		base_url: "",
+		transport_mode: "direct",
 		is_enabled: true,
 	},
 	onCreateBack: vi.fn(),
@@ -218,6 +219,7 @@ describe("RemoteNodeDialog", () => {
 				form={{
 					name: "Edge Alpha",
 					base_url: "https://edge.example.com",
+					transport_mode: "direct",
 					is_enabled: true,
 				}}
 				onRunConnectionTest={onRunConnectionTest}
@@ -243,6 +245,7 @@ describe("RemoteNodeDialog", () => {
 				form={{
 					name: "Edge Alpha",
 					base_url: "https://edge.example.com",
+					transport_mode: "direct",
 					is_enabled: true,
 				}}
 				onRunConnectionTest={onRunConnectionTest}
@@ -255,5 +258,40 @@ describe("RemoteNodeDialog", () => {
 		fireEvent.click(button);
 
 		expect(onRunConnectionTest).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows the reverse tunnel test badge and explicit auto semantics in create mode", () => {
+		render(<RemoteNodeDialog {...baseProps} createStep={1} mode="create" />);
+
+		expect(
+			screen.getByText("remote_node_transport_test_badge"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("remote_node_transport_auto_desc"),
+		).toBeInTheDocument();
+		expect(screen.getByText("remote_node_base_url_hint")).toBeInTheDocument();
+	});
+
+	it("shows the reverse tunnel test badge in edit mode", () => {
+		render(
+			<RemoteNodeDialog
+				{...baseProps}
+				mode="edit"
+				editingNode={remoteNode({
+					enrollment_status: "completed",
+					transport_mode: "reverse_tunnel",
+				})}
+				form={{
+					name: "Edge Alpha",
+					base_url: "",
+					transport_mode: "reverse_tunnel",
+					is_enabled: true,
+				}}
+			/>,
+		);
+
+		expect(
+			screen.getAllByText("remote_node_transport_test_badge").length,
+		).toBeGreaterThan(0);
 	});
 });

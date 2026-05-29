@@ -257,6 +257,7 @@ async fn build_download_test_state(
         share_download_rollback,
         background_task_dispatch_wakeup:
             crate::runtime::PrimaryAppState::new_background_task_dispatch_wakeup(),
+        remote_protocol: crate::runtime::PrimaryAppState::new_remote_protocol(),
     };
 
     let blob = file_repo::create_blob(

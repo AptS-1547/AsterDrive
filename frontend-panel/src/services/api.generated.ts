@@ -4599,6 +4599,7 @@ export interface components {
             base_url?: string | null;
             is_enabled?: boolean;
             name: string;
+            transport_mode?: components["schemas"]["RemoteNodeTransportMode"];
         };
         /** @description Create a new share. */
         CreateShareReq: {
@@ -5453,6 +5454,8 @@ export interface components {
                 last_checked_at?: string | null;
                 last_error: string;
                 name: string;
+                transport_mode: components["schemas"]["RemoteNodeTransportMode"];
+                tunnel: components["schemas"]["RemoteTunnelInfo"];
                 updated_at: string;
             }[];
             /** Format: int64 */
@@ -5772,6 +5775,7 @@ export interface components {
             base_url?: string | null;
             is_enabled?: boolean | null;
             name?: string | null;
+            transport_mode?: null | components["schemas"]["RemoteNodeTransportMode"];
         };
         /** @description Patch a team member's role. */
         PatchTeamMemberReq: {
@@ -6007,8 +6011,15 @@ export interface components {
             last_checked_at?: string | null;
             last_error: string;
             name: string;
+            transport_mode: components["schemas"]["RemoteNodeTransportMode"];
+            tunnel: components["schemas"]["RemoteTunnelInfo"];
             updated_at: string;
         };
+        /**
+         * @description Remote node transport mode.
+         * @enum {string}
+         */
+        RemoteNodeTransportMode: "direct" | "reverse_tunnel" | "auto";
         RemoteStorageBrowserCorsContract: {
             allowed_headers?: string[];
             exposed_headers?: string[];
@@ -6045,6 +6056,13 @@ export interface components {
             /** Format: int64 */
             max_ingress_size?: number | null;
         };
+        RemoteTunnelInfo: {
+            last_error: string;
+            last_seen_at?: string | null;
+            status: components["schemas"]["RemoteTunnelOnlineStatus"];
+        };
+        /** @enum {string} */
+        RemoteTunnelOnlineStatus: "online" | "offline";
         RemoteUpdateIngressProfileRequest: {
             access_key?: string | null;
             base_path?: string | null;
@@ -6396,7 +6414,7 @@ export interface components {
             /** Format: int64 */
             migrated_bytes: number;
             /** Format: int64 */
-            renamed_opaque_blobs: number;
+            renamed_opaque_blobs?: number;
             /** Format: int64 */
             scanned_blobs: number;
             /** Format: int64 */
@@ -9413,6 +9431,8 @@ export interface operations {
                                 last_checked_at?: string | null;
                                 last_error: string;
                                 name: string;
+                                transport_mode: components["schemas"]["RemoteNodeTransportMode"];
+                                tunnel: components["schemas"]["RemoteTunnelInfo"];
                                 updated_at: string;
                             }[];
                             /** Format: int64 */
@@ -9476,6 +9496,8 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
+                            transport_mode: components["schemas"]["RemoteNodeTransportMode"];
+                            tunnel: components["schemas"]["RemoteTunnelInfo"];
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -9592,6 +9614,8 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
+                            transport_mode: components["schemas"]["RemoteNodeTransportMode"];
+                            tunnel: components["schemas"]["RemoteTunnelInfo"];
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -9700,6 +9724,8 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
+                            transport_mode: components["schemas"]["RemoteNodeTransportMode"];
+                            tunnel: components["schemas"]["RemoteTunnelInfo"];
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -10086,6 +10112,8 @@ export interface operations {
                             last_checked_at?: string | null;
                             last_error: string;
                             name: string;
+                            transport_mode: components["schemas"]["RemoteNodeTransportMode"];
+                            tunnel: components["schemas"]["RemoteTunnelInfo"];
                             updated_at: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];

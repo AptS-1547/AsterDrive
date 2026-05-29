@@ -21,15 +21,24 @@ use aster_drive::services::{
     auth_service, file_service, folder_service, managed_follower_service,
     managed_ingress_profile_service, master_binding_service, policy_service, upload_service,
 };
+use aster_drive::storage::remote_protocol::tunnel::server::{
+    REMOTE_TUNNEL_BODY_LIMIT, REMOTE_TUNNEL_COMPLETE_PATH, REMOTE_TUNNEL_JSON_LIMIT,
+    REMOTE_TUNNEL_POLL_PATH, RemoteTunnelResponse,
+};
 use aster_drive::storage::remote_protocol::{
+    INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_SIGNATURE_HEADER,
+    INTERNAL_AUTH_TIMESTAMP_HEADER, INTERNAL_STORAGE_BASE_PATH,
+    INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL, INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL,
     RemoteCreateIngressProfileRequest, RemoteCreateLocalIngressProfileRequest,
     RemoteStorageCapabilities, RemoteStorageClient, RemoteStorageComposeRequest,
-    sign_internal_request, sign_presigned_request,
+    RemoteUpdateIngressProfileRequest, sign_internal_request, sign_presigned_request,
 };
 use aster_drive::types::{
-    DriverType, NullablePatch, RemoteDownloadStrategy, RemoteUploadStrategy, StoragePolicyOptions,
-    StoredStoragePolicyAllowedTypes, serialize_storage_policy_options,
+    DriverType, NullablePatch, RemoteDownloadStrategy, RemoteNodeTransportMode,
+    RemoteUploadStrategy, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
+    serialize_storage_policy_options,
 };
+use bytes::Bytes;
 use chrono::{Duration as ChronoDuration, Utc};
 use futures::TryStreamExt;
 use futures::future::join_all;
@@ -37,11 +46,17 @@ use sea_orm::{ActiveModelTrait, Set};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio_util::sync::CancellationToken;
 
 struct TestHttpServer {
     base_url: String,
     handle: actix_web::dev::ServerHandle,
     task: tokio::task::JoinHandle<std::io::Result<()>>,
+}
+
+struct TestReverseTunnelHttpWorker {
+    shutdown: CancellationToken,
+    handle: tokio::task::JoinHandle<()>,
 }
 
 struct RawHttpResponse {
@@ -63,6 +78,13 @@ async fn spawn_internal_storage_server(
 ) -> TestHttpServer {
     let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
         .expect("test internal storage listener should bind");
+    spawn_internal_storage_server_on_listener(state, listener).await
+}
+
+async fn spawn_internal_storage_server_on_listener(
+    state: aster_drive::runtime::FollowerAppState,
+    listener: std::net::TcpListener,
+) -> TestHttpServer {
     let addr = listener
         .local_addr()
         .expect("test internal storage listener should expose local addr");
@@ -76,6 +98,95 @@ async fn spawn_internal_storage_server(
     })
     .listen(listener)
     .expect("test internal storage server should listen")
+    .run();
+    let handle = server.handle();
+    let task = tokio::spawn(server);
+
+    TestHttpServer {
+        base_url: format!("http://127.0.0.1:{}", addr.port()),
+        handle,
+        task,
+    }
+}
+
+fn follower_view_with_server_port(
+    state: &aster_drive::runtime::PrimaryAppState,
+    port: u16,
+) -> aster_drive::runtime::FollowerAppState {
+    let mut config = (*state.config).clone();
+    config.server.port = port;
+
+    aster_drive::runtime::FollowerAppState {
+        db_handles: state.db_handles.clone(),
+        driver_registry: state.driver_registry.clone(),
+        policy_snapshot: state.policy_snapshot.clone(),
+        config: Arc::new(config),
+        cache: state.cache.clone(),
+        metrics: state.metrics.clone(),
+    }
+}
+
+async fn spawn_reverse_tunnel_primary_server(
+    state: aster_drive::runtime::PrimaryAppState,
+) -> TestHttpServer {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("test reverse tunnel primary listener should bind");
+    let addr = listener
+        .local_addr()
+        .expect("test reverse tunnel primary listener should expose local addr");
+    let state_for_server = state.clone();
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state_for_server.clone()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::remote_tunnel::routes()),
+            )
+    })
+    .listen(listener)
+    .expect("test reverse tunnel primary server should listen")
+    .run();
+    let handle = server.handle();
+    let task = tokio::spawn(server);
+
+    TestHttpServer {
+        base_url: format!("http://127.0.0.1:{}", addr.port()),
+        handle,
+        task,
+    }
+}
+
+async fn spawn_reverse_tunnel_poll_only_primary_server(
+    state: aster_drive::runtime::PrimaryAppState,
+) -> TestHttpServer {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("test reverse tunnel poll-only primary listener should bind");
+    let addr = listener
+        .local_addr()
+        .expect("test reverse tunnel poll-only primary listener should expose local addr");
+    let state_for_server = state.clone();
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(web::PayloadConfig::new(REMOTE_TUNNEL_JSON_LIMIT))
+            .app_data(web::JsonConfig::default().limit(REMOTE_TUNNEL_JSON_LIMIT))
+            .app_data(web::Data::new(state_for_server.clone()))
+            .service(
+                web::scope("/api/v1/internal/remote-tunnel")
+                    .route(
+                        "/poll",
+                        web::post()
+                            .to(aster_drive::api::routes::remote_tunnel::poll_remote_tunnel),
+                    )
+                    .route(
+                        "/complete",
+                        web::post()
+                            .to(aster_drive::api::routes::remote_tunnel::complete_remote_tunnel),
+                    ),
+            )
+    })
+    .listen(listener)
+    .expect("test reverse tunnel poll-only primary server should listen")
     .run();
     let handle = server.handle();
     let task = tokio::spawn(server);
@@ -164,6 +275,191 @@ async fn spawn_counting_internal_storage_server(
     )
 }
 
+async fn start_test_reverse_tunnel_worker(
+    primary_state: aster_drive::runtime::PrimaryAppState,
+    remote_node: aster_drive::entities::managed_follower::Model,
+    follower_base_url: String,
+) -> (CancellationToken, tokio::task::JoinHandle<()>) {
+    let shutdown = CancellationToken::new();
+    let worker_shutdown = shutdown.clone();
+    let handle = tokio::spawn(async move {
+        let client = reqwest::Client::new();
+        loop {
+            let poll_result = tokio::select! {
+                biased;
+                _ = worker_shutdown.cancelled() => break,
+                result = aster_drive::storage::remote_protocol::tunnel::server::poll(
+                    &primary_state,
+                    &remote_node,
+                ) => result,
+            };
+            let poll = poll_result.expect("reverse tunnel poll should succeed");
+            let Some(request) = poll.request else {
+                continue;
+            };
+
+            let response =
+                execute_test_reverse_tunnel_request(&client, &follower_base_url, request).await;
+            aster_drive::storage::remote_protocol::tunnel::server::complete(
+                &primary_state,
+                &remote_node,
+                response,
+            )
+            .await
+            .expect("reverse tunnel completion should succeed");
+        }
+    });
+    (shutdown, handle)
+}
+
+async fn execute_test_reverse_tunnel_request(
+    client: &reqwest::Client,
+    follower_base_url: &str,
+    request: aster_drive::storage::remote_protocol::tunnel::server::RemoteTunnelRequest,
+) -> RemoteTunnelResponse {
+    let method = reqwest::Method::from_bytes(request.method.as_bytes())
+        .expect("reverse tunnel test request method should parse");
+    let response = client
+        .request(
+            method,
+            format!("{}{}", follower_base_url, request.path_and_query),
+        )
+        .headers(reverse_tunnel_test_headers(request.headers))
+        .body(request.body)
+        .send()
+        .await
+        .expect("reverse tunnel test local request should succeed");
+    aster_drive::storage::remote_protocol::tunnel::server::tunnel_response_from_reqwest(
+        request.request_id,
+        response,
+    )
+    .await
+    .expect("reverse tunnel test response should convert")
+}
+
+fn reverse_tunnel_test_headers(headers: Vec<(String, String)>) -> reqwest::header::HeaderMap {
+    let mut map = reqwest::header::HeaderMap::new();
+    for (name, value) in headers {
+        let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+            .expect("reverse tunnel test header name should parse");
+        let value = reqwest::header::HeaderValue::from_str(&value)
+            .expect("reverse tunnel test header value should parse");
+        map.append(name, value);
+    }
+    map
+}
+
+async fn stop_test_reverse_tunnel_worker(
+    shutdown: CancellationToken,
+    handle: tokio::task::JoinHandle<()>,
+) {
+    shutdown.cancel();
+    if tokio::time::timeout(Duration::from_secs(7), handle)
+        .await
+        .is_err()
+    {
+        panic!("reverse tunnel test worker did not shut down");
+    }
+}
+
+async fn start_production_reverse_tunnel_worker(
+    follower_state: aster_drive::runtime::FollowerAppState,
+) -> TestReverseTunnelHttpWorker {
+    let shutdown = CancellationToken::new();
+    let worker_shutdown = shutdown.clone();
+    let handle = tokio::spawn(async move {
+        aster_drive::storage::remote_protocol::tunnel::client::run_follower_tunnel_worker(
+            web::Data::new(follower_state),
+            worker_shutdown,
+        )
+        .await;
+    });
+
+    TestReverseTunnelHttpWorker { shutdown, handle }
+}
+
+async fn stop_test_reverse_tunnel_http_worker(worker: TestReverseTunnelHttpWorker) {
+    stop_test_reverse_tunnel_worker(worker.shutdown, worker.handle).await;
+}
+
+async fn send_signed_tunnel_json_raw(
+    client: &reqwest::Client,
+    remote_node: &aster_drive::entities::managed_follower::Model,
+    master_url: &str,
+    path: &str,
+    value: serde_json::Value,
+) -> (reqwest::StatusCode, serde_json::Value) {
+    let body = serde_json::to_vec(&value).expect("tunnel JSON body should encode");
+    let url = format!("{master_url}{path}");
+    let response = client
+        .post(url)
+        .headers(signed_tunnel_http_headers(
+            remote_node,
+            "POST",
+            path,
+            Some(u64::try_from(body.len()).expect("tunnel test body length should fit u64")),
+        ))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body)
+        .send()
+        .await
+        .expect("signed tunnel HTTP request should send");
+    let status = response.status();
+    let body = response
+        .bytes()
+        .await
+        .expect("signed tunnel HTTP response body should read");
+    let value: serde_json::Value =
+        serde_json::from_slice(&body).expect("signed tunnel response should be JSON");
+    (status, value)
+}
+
+fn signed_tunnel_http_headers(
+    remote_node: &aster_drive::entities::managed_follower::Model,
+    method: &str,
+    path: &str,
+    content_length: Option<u64>,
+) -> reqwest::header::HeaderMap {
+    let timestamp = Utc::now().timestamp();
+    let nonce = uuid::Uuid::new_v4().to_string();
+    let signature = sign_internal_request(
+        &remote_node.secret_key,
+        method,
+        path,
+        timestamp,
+        &nonce,
+        content_length,
+    );
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::HeaderName::from_static(INTERNAL_AUTH_ACCESS_KEY_HEADER),
+        reqwest::header::HeaderValue::from_str(&remote_node.access_key)
+            .expect("access key header value should parse"),
+    );
+    headers.insert(
+        reqwest::header::HeaderName::from_static(INTERNAL_AUTH_TIMESTAMP_HEADER),
+        reqwest::header::HeaderValue::from_str(&timestamp.to_string())
+            .expect("timestamp header value should parse"),
+    );
+    headers.insert(
+        reqwest::header::HeaderName::from_static(INTERNAL_AUTH_NONCE_HEADER),
+        reqwest::header::HeaderValue::from_str(&nonce).expect("nonce header value should parse"),
+    );
+    headers.insert(
+        reqwest::header::HeaderName::from_static(INTERNAL_AUTH_SIGNATURE_HEADER),
+        reqwest::header::HeaderValue::from_str(&signature)
+            .expect("signature header value should parse"),
+    );
+    if let Some(content_length) = content_length {
+        headers.insert(
+            reqwest::header::CONTENT_LENGTH,
+            reqwest::header::HeaderValue::from_str(&content_length.to_string())
+                .expect("content length header value should parse"),
+        );
+    }
+    headers
+}
+
 async fn create_remote_policy(
     state: &aster_drive::runtime::PrimaryAppState,
     remote_node_id: i64,
@@ -222,6 +518,42 @@ async fn create_remote_policy_with_options(
         .expect("policy snapshot should reload after creating remote policy");
 
     policy
+}
+
+async fn create_remote_policy_via_service_with_options(
+    state: &aster_drive::runtime::PrimaryAppState,
+    remote_node_id: i64,
+    name: &str,
+    base_path: &str,
+    options: StoragePolicyOptions,
+    chunk_size: i64,
+) -> storage_policy::Model {
+    let created = policy_service::create(
+        state,
+        policy_service::CreateStoragePolicyInput {
+            name: name.to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::Remote,
+                endpoint: String::new(),
+                bucket: String::new(),
+                access_key: String::new(),
+                secret_key: String::new(),
+                base_path: base_path.to_string(),
+                remote_node_id: Some(remote_node_id),
+            },
+            max_file_size: 0,
+            chunk_size: Some(chunk_size),
+            is_default: false,
+            allowed_types: None,
+            options: Some(options),
+        },
+    )
+    .await
+    .expect("remote policy should be created through service");
+
+    policy_repo::find_by_id(state.writer_db(), created.id)
+        .await
+        .expect("created remote policy should be queryable")
 }
 
 async fn seed_remote_capabilities(
@@ -290,6 +622,49 @@ async fn wait_for_remote_probe(
     unreachable!("remote probe retry loop should return or panic")
 }
 
+async fn wait_for_tunnel_error_persisted(
+    state: &aster_drive::runtime::PrimaryAppState,
+    node_id: i64,
+    expected: &str,
+) {
+    for attempt in 0..20 {
+        let remote_node = managed_follower_repo::find_by_id(state.writer_db(), node_id)
+            .await
+            .expect("remote node should be queryable while waiting for tunnel error");
+        if remote_node.tunnel_last_error.contains(expected) {
+            return;
+        }
+        if attempt < 19 {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    }
+
+    let remote_node = managed_follower_repo::find_by_id(state.writer_db(), node_id)
+        .await
+        .expect("remote node should be queryable after waiting for tunnel error");
+    panic!(
+        "expected persisted tunnel error to contain '{expected}', got '{}'",
+        remote_node.tunnel_last_error
+    );
+}
+
+async fn wait_for_stream_lane(
+    state: &aster_drive::runtime::PrimaryAppState,
+    node: &aster_drive::entities::managed_follower::Model,
+) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(7);
+    while tokio::time::Instant::now() < deadline {
+        if state.remote_protocol.tunnel_registry().has_stream_lane(node) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!(
+        "expected reverse tunnel stream lane for remote node #{} to become available",
+        node.id
+    );
+}
+
 async fn mark_remote_node_enrollment_completed(
     state: &aster_drive::runtime::PrimaryAppState,
     node_id: i64,
@@ -349,6 +724,213 @@ async fn create_managed_local_ingress_for_binding(
     )
     .await
     .expect("provider managed ingress profile should be created");
+}
+
+async fn setup_reverse_tunnel_ingress_profile_target(
+    transport_mode: RemoteNodeTransportMode,
+) -> (
+    aster_drive::runtime::PrimaryAppState,
+    TestHttpServer,
+    aster_drive::runtime::PrimaryAppState,
+    aster_drive::entities::managed_follower::Model,
+    String,
+    CancellationToken,
+    tokio::task::JoinHandle<()>,
+) {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: format!("managed-ingress-{transport_mode:?}").to_lowercase(),
+            base_url: String::new(),
+            transport_mode,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse tunnel ingress target node should be created without base_url");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), consumer_node.id)
+            .await
+            .expect("reverse tunnel ingress target node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "reverse-managed-ingress".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created for reverse managed ingress");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+    mark_remote_node_enrollment_completed(&consumer_state, consumer_node.id).await;
+
+    let (tunnel_shutdown, tunnel_handle) = start_test_reverse_tunnel_worker(
+        consumer_state.clone(),
+        consumer_node_model.clone(),
+        provider_server.base_url.clone(),
+    )
+    .await;
+
+    let listed = managed_ingress_profile_service::list_remote(&consumer_state, consumer_node.id)
+        .await
+        .expect("reverse tunnel ingress profile list should use tunnel transport");
+    assert!(
+        listed.is_empty(),
+        "fresh reverse tunnel managed ingress target should start without profiles"
+    );
+
+    assert_eq!(provider_binding.access_key, consumer_node_model.access_key);
+
+    (
+        provider_state,
+        provider_server,
+        consumer_state,
+        consumer_node_model,
+        provider_binding.storage_namespace,
+        tunnel_shutdown,
+        tunnel_handle,
+    )
+}
+
+#[actix_web::test]
+async fn test_remote_ingress_profiles_use_reverse_tunnel_without_base_url() {
+    let (
+        provider_state,
+        provider_server,
+        consumer_state,
+        consumer_node_model,
+        storage_namespace,
+        tunnel_shutdown,
+        tunnel_handle,
+    ) = setup_reverse_tunnel_ingress_profile_target(RemoteNodeTransportMode::ReverseTunnel).await;
+
+    let created = managed_ingress_profile_service::create_remote(
+        &consumer_state,
+        consumer_node_model.id,
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
+            name: "Reverse Landing".to_string(),
+            base_path: "reverse-landing".to_string(),
+            max_file_size: 0,
+            is_default: true,
+        }),
+    )
+    .await
+    .expect("reverse tunnel ingress profile create should not require base_url");
+    assert_eq!(created.name, "Reverse Landing");
+    assert!(created.is_default);
+
+    let listed =
+        managed_ingress_profile_service::list_remote(&consumer_state, consumer_node_model.id)
+            .await
+            .expect("reverse tunnel ingress profile list should not require base_url");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].profile_key, created.profile_key);
+
+    let updated = managed_ingress_profile_service::update_remote(
+        &consumer_state,
+        consumer_node_model.id,
+        &created.profile_key,
+        RemoteUpdateIngressProfileRequest {
+            name: Some("Reverse Landing Updated".to_string()),
+            base_path: Some("reverse-landing-updated".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("reverse tunnel ingress profile update should not require base_url");
+    assert_eq!(updated.name, "Reverse Landing Updated");
+    assert_eq!(updated.base_path, "reverse-landing-updated");
+
+    let client = RemoteStorageClient::new(
+        &provider_server.base_url,
+        &consumer_node_model.access_key,
+        &consumer_node_model.secret_key,
+    )
+    .expect("managed ingress direct client should build for verification");
+    client
+        .put_bytes("reverse-managed-ingress.bin", b"reverse managed ingress")
+        .await
+        .expect("updated reverse tunnel ingress profile should accept remote writes");
+    let stored_path = Path::new(
+        &provider_state
+            .config
+            .server
+            .follower
+            .managed_ingress_local_root,
+    )
+    .join("reverse-landing-updated")
+    .join(storage_namespace)
+    .join("reverse-managed-ingress.bin");
+    assert_eq!(
+        tokio::fs::read(&stored_path)
+            .await
+            .expect("reverse tunnel managed ingress payload should be stored"),
+        b"reverse managed ingress"
+    );
+
+    managed_ingress_profile_service::delete_remote(
+        &consumer_state,
+        consumer_node_model.id,
+        &created.profile_key,
+    )
+    .await
+    .expect("reverse tunnel ingress profile delete should not require base_url");
+    let listed_after_delete =
+        managed_ingress_profile_service::list_remote(&consumer_state, consumer_node_model.id)
+            .await
+            .expect("reverse tunnel ingress profile list after delete should succeed");
+    assert!(listed_after_delete.is_empty());
+
+    stop_test_reverse_tunnel_worker(tunnel_shutdown, tunnel_handle).await;
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_remote_ingress_profiles_auto_empty_base_url_uses_reverse_tunnel() {
+    let (
+        _provider_state,
+        provider_server,
+        consumer_state,
+        consumer_node_model,
+        _storage_namespace,
+        tunnel_shutdown,
+        tunnel_handle,
+    ) = setup_reverse_tunnel_ingress_profile_target(RemoteNodeTransportMode::Auto).await;
+
+    let profile = managed_ingress_profile_service::create_remote(
+        &consumer_state,
+        consumer_node_model.id,
+        RemoteCreateIngressProfileRequest::Local(RemoteCreateLocalIngressProfileRequest {
+            name: "Auto Tunnel Landing".to_string(),
+            base_path: "auto-tunnel-landing".to_string(),
+            max_file_size: 0,
+            is_default: true,
+        }),
+    )
+    .await
+    .expect("auto ingress profile create should use reverse tunnel when base_url is empty");
+
+    let listed =
+        managed_ingress_profile_service::list_remote(&consumer_state, consumer_node_model.id)
+            .await
+            .expect("auto ingress profile list should use reverse tunnel when base_url is empty");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].profile_key, profile.profile_key);
+
+    stop_test_reverse_tunnel_worker(tunnel_shutdown, tunnel_handle).await;
+    provider_server.stop().await;
 }
 
 async fn write_temp_upload_file(
@@ -562,6 +1144,25 @@ fn managed_ingress_object_path(
     )
 }
 
+async fn remote_driver_for_policy_connection_test_objects(
+    provider_state: &aster_drive::runtime::PrimaryAppState,
+    profile_base_path: &str,
+    storage_namespace: &str,
+    remote_base_path: &str,
+) -> Vec<String> {
+    let base_dir = managed_ingress_object_path(
+        provider_state,
+        profile_base_path,
+        storage_namespace,
+        remote_base_path,
+        "",
+    );
+    snapshot_dir_tree(&base_dir)
+        .expect("managed ingress test object directory should be readable")
+        .into_iter()
+        .collect()
+}
+
 fn path_and_query_from_url(url: &str) -> String {
     let parsed = reqwest::Url::parse(url).expect("test URL should parse");
     match parsed.query() {
@@ -608,6 +1209,7 @@ async fn setup_browser_presigned_cors_fixture(
         managed_follower_service::CreateRemoteNodeInput {
             name: format!("{label}-node"),
             base_url: "http://provider.example.com".to_string(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -719,6 +1321,7 @@ async fn test_managed_ingress_profile_handles_remote_writes_without_legacy_bindi
         managed_follower_service::CreateRemoteNodeInput {
             name: "managed-ingress-node".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -1189,6 +1792,7 @@ async fn test_remote_node_connection_failure_returns_error_and_persists_last_err
         managed_follower_service::CreateRemoteNodeInput {
             name: "broken-remote".to_string(),
             base_url: "http://127.0.0.1:9".to_string(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -1218,6 +1822,7 @@ async fn test_remote_node_failed_probe_preserves_cached_capabilities() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "capability-cache-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -1290,6 +1895,7 @@ async fn test_remote_node_probe_rejects_incompatible_protocol_version() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "old-protocol-target".to_string(),
             base_url: capabilities_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -1306,7 +1912,7 @@ async fn test_remote_node_probe_rejects_incompatible_protocol_version() {
         Some(aster_drive::storage::StorageErrorKind::Misconfigured)
     );
     assert!(error.message().contains("protocol incompatible"));
-    assert!(error.message().contains("local supports v2-v2"));
+    assert!(error.message().contains("local supports v2-v3"));
 
     let stored = managed_follower_repo::find_by_id(state.writer_db(), node.id)
         .await
@@ -1334,6 +1940,7 @@ async fn test_remote_node_probe_rejects_presigned_download_when_range_cors_missi
         managed_follower_service::CreateRemoteNodeInput {
             name: "missing-range-cors-target".to_string(),
             base_url: capabilities_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -1384,7 +1991,7 @@ async fn test_remote_node_probe_rejects_presigned_download_when_range_cors_missi
     assert!(
         stored
             .last_capabilities
-            .contains("\"protocol_version\":\"v2\"")
+            .contains("\"protocol_version\":\"v3\"")
     );
 
     capabilities_server.stop().await;
@@ -1480,8 +2087,14 @@ async fn test_internal_storage_capabilities_probe_does_not_require_ingress_profi
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     let body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
-    assert_eq!(body["data"]["protocol_version"], "v2");
-    assert_eq!(body["data"]["min_supported_protocol_version"], "v2");
+    assert_eq!(
+        body["data"]["protocol_version"],
+        INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL
+    );
+    assert_eq!(
+        body["data"]["min_supported_protocol_version"],
+        INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL
+    );
     assert_eq!(body["data"]["features"]["object_get"], true);
     assert_eq!(body["data"]["features"]["object_head"], true);
     assert_eq!(body["data"]["features"]["browser_presigned_cors"], true);
@@ -1692,6 +2305,7 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -1727,8 +2341,14 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
     .await;
 
     let probed = wait_for_remote_probe(&consumer_state, consumer_node.id).await;
-    assert_eq!(probed.capabilities.protocol_version, "v2");
-    assert_eq!(probed.capabilities.min_supported_protocol_version, "v2");
+    assert_eq!(
+        probed.capabilities.protocol_version,
+        INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL
+    );
+    assert_eq!(
+        probed.capabilities.min_supported_protocol_version,
+        INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL
+    );
     assert!(probed.capabilities.features.object_get);
     assert!(probed.capabilities.features.object_head);
     assert!(probed.capabilities.features.range_get);
@@ -1910,6 +2530,1364 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
 }
 
 #[actix_web::test]
+async fn test_remote_storage_end_to_end_via_reverse_tunnel() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-provider-target".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse remote node should be created without base_url");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), consumer_node.id)
+            .await
+            .expect("reverse remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "reverse-consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created for reverse node");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.access_key,
+    )
+    .await;
+    mark_remote_node_enrollment_completed(&consumer_state, consumer_node.id).await;
+
+    let (tunnel_shutdown, tunnel_handle) = start_test_reverse_tunnel_worker(
+        consumer_state.clone(),
+        consumer_node_model.clone(),
+        provider_server.base_url.clone(),
+    )
+    .await;
+
+    let probed = managed_follower_service::test_connection(&consumer_state, consumer_node.id)
+        .await
+        .expect("reverse tunnel remote node should probe through tunnel");
+    assert_eq!(
+        probed.transport_mode,
+        RemoteNodeTransportMode::ReverseTunnel
+    );
+    assert_eq!(
+        probed.tunnel.status,
+        aster_drive::storage::remote_protocol::tunnel::server::RemoteTunnelOnlineStatus::Online
+    );
+    assert_eq!(probed.capabilities.protocol_version, "v3");
+
+    let remote_policy = create_remote_policy(
+        &consumer_state,
+        consumer_node.id,
+        "Reverse Tunnel Remote Policy",
+        "reverse-base",
+    )
+    .await;
+    let remote_driver = consumer_state
+        .driver_registry
+        .get_driver(&remote_policy)
+        .expect("reverse remote policy driver should resolve");
+
+    remote_driver
+        .put("files/reverse.txt", b"reverse tunnel payload")
+        .await
+        .expect("reverse remote PUT should succeed");
+    assert!(
+        remote_driver
+            .exists("files/reverse.txt")
+            .await
+            .expect("reverse remote HEAD should succeed")
+    );
+    let downloaded = remote_driver
+        .get("files/reverse.txt")
+        .await
+        .expect("reverse remote GET should succeed");
+    assert_eq!(downloaded, b"reverse tunnel payload");
+
+    let mut stream = remote_driver
+        .get_range("files/reverse.txt", 8, Some(6))
+        .await
+        .expect("reverse remote range GET should succeed");
+    let mut range = Vec::new();
+    stream
+        .read_to_end(&mut range)
+        .await
+        .expect("reverse remote range body should read");
+    assert_eq!(range, b"tunnel");
+
+    let streamed_payload = b"reverse tunnel buffered stream upload".to_vec();
+    let stream_driver = remote_driver
+        .as_stream_upload()
+        .expect("reverse remote driver should expose bounded stream upload");
+    stream_driver
+        .put_reader(
+            "files/streamed.txt",
+            Box::new(std::io::Cursor::new(streamed_payload.clone())),
+            i64::try_from(streamed_payload.len()).expect("test payload length should fit i64"),
+        )
+        .await
+        .expect("reverse buffered stream upload should succeed");
+    assert_eq!(
+        remote_driver
+            .get("files/streamed.txt")
+            .await
+            .expect("reverse streamed upload should be readable"),
+        streamed_payload
+    );
+
+    let listed_paths = remote_driver
+        .as_list()
+        .expect("reverse remote driver should support list")
+        .list_paths(Some("files"))
+        .await
+        .expect("reverse remote list should succeed");
+    assert!(listed_paths.contains(&"files/reverse.txt".to_string()));
+    assert!(listed_paths.contains(&"files/streamed.txt".to_string()));
+
+    remote_driver
+        .delete("files/reverse.txt")
+        .await
+        .expect("reverse remote DELETE should succeed");
+    assert!(
+        !remote_driver
+            .exists("files/reverse.txt")
+            .await
+            .expect("reverse remote HEAD after delete should succeed")
+    );
+
+    let provider_streamed_path = managed_ingress_object_path(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.storage_namespace,
+        &remote_policy.base_path,
+        "files/streamed.txt",
+    );
+    assert_eq!(
+        tokio::fs::read(&provider_streamed_path)
+            .await
+            .expect("provider should receive reverse streamed object"),
+        b"reverse tunnel buffered stream upload"
+    );
+
+    stop_test_reverse_tunnel_worker(tunnel_shutdown, tunnel_handle).await;
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_handles_concurrent_requests_across_polls() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-concurrent-target".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse remote node should be created without base_url");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), consumer_node.id)
+            .await
+            .expect("reverse remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "reverse-concurrent-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created for reverse node");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.access_key,
+    )
+    .await;
+    mark_remote_node_enrollment_completed(&consumer_state, consumer_node.id).await;
+    seed_remote_capabilities(
+        &consumer_state,
+        consumer_node.id,
+        RemoteStorageCapabilities::current(),
+    )
+    .await;
+
+    let (tunnel_shutdown, tunnel_handle) = start_test_reverse_tunnel_worker(
+        consumer_state.clone(),
+        consumer_node_model,
+        provider_server.base_url.clone(),
+    )
+    .await;
+
+    let remote_policy = create_remote_policy(
+        &consumer_state,
+        consumer_node.id,
+        "Reverse Concurrent Remote Policy",
+        "reverse-concurrent-base",
+    )
+    .await;
+    let remote_driver = consumer_state
+        .driver_registry
+        .get_driver(&remote_policy)
+        .expect("reverse remote policy driver should resolve");
+
+    let writes = (0..8)
+        .map(|index| {
+            let driver = remote_driver.clone();
+            tokio::spawn(async move {
+                let path = format!("files/concurrent-{index}.txt");
+                let payload = format!("reverse concurrent payload {index}");
+                driver
+                    .put(&path, payload.as_bytes())
+                    .await
+                    .expect("concurrent reverse tunnel PUT should succeed");
+                let stored = driver
+                    .get(&path)
+                    .await
+                    .expect("concurrent reverse tunnel GET should succeed");
+                assert_eq!(stored, payload.as_bytes());
+            })
+        })
+        .collect::<Vec<_>>();
+    for result in join_all(writes).await {
+        result.expect("concurrent reverse tunnel task should join");
+    }
+
+    let listed_paths = remote_driver
+        .as_list()
+        .expect("reverse remote driver should support list")
+        .list_paths(Some("files"))
+        .await
+        .expect("reverse remote list should succeed after concurrent writes");
+    for index in 0..8 {
+        assert!(listed_paths.contains(&format!("files/concurrent-{index}.txt")));
+    }
+
+    stop_test_reverse_tunnel_worker(tunnel_shutdown, tunnel_handle).await;
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_e2e_over_http_with_follower_worker() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("provider listener should bind for production tunnel worker test");
+    let provider_port = provider_listener
+        .local_addr()
+        .expect("provider listener should expose local addr")
+        .port();
+    let provider_server = spawn_internal_storage_server_on_listener(
+        follower_view_with_server_port(&provider_state, provider_port),
+        provider_listener,
+    )
+    .await;
+    let primary_server = spawn_reverse_tunnel_primary_server(consumer_state.clone()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-http-provider-target".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse HTTP remote node should be created without base_url");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), consumer_node.id)
+            .await
+            .expect("reverse HTTP remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "reverse-http-consumer-access".to_string(),
+            master_url: primary_server.base_url.clone(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created for HTTP reverse node");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.access_key,
+    )
+    .await;
+    mark_remote_node_enrollment_completed(&consumer_state, consumer_node.id).await;
+
+    let tunnel_worker = start_production_reverse_tunnel_worker(follower_view_with_server_port(
+        &provider_state,
+        provider_port,
+    ))
+    .await;
+    wait_for_stream_lane(&consumer_state, &consumer_node_model).await;
+
+    let probed = managed_follower_service::test_connection(&consumer_state, consumer_node.id)
+        .await
+        .expect("HTTP reverse tunnel remote node should probe through production worker");
+    assert_eq!(
+        probed.tunnel.status,
+        aster_drive::storage::remote_protocol::tunnel::server::RemoteTunnelOnlineStatus::Online
+    );
+    assert_eq!(probed.capabilities.protocol_version, "v3");
+
+    let remote_policy = create_remote_policy(
+        &consumer_state,
+        consumer_node.id,
+        "Reverse HTTP Tunnel Remote Policy",
+        "reverse-http-base",
+    )
+    .await;
+    let remote_driver = consumer_state
+        .driver_registry
+        .get_driver(&remote_policy)
+        .expect("HTTP reverse remote policy driver should resolve");
+
+    let payload = vec![b'x'; 1024 * 1024 + 64 * 1024];
+    remote_driver
+        .put("files/http-large.bin", &payload)
+        .await
+        .expect("HTTP reverse tunnel PUT above global JSON limit should succeed");
+    assert_eq!(
+        remote_driver
+            .get("files/http-large.bin")
+            .await
+            .expect("HTTP reverse tunnel GET above global JSON limit should succeed"),
+        payload
+    );
+
+    let provider_object = managed_ingress_object_path(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.storage_namespace,
+        &remote_policy.base_path,
+        "files/http-large.bin",
+    );
+    assert_eq!(
+        tokio::fs::metadata(&provider_object)
+            .await
+            .expect("provider should receive HTTP tunnel object")
+            .len(),
+        1024 * 1024 + 64 * 1024
+    );
+
+    stop_test_reverse_tunnel_http_worker(tunnel_worker).await;
+    primary_server.stop().await;
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_production_worker_falls_back_to_poll_when_stream_unavailable() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("provider listener should bind for poll fallback test");
+    let provider_port = provider_listener
+        .local_addr()
+        .expect("provider listener should expose local addr")
+        .port();
+    let provider_server = spawn_internal_storage_server_on_listener(
+        follower_view_with_server_port(&provider_state, provider_port),
+        provider_listener,
+    )
+    .await;
+    let primary_server =
+        spawn_reverse_tunnel_poll_only_primary_server(consumer_state.clone()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-poll-fallback-target".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse poll fallback node should be created without base_url");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), consumer_node.id)
+            .await
+            .expect("reverse poll fallback node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "reverse-poll-fallback-access".to_string(),
+            master_url: primary_server.base_url.clone(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created for poll fallback reverse node");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload for poll fallback test");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.access_key,
+    )
+    .await;
+    mark_remote_node_enrollment_completed(&consumer_state, consumer_node.id).await;
+
+    let tunnel_worker = start_production_reverse_tunnel_worker(follower_view_with_server_port(
+        &provider_state,
+        provider_port,
+    ))
+    .await;
+
+    let probed = managed_follower_service::test_connection(&consumer_state, consumer_node.id)
+        .await
+        .expect("poll fallback should probe through production worker");
+    assert_eq!(
+        probed.tunnel.status,
+        aster_drive::storage::remote_protocol::tunnel::server::RemoteTunnelOnlineStatus::Online
+    );
+    assert_eq!(probed.capabilities.protocol_version, "v3");
+    assert!(
+        !consumer_state
+            .remote_protocol
+            .tunnel_registry()
+            .has_stream_lane(&consumer_node_model),
+        "poll-only primary server must not register stream lanes"
+    );
+
+    let remote_policy = create_remote_policy(
+        &consumer_state,
+        consumer_node.id,
+        "Reverse Poll Fallback Remote Policy",
+        "reverse-poll-fallback-base",
+    )
+    .await;
+    let remote_driver = consumer_state
+        .driver_registry
+        .get_driver(&remote_policy)
+        .expect("poll fallback remote policy driver should resolve");
+
+    remote_driver
+        .put("files/fallback.txt", b"poll fallback payload")
+        .await
+        .expect("poll fallback reverse tunnel PUT should succeed");
+    assert_eq!(
+        remote_driver
+            .get("files/fallback.txt")
+            .await
+            .expect("poll fallback reverse tunnel GET should succeed"),
+        b"poll fallback payload"
+    );
+
+    let provider_object = managed_ingress_object_path(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.storage_namespace,
+        &remote_policy.base_path,
+        "files/fallback.txt",
+    );
+    assert_eq!(
+        tokio::fs::read(&provider_object)
+            .await
+            .expect("provider should receive poll fallback object"),
+        b"poll fallback payload"
+    );
+
+    stop_test_reverse_tunnel_http_worker(tunnel_worker).await;
+    primary_server.stop().await;
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_follower_worker_rejects_non_storage_paths() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("provider listener should bind for tunnel path guard test");
+    let provider_port = provider_listener
+        .local_addr()
+        .expect("provider listener should expose local addr")
+        .port();
+    let provider_server = spawn_internal_storage_server_on_listener(
+        follower_view_with_server_port(&provider_state, provider_port),
+        provider_listener,
+    )
+    .await;
+    let primary_server = spawn_reverse_tunnel_primary_server(consumer_state.clone()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-path-guard-target".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse node should be created for path guard test");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), consumer_node.id)
+            .await
+            .expect("reverse node should be queryable for path guard test");
+
+    master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "reverse-path-guard-access".to_string(),
+            master_url: primary_server.base_url.clone(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created for path guard test");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload for path guard test");
+    mark_remote_node_enrollment_completed(&consumer_state, consumer_node.id).await;
+
+    let tunnel_worker = start_production_reverse_tunnel_worker(follower_view_with_server_port(
+        &provider_state,
+        provider_port,
+    ))
+    .await;
+
+    let response = consumer_state
+        .remote_protocol
+        .tunnel_registry()
+        .send(
+            &consumer_node_model,
+            http::Method::GET,
+            "/api/v1/admin/users".to_string(),
+            None,
+            Vec::new(),
+            Bytes::new(),
+        )
+        .await
+        .expect("forbidden tunnel target should return a tunnel response");
+    assert_eq!(response.status, http::StatusCode::FORBIDDEN);
+    assert_eq!(
+        response.body.as_ref(),
+        b"reverse tunnel can only proxy internal storage paths"
+    );
+    let info = managed_follower_service::get(&consumer_state, consumer_node.id)
+        .await
+        .expect("remote node info should load after forbidden tunnel target");
+    assert!(
+        info.tunnel
+            .last_error
+            .contains("reverse tunnel can only proxy internal storage paths"),
+        "forbidden tunnel target should be visible in tunnel diagnostics, got '{}'",
+        info.tunnel.last_error
+    );
+
+    stop_test_reverse_tunnel_http_worker(tunnel_worker).await;
+    primary_server.stop().await;
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_policy_connection_test_uses_tunnel_registry() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-policy-test-target".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse remote node should be created without base_url");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), consumer_node.id)
+            .await
+            .expect("reverse remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "reverse-policy-test-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created for reverse node");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.access_key,
+    )
+    .await;
+    mark_remote_node_enrollment_completed(&consumer_state, consumer_node.id).await;
+    seed_remote_capabilities(
+        &consumer_state,
+        consumer_node.id,
+        RemoteStorageCapabilities::current(),
+    )
+    .await;
+
+    let (tunnel_shutdown, tunnel_handle) = start_test_reverse_tunnel_worker(
+        consumer_state.clone(),
+        consumer_node_model,
+        provider_server.base_url.clone(),
+    )
+    .await;
+
+    policy_service::test_connection_params(
+        &consumer_state,
+        policy_service::StoragePolicyConnectionInput {
+            driver_type: DriverType::Remote,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            base_path: "reverse-policy-test".to_string(),
+            remote_node_id: Some(consumer_node.id),
+        },
+    )
+    .await
+    .expect("reverse tunnel policy connection test should use tunnel transport");
+
+    let test_objects = remote_driver_for_policy_connection_test_objects(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.storage_namespace,
+        "reverse-policy-test",
+    )
+    .await;
+    assert!(
+        test_objects.is_empty(),
+        "connection test should clean up tunneled test object, found {test_objects:?}"
+    );
+
+    stop_test_reverse_tunnel_worker(tunnel_shutdown, tunnel_handle).await;
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_http_rejects_access_key_mismatch() {
+    let state = common::setup().await;
+    let primary_server = spawn_reverse_tunnel_primary_server(state.clone()).await;
+    let node_a = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-http-auth-a".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("node a should be created");
+    let node_b = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-http-auth-b".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("node b should be created");
+    let node_a_model = managed_follower_repo::find_by_id(state.writer_db(), node_a.id)
+        .await
+        .expect("node a should be queryable");
+    let node_b_model = managed_follower_repo::find_by_id(state.writer_db(), node_b.id)
+        .await
+        .expect("node b should be queryable");
+
+    let client = reqwest::Client::new();
+    let (status, body) = send_signed_tunnel_json_raw(
+        &client,
+        &node_a_model,
+        &primary_server.base_url,
+        REMOTE_TUNNEL_POLL_PATH,
+        serde_json::json!({ "access_key": node_b_model.access_key }),
+    )
+    .await;
+
+    assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+    assert!(
+        body["msg"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("does not match signed credentials"),
+        "unexpected mismatch response: {body}"
+    );
+
+    primary_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_completion_from_wrong_node_does_not_consume_pending_request() {
+    let state = common::setup().await;
+    let node_a = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-wrong-complete-a".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("node a should be created");
+    let node_b = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-wrong-complete-b".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("node b should be created");
+    let node_a_model = managed_follower_repo::find_by_id(state.writer_db(), node_a.id)
+        .await
+        .expect("node a should be queryable");
+    let node_b_model = managed_follower_repo::find_by_id(state.writer_db(), node_b.id)
+        .await
+        .expect("node b should be queryable");
+
+    let poll_state = state.clone();
+    let poll_node = node_a_model.clone();
+    let poll_handle = tokio::spawn(async move {
+        aster_drive::storage::remote_protocol::tunnel::server::poll(&poll_state, &poll_node)
+            .await
+            .expect("node a poll should succeed")
+    });
+    tokio::task::yield_now().await;
+
+    let send_handle = {
+        let registry = state.remote_protocol.tunnel_registry().clone();
+        let node = node_a_model.clone();
+        tokio::spawn(async move {
+            registry
+                .send(
+                    &node,
+                    http::Method::GET,
+                    format!("{INTERNAL_STORAGE_BASE_PATH}/capabilities"),
+                    None,
+                    Vec::new(),
+                    Bytes::new(),
+                )
+                .await
+        })
+    };
+    let poll = poll_handle.await.expect("poll task should join");
+    let request = poll
+        .request
+        .expect("node a poll should receive dispatched request");
+
+    let wrong_error = aster_drive::storage::remote_protocol::tunnel::server::complete(
+        &state,
+        &node_b_model,
+        RemoteTunnelResponse {
+            request_id: request.request_id.clone(),
+            status: 200,
+            headers: Vec::new(),
+            body: b"wrong node".to_vec(),
+        },
+    )
+    .await
+    .expect_err("wrong node must not complete another node's pending request");
+    assert!(
+        wrong_error
+            .message()
+            .contains("does not belong to this remote node"),
+        "unexpected wrong-node error: {wrong_error}"
+    );
+
+    aster_drive::storage::remote_protocol::tunnel::server::complete(
+        &state,
+        &node_a_model,
+        RemoteTunnelResponse {
+            request_id: request.request_id,
+            status: 200,
+            headers: Vec::new(),
+            body: serde_json::to_vec(&serde_json::json!({
+                "code": 0,
+                "msg": "",
+                "data": RemoteStorageCapabilities::current(),
+            }))
+            .expect("capabilities response should serialize"),
+        },
+    )
+    .await
+    .expect("owner node should still be able to complete pending request");
+    let response = send_handle
+        .await
+        .expect("reverse tunnel send task should join")
+        .expect("reverse tunnel send should complete after owner response");
+    assert_eq!(response.status.as_u16(), 200);
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_records_offline_error_and_clears_on_poll() {
+    let state = common::setup().await;
+    let node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-offline-error".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse node should be created");
+    let node_model = managed_follower_repo::find_by_id(state.writer_db(), node.id)
+        .await
+        .expect("reverse node should be queryable");
+
+    let error = state
+        .remote_protocol
+        .tunnel_registry()
+        .send(
+            &node_model,
+            http::Method::GET,
+            format!("{INTERNAL_STORAGE_BASE_PATH}/capabilities"),
+            None,
+            Vec::new(),
+            Bytes::new(),
+        )
+        .await
+        .expect_err("offline reverse tunnel send should fail");
+    assert!(error.message().contains("reverse tunnel is offline"));
+
+    let info = managed_follower_service::get(&state, node.id)
+        .await
+        .expect("remote node info should load");
+    assert!(
+        info.tunnel.last_error.contains("reverse tunnel is offline"),
+        "runtime tunnel error should be visible immediately, got '{}'",
+        info.tunnel.last_error
+    );
+    wait_for_tunnel_error_persisted(&state, node.id, "reverse tunnel is offline").await;
+
+    let poll_state = state.clone();
+    let poll_node = node_model.clone();
+    let poll_handle = tokio::spawn(async move {
+        aster_drive::storage::remote_protocol::tunnel::server::poll(&poll_state, &poll_node)
+            .await
+            .expect("reverse tunnel poll should clear stale error")
+    });
+    tokio::task::yield_now().await;
+    let send_handle = {
+        let registry = state.remote_protocol.tunnel_registry().clone();
+        let node = node_model.clone();
+        tokio::spawn(async move {
+            registry
+                .send(
+                    &node,
+                    http::Method::GET,
+                    format!("{INTERNAL_STORAGE_BASE_PATH}/capabilities"),
+                    None,
+                    Vec::new(),
+                    Bytes::new(),
+                )
+                .await
+        })
+    };
+    let polled = poll_handle.await.expect("poll task should join");
+    let request = polled
+        .request
+        .expect("poll should receive the stale-error clearing request");
+    aster_drive::storage::remote_protocol::tunnel::server::complete(
+        &state,
+        &node_model,
+        RemoteTunnelResponse {
+            request_id: request.request_id,
+            status: 200,
+            headers: Vec::new(),
+            body: serde_json::to_vec(&serde_json::json!({
+                "code": 0,
+                "msg": "",
+                "data": RemoteStorageCapabilities::current(),
+            }))
+            .expect("capabilities response should serialize"),
+        },
+    )
+    .await
+    .expect("successful tunnel completion should clear stale error");
+    send_handle
+        .await
+        .expect("send task should join")
+        .expect("send should complete after success response");
+    let cleared = managed_follower_service::get(&state, node.id)
+        .await
+        .expect("remote node info should load after poll");
+    assert_eq!(cleared.tunnel.last_error, "");
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_polls_do_not_touch_updated_at() {
+    let state = common::setup().await;
+    let node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-poll-updated-at".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse node should be created");
+    let before = managed_follower_repo::find_by_id(state.writer_db(), node.id)
+        .await
+        .expect("reverse node should be queryable before poll");
+    tokio::time::sleep(Duration::from_millis(2)).await;
+
+    let poll_state = state.clone();
+    let poll_node = before.clone();
+    let poll_handle = tokio::spawn(async move {
+        aster_drive::storage::remote_protocol::tunnel::server::poll(&poll_state, &poll_node)
+            .await
+            .expect("reverse tunnel poll should succeed")
+    });
+    tokio::task::yield_now().await;
+    let send_handle = {
+        let registry = state.remote_protocol.tunnel_registry().clone();
+        let node = before.clone();
+        tokio::spawn(async move {
+            registry
+                .send(
+                    &node,
+                    http::Method::GET,
+                    format!("{INTERNAL_STORAGE_BASE_PATH}/capabilities"),
+                    None,
+                    Vec::new(),
+                    Bytes::new(),
+                )
+                .await
+        })
+    };
+    let polled = poll_handle.await.expect("poll task should join");
+    let request = polled
+        .request
+        .expect("poll should receive the updated_at test request");
+    aster_drive::storage::remote_protocol::tunnel::server::complete(
+        &state,
+        &before,
+        RemoteTunnelResponse {
+            request_id: request.request_id,
+            status: 200,
+            headers: Vec::new(),
+            body: serde_json::to_vec(&serde_json::json!({
+                "code": 0,
+                "msg": "",
+                "data": RemoteStorageCapabilities::current(),
+            }))
+            .expect("capabilities response should serialize"),
+        },
+    )
+    .await
+    .expect("tunnel completion should finish updated_at test request");
+    send_handle
+        .await
+        .expect("send task should join")
+        .expect("send should complete after updated_at test response");
+
+    let after = managed_follower_repo::find_by_id(state.writer_db(), node.id)
+        .await
+        .expect("reverse node should be queryable after poll");
+    assert_eq!(
+        after.updated_at, before.updated_at,
+        "tunnel heartbeat should not change configuration updated_at"
+    );
+    assert!(after.tunnel_last_seen_at.is_some());
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_completion_rejects_body_above_cap() {
+    let state = common::setup().await;
+    let node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-too-large-complete".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("node should be created");
+    let node_model = managed_follower_repo::find_by_id(state.writer_db(), node.id)
+        .await
+        .expect("node should be queryable");
+
+    let error = aster_drive::storage::remote_protocol::tunnel::server::complete(
+        &state,
+        &node_model,
+        RemoteTunnelResponse {
+            request_id: "too-large".to_string(),
+            status: 200,
+            headers: Vec::new(),
+            body: vec![0; REMOTE_TUNNEL_BODY_LIMIT + 1],
+        },
+    )
+    .await
+    .expect_err("oversized tunnel response must be rejected before pending lookup");
+    assert!(
+        error
+            .message()
+            .contains("reverse tunnel response body exceeds"),
+        "unexpected oversized response error: {error}"
+    );
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_route_accepts_payload_above_global_json_limit() {
+    const {
+        assert!(REMOTE_TUNNEL_JSON_LIMIT > 1024 * 1024);
+    }
+
+    let state = common::setup().await;
+    let primary_server = spawn_reverse_tunnel_primary_server(state.clone()).await;
+    let node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-json-limit".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("node should be created");
+    let node_model = managed_follower_repo::find_by_id(state.writer_db(), node.id)
+        .await
+        .expect("node should be queryable");
+
+    let client = reqwest::Client::new();
+    let (status, response) = send_signed_tunnel_json_raw(
+        &client,
+        &node_model,
+        &primary_server.base_url,
+        REMOTE_TUNNEL_COMPLETE_PATH,
+        serde_json::json!({
+            "request_id": "not-pending",
+            "status": 200,
+            "headers": [],
+            "body": vec![b'a'; 1024 * 1024 + 1],
+        }),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+    assert!(
+        response["msg"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("no longer pending"),
+        "large complete should reach handler instead of JSON limit: {response}"
+    );
+
+    primary_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_remote_policy_rejects_presigned_strategies() {
+    let state = common::setup().await;
+    let node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-presigned-rejected".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse remote node should be created");
+
+    let make_input = |options| policy_service::CreateStoragePolicyInput {
+        name: "Reverse Presigned Rejected".to_string(),
+        connection: policy_service::StoragePolicyConnectionInput {
+            driver_type: DriverType::Remote,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            base_path: "reverse-presigned".to_string(),
+            remote_node_id: Some(node.id),
+        },
+        max_file_size: 0,
+        chunk_size: Some(5_242_880),
+        is_default: false,
+        allowed_types: None,
+        options: Some(options),
+    };
+
+    let upload_error = policy_service::create(
+        &state,
+        make_input(StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        }),
+    )
+    .await
+    .expect_err("reverse tunnel should reject presigned remote upload policies");
+    assert!(
+        upload_error
+            .message()
+            .contains("reverse tunnel remote nodes do not support presigned")
+    );
+
+    let download_error = policy_service::create(
+        &state,
+        make_input(StoragePolicyOptions {
+            remote_download_strategy: Some(RemoteDownloadStrategy::Presigned),
+            ..Default::default()
+        }),
+    )
+    .await
+    .expect_err("reverse tunnel should reject presigned remote download policies");
+    assert!(
+        download_error
+            .message()
+            .contains("reverse tunnel remote nodes do not support presigned")
+    );
+}
+
+#[actix_web::test]
+async fn test_auto_empty_url_remote_policy_rejects_presigned_strategies() {
+    let state = common::setup().await;
+    let node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "auto-empty-presigned-rejected".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::Auto,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("auto remote node should be created without base_url");
+
+    let error = policy_service::create(
+        &state,
+        policy_service::CreateStoragePolicyInput {
+            name: "Auto Empty Presigned Rejected".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::Remote,
+                endpoint: String::new(),
+                bucket: String::new(),
+                access_key: String::new(),
+                secret_key: String::new(),
+                base_path: "auto-empty-presigned".to_string(),
+                remote_node_id: Some(node.id),
+            },
+            max_file_size: 0,
+            chunk_size: Some(5_242_880),
+            is_default: false,
+            allowed_types: None,
+            options: Some(StoragePolicyOptions {
+                remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+                ..Default::default()
+            }),
+        },
+    )
+    .await
+    .expect_err(
+        "auto node without base_url resolves to reverse tunnel and should reject presigned",
+    );
+    assert!(
+        error
+            .message()
+            .contains("reverse tunnel remote nodes do not support presigned")
+    );
+}
+
+#[actix_web::test]
+async fn test_reverse_tunnel_remote_policy_update_rejects_presigned_strategies() {
+    let state = common::setup().await;
+    let node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-presigned-update-rejected".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse remote node should be created");
+    seed_remote_capabilities(&state, node.id, RemoteStorageCapabilities::current()).await;
+    let policy = create_remote_policy(
+        &state,
+        node.id,
+        "Reverse Presigned Update Rejected",
+        "reverse-presigned-update",
+    )
+    .await;
+
+    let upload_error = policy_service::update(
+        &state,
+        policy.id,
+        policy_service::UpdateStoragePolicyInput {
+            options: Some(StoragePolicyOptions {
+                remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("reverse tunnel should reject presigned upload policy updates");
+    assert!(
+        upload_error
+            .message()
+            .contains("reverse tunnel remote nodes do not support presigned")
+    );
+
+    let download_error = policy_service::update(
+        &state,
+        policy.id,
+        policy_service::UpdateStoragePolicyInput {
+            options: Some(StoragePolicyOptions {
+                remote_download_strategy: Some(RemoteDownloadStrategy::Presigned),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("reverse tunnel should reject presigned download policy updates");
+    assert!(
+        download_error
+            .message()
+            .contains("reverse tunnel remote nodes do not support presigned")
+    );
+}
+
+#[actix_web::test]
+async fn test_remote_node_update_rejects_reverse_tunnel_when_referenced_policy_uses_presigned() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "direct-presigned-update-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("direct remote node should be created");
+    seed_remote_capabilities(
+        &consumer_state,
+        node.id,
+        RemoteStorageCapabilities::current(),
+    )
+    .await;
+    let _policy = create_remote_policy_via_service_with_options(
+        &consumer_state,
+        node.id,
+        "Direct Presigned Before Reverse Switch",
+        "direct-presigned-before-switch",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        },
+        5_242_880,
+    )
+    .await;
+
+    let error = managed_follower_service::update(
+        &consumer_state,
+        node.id,
+        managed_follower_service::UpdateRemoteNodeInput {
+            base_url: Some(String::new()),
+            transport_mode: Some(RemoteNodeTransportMode::ReverseTunnel),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("node with presigned policies must not switch to reverse tunnel");
+    assert!(
+        error.message().contains("uses presigned"),
+        "unexpected reverse switch error: {error}"
+    );
+
+    let still_direct = managed_follower_repo::find_by_id(consumer_state.writer_db(), node.id)
+        .await
+        .expect("remote node should still exist");
+    assert_eq!(still_direct.transport_mode, RemoteNodeTransportMode::Direct);
+    assert_eq!(still_direct.base_url, provider_server.base_url);
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
 async fn test_remote_presigned_download_redirects_to_follower() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
@@ -1920,6 +3898,7 @@ async fn test_remote_presigned_download_redirects_to_follower() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2110,6 +4089,7 @@ async fn test_disabling_remote_node_syncs_follower_binding_and_blocks_remote_use
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2233,6 +4213,7 @@ async fn test_saved_remote_node_connection_endpoint_returns_precondition_failed_
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2316,6 +4297,7 @@ async fn test_disabled_remote_nodes_skip_network_during_health_checks() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "disabled-health-check-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: false,
         },
     )
@@ -2357,6 +4339,7 @@ async fn test_pending_remote_nodes_skip_network_during_health_checks() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "pending-health-check-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2402,6 +4385,7 @@ async fn test_pending_remote_node_connection_test_requires_completed_enrollment_
         managed_follower_service::CreateRemoteNodeInput {
             name: "pending-connection-test-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2448,6 +4432,7 @@ async fn test_remote_ingress_profiles_require_completed_enrollment_before_networ
         managed_follower_service::CreateRemoteNodeInput {
             name: "pending-ingress-profile-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2489,6 +4474,7 @@ async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "enabled-health-check-target".to_string(),
             base_url: enabled_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2529,6 +4515,7 @@ async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "disabled-health-check-target".to_string(),
             base_url: disabled_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: false,
         },
     )
@@ -2570,6 +4557,86 @@ async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
 }
 
 #[actix_web::test]
+async fn test_reverse_tunnel_remote_nodes_are_checked_by_health_tests_without_base_url() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let (provider_server, request_count) =
+        spawn_counting_internal_storage_server(provider_state.follower_view()).await;
+
+    let remote_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "reverse-health-check-target".to_string(),
+            base_url: String::new(),
+            transport_mode: RemoteNodeTransportMode::ReverseTunnel,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("reverse remote node should be created");
+    let remote_node_model =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), remote_node.id)
+            .await
+            .expect("reverse remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "reverse-health-check-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: remote_node_model.access_key.clone(),
+            secret_key: remote_node_model.secret_key.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding for reverse health check should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(
+        &provider_state,
+        &provider_binding.access_key,
+        &provider_binding.access_key,
+    )
+    .await;
+    mark_remote_node_enrollment_completed(&consumer_state, remote_node.id).await;
+
+    let (tunnel_shutdown, tunnel_handle) = start_test_reverse_tunnel_worker(
+        consumer_state.clone(),
+        remote_node_model,
+        provider_server.base_url.clone(),
+    )
+    .await;
+
+    let stats = managed_follower_service::run_health_tests(&consumer_state)
+        .await
+        .expect("reverse health checks should finish through tunnel");
+
+    assert_eq!(stats.checked, 1);
+    assert_eq!(stats.healthy, 1);
+    assert_eq!(stats.failed, 0);
+    assert_eq!(stats.skipped, 0);
+    assert_eq!(
+        request_count.load(Ordering::Relaxed),
+        2,
+        "reverse tunnel health check should sync binding and probe capabilities",
+    );
+
+    let checked_node =
+        managed_follower_repo::find_by_id(consumer_state.writer_db(), remote_node.id)
+            .await
+            .expect("reverse remote node should remain queryable");
+    assert!(checked_node.last_checked_at.is_some());
+    assert_eq!(checked_node.last_error, "");
+
+    stop_test_reverse_tunnel_worker(tunnel_shutdown, tunnel_handle).await;
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
 async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_disabled() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
@@ -2580,6 +4647,7 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2718,6 +4786,7 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -2908,6 +4977,7 @@ async fn test_force_delete_policy_cleans_late_remote_presigned_put_e2e() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "late-presigned-provider".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -3084,6 +5154,7 @@ async fn test_remote_relay_stream_direct_upload_e2e() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -3243,6 +5314,7 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: "http://provider.example.com".to_string(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -3479,6 +5551,7 @@ async fn test_remote_presigned_download_browser_cors_allows_get() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -3780,6 +5853,7 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -4081,6 +6155,7 @@ async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_path_
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: "http://provider.example.com".to_string(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -4207,6 +6282,7 @@ async fn test_remote_presigned_upload_browser_cors_rejects_disabled_binding() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: "http://provider.example.com".to_string(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )
@@ -4659,6 +6735,7 @@ async fn test_remote_presigned_multipart_upload_composes_on_provider_without_ass
         managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
+            transport_mode: RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )

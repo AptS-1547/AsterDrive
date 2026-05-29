@@ -151,16 +151,18 @@ fn render_node_human(report: &NodeEnrollReport) -> String {
 
     lines.push(String::new());
     lines.push(palette.label("Next steps:"));
-    lines.push("  1. Restart the AsterDrive process on this node so the follower endpoint starts listening.".to_string());
+    lines.push(
+        "  1. Restart the AsterDrive process on this node so follower services start.".to_string(),
+    );
     lines.push(format!(
-        "  2. Confirm the master can reach this node on {}:{}.",
+        "  2. For direct transport, confirm the master can reach this node on {}:{}.",
         palette.accent(&report.server_host),
         report.server_port
     ));
     lines.push(format!("     {}", report.connectivity_hint));
     lines.push(format!(
-        "  3. Verify {} through the same address the master will use.",
-        palette.accent(&report.readiness_check_path)
+        "  3. For reverse tunnel transport, keep outbound access from this node to {} available.",
+        palette.accent(&report.master_url)
     ));
 
     lines.join("\n")
@@ -169,12 +171,12 @@ fn render_node_human(report: &NodeEnrollReport) -> String {
 fn build_connectivity_hint(server_host: &str, server_port: u16) -> String {
     if host_is_loopback(server_host) {
         return format!(
-            "Current server.host is {server_host}. If the master runs on another machine, change server.host or put a reverse proxy/tunnel in front of port {server_port}."
+            "Current server.host is {server_host}. Direct transport from another machine needs a reachable bind host or reverse proxy in front of port {server_port}."
         );
     }
 
     format!(
-        "If you publish the follower through a reverse proxy, NAT, or port mapping, make sure it still forwards to port {server_port}."
+        "If you publish the follower for direct transport, make sure the public address forwards to port {server_port}."
     )
 }
 
@@ -212,8 +214,10 @@ mod tests {
         assert!(rendered.contains("Next steps:"));
         assert!(rendered.contains("Listen"));
         assert!(rendered.contains("127.0.0.1:3000"));
-        assert!(rendered.contains("Confirm the master can reach this node"));
-        assert!(rendered.contains("/health/ready"));
+        assert!(rendered.contains("For direct transport"));
+        assert!(rendered.contains("confirm the master can reach this node"));
+        assert!(rendered.contains("For reverse tunnel transport"));
+        assert!(rendered.contains("keep outbound access"));
     }
 
     #[test]

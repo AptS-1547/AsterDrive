@@ -47,10 +47,16 @@ const remoteNode = (
 	id: 7,
 	name: "Edge Alpha",
 	base_url: "https://edge.example.com",
+	transport_mode: "direct",
 	is_enabled: true,
 	enrollment_status: "not_started",
 	last_error: "",
 	last_checked_at: null,
+	tunnel: {
+		status: "offline",
+		last_error: "",
+		last_seen_at: null,
+	},
 	capabilities: {
 		protocol_version: "v1",
 		supports_list: true,
@@ -112,5 +118,30 @@ describe("RemoteNodesTable", () => {
 		);
 
 		expect(onGenerateEnrollmentCommand).toHaveBeenCalledWith(node);
+	});
+
+	it("marks reverse tunnel rows as test transport", () => {
+		render(
+			<RemoteNodesTable
+				generatingEnrollmentId={null}
+				items={[
+					remoteNode({
+						base_url: "",
+						transport_mode: "reverse_tunnel",
+					}),
+				]}
+				loading={false}
+				onEdit={vi.fn()}
+				onGenerateEnrollmentCommand={vi.fn()}
+				onRequestDelete={vi.fn()}
+			/>,
+		);
+
+		expect(
+			screen.getByText("remote_node_transport_reverse_tunnel"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("remote_node_transport_test_badge"),
+		).toBeInTheDocument();
 	});
 });

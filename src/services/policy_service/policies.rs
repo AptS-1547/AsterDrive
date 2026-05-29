@@ -169,6 +169,13 @@ pub async fn create(
     let serialized_options = serialize_options(&options)?;
     let chunk_size = chunk_size.unwrap_or(5_242_880);
     ensure_storage_native_thumbnail_supported(driver_type, &options)?;
+    ensure_remote_transport_supports_policy_options(
+        state.writer_db(),
+        driver_type,
+        remote_node_id,
+        &options,
+    )
+    .await?;
 
     let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let now = Utc::now();
@@ -355,6 +362,13 @@ pub async fn update(
     let final_options = options.unwrap_or(existing_options).normalized();
     let serialized_final_options = serialize_options(&final_options)?;
     ensure_storage_native_thumbnail_supported(existing.driver_type, &final_options)?;
+    ensure_remote_transport_supports_policy_options(
+        &txn,
+        existing.driver_type,
+        normalized_remote_node_id,
+        &final_options,
+    )
+    .await?;
 
     if let Some(false) = is_default
         && existing.is_default
@@ -456,7 +470,6 @@ pub async fn test_connection_params<S: PrimaryRuntimeState>(
     input: StoragePolicyConnectionInput,
 ) -> Result<()> {
     use crate::storage::drivers::local::LocalDriver;
-    use crate::storage::drivers::remote::RemoteDriver;
     use crate::storage::drivers::s3::S3Driver;
 
     let StoragePolicyConnectionInput {
@@ -500,12 +513,44 @@ pub async fn test_connection_params<S: PrimaryRuntimeState>(
             })?;
             let remote_node =
                 managed_follower_repo::find_by_id(state.writer_db(), remote_node_id).await?;
-            Box::new(RemoteDriver::new(&fake_policy, &remote_node)?)
+            Box::new(
+                state
+                    .remote_protocol()
+                    .driver_for_policy(&fake_policy, &remote_node)?,
+            )
         }
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
     };
 
     probe_storage_driver(driver.as_ref(), "connection test failed").await
+}
+
+async fn ensure_remote_transport_supports_policy_options<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    driver_type: DriverType,
+    remote_node_id: Option<i64>,
+    options: &crate::types::StoragePolicyOptions,
+) -> Result<()> {
+    if driver_type != DriverType::Remote {
+        return Ok(());
+    }
+    let Some(remote_node_id) = remote_node_id else {
+        return Ok(());
+    };
+    let remote_node = managed_follower_repo::find_by_id(db, remote_node_id).await?;
+    if remote_node
+        .transport_mode
+        .resolves_to_reverse_tunnel(&remote_node.base_url)
+        && (options.effective_remote_download_strategy()
+            == crate::types::RemoteDownloadStrategy::Presigned
+            || options.effective_remote_upload_strategy()
+                == crate::types::RemoteUploadStrategy::Presigned)
+    {
+        return Err(AsterError::validation_error(
+            "reverse tunnel remote nodes do not support presigned browser transfer strategies",
+        ));
+    }
+    Ok(())
 }
 
 async fn probe_storage_driver(

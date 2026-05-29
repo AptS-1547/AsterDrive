@@ -890,6 +890,7 @@ pub async fn setup_with_memory_cache() -> PrimaryAppState {
         storage_change_tx: base.storage_change_tx,
         share_download_rollback: base.share_download_rollback,
         background_task_dispatch_wakeup: base.background_task_dispatch_wakeup,
+        remote_protocol: base.remote_protocol,
     }
 }
 
@@ -1134,6 +1135,11 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
             ),
         );
 
+    let driver_registry = std::sync::Arc::new(aster_drive::storage::DriverRegistry::noop());
+    let remote_protocol = aster_drive::runtime::PrimaryAppState::new_remote_protocol();
+    remote_protocol.set_persistence_db(db.clone());
+    driver_registry.set_remote_protocol(remote_protocol.clone());
+
     PrimaryAppState {
         db_handles: aster_drive::db::connect_reader_for_writer_with_metrics(
             &db_cfg,
@@ -1142,7 +1148,7 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
         )
         .await
         .unwrap(),
-        driver_registry: std::sync::Arc::new(aster_drive::storage::DriverRegistry::noop()),
+        driver_registry,
         runtime_config,
         policy_snapshot,
         config,
@@ -1153,6 +1159,7 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
         share_download_rollback,
         background_task_dispatch_wakeup:
             aster_drive::runtime::PrimaryAppState::new_background_task_dispatch_wakeup(),
+        remote_protocol,
     }
 }
 

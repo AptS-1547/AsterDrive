@@ -3045,6 +3045,7 @@ async fn test_user_status_cached_in_auth_middleware() {
         storage_change_tx: base.storage_change_tx,
         share_download_rollback: base.share_download_rollback,
         background_task_dispatch_wakeup: base.background_task_dispatch_wakeup,
+        remote_protocol: base.remote_protocol,
     };
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -3092,6 +3093,7 @@ async fn test_disable_user_invalidates_status_cache() {
         storage_change_tx: base.storage_change_tx,
         share_download_rollback: base.share_download_rollback,
         background_task_dispatch_wakeup: base.background_task_dispatch_wakeup,
+        remote_protocol: base.remote_protocol,
     };
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);

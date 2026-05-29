@@ -34,6 +34,11 @@ import {
 	getRemoteNodeEnrollmentStatusTone,
 	getRemoteNodeStatusLabel,
 	getRemoteNodeStatusTone,
+	getRemoteNodeTransportBadge,
+	getRemoteNodeTransportLabel,
+	getRemoteNodeTransportTone,
+	getRemoteNodeTunnelLabel,
+	getRemoteNodeTunnelTone,
 	hasCompletedRemoteNodeEnrollment,
 } from "./shared";
 
@@ -68,7 +73,7 @@ export function RemoteNodesTable({
 		<AdminTableList
 			loading={loading}
 			items={items}
-			columns={5}
+			columns={6}
 			rows={6}
 			emptyTitle={t("no_remote_nodes")}
 			emptyDescription={t("no_remote_nodes_desc")}
@@ -100,6 +105,7 @@ export function RemoteNodesTable({
 						>
 							{t("base_url")}
 						</AdminSortableTableHead>
+						<TableHead>{t("remote_node_transport_mode")}</TableHead>
 						<AdminSortableTableHead
 							sortKey="last_checked_at"
 							sortBy={sortBy}
@@ -162,6 +168,47 @@ export function RemoteNodesTable({
 								<span className="truncate text-xs font-mono text-muted-foreground">
 									{node.base_url || t("remote_node_base_url_empty")}
 								</span>
+							</div>
+						</TableCell>
+						<TableCell>
+							<div className={ADMIN_TABLE_BADGE_CELL_CLASS}>
+								<div className="space-y-2">
+									<div className="flex flex-wrap gap-1.5">
+										<Badge
+											variant="outline"
+											className={getRemoteNodeTransportTone(
+												node.transport_mode ?? "direct",
+											)}
+										>
+											{getRemoteNodeTransportLabel(
+												t,
+												node.transport_mode ?? "direct",
+											)}
+											{getRemoteNodeTransportBadge(
+												t,
+												node.transport_mode ?? "direct",
+											) ? (
+												<span className="ml-1.5 rounded border border-amber-500/40 bg-amber-500/10 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+													{getRemoteNodeTransportBadge(
+														t,
+														node.transport_mode ?? "direct",
+													)}
+												</span>
+											) : null}
+										</Badge>
+										<Badge
+											variant="outline"
+											className={getRemoteNodeTunnelTone(node)}
+										>
+											{getRemoteNodeTunnelLabel(t, node)}
+										</Badge>
+									</div>
+									{node.tunnel?.last_error ? (
+										<div className="line-clamp-2 text-xs text-muted-foreground">
+											{node.tunnel.last_error}
+										</div>
+									) : null}
+								</div>
 							</div>
 						</TableCell>
 						<TableCell>

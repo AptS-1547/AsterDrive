@@ -869,8 +869,8 @@ async fn test_admin_blob_maintenance_task_rejects_invalid_targets_and_permission
             .insert_header(common::csrf_header_for(&admin_token))
             .set_json(payload)
             .to_request();
-        let err = test::try_call_service(&app, req).await.unwrap_err();
-        assert_eq!(err.error_response().status(), expected_status);
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), expected_status);
     }
 }
 

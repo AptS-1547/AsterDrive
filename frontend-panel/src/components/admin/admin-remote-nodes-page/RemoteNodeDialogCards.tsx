@@ -11,10 +11,35 @@ import {
 	formatLastChecked,
 	getRemoteNodeEnrollmentStatusLabel,
 	getRemoteNodeEnrollmentStatusTone,
+	getRemoteNodeTransportBadge,
+	getRemoteNodeTransportLabel,
+	getRemoteNodeTransportTone,
+	getRemoteNodeTunnelLabel,
+	getRemoteNodeTunnelTone,
 } from "./shared";
 
 export const DOCKER_FOLLOWER_DOCS_URL =
 	"https://drive.astercosm.com/deployment/docker-follower";
+
+function RemoteNodeTransportBadgeContent({
+	mode,
+}: {
+	mode: NonNullable<RemoteNodeInfo["transport_mode"]>;
+}) {
+	const { t } = useTranslation("admin");
+	const badge = getRemoteNodeTransportBadge(t, mode);
+
+	return (
+		<>
+			{getRemoteNodeTransportLabel(t, mode)}
+			{badge ? (
+				<span className="ml-1.5 rounded border border-amber-500/40 bg-amber-500/10 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+					{badge}
+				</span>
+			) : null}
+		</>
+	);
+}
 
 export function RemoteNodeSectionIntro({
 	description,
@@ -76,7 +101,11 @@ export function RemoteNodeSummaryCard({
 			</p>
 			<div className="mt-4 flex flex-wrap gap-2">
 				<Badge variant="outline" className={modeToneClass}>
-					{remoteNodeModeLabel}
+					{form.transport_mode === "reverse_tunnel" ? (
+						<RemoteNodeTransportBadgeContent mode={form.transport_mode} />
+					) : (
+						remoteNodeModeLabel
+					)}
 				</Badge>
 				{editingNode ? (
 					<Badge
@@ -96,6 +125,14 @@ export function RemoteNodeSummaryCard({
 						? t("remote_node_status_enabled")
 						: t("remote_node_status_disabled")}
 				</Badge>
+				{editingNode ? (
+					<Badge
+						variant="outline"
+						className={getRemoteNodeTunnelTone(editingNode)}
+					>
+						{getRemoteNodeTunnelLabel(t, editingNode)}
+					</Badge>
+				) : null}
 			</div>
 			<dl className="mt-4 space-y-3 text-sm">
 				{summaryItems.map((item) => (
@@ -169,6 +206,23 @@ export function RemoteNodeDiagnosticsCard({
 			<dl className="mt-4 space-y-3 text-sm">
 				<div>
 					<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+						{t("remote_node_transport_mode")}
+					</dt>
+					<dd className="mt-1">
+						<Badge
+							variant="outline"
+							className={getRemoteNodeTransportTone(
+								editingNode.transport_mode ?? "direct",
+							)}
+						>
+							<RemoteNodeTransportBadgeContent
+								mode={editingNode.transport_mode ?? "direct"}
+							/>
+						</Badge>
+					</dd>
+				</div>
+				<div>
+					<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
 						{t("remote_node_enrollment_status")}
 					</dt>
 					<dd className="mt-1">
@@ -183,6 +237,28 @@ export function RemoteNodeDiagnosticsCard({
 								editingNode.enrollment_status,
 							)}
 						</Badge>
+					</dd>
+				</div>
+				<div>
+					<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+						{t("remote_node_tunnel_status")}
+					</dt>
+					<dd className="mt-1 space-y-1">
+						<Badge
+							variant="outline"
+							className={getRemoteNodeTunnelTone(editingNode)}
+						>
+							{getRemoteNodeTunnelLabel(t, editingNode)}
+						</Badge>
+						<div className="break-all text-xs text-muted-foreground">
+							{t("remote_node_tunnel_last_seen")}:{" "}
+							{formatLastChecked(t, editingNode.tunnel?.last_seen_at)}
+						</div>
+						<div className="break-all text-xs text-muted-foreground">
+							{t("remote_node_tunnel_last_error")}:{" "}
+							{editingNode.tunnel?.last_error ||
+								t("remote_node_last_error_empty")}
+						</div>
 					</dd>
 				</div>
 				<div>
