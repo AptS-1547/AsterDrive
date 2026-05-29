@@ -10,7 +10,7 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::user_service;
 use crate::types::{
     ArchiveFilenameEncoding, BackgroundTaskKind, BackgroundTaskStatus, DriverType,
-    StoredTaskPayload, StoredTaskResult,
+    RemoteNodeTransportMode, StoredTaskPayload, StoredTaskResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,6 +201,8 @@ pub(crate) struct StoragePolicyCleanupRemoteNodeSnapshot {
     pub id: i64,
     pub name: String,
     pub base_url: String,
+    #[serde(default)]
+    pub transport_mode: RemoteNodeTransportMode,
     pub access_key: String,
     pub secret_key: String,
 }

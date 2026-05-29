@@ -4,9 +4,12 @@ import type {
 	RemoteNodeInfo,
 } from "@/types/api";
 
+export type RemoteNodeTransportMode = "direct" | "reverse_tunnel" | "auto";
+
 export interface RemoteNodeFormData {
 	name: string;
 	base_url: string;
+	transport_mode: RemoteNodeTransportMode;
 	is_enabled: boolean;
 }
 
@@ -14,6 +17,7 @@ export function getRemoteNodeForm(node: RemoteNodeInfo): RemoteNodeFormData {
 	return {
 		name: node.name,
 		base_url: node.base_url,
+		transport_mode: node.transport_mode ?? "direct",
 		is_enabled: node.is_enabled,
 	};
 }
@@ -24,6 +28,7 @@ export function buildCreateRemoteNodePayload(
 	return {
 		name: form.name,
 		base_url: form.base_url || undefined,
+		transport_mode: form.transport_mode,
 		is_enabled: form.is_enabled,
 	};
 }
@@ -34,6 +39,7 @@ export function buildUpdateRemoteNodePayload(
 	return {
 		name: form.name,
 		base_url: form.base_url,
+		transport_mode: form.transport_mode,
 		is_enabled: form.is_enabled,
 	};
 }
@@ -46,7 +52,10 @@ export function hasRemoteConnectionFieldChanges(
 		return true;
 	}
 
-	return form.base_url !== editingNode.base_url;
+	return (
+		form.base_url !== editingNode.base_url ||
+		form.transport_mode !== (editingNode.transport_mode ?? "direct")
+	);
 }
 
 export function getRemoteNodeBaseUrlValidationMessage(
@@ -73,5 +82,6 @@ export function getRemoteNodeBaseUrlValidationMessage(
 export const emptyRemoteNodeForm: RemoteNodeFormData = {
 	name: "",
 	base_url: "",
+	transport_mode: "direct",
 	is_enabled: true,
 };

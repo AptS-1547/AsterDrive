@@ -474,16 +474,12 @@ fn ingress_profile_update_debug_redacts_optional_credentials() {
 }
 
 #[test]
-fn ingress_profile_url_encodes_path_separators_inside_profile_key() {
+fn ingress_profile_path_encodes_path_separators_inside_profile_key() {
     let client = RemoteStorageClient::new("http://storage.example.com", "ak", "sk")
         .expect("remote client should build");
 
-    let url = client
-        .ingress_profile_url(" a/b ")
-        .expect("profile URL should build");
-
     assert_eq!(
-        url.path(),
+        client.ingress_profile_path(" a/b "),
         "/api/v1/internal/storage/ingress-profiles/a%2Fb"
     );
 }

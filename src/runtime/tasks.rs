@@ -12,6 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
+use super::FollowerAppState;
 use super::PrimaryAppState;
 use crate::services::share_service::ShareDownloadRollbackWorker;
 use crate::utils::numbers::u128_to_u64;
@@ -851,11 +852,17 @@ pub fn spawn_primary_background_tasks(
 }
 
 /// Spawn only follower-safe background tasks.
-pub fn spawn_follower_background_tasks(
-    metrics: crate::metrics_core::SharedMetricsRecorder,
-) -> BackgroundTasks {
+pub fn spawn_follower_background_tasks(state: web::Data<FollowerAppState>) -> BackgroundTasks {
     tracing::info!("follower mode enabled; skipping primary-only background tasks");
-    build_background_tasks_base(&metrics)
+    let mut tasks = build_background_tasks_base(&state.metrics);
+    let shutdown_token = tasks.shutdown_token();
+    tasks.push(
+        crate::storage::remote_protocol::tunnel::client::run_follower_tunnel_worker(
+            state,
+            shutdown_token,
+        ),
+    );
+    tasks
 }
 
 fn mail_outbox_dispatch_interval(state: &PrimaryAppState) -> Duration {
@@ -958,6 +965,7 @@ mod tests {
             share_download_rollback,
             background_task_dispatch_wakeup:
                 crate::runtime::PrimaryAppState::new_background_task_dispatch_wakeup(),
+            remote_protocol: crate::runtime::PrimaryAppState::new_remote_protocol(),
         })
     }
 
@@ -1020,7 +1028,8 @@ mod tests {
 
     #[tokio::test]
     async fn follower_background_tasks_can_shutdown_without_primary_workers() {
-        let tasks = spawn_follower_background_tasks(crate::metrics_core::NoopMetrics::arc());
+        let state = setup_state().await;
+        let tasks = spawn_follower_background_tasks(web::Data::new(state.follower_view()));
 
         tasks.shutdown().await;
     }

@@ -13,6 +13,7 @@ use crate::db::repository::{managed_follower_repo, master_binding_repo};
 use crate::entities::storage_policy;
 use crate::errors::{Result, precondition_failed_with_subcode};
 use crate::metrics_core::SharedMetricsRecorder;
+use crate::storage::remote_protocol::RemoteProtocolRuntime;
 use crate::types::{DriverType, parse_storage_policy_options};
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -48,6 +49,7 @@ pub struct DriverRegistry {
     managed_followers_by_id: RwLock<HashMap<i64, crate::entities::managed_follower::Model>>,
     master_bindings_by_access_key: RwLock<HashMap<String, crate::entities::master_binding::Model>>,
     metrics: SharedMetricsRecorder,
+    remote_protocol: RwLock<Option<Arc<RemoteProtocolRuntime>>>,
 }
 
 impl DriverRegistry {
@@ -58,6 +60,7 @@ impl DriverRegistry {
             managed_followers_by_id: RwLock::new(HashMap::new()),
             master_bindings_by_access_key: RwLock::new(HashMap::new()),
             metrics,
+            remote_protocol: RwLock::new(None),
         }
     }
 
@@ -102,6 +105,11 @@ impl DriverRegistry {
     pub async fn reload_primary_state<C: sea_orm::ConnectionTrait>(&self, db: &C) -> Result<()> {
         self.reload_managed_followers(db).await?;
         self.reload_master_bindings(db).await
+    }
+
+    pub fn set_remote_protocol(&self, remote_protocol: Arc<RemoteProtocolRuntime>) {
+        *self.remote_protocol.write() = Some(remote_protocol);
+        self.invalidate_all();
     }
 
     pub async fn reload_follower_state<C: sea_orm::ConnectionTrait>(&self, db: &C) -> Result<()> {
@@ -234,7 +242,12 @@ impl DriverRegistry {
                     );
                     return Err(error);
                 }
-                let driver = Arc::new(RemoteDriver::new(policy, &remote_node)?);
+                let remote_protocol = self.remote_protocol.read().clone();
+                let driver = if let Some(remote_protocol) = remote_protocol {
+                    Arc::new(remote_protocol.driver_for_policy(policy, &remote_node)?)
+                } else {
+                    Arc::new(RemoteDriver::new(policy, &remote_node)?)
+                };
                 let storage: Arc<dyn StorageDriver> = driver.clone();
                 let multipart: Arc<dyn MultipartStorageDriver> = driver;
                 Ok(self.build_entry(policy.driver_type, storage, Some(multipart)))
@@ -436,12 +449,15 @@ mod tests {
             access_key: "follower-ak".to_string(),
             secret_key: "follower-sk".to_string(),
             is_enabled,
+            transport_mode: crate::types::RemoteNodeTransportMode::Direct,
             last_capabilities: serde_json::to_string(
                 &crate::storage::remote_protocol::RemoteStorageCapabilities::current(),
             )
             .expect("current remote capabilities should serialize"),
             last_error: String::new(),
             last_checked_at: None,
+            tunnel_last_error: String::new(),
+            tunnel_last_seen_at: None,
             created_at: now,
             updated_at: now,
         }

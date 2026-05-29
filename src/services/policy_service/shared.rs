@@ -10,8 +10,9 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::storage::drivers::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::types::{
-    DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
-    serialize_storage_policy_allowed_types, serialize_storage_policy_options,
+    DriverType, RemoteNodeTransportMode, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
+    StoredStoragePolicyOptions, serialize_storage_policy_allowed_types,
+    serialize_storage_policy_options,
 };
 
 use super::models::{
@@ -99,7 +100,9 @@ pub(super) async fn validate_remote_binding<C: sea_orm::ConnectionTrait>(
                     "remote node #{remote_node_id} is disabled"
                 )));
             }
-            if remote_node.base_url.trim().is_empty() {
+            if remote_node.transport_mode == RemoteNodeTransportMode::Direct
+                && remote_node.base_url.trim().is_empty()
+            {
                 return Err(AsterError::validation_error(
                     "remote node base_url is required for remote storage policies",
                 ));

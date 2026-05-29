@@ -1,12 +1,10 @@
 use crate::api::error_code::ErrorCode;
 use crate::api::subcode::ApiSubcode;
-use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
+use crate::errors::{AsterError, precondition_failed_with_subcode};
 use crate::storage::error::{
     StorageErrorKind, storage_driver_error, storage_driver_error_with_subcode,
 };
 use serde::Deserialize;
-
-use super::models::{ApiEnvelope, RemoteIngressProfileInfo};
 
 #[derive(Debug, Deserialize)]
 struct RemoteErrorEnvelope {
@@ -36,45 +34,7 @@ pub(super) fn map_reqwest_error(error: reqwest::Error) -> AsterError {
     }
 }
 
-pub(super) async fn ensure_success(response: reqwest::Response, context: &str) -> Result<Vec<u8>> {
-    let response = ensure_success_response(response, context).await?;
-    response
-        .bytes()
-        .await
-        .map(|bytes| bytes.to_vec())
-        .map_err(map_reqwest_error)
-}
-
-pub(super) async fn ensure_success_without_body(
-    response: reqwest::Response,
-    context: &str,
-) -> Result<()> {
-    ensure_success_response(response, context).await?;
-    Ok(())
-}
-
-pub(super) async fn ensure_success_response(
-    response: reqwest::Response,
-    context: &str,
-) -> Result<reqwest::Response> {
-    if response.status().is_success() {
-        Ok(response)
-    } else {
-        Err(build_remote_status_error(response, context, false).await)
-    }
-}
-
-pub(super) async fn build_remote_status_error(
-    response: reqwest::Response,
-    context: &str,
-    not_found_as_record: bool,
-) -> AsterError {
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
-    build_remote_status_error_from_parts(status, &body, context, not_found_as_record)
-}
-
-pub(super) fn build_remote_status_error_from_parts(
+pub fn build_remote_status_error_from_parts(
     status: reqwest::StatusCode,
     body: &str,
     context: &str,
@@ -130,32 +90,6 @@ pub(super) fn build_remote_status_error_from_parts(
     }
 }
 
-pub(super) async fn parse_ingress_profile_response(
-    response: reqwest::Response,
-    context: &str,
-) -> Result<RemoteIngressProfileInfo> {
-    let body = ensure_success(response, context).await?;
-    let envelope: ApiEnvelope<RemoteIngressProfileInfo> =
-        serde_json::from_slice(&body).map_err(|e| {
-            storage_driver_error(
-                StorageErrorKind::Misconfigured,
-                format!("decode remote ingress profile response: {e}"),
-            )
-        })?;
-    if envelope.code != 0 {
-        return Err(storage_driver_error(
-            remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
-            format!("{context} failed: {}", envelope.msg),
-        ));
-    }
-    envelope.data.ok_or_else(|| {
-        storage_driver_error(
-            StorageErrorKind::Misconfigured,
-            format!("{context} response missing data"),
-        )
-    })
-}
-
 pub(super) fn remote_api_error(code: i32, message: &str) -> Option<AsterError> {
     match code {
         code if code == ErrorCode::StorageQuotaExceeded as i32 => {
@@ -165,7 +99,7 @@ pub(super) fn remote_api_error(code: i32, message: &str) -> Option<AsterError> {
     }
 }
 
-pub(super) fn remote_api_error_kind(code: i32) -> Option<StorageErrorKind> {
+pub fn remote_api_error_kind(code: i32) -> Option<StorageErrorKind> {
     match code {
         code if code == ErrorCode::BadRequest as i32 => Some(StorageErrorKind::Misconfigured),
         code if code == ErrorCode::StoragePolicyNotFound as i32

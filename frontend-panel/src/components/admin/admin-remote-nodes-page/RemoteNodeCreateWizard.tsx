@@ -16,6 +16,10 @@ import type {
 	RemoteNodeFieldChangeHandler,
 	RemoteNodeSummaryItem,
 } from "./RemoteNodeDialogTypes";
+import {
+	type TransportModeOption,
+	TransportModeSelector,
+} from "./TransportModeSelector";
 
 interface RemoteNodeCreateWizardProps {
 	baseUrlValidationMessage: string | null;
@@ -29,9 +33,9 @@ interface RemoteNodeCreateWizardProps {
 	modeToneClass: string;
 	onCreateStepChange: (step: number) => void;
 	onFieldChange: RemoteNodeFieldChangeHandler;
-	remoteNodeModeLabel: string;
 	stepAnimationKey: string;
 	summaryItems: RemoteNodeSummaryItem[];
+	transportOptions: TransportModeOption[];
 }
 
 export function RemoteNodeCreateWizard({
@@ -46,9 +50,9 @@ export function RemoteNodeCreateWizard({
 	modeToneClass,
 	onCreateStepChange,
 	onFieldChange,
-	remoteNodeModeLabel,
 	stepAnimationKey,
 	summaryItems,
+	transportOptions,
 }: RemoteNodeCreateWizardProps) {
 	const { t } = useTranslation("admin");
 	const createLastStep = createSteps.length - 1;
@@ -61,7 +65,6 @@ export function RemoteNodeCreateWizard({
 				enabledToneClass={enabledToneClass}
 				form={form}
 				modeToneClass={modeToneClass}
-				remoteNodeModeLabel={remoteNodeModeLabel}
 				summaryItems={summaryItems}
 			/>
 			<RemoteNodeDocsCard />
@@ -190,6 +193,19 @@ export function RemoteNodeCreateWizard({
 												)}
 											/>
 											<div className="space-y-4">
+												<div className="space-y-3">
+													<Label id="remote-node-create-transport-mode-label">
+														{t("remote_node_transport_mode")}
+													</Label>
+													<TransportModeSelector
+														ariaLabelledBy="remote-node-create-transport-mode-label"
+														options={transportOptions}
+														value={form.transport_mode}
+														onChange={(value) =>
+															onFieldChange("transport_mode", value)
+														}
+													/>
+												</div>
 												<div className="space-y-2">
 													<Label htmlFor="remote-node-base-url">
 														{t("base_url")}

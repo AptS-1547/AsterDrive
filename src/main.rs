@@ -276,10 +276,10 @@ async fn run_follower_http_server(
     );
 
     let shutdown_db = state.writer_db().clone();
-    let follower_metrics = state.metrics.clone();
     let state = web::Data::new(state);
     let http_shutdown_token = CancellationToken::new();
     let metrics = web::Data::new(state.metrics.clone());
+    let app_state = state.clone();
     let server = HttpServer::new(move || {
         App::new()
             .wrap(actix_web::middleware::Compress::default())
@@ -288,7 +288,7 @@ async fn run_follower_http_server(
             .wrap(aster_drive::api::middleware::security_headers::default_headers())
             .app_data(actix_web::web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))
-            .app_data(state.clone())
+            .app_data(app_state.clone())
             .app_data(metrics.clone())
             .configure(aster_drive::api::configure_follower)
     })
@@ -303,7 +303,7 @@ async fn run_follower_http_server(
 
     let server_handle = server.handle();
     let background_tasks =
-        aster_drive::runtime::tasks::spawn_follower_background_tasks(follower_metrics);
+        aster_drive::runtime::tasks::spawn_follower_background_tasks(state.clone());
     tokio::spawn(async move {
         aster_drive::runtime::shutdown::wait_for_signal().await;
         http_shutdown_token.cancel();

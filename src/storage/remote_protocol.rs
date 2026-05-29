@@ -4,9 +4,13 @@ mod auth;
 mod client;
 mod errors;
 mod models;
+mod runtime;
 #[cfg(test)]
 mod tests;
+mod transport;
+pub mod tunnel;
 
+pub(crate) use auth::internal_request_mac;
 pub use auth::{normalize_remote_base_url, sign_internal_request, sign_presigned_request};
 pub use client::RemoteStorageClient;
 pub use models::{
@@ -22,6 +26,7 @@ pub use models::{
     RemoteStorageListResponse, RemoteStorageObjectMetadata, RemoteStorageProtocolLimits,
     RemoteUpdateIngressProfileRequest,
 };
+pub use runtime::RemoteProtocolRuntime;
 
 pub const INTERNAL_STORAGE_BASE_PATH: &str = "/api/v1/internal/storage";
 pub const INTERNAL_AUTH_ACCESS_KEY_HEADER: &str = "x-aster-access-key";

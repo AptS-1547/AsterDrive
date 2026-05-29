@@ -277,8 +277,11 @@ export type RemoteNodeEnrollmentStatus =
 	components["schemas"]["RemoteNodeEnrollmentStatus"];
 export type RemoteNodeInfo = components["schemas"]["RemoteNodeInfo"];
 export type RemoteNodePage = components["schemas"]["OffsetPage_RemoteNodeInfo"];
+export type RemoteNodeTransportMode =
+	components["schemas"]["RemoteNodeTransportMode"];
 export type RemoteStorageCapabilities =
 	components["schemas"]["RemoteStorageCapabilities"];
+export type RemoteTunnelInfo = components["schemas"]["RemoteTunnelInfo"];
 export type RemoteUpdateIngressProfileRequest =
 	components["schemas"]["RemoteUpdateIngressProfileRequest"];
 export type RemoteDownloadStrategy =

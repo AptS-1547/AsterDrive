@@ -2,8 +2,7 @@ use crate::errors::Result;
 use crate::runtime::PrimaryRuntimeState;
 use crate::services::managed_follower_service;
 use crate::storage::remote_protocol::{
-    RemoteCreateIngressProfileRequest, RemoteIngressProfileInfo, RemoteStorageClient,
-    RemoteUpdateIngressProfileRequest,
+    RemoteCreateIngressProfileRequest, RemoteIngressProfileInfo, RemoteUpdateIngressProfileRequest,
 };
 
 pub async fn list_remote<S: PrimaryRuntimeState>(
@@ -64,8 +63,8 @@ pub async fn delete_remote<S: PrimaryRuntimeState>(
 async fn remote_client_for_node<S: PrimaryRuntimeState>(
     state: &S,
     remote_node_id: i64,
-) -> Result<RemoteStorageClient> {
+) -> Result<crate::storage::remote_protocol::RemoteStorageClient> {
     let node =
         managed_follower_service::require_completed_enrollment(state, remote_node_id).await?;
-    RemoteStorageClient::new(&node.base_url, &node.access_key, &node.secret_key)
+    managed_follower_service::remote_storage_client_for_node(state, &node)
 }

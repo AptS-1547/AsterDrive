@@ -25,6 +25,7 @@ async fn test_completed_remote_node_enrollment_rejects_new_token() {
         managed_follower_service::CreateRemoteNodeInput {
             name: "node-a".to_string(),
             base_url: "https://node-a.example.com".to_string(),
+            transport_mode: aster_drive::types::RemoteNodeTransportMode::Direct,
             is_enabled: true,
         },
     )

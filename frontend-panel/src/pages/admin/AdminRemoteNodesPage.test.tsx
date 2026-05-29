@@ -274,12 +274,12 @@ vi.mock("@/components/common/ConfirmDialog", () => ({
 		title: string;
 	}) =>
 		open ? (
-			<div role="dialog">
+			<dialog open>
 				<h2>{title}</h2>
 				<button type="button" onClick={onConfirm}>
 					{confirmLabel}
 				</button>
-			</div>
+			</dialog>
 		) : null,
 }));
 
@@ -542,6 +542,7 @@ describe("AdminRemoteNodesPage", () => {
 			base_url: "https://edge.example.com",
 			is_enabled: true,
 			name: "Edge Beta",
+			transport_mode: "direct",
 		});
 		expect(
 			adminRemoteNodeServiceMocks.createEnrollmentCommand,
@@ -633,6 +634,115 @@ describe("AdminRemoteNodesPage", () => {
 				adminRemoteNodeServiceMocks.deleteIngressProfile,
 			).toHaveBeenCalledWith(7, "default");
 		});
+	});
+
+	it("keeps managed ingress blocked for direct nodes without base_url", async () => {
+		mockState.useApiList.mockReturnValue({
+			items: [
+				{
+					base_url: "",
+					enrollment_status: "completed",
+					id: 7,
+					name: "Direct Empty",
+					transport_mode: "direct",
+				},
+			],
+			loading: false,
+			reload: mockState.reload,
+			setItems: mockState.setItems,
+			setTotal: mockState.setTotal,
+			total: 1,
+		});
+
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: "edit:7" }));
+
+		expect(screen.getByTestId("managed-ingress-enabled")).toHaveTextContent(
+			"true",
+		);
+		expect(screen.getByTestId("managed-ingress-error")).toHaveTextContent(
+			"remote_node_ingress_profiles_base_url_required",
+		);
+		expect(
+			adminRemoteNodeServiceMocks.listIngressProfiles,
+		).not.toHaveBeenCalled();
+	});
+
+	it("loads managed ingress profiles for reverse tunnel nodes without base_url", async () => {
+		mockState.useApiList.mockReturnValue({
+			items: [
+				{
+					base_url: "",
+					enrollment_status: "completed",
+					id: 7,
+					name: "Reverse Tunnel",
+					transport_mode: "reverse_tunnel",
+					tunnel: {
+						last_error: "",
+						last_seen_at: "2026-05-29T00:00:00Z",
+						status: "online",
+					},
+				},
+			],
+			loading: false,
+			reload: mockState.reload,
+			setItems: mockState.setItems,
+			setTotal: mockState.setTotal,
+			total: 1,
+		});
+
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: "edit:7" }));
+
+		await waitFor(() => {
+			expect(
+				adminRemoteNodeServiceMocks.listIngressProfiles,
+			).toHaveBeenCalledWith(7);
+		});
+		expect(screen.getByTestId("managed-ingress-enabled")).toHaveTextContent(
+			"true",
+		);
+		expect(screen.getByTestId("managed-ingress-error")).toBeEmptyDOMElement();
+	});
+
+	it("loads managed ingress profiles for auto nodes without base_url", async () => {
+		mockState.useApiList.mockReturnValue({
+			items: [
+				{
+					base_url: "",
+					enrollment_status: "completed",
+					id: 7,
+					name: "Auto Tunnel",
+					transport_mode: "auto",
+					tunnel: {
+						last_error: "",
+						last_seen_at: "2026-05-29T00:00:00Z",
+						status: "online",
+					},
+				},
+			],
+			loading: false,
+			reload: mockState.reload,
+			setItems: mockState.setItems,
+			setTotal: mockState.setTotal,
+			total: 1,
+		});
+
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: "edit:7" }));
+
+		await waitFor(() => {
+			expect(
+				adminRemoteNodeServiceMocks.listIngressProfiles,
+			).toHaveBeenCalledWith(7);
+		});
+		expect(screen.getByTestId("managed-ingress-enabled")).toHaveTextContent(
+			"true",
+		);
+		expect(screen.getByTestId("managed-ingress-error")).toBeEmptyDOMElement();
 	});
 
 	it("surfaces managed ingress errors for nodes that cannot load profiles", async () => {

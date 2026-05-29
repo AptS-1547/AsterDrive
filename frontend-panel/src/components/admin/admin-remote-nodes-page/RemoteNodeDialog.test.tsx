@@ -121,10 +121,16 @@ vi.mock("@/components/ui/label", () => ({
 	Label: ({
 		children,
 		htmlFor,
+		...props
 	}: {
 		children: React.ReactNode;
 		htmlFor?: string;
-	}) => <label htmlFor={htmlFor}>{children}</label>,
+		[key: string]: unknown;
+	}) => (
+		<label htmlFor={htmlFor} {...props}>
+			{children}
+		</label>
+	),
 }));
 
 vi.mock("@/components/ui/switch", () => ({
@@ -153,6 +159,7 @@ const baseProps = {
 	form: {
 		name: "",
 		base_url: "",
+		transport_mode: "direct",
 		is_enabled: true,
 	},
 	onCreateBack: vi.fn(),
@@ -218,6 +225,7 @@ describe("RemoteNodeDialog", () => {
 				form={{
 					name: "Edge Alpha",
 					base_url: "https://edge.example.com",
+					transport_mode: "direct",
 					is_enabled: true,
 				}}
 				onRunConnectionTest={onRunConnectionTest}
@@ -243,6 +251,7 @@ describe("RemoteNodeDialog", () => {
 				form={{
 					name: "Edge Alpha",
 					base_url: "https://edge.example.com",
+					transport_mode: "direct",
 					is_enabled: true,
 				}}
 				onRunConnectionTest={onRunConnectionTest}
@@ -255,5 +264,119 @@ describe("RemoteNodeDialog", () => {
 		fireEvent.click(button);
 
 		expect(onRunConnectionTest).toHaveBeenCalledTimes(1);
+	});
+
+	it("shows the reverse tunnel test badge and explicit auto semantics in create mode", () => {
+		render(<RemoteNodeDialog {...baseProps} createStep={1} mode="create" />);
+
+		expect(
+			screen.getByRole("radiogroup", {
+				name: "remote_node_transport_mode",
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("radio", { name: /remote_node_transport_direct/ }),
+		).toBeChecked();
+		expect(
+			screen.getByText("remote_node_transport_test_badge"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("remote_node_transport_auto_desc"),
+		).toBeInTheDocument();
+		expect(screen.getByText("remote_node_base_url_hint")).toBeInTheDocument();
+	});
+
+	it("shows create-step validation messages and blocks invalid connection URLs", () => {
+		const onCreateNext = vi.fn();
+
+		const { rerender } = render(
+			<RemoteNodeDialog
+				{...baseProps}
+				createStepTouched
+				mode="create"
+				onCreateNext={onCreateNext}
+			/>,
+		);
+
+		expect(
+			screen.getByText("remote_node_wizard_name_required"),
+		).toBeInTheDocument();
+
+		rerender(
+			<RemoteNodeDialog
+				{...baseProps}
+				createStep={1}
+				form={{
+					name: "Edge Alpha",
+					base_url: "ftp://edge.example.com",
+					transport_mode: "direct",
+					is_enabled: true,
+				}}
+				mode="create"
+				onCreateNext={onCreateNext}
+			/>,
+		);
+
+		expect(
+			screen.getByText("remote_node_base_url_invalid"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		).toBeDisabled();
+	});
+
+	it("shows the reverse tunnel test badge in edit mode", () => {
+		render(
+			<RemoteNodeDialog
+				{...baseProps}
+				mode="edit"
+				editingNode={remoteNode({
+					enrollment_status: "completed",
+					transport_mode: "reverse_tunnel",
+				})}
+				form={{
+					name: "Edge Alpha",
+					base_url: "",
+					transport_mode: "reverse_tunnel",
+					is_enabled: true,
+				}}
+			/>,
+		);
+
+		expect(
+			screen.getAllByText("remote_node_transport_test_badge").length,
+		).toBeGreaterThan(0);
+	});
+
+	it("falls back invalid transport form values to direct and blocks invalid edits", () => {
+		const onSubmit = vi.fn();
+
+		render(
+			<RemoteNodeDialog
+				{...baseProps}
+				mode="edit"
+				editingNode={remoteNode({
+					enrollment_status: "completed",
+					transport_mode: "direct",
+				})}
+				form={
+					{
+						name: "Edge Alpha",
+						base_url: "mailto:edge@example.com",
+						transport_mode: "legacy",
+						is_enabled: true,
+					} as typeof baseProps.form
+				}
+				onSubmit={onSubmit}
+			/>,
+		);
+
+		expect(
+			screen.getAllByText("remote_node_transport_direct").length,
+		).toBeGreaterThan(0);
+		expect(
+			screen.getByText("remote_node_base_url_invalid"),
+		).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "save_changes" })).toBeDisabled();
 	});
 });

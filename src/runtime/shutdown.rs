@@ -50,8 +50,11 @@ pub async fn perform_shutdown(background_tasks: BackgroundTasks, db: DatabaseCon
 #[cfg(test)]
 mod tests {
     use super::perform_shutdown;
+    use crate::runtime::FollowerAppState;
     use crate::runtime::tasks::spawn_follower_background_tasks;
+    use actix_web::web;
     use migration::Migrator;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn perform_shutdown_stops_empty_background_tasks_and_closes_database() {
@@ -67,10 +70,20 @@ mod tests {
         .unwrap();
         Migrator::up(&db, None).await.unwrap();
 
-        perform_shutdown(
-            spawn_follower_background_tasks(crate::metrics_core::NoopMetrics::arc()),
-            db,
-        )
+        let cache = crate::cache::create_cache(&crate::config::CacheConfig {
+            enabled: false,
+            ..Default::default()
+        })
         .await;
+        let state = web::Data::new(FollowerAppState {
+            db_handles: crate::db::DbHandles::single(db.clone()),
+            driver_registry: Arc::new(crate::storage::DriverRegistry::noop()),
+            policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
+            config: Arc::new(crate::config::Config::default()),
+            cache,
+            metrics: crate::metrics_core::NoopMetrics::arc(),
+        });
+
+        perform_shutdown(spawn_follower_background_tasks(state), db).await;
     }
 }

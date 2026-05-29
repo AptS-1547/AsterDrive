@@ -36,6 +36,27 @@ pub fn sign_internal_request(
     nonce: &str,
     content_length: Option<u64>,
 ) -> String {
+    let digest = internal_request_mac(
+        secret_key,
+        method,
+        path_and_query,
+        timestamp,
+        nonce,
+        content_length,
+    )
+    .finalize()
+    .into_bytes();
+    hex::encode(digest)
+}
+
+pub(crate) fn internal_request_mac(
+    secret_key: &str,
+    method: &str,
+    path_and_query: &str,
+    timestamp: i64,
+    nonce: &str,
+    content_length: Option<u64>,
+) -> Hmac<Sha256> {
     let canonical = format!(
         "{}\n{}\n{}\n{}\n{}",
         method,
@@ -49,7 +70,7 @@ pub fn sign_internal_request(
     let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret_key.as_bytes())
         .expect("HMAC accepts any key length");
     mac.update(canonical.as_bytes());
-    hex::encode(mac.finalize().into_bytes())
+    mac
 }
 
 pub fn sign_presigned_request(

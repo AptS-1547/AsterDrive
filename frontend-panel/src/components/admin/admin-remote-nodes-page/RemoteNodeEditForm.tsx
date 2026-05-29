@@ -20,6 +20,10 @@ import type {
 	RemoteNodeFieldChangeHandler,
 	RemoteNodeSummaryItem,
 } from "./RemoteNodeDialogTypes";
+import {
+	type TransportModeOption,
+	TransportModeSelector,
+} from "./TransportModeSelector";
 
 interface RemoteNodeEditFormProps {
 	baseUrlValidationMessage: string | null;
@@ -42,8 +46,8 @@ interface RemoteNodeEditFormProps {
 		profileKey: string,
 		payload: RemoteUpdateIngressProfileRequest,
 	) => Promise<void>;
-	remoteNodeModeLabel: string;
 	summaryItems: RemoteNodeSummaryItem[];
+	transportOptions: TransportModeOption[];
 }
 
 export function RemoteNodeEditForm({
@@ -60,8 +64,8 @@ export function RemoteNodeEditForm({
 	onDeleteManagedIngressProfile,
 	onFieldChange,
 	onUpdateManagedIngressProfile,
-	remoteNodeModeLabel,
 	summaryItems,
+	transportOptions,
 }: RemoteNodeEditFormProps) {
 	const { t } = useTranslation("admin");
 
@@ -86,6 +90,17 @@ export function RemoteNodeEditForm({
 							<p className="text-xs text-muted-foreground">
 								{t("remote_node_name_hint")}
 							</p>
+						</div>
+						<div className="space-y-3 md:col-span-2">
+							<Label id="remote-node-edit-transport-mode-label">
+								{t("remote_node_transport_mode")}
+							</Label>
+							<TransportModeSelector
+								ariaLabelledBy="remote-node-edit-transport-mode-label"
+								options={transportOptions}
+								value={form.transport_mode}
+								onChange={(value) => onFieldChange("transport_mode", value)}
+							/>
 						</div>
 						<div className="space-y-2 md:col-span-2">
 							<Label htmlFor="remote-node-base-url">{t("base_url")}</Label>
@@ -171,7 +186,6 @@ export function RemoteNodeEditForm({
 					enabledToneClass={enabledToneClass}
 					form={form}
 					modeToneClass={modeToneClass}
-					remoteNodeModeLabel={remoteNodeModeLabel}
 					summaryItems={summaryItems}
 				/>
 

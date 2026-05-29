@@ -1,9 +1,12 @@
 //! SeaORM 实体定义：`managed_follower`。
 
+use sea_orm::Set;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+
+use crate::types::RemoteNodeTransportMode;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -17,10 +20,14 @@ pub struct Model {
     #[serde(skip_serializing)]
     pub secret_key: String,
     pub is_enabled: bool,
+    pub transport_mode: RemoteNodeTransportMode,
     pub last_capabilities: String,
     pub last_error: String,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub last_checked_at: Option<DateTimeUtc>,
+    pub tunnel_last_error: String,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub tunnel_last_seen_at: Option<DateTimeUtc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -47,4 +54,23 @@ impl Related<super::storage_policy::Entity> for Entity {
     }
 }
 
-impl ActiveModelBehavior for ActiveModel {}
+#[async_trait::async_trait]
+impl ActiveModelBehavior for ActiveModel {
+    async fn before_save<C>(mut self, _db: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        if insert {
+            if !self.transport_mode.is_set() {
+                self.transport_mode = Set(RemoteNodeTransportMode::Direct);
+            }
+            if !self.tunnel_last_error.is_set() {
+                self.tunnel_last_error = Set(String::new());
+            }
+            if !self.tunnel_last_seen_at.is_set() {
+                self.tunnel_last_seen_at = Set(None);
+            }
+        }
+        Ok(self)
+    }
+}

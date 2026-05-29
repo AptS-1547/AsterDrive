@@ -52,21 +52,45 @@ pub struct RemoteDriver {
     client: RemoteStorageClient,
     base_path: String,
     supports_capacity: bool,
+    uses_reverse_tunnel: bool,
 }
 
 impl RemoteDriver {
     const MULTIPART_UPLOADS_PREFIX: &str = "uploads";
 
     pub fn new(policy: &storage_policy::Model, follower: &managed_follower::Model) -> Result<Self> {
-        let capabilities = RemoteStorageCapabilities::from_stored_json(&follower.last_capabilities);
-        Ok(Self {
-            client: RemoteStorageClient::new(
+        Self::from_client(
+            policy,
+            follower,
+            RemoteStorageClient::new(
                 &follower.base_url,
                 &follower.access_key,
                 &follower.secret_key,
             )?,
+        )
+    }
+
+    pub(crate) fn new_with_client(
+        policy: &storage_policy::Model,
+        follower: &managed_follower::Model,
+        client: RemoteStorageClient,
+    ) -> Result<Self> {
+        Self::from_client(policy, follower, client)
+    }
+
+    fn from_client(
+        policy: &storage_policy::Model,
+        follower: &managed_follower::Model,
+        client: RemoteStorageClient,
+    ) -> Result<Self> {
+        let capabilities = RemoteStorageCapabilities::from_stored_json(&follower.last_capabilities);
+        Ok(Self {
+            client,
             base_path: policy.base_path.trim_matches('/').to_string(),
             supports_capacity: capabilities.supports_capacity,
+            uses_reverse_tunnel: follower
+                .transport_mode
+                .resolves_to_reverse_tunnel(&follower.base_url),
         })
     }
 
@@ -228,12 +252,24 @@ impl PresignedStorageDriver for RemoteDriver {
         expires: Duration,
         options: PresignedDownloadOptions,
     ) -> Result<Option<String>> {
+        if self.uses_reverse_tunnel {
+            return Err(storage_driver_error(
+                StorageErrorKind::Unsupported,
+                "reverse tunnel remote nodes do not support presigned download URLs",
+            ));
+        }
         self.client
             .presigned_url(&self.object_key(path), expires, options)
             .map(Some)
     }
 
     async fn presigned_put_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {
+        if self.uses_reverse_tunnel {
+            return Err(storage_driver_error(
+                StorageErrorKind::Unsupported,
+                "reverse tunnel remote nodes do not support presigned upload URLs",
+            ));
+        }
         self.client
             .presigned_put_url(&self.object_key(path), expires)
             .map(Some)
@@ -253,6 +289,12 @@ impl MultipartStorageDriver for RemoteDriver {
         part_number: i32,
         expires: Duration,
     ) -> Result<String> {
+        if self.uses_reverse_tunnel {
+            return Err(storage_driver_error(
+                StorageErrorKind::Unsupported,
+                "reverse tunnel remote nodes do not support presigned multipart upload URLs",
+            ));
+        }
         let part_key = Self::multipart_part_key(upload_id, part_number)?;
         self.client
             .presigned_put_url(&self.object_key(&part_key), expires)
@@ -439,12 +481,23 @@ mod tests {
             access_key: "access-key".to_string(),
             secret_key: "secret-key".to_string(),
             is_enabled: true,
+            transport_mode: crate::types::RemoteNodeTransportMode::Direct,
             last_capabilities: last_capabilities.to_string(),
             last_error: String::new(),
             last_checked_at: None,
+            tunnel_last_error: String::new(),
+            tunnel_last_seen_at: None,
             created_at: now,
             updated_at: now,
         }
+    }
+
+    fn build_reverse_follower_with_capabilities(
+        last_capabilities: &str,
+    ) -> managed_follower::Model {
+        let mut follower = build_follower_with_capabilities("", last_capabilities);
+        follower.transport_mode = crate::types::RemoteNodeTransportMode::ReverseTunnel;
+        follower
     }
 
     fn build_driver(base_url: &str, base_path: &str) -> RemoteDriver {
@@ -627,6 +680,57 @@ mod tests {
                 .query_pairs()
                 .any(|(key, _)| key == PRESIGNED_AUTH_SIGNATURE_QUERY)
         );
+    }
+
+    #[tokio::test]
+    async fn reverse_tunnel_driver_rejects_presigned_browser_urls() {
+        let remote_protocol = crate::runtime::PrimaryAppState::new_remote_protocol();
+        let follower = build_reverse_follower_with_capabilities(
+            r#"{
+                "protocol_version":"v3",
+                "min_supported_protocol_version":"v2",
+                "supports_stream_upload":true,
+                "supports_list":true,
+                "supports_range_read":true
+            }"#,
+        );
+        let driver = remote_protocol
+            .driver_for_policy(&build_policy("base"), &follower)
+            .expect("reverse tunnel driver should build");
+
+        let download_error = driver
+            .presigned_url(
+                "file.txt",
+                Duration::from_secs(60),
+                PresignedDownloadOptions::default(),
+            )
+            .await
+            .expect_err("reverse tunnel download presigned URL should be rejected");
+        assert_eq!(
+            download_error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
+        );
+        assert!(download_error.message().contains("reverse tunnel"));
+
+        let upload_error = driver
+            .presigned_put_url("file.txt", Duration::from_secs(60))
+            .await
+            .expect_err("reverse tunnel upload presigned URL should be rejected");
+        assert_eq!(
+            upload_error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
+        );
+        assert!(upload_error.message().contains("reverse tunnel"));
+
+        let part_error = driver
+            .presigned_upload_part_url("file.txt", "upload-1", 1, Duration::from_secs(60))
+            .await
+            .expect_err("reverse tunnel multipart presigned URL should be rejected");
+        assert_eq!(
+            part_error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
+        );
+        assert!(part_error.message().contains("reverse tunnel"));
     }
 
     #[tokio::test]

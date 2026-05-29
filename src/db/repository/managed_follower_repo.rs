@@ -142,3 +142,19 @@ pub async fn touch_probe_result<C: ConnectionTrait>(
     active.updated_at = Set(chrono::Utc::now());
     update(db, active).await
 }
+
+pub async fn touch_tunnel_result<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    tunnel_last_error: String,
+    tunnel_last_seen_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> Result<managed_follower::Model> {
+    let existing = find_by_id(db, id).await?;
+    let mut active: managed_follower::ActiveModel = existing.into();
+    active.tunnel_last_error = Set(tunnel_last_error);
+    active.tunnel_last_seen_at = Set(tunnel_last_seen_at);
+    // Tunnel 心跳和错误是运行态遥测，不代表远端节点配置被修改。
+    // 保持 updated_at 只用于名称、base_url、transport_mode 等管理面变更；
+    // 需要按 tunnel 活跃度排序时应显式使用 tunnel_last_seen_at。
+    update(db, active).await
+}
