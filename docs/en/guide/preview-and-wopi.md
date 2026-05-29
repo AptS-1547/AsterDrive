@@ -140,7 +140,7 @@ It provides a **read-only listing preview**:
 
 When opening an archive for the first time, if the listing is not cached yet, the backend creates an `archive_preview_generate` background task. The frontend shows generation in progress and retries later automatically; after completion, later opens use the cache directly.
 
-If filenames inside a ZIP look garbled, switch `Filename encoding` in the preview toolbar. This option is only meaningful for ZIP; 7z uses Unicode names stored by the format. Common options include:
+If filenames inside a ZIP look garbled, switch `Filename encoding` in the preview toolbar. This option only affects ZIP entry name decoding. Common options include:
 
 - `Auto`
 - `UTF-8`
@@ -170,7 +170,7 @@ If an archive cannot open, check first:
 
 - Whether the global archive preview switch is enabled
 - Whether the current entry is user-side or share-side, and whether the corresponding switch is enabled
-- Whether the file is a supported ZIP or 7z, not `rar` or another format
+- Whether the file is a supported ZIP, not `rar`, `7z`, or another format
 - Whether the source archive exceeds the size limit
 - Whether `archive preview generation` failed in `Admin -> Tasks`
 
