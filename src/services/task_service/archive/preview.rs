@@ -5,20 +5,24 @@ use crate::db::repository::file_repo;
 use crate::entities::{background_task, file, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::{archive_preview_service, workspace_storage_service::WorkspaceStorageScope};
+use crate::services::{
+    archive_preview_service,
+    task_service::{
+        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress,
+        mark_task_succeeded, prepare_task_temp_dir,
+        steps::{
+            TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_PERSIST_MANIFEST, TASK_STEP_SCAN_ARCHIVE,
+            TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
+            set_task_step_succeeded,
+        },
+        types::{
+            ArchivePreviewTaskPayload, ArchivePreviewTaskResult, parse_task_payload,
+            serialize_task_result,
+        },
+    },
+    workspace_storage_service::WorkspaceStorageScope,
+};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
-
-use super::super::steps::{
-    TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_PERSIST_MANIFEST, TASK_STEP_SCAN_ARCHIVE,
-    TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active, set_task_step_succeeded,
-};
-use super::super::types::{
-    ArchivePreviewTaskPayload, ArchivePreviewTaskResult, parse_task_payload, serialize_task_result,
-};
-use super::super::{
-    TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress,
-    mark_task_succeeded, prepare_task_temp_dir,
-};
 
 pub(crate) async fn ensure_archive_preview_task(
     state: &PrimaryAppState,

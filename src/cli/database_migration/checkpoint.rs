@@ -3,15 +3,39 @@
 //! 这里负责创建、加载、更新和失败标记迁移检查点，让中断后的数据复制
 //! 可以从已提交的位置继续。
 
-use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
+use sea_orm::{
+    ConnectionTrait, DatabaseConnection, Statement,
+    entity::prelude::DeriveIden,
+    sea_query::{Alias, Expr, ExprTrait, Query, Value},
+};
 
-use crate::cli::db_shared::{quote_ident, quote_literal, redact_database_url};
+use crate::cli::db_shared::{quote_ident, redact_database_url};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::utils::hash::sha256_hex;
 
-use super::helpers::{now_ms, nullable_sql_string};
+use super::helpers::now_ms;
 use super::schema::{ensure_target_empty, total_source_rows};
 use super::{CHECKPOINT_TABLE, DatabaseMigrateArgs, MigrationCheckpoint, MigrationMode, TablePlan};
+
+#[derive(DeriveIden)]
+enum CheckpointColumn {
+    MigrationKey,
+    SourceDatabaseUrl,
+    TargetDatabaseUrl,
+    Mode,
+    Status,
+    Stage,
+    CurrentTable,
+    CurrentTableIndex,
+    CurrentTableOffset,
+    CopiedRows,
+    TotalRows,
+    PlanJson,
+    ResultJson,
+    LastError,
+    HeartbeatAtMs,
+    UpdatedAtMs,
+}
 
 #[derive(Debug)]
 pub(super) struct InitializedCheckpoint {
@@ -136,61 +160,51 @@ pub(super) async fn update_checkpoint<C>(db: &C, checkpoint: &MigrationCheckpoin
 where
     C: ConnectionTrait,
 {
-    let backend = db.get_database_backend();
-    let sql = format!(
-        "UPDATE {table_name} SET \
-            {source_col} = {source}, \
-            {target_col} = {target}, \
-            {mode_col} = {mode}, \
-            {status_col} = {status}, \
-            {stage_col} = {stage}, \
-            {current_table_col} = {current_table}, \
-            {current_table_index_col} = {current_table_index}, \
-            {current_table_offset_col} = {current_table_offset}, \
-            {copied_rows_col} = {copied_rows}, \
-            {total_rows_col} = {total_rows}, \
-            {plan_json_col} = {plan_json}, \
-            {result_json_col} = {result_json}, \
-            {last_error_col} = {last_error}, \
-            {heartbeat_col} = {heartbeat}, \
-            {updated_col} = {updated} \
-         WHERE {migration_key_col} = {migration_key}",
-        table_name = quote_ident(backend, CHECKPOINT_TABLE),
-        source_col = quote_ident(backend, "source_database_url"),
-        target_col = quote_ident(backend, "target_database_url"),
-        mode_col = quote_ident(backend, "mode"),
-        status_col = quote_ident(backend, "status"),
-        stage_col = quote_ident(backend, "stage"),
-        current_table_col = quote_ident(backend, "current_table"),
-        current_table_index_col = quote_ident(backend, "current_table_index"),
-        current_table_offset_col = quote_ident(backend, "current_table_offset"),
-        copied_rows_col = quote_ident(backend, "copied_rows"),
-        total_rows_col = quote_ident(backend, "total_rows"),
-        plan_json_col = quote_ident(backend, "plan_json"),
-        result_json_col = quote_ident(backend, "result_json"),
-        last_error_col = quote_ident(backend, "last_error"),
-        heartbeat_col = quote_ident(backend, "heartbeat_at_ms"),
-        updated_col = quote_ident(backend, "updated_at_ms"),
-        migration_key_col = quote_ident(backend, "migration_key"),
-        source = quote_literal(&checkpoint.source_database_url),
-        target = quote_literal(&checkpoint.target_database_url),
-        mode = quote_literal(&checkpoint.mode),
-        status = quote_literal(&checkpoint.status),
-        stage = quote_literal(&checkpoint.stage),
-        current_table = nullable_sql_string(checkpoint.current_table.as_deref()),
-        current_table_index = checkpoint.current_table_index,
-        current_table_offset = checkpoint.current_table_offset,
-        copied_rows = checkpoint.copied_rows,
-        total_rows = checkpoint.total_rows,
-        plan_json = quote_literal(&checkpoint.plan_json),
-        result_json = nullable_sql_string(checkpoint.result_json.as_deref()),
-        last_error = nullable_sql_string(checkpoint.last_error.as_deref()),
-        heartbeat = checkpoint.heartbeat_at_ms,
-        updated = checkpoint.updated_at_ms,
-        migration_key = quote_literal(&checkpoint.migration_key),
-    );
+    let statement = Query::update()
+        .table(Alias::new(CHECKPOINT_TABLE))
+        .value(
+            CheckpointColumn::SourceDatabaseUrl,
+            checkpoint.source_database_url.clone(),
+        )
+        .value(
+            CheckpointColumn::TargetDatabaseUrl,
+            checkpoint.target_database_url.clone(),
+        )
+        .value(CheckpointColumn::Mode, checkpoint.mode.clone())
+        .value(CheckpointColumn::Status, checkpoint.status.clone())
+        .value(CheckpointColumn::Stage, checkpoint.stage.clone())
+        .value(
+            CheckpointColumn::CurrentTable,
+            optional_string_expr(&checkpoint.current_table),
+        )
+        .value(
+            CheckpointColumn::CurrentTableIndex,
+            checkpoint.current_table_index,
+        )
+        .value(
+            CheckpointColumn::CurrentTableOffset,
+            checkpoint.current_table_offset,
+        )
+        .value(CheckpointColumn::CopiedRows, checkpoint.copied_rows)
+        .value(CheckpointColumn::TotalRows, checkpoint.total_rows)
+        .value(CheckpointColumn::PlanJson, checkpoint.plan_json.clone())
+        .value(
+            CheckpointColumn::ResultJson,
+            optional_string_expr(&checkpoint.result_json),
+        )
+        .value(
+            CheckpointColumn::LastError,
+            optional_string_expr(&checkpoint.last_error),
+        )
+        .value(CheckpointColumn::HeartbeatAtMs, checkpoint.heartbeat_at_ms)
+        .value(CheckpointColumn::UpdatedAtMs, checkpoint.updated_at_ms)
+        .and_where(
+            Expr::col(CheckpointColumn::MigrationKey)
+                .eq(Expr::val(checkpoint.migration_key.clone())),
+        )
+        .to_owned();
 
-    db.execute_raw(Statement::from_string(backend, sql))
+    db.execute(&statement)
         .await
         .map_aster_err(AsterError::database_operation)?;
     Ok(())
@@ -233,6 +247,7 @@ async fn load_checkpoint(
     migration_key: &str,
 ) -> Result<Option<MigrationCheckpoint>> {
     let backend = target.get_database_backend();
+    let migration_key_placeholder = migration_key_placeholder(backend);
     let sql = format!(
         "SELECT \
             {migration_key_col}, {source_col}, {target_col}, {mode_col}, {status_col}, {stage_col}, \
@@ -240,8 +255,7 @@ async fn load_checkpoint(
             {copied_rows_col}, {total_rows_col}, {plan_json_col}, {result_json_col}, \
             {last_error_col}, {heartbeat_col}, {updated_col} \
          FROM {table_name} \
-         WHERE {migration_key_col} = {}",
-        quote_literal(migration_key),
+         WHERE {migration_key_col} = {migration_key_placeholder}",
         migration_key_col = quote_ident(backend, "migration_key"),
         source_col = quote_ident(backend, "source_database_url"),
         target_col = quote_ident(backend, "target_database_url"),
@@ -262,7 +276,11 @@ async fn load_checkpoint(
     );
 
     let Some(row) = target
-        .query_one_raw(Statement::from_string(backend, sql))
+        .query_one_raw(Statement::from_sql_and_values(
+            backend,
+            sql,
+            [migration_key.into()],
+        ))
         .await
         .map_aster_err(AsterError::database_operation)?
     else {
@@ -327,58 +345,63 @@ async fn insert_checkpoint<C>(db: &C, checkpoint: &MigrationCheckpoint) -> Resul
 where
     C: ConnectionTrait,
 {
-    let backend = db.get_database_backend();
-    let sql = format!(
-        "INSERT INTO {table_name} (\
-            {migration_key_col}, {source_col}, {target_col}, {mode_col}, {status_col}, {stage_col}, \
-            {current_table_col}, {current_table_index_col}, {current_table_offset_col}, \
-            {copied_rows_col}, {total_rows_col}, {plan_json_col}, {result_json_col}, \
-            {last_error_col}, {heartbeat_col}, {updated_col}\
-        ) VALUES (\
-            {migration_key}, {source}, {target}, {mode}, {status}, {stage}, \
-            {current_table}, {current_table_index}, {current_table_offset}, \
-            {copied_rows}, {total_rows}, {plan_json}, {result_json}, \
-            {last_error}, {heartbeat}, {updated}\
-        )",
-        table_name = quote_ident(backend, CHECKPOINT_TABLE),
-        migration_key_col = quote_ident(backend, "migration_key"),
-        source_col = quote_ident(backend, "source_database_url"),
-        target_col = quote_ident(backend, "target_database_url"),
-        mode_col = quote_ident(backend, "mode"),
-        status_col = quote_ident(backend, "status"),
-        stage_col = quote_ident(backend, "stage"),
-        current_table_col = quote_ident(backend, "current_table"),
-        current_table_index_col = quote_ident(backend, "current_table_index"),
-        current_table_offset_col = quote_ident(backend, "current_table_offset"),
-        copied_rows_col = quote_ident(backend, "copied_rows"),
-        total_rows_col = quote_ident(backend, "total_rows"),
-        plan_json_col = quote_ident(backend, "plan_json"),
-        result_json_col = quote_ident(backend, "result_json"),
-        last_error_col = quote_ident(backend, "last_error"),
-        heartbeat_col = quote_ident(backend, "heartbeat_at_ms"),
-        updated_col = quote_ident(backend, "updated_at_ms"),
-        migration_key = quote_literal(&checkpoint.migration_key),
-        source = quote_literal(&checkpoint.source_database_url),
-        target = quote_literal(&checkpoint.target_database_url),
-        mode = quote_literal(&checkpoint.mode),
-        status = quote_literal(&checkpoint.status),
-        stage = quote_literal(&checkpoint.stage),
-        current_table = nullable_sql_string(checkpoint.current_table.as_deref()),
-        current_table_index = checkpoint.current_table_index,
-        current_table_offset = checkpoint.current_table_offset,
-        copied_rows = checkpoint.copied_rows,
-        total_rows = checkpoint.total_rows,
-        plan_json = quote_literal(&checkpoint.plan_json),
-        result_json = nullable_sql_string(checkpoint.result_json.as_deref()),
-        last_error = nullable_sql_string(checkpoint.last_error.as_deref()),
-        heartbeat = checkpoint.heartbeat_at_ms,
-        updated = checkpoint.updated_at_ms,
-    );
+    let statement = Query::insert()
+        .into_table(Alias::new(CHECKPOINT_TABLE))
+        .columns([
+            CheckpointColumn::MigrationKey,
+            CheckpointColumn::SourceDatabaseUrl,
+            CheckpointColumn::TargetDatabaseUrl,
+            CheckpointColumn::Mode,
+            CheckpointColumn::Status,
+            CheckpointColumn::Stage,
+            CheckpointColumn::CurrentTable,
+            CheckpointColumn::CurrentTableIndex,
+            CheckpointColumn::CurrentTableOffset,
+            CheckpointColumn::CopiedRows,
+            CheckpointColumn::TotalRows,
+            CheckpointColumn::PlanJson,
+            CheckpointColumn::ResultJson,
+            CheckpointColumn::LastError,
+            CheckpointColumn::HeartbeatAtMs,
+            CheckpointColumn::UpdatedAtMs,
+        ])
+        .values([
+            checkpoint.migration_key.clone().into(),
+            checkpoint.source_database_url.clone().into(),
+            checkpoint.target_database_url.clone().into(),
+            checkpoint.mode.clone().into(),
+            checkpoint.status.clone().into(),
+            checkpoint.stage.clone().into(),
+            optional_string_expr(&checkpoint.current_table),
+            checkpoint.current_table_index.into(),
+            checkpoint.current_table_offset.into(),
+            checkpoint.copied_rows.into(),
+            checkpoint.total_rows.into(),
+            checkpoint.plan_json.clone().into(),
+            optional_string_expr(&checkpoint.result_json),
+            optional_string_expr(&checkpoint.last_error),
+            checkpoint.heartbeat_at_ms.into(),
+            checkpoint.updated_at_ms.into(),
+        ])
+        .map_aster_err(AsterError::database_operation)?
+        .to_owned();
 
-    db.execute_raw(Statement::from_string(backend, sql))
+    db.execute(&statement)
         .await
         .map_aster_err(AsterError::database_operation)?;
     Ok(())
+}
+
+fn optional_string_expr(value: &Option<String>) -> Expr {
+    Expr::value(Value::String(value.clone()))
+}
+
+fn migration_key_placeholder(backend: sea_orm::DbBackend) -> &'static str {
+    match backend {
+        sea_orm::DbBackend::Postgres => "$1",
+        sea_orm::DbBackend::MySql | sea_orm::DbBackend::Sqlite => "?",
+        _ => "?",
+    }
 }
 
 fn build_migration_key(
@@ -393,4 +416,78 @@ fn build_migration_key(
         mode.as_str()
     );
     sha256_hex(key.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::{Database, DbBackend};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn checkpoint_insert_update_bind_values_without_sql_literal_concatenation() {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        ensure_checkpoint_table(&db).await.unwrap();
+
+        let mut checkpoint = MigrationCheckpoint {
+            migration_key: "checkpoint-key".to_string(),
+            source_database_url: "sqlite:///.../source's.db?mode=rwc".to_string(),
+            target_database_url: "sqlite:///.../target\\path.db?mode=rwc".to_string(),
+            mode: "apply".to_string(),
+            status: "running".to_string(),
+            stage: "data_copy".to_string(),
+            current_table: Some("folders'quoted".to_string()),
+            current_table_index: 1,
+            current_table_offset: 2,
+            copied_rows: 3,
+            total_rows: 4,
+            plan_json: r#"[{"name":"files'quoted"}]"#.to_string(),
+            result_json: None,
+            last_error: Some("first line\nsecond line's detail".to_string()),
+            heartbeat_at_ms: 5,
+            updated_at_ms: 6,
+        };
+
+        insert_checkpoint(&db, &checkpoint).await.unwrap();
+        let loaded = load_checkpoint(&db, &checkpoint.migration_key)
+            .await
+            .unwrap()
+            .expect("checkpoint should be inserted");
+        assert_eq!(loaded.source_database_url, checkpoint.source_database_url);
+        assert_eq!(loaded.target_database_url, checkpoint.target_database_url);
+        assert_eq!(loaded.current_table, checkpoint.current_table);
+        assert_eq!(loaded.plan_json, checkpoint.plan_json);
+        assert_eq!(loaded.result_json, None);
+        assert_eq!(loaded.last_error, checkpoint.last_error);
+
+        checkpoint.status = "failed".to_string();
+        checkpoint.current_table = None;
+        checkpoint.result_json = Some(r#"{"ready":false,"note":"quoted'value"}"#.to_string());
+        checkpoint.last_error = None;
+        checkpoint.copied_rows = 9;
+        checkpoint.heartbeat_at_ms = 10;
+        checkpoint.updated_at_ms = 11;
+        update_checkpoint(&db, &checkpoint).await.unwrap();
+
+        let updated = load_checkpoint(&db, &checkpoint.migration_key)
+            .await
+            .unwrap()
+            .expect("checkpoint should still exist");
+        assert_eq!(updated.status, "failed");
+        assert_eq!(updated.current_table, None);
+        assert_eq!(updated.result_json, checkpoint.result_json);
+        assert_eq!(updated.last_error, None);
+        assert_eq!(updated.copied_rows, 9);
+        assert_eq!(updated.heartbeat_at_ms, 10);
+        assert_eq!(updated.updated_at_ms, 11);
+
+        assert_eq!(db.get_database_backend(), DbBackend::Sqlite);
+    }
+
+    #[test]
+    fn checkpoint_migration_key_placeholder_matches_backend() {
+        assert_eq!(migration_key_placeholder(DbBackend::Postgres), "$1");
+        assert_eq!(migration_key_placeholder(DbBackend::MySql), "?");
+        assert_eq!(migration_key_placeholder(DbBackend::Sqlite), "?");
+    }
 }

@@ -2,8 +2,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use crate::errors::{AsterError, Result};
-
-use super::super::scan::{ArchiveScanEntry, ArchiveScanEntryKind};
+use crate::services::archive_service::scan::{ArchiveScanEntry, ArchiveScanEntryKind};
 
 const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
 const UNIX_REGULAR_FILE_MODE: u32 = 0o100000;

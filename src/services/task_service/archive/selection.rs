@@ -8,6 +8,10 @@ use std::{
 use actix_web::HttpResponse;
 use chrono::Utc;
 
+use super::common::{
+    ArchiveEntry, ArchiveFileEntry, ArchiveSinkContext, ends_with_ignore_ascii_case,
+    is_client_disconnect_error_text, write_archive_to_sink,
+};
 use crate::config::operations;
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
@@ -15,13 +19,8 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     batch_service, folder_service,
+    task_service::types::CreateArchiveTaskParams,
     workspace_storage_service::{self, WorkspaceStorageScope},
-};
-
-use super::super::types::CreateArchiveTaskParams;
-use super::common::{
-    ArchiveEntry, ArchiveFileEntry, ArchiveSinkContext, ends_with_ignore_ascii_case,
-    is_client_disconnect_error_text, write_archive_to_sink,
 };
 
 pub(crate) struct PreparedArchiveDownload {

@@ -4,7 +4,10 @@ use super::ref_count::{
 };
 use crate::entities::file_blob;
 use chrono::Utc;
-use sea_orm::{ColumnTrait, DbBackend, EntityTrait, ExprTrait, QueryFilter, QueryTrait, Set};
+use sea_orm::{
+    ColumnTrait, DbBackend, EntityTrait, ExprTrait, QueryFilter, QuerySelect, QueryTrait, Set,
+    sea_query::Expr,
+};
 use std::time::Duration;
 
 #[test]
@@ -61,6 +64,38 @@ fn postgres_find_or_create_blob_insert_sql_uses_valid_on_conflict() {
         "{sql}"
     );
     assert!(!sql.contains(" WHERE "), "{sql}");
+}
+
+#[test]
+fn summarize_blobs_by_policy_sql_uses_seaorm_aggregate_query() {
+    let statement = crate::entities::file_blob::Entity::find()
+        .select_only()
+        .column_as(Expr::col(file_blob::Column::Id).count(), "count")
+        .column_as(
+            Expr::col(file_blob::Column::Size).sum().cast_as("bigint"),
+            "total_size",
+        )
+        .filter(file_blob::Column::PolicyId.eq(42))
+        .build(DbBackend::Postgres);
+
+    assert!(
+        statement.sql.contains(r#"COUNT("id") AS "count""#),
+        "{}",
+        statement.sql
+    );
+    assert!(
+        statement
+            .sql
+            .contains(r#"CAST(SUM("size") AS bigint) AS "total_size""#),
+        "{}",
+        statement.sql
+    );
+    assert!(
+        statement.sql.contains(r#""policy_id" = $1"#),
+        "{}",
+        statement.sql
+    );
+    assert!(statement.values.is_some(), "{statement:?}");
 }
 
 // 第二轮审查有 agent 怀疑 `RefCount.gte(0)` 是无效过滤（误以为 ref_count 不能为负）。

@@ -40,19 +40,18 @@ use std::sync::Mutex as StdMutex;
 use std::sync::{Arc, LazyLock, Weak};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
+use super::{ensure_token_type, issue_tokens_for_session_id, verify_token};
 use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{auth_session_repo, user_repo};
 use crate::entities::auth_session;
 use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
-use crate::types::TokenType;
-
-use super::super::Claims;
-use super::super::session::{
+use crate::services::auth_service::Claims;
+use crate::services::auth_service::session::{
     invalidate_auth_snapshot_cache, purge_all_auth_sessions_in_connection,
 };
-use super::{ensure_token_type, issue_tokens_for_session_id, verify_token};
+use crate::types::TokenType;
 
 // This window is only for classifying an already-rotated previous JTI. It does
 // not allow a second successful refresh; stale callers still receive E019.

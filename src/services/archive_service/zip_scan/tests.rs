@@ -4,17 +4,18 @@ use std::path::PathBuf;
 use encoding_rs::{BIG5, EUC_KR, SHIFT_JIS, WINDOWS_1252};
 use oem_cp::{code_table::ENCODING_TABLE_CP850, encode_string_checked};
 
+use crate::services::archive_service::path::normalize_archive_entry_path;
 use crate::services::archive_service::scan::ArchiveScanEntry;
 use crate::services::archive_service::test_utils::{
     crc32, create_single_file_zip_with_raw_name, push_u16, push_u32,
 };
 
-use super::super::path::normalize_archive_entry_path;
 use super::*;
 use zip::HasZipMetadata;
 
 const ZIP_UTF8_NAME_FLAG: u16 = 0x0800;
 const ZIP_UNICODE_PATH_EXTRA_FIELD: u16 = 0x7075;
+const ZIP_ENCRYPTED_FLAG: u16 = 0x0001;
 
 fn scan_limits() -> ArchiveScanLimits {
     ArchiveScanLimits {
@@ -260,6 +261,106 @@ fn patch_zip_entry_raw_name_in_header(
     }
 
     assert!(patched, "zip entry header should be patched");
+}
+
+fn patch_zip_central_external_attrs(bytes: &mut [u8], path: &str, external_attrs: u32) {
+    let path = path.as_bytes();
+    let central_signature = [0x50, 0x4B, 0x01, 0x02];
+    let mut patched = false;
+
+    for index in 0..bytes.len().saturating_sub(central_signature.len()) {
+        if !bytes[index..].starts_with(&central_signature) {
+            continue;
+        }
+        let name_len = u16::from_le_bytes([bytes[index + 28], bytes[index + 29]]) as usize;
+        let name_start = index + 46;
+        let name_end = name_start + name_len;
+        if name_end <= bytes.len() && &bytes[name_start..name_end] == path {
+            bytes[index + 38..index + 42].copy_from_slice(&external_attrs.to_le_bytes());
+            bytes[index + 5] = 3;
+            patched = true;
+            break;
+        }
+    }
+
+    assert!(patched, "central directory entry should exist");
+}
+
+fn find_zip_header(
+    bytes: &[u8],
+    path: &str,
+    signature: &[u8; 4],
+    name_len_offset: usize,
+    name_offset: usize,
+) -> usize {
+    let path = path.as_bytes();
+    for index in 0..bytes.len().saturating_sub(signature.len()) {
+        if !bytes[index..].starts_with(signature) || index + name_offset > bytes.len() {
+            continue;
+        }
+        let name_len = u16::from_le_bytes([
+            bytes[index + name_len_offset],
+            bytes[index + name_len_offset + 1],
+        ]) as usize;
+        let name_start = index + name_offset;
+        let name_end = name_start + name_len;
+        if name_end <= bytes.len() && &bytes[name_start..name_end] == path {
+            return index;
+        }
+    }
+
+    panic!("zip entry header should exist");
+}
+
+fn patch_zip_entry_general_purpose_flag(bytes: &mut [u8], path: &str, flag_mask: u16) {
+    let local_header = find_zip_header(bytes, path, &[0x50, 0x4B, 0x03, 0x04], 26, 30);
+    let local_flags = u16::from_le_bytes([bytes[local_header + 6], bytes[local_header + 7]]);
+    bytes[local_header + 6..local_header + 8]
+        .copy_from_slice(&(local_flags | flag_mask).to_le_bytes());
+
+    let central_header = find_zip_header(bytes, path, &[0x50, 0x4B, 0x01, 0x02], 28, 46);
+    let central_flags = u16::from_le_bytes([bytes[central_header + 8], bytes[central_header + 9]]);
+    bytes[central_header + 8..central_header + 10]
+        .copy_from_slice(&(central_flags | flag_mask).to_le_bytes());
+}
+
+fn create_symlink_zip_bytes(path: &str, target: &str) -> Vec<u8> {
+    let mut bytes = create_stored_zip_bytes(&[(path, Some(target.as_bytes()))]);
+    patch_zip_central_external_attrs(&mut bytes, path, 0o120777_u32 << 16);
+    bytes
+}
+
+fn create_special_file_zip_bytes(path: &str) -> Vec<u8> {
+    let mut bytes = create_stored_zip_bytes(&[(path, Some(b""))]);
+    patch_zip_central_external_attrs(&mut bytes, path, 0o060666_u32 << 16);
+    bytes
+}
+
+fn create_encrypted_flag_zip_bytes(path: &str, content: &[u8]) -> Vec<u8> {
+    let mut bytes = create_stored_zip_bytes(&[(path, Some(content))]);
+    patch_zip_entry_general_purpose_flag(&mut bytes, path, ZIP_ENCRYPTED_FLAG);
+    bytes
+}
+
+fn scan_zip(bytes: Vec<u8>, limits: ArchiveScanLimits) -> Result<ArchiveScanResult> {
+    let cursor = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor).expect("zip should open");
+
+    scan_zip_archive(
+        &mut archive,
+        limits,
+        None,
+        ArchiveFilenameEncoding::Auto,
+        ArchiveScanNamePolicy::StrictAsterName,
+        |_| Ok(()),
+    )
+}
+
+fn scan_zip_raw(bytes: Vec<u8>, limits: ArchiveScanLimits) -> Result<ArchiveRawScanResult> {
+    let cursor = Cursor::new(bytes);
+    let mut archive = zip::ZipArchive::new(cursor).expect("zip should open");
+
+    scan_zip_archive_raw(&mut archive, limits, None)
 }
 
 fn scan_error_with_encoding(bytes: Vec<u8>, filename_encoding: ArchiveFilenameEncoding) -> String {
@@ -560,6 +661,175 @@ fn preview_name_policy_allows_display_names_for_preview_only() {
     assert_eq!(entries[0].path, "folder/name:with-colon.txt");
     assert_eq!(entries[0].name, "name:with-colon.txt");
     assert_eq!(entries[0].parent.as_deref(), Some("folder"));
+}
+
+#[test]
+fn scan_rejects_encrypted_entries() {
+    let bytes = create_encrypted_flag_zip_bytes("secret.txt", b"secret");
+    let error = scan_zip(bytes, scan_limits())
+        .expect_err("encrypted ZIP entry should be rejected")
+        .message()
+        .to_string();
+
+    assert!(error.contains("encrypted"));
+}
+
+#[test]
+fn scan_rejects_symlink_entries() {
+    let bytes = create_symlink_zip_bytes("link.txt", "../target");
+    let error = scan_zip(bytes, scan_limits())
+        .expect_err("ZIP symlink entry should be rejected")
+        .message()
+        .to_string();
+
+    assert!(error.contains("symbolic link"));
+}
+
+#[test]
+fn scan_rejects_special_file_entries() {
+    let bytes = create_special_file_zip_bytes("device");
+    let error = scan_zip(bytes, scan_limits())
+        .expect_err("ZIP special file entry should be rejected")
+        .message()
+        .to_string();
+
+    assert!(error.contains("special file"));
+}
+
+#[test]
+fn scan_zip_raw_rejects_encrypted_entries() {
+    let bytes = create_encrypted_flag_zip_bytes("secret.txt", b"secret");
+    let error = scan_zip_raw(bytes, scan_limits())
+        .expect_err("raw ZIP scan should reject encrypted entries")
+        .message()
+        .to_string();
+
+    assert!(error.contains("encrypted"));
+}
+
+#[test]
+fn scan_zip_raw_returns_manifest_and_replay_rejects_path_traversal() {
+    let bytes = create_stored_zip_bytes(&[("safe/file.txt", Some(b"payload".as_slice()))]);
+    let raw = scan_zip_raw(bytes, scan_limits()).expect("raw ZIP scan should succeed");
+
+    assert_eq!(raw.entry_count, 1);
+    assert_eq!(raw.file_count, 1);
+    assert_eq!(raw.total_uncompressed_bytes, 7);
+    assert_eq!(raw.total_compressed_base, 7);
+    assert_eq!(raw.entries[0].display_name, "safe/file.txt");
+    assert_eq!(raw.entries[0].raw_name, b"safe/file.txt");
+
+    let mut tampered_entries = raw.entries;
+    tampered_entries[0].raw_name = b"../escape.txt".to_vec();
+    tampered_entries[0].display_name = "../escape.txt".to_string();
+    let error = build_zip_scan_result_from_raw_entries(
+        &tampered_entries,
+        scan_limits(),
+        None,
+        ArchiveFilenameEncoding::Auto,
+        ArchiveScanNamePolicy::StrictAsterName,
+        |_| Ok(()),
+    )
+    .expect_err("raw ZIP replay should reject unsafe paths");
+
+    assert!(error.message().contains("unsafe path"));
+}
+
+#[test]
+fn build_zip_scan_result_rejects_raw_replay_entry_limit() {
+    let raw_entries = vec![
+        ArchiveRawScanEntry {
+            index: 0,
+            raw_name: b"first.txt".to_vec(),
+            display_name: "first.txt".to_string(),
+            raw_name_utf8: true,
+            kind: ArchiveScanEntryKind::File,
+            size: 1,
+            compressed_size: 1,
+            modified_at: None,
+        },
+        ArchiveRawScanEntry {
+            index: 1,
+            raw_name: b"second.txt".to_vec(),
+            display_name: "second.txt".to_string(),
+            raw_name_utf8: true,
+            kind: ArchiveScanEntryKind::File,
+            size: 1,
+            compressed_size: 1,
+            modified_at: None,
+        },
+    ];
+    let mut limits = scan_limits();
+    limits.max_entries = 1;
+
+    let error = build_zip_scan_result_from_raw_entries(
+        &raw_entries,
+        limits,
+        None,
+        ArchiveFilenameEncoding::Auto,
+        ArchiveScanNamePolicy::StrictAsterName,
+        |_| Ok(()),
+    )
+    .expect_err("raw ZIP replay should reject entry limit");
+
+    assert!(error.message().contains("entries"));
+}
+
+#[test]
+fn build_zip_scan_result_rejects_raw_replay_extracted_size_overflow() {
+    let raw_entries = vec![ArchiveRawScanEntry {
+        index: 0,
+        raw_name: b"payload.txt".to_vec(),
+        display_name: "payload.txt".to_string(),
+        raw_name_utf8: true,
+        kind: ArchiveScanEntryKind::File,
+        size: 11,
+        compressed_size: 11,
+        modified_at: None,
+    }];
+    let mut limits = scan_limits();
+    limits.max_uncompressed_bytes = 10;
+
+    let error = build_zip_scan_result_from_raw_entries(
+        &raw_entries,
+        limits,
+        None,
+        ArchiveFilenameEncoding::Auto,
+        ArchiveScanNamePolicy::StrictAsterName,
+        |_| Ok(()),
+    )
+    .expect_err("raw ZIP replay should reject extracted size above preflight limit");
+
+    assert!(error.message().contains("uncompressed size"));
+}
+
+#[test]
+fn build_zip_scan_result_rejects_raw_replay_total_compression_ratio() {
+    let raw_entries = vec![ArchiveRawScanEntry {
+        index: 0,
+        raw_name: b"payload.txt".to_vec(),
+        display_name: "payload.txt".to_string(),
+        raw_name_utf8: true,
+        kind: ArchiveScanEntryKind::File,
+        size: 20,
+        compressed_size: 10,
+        modified_at: None,
+    }];
+    let mut limits = scan_limits();
+    limits.max_entry_compression_ratio = u64::MAX;
+    limits.max_compression_ratio = 1;
+
+    let error = build_zip_scan_result_from_raw_entries(
+        &raw_entries,
+        limits,
+        None,
+        ArchiveFilenameEncoding::Auto,
+        ArchiveScanNamePolicy::StrictAsterName,
+        |_| Ok(()),
+    )
+    .expect_err("raw ZIP replay should reject total compression ratio");
+
+    assert!(error.message().contains("total compression ratio"));
 }
 
 #[test]

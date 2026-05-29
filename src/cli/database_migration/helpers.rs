@@ -43,9 +43,3 @@ pub(super) fn parse_bool(value: &str) -> Option<bool> {
 pub(super) fn parse_timestamp(value: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::parse_from_rfc3339(value).ok()
 }
-
-pub(super) fn nullable_sql_string(value: Option<&str>) -> String {
-    value
-        .map(crate::cli::db_shared::quote_literal)
-        .unwrap_or_else(|| "NULL".to_string())
-}

@@ -5,27 +5,23 @@ use futures::stream::{self, StreamExt};
 use sea_orm::ActiveEnum;
 use tokio::time::MissedTickBehavior;
 
-use crate::db::repository::background_task_repo;
-use crate::entities::background_task;
-use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
-use crate::types::BackgroundTaskKind;
-
-use super::super::archive;
-use super::super::blob_maintenance;
-use super::super::media_metadata;
-use super::super::retry::{TaskRetryClass, TaskRetryPolicy};
-use super::super::runtime;
-use super::super::steps::{mark_active_step_failed, parse_task_steps_json, serialize_task_steps};
-use super::super::storage_migration;
-use super::super::storage_policy_cleanup;
-use super::super::thumbnail;
-use super::super::trash;
 use super::{
     DispatchStats, TASK_HEARTBEAT_INTERVAL_SECS, TaskDispatchOutcome, TaskLease, TaskLeaseGuard,
     is_task_lease_lost, is_task_lease_renewal_timed_out, task_expiration_from,
     task_lease_expires_at, truncate_error,
 };
+use crate::db::repository::background_task_repo;
+use crate::entities::background_task;
+use crate::errors::{AsterError, Result};
+use crate::runtime::PrimaryAppState;
+use crate::services::task_service::{
+    archive, blob_maintenance, media_metadata, retry,
+    retry::{TaskRetryClass, TaskRetryPolicy},
+    runtime,
+    steps::{mark_active_step_failed, parse_task_steps_json, serialize_task_steps},
+    storage_migration, storage_policy_cleanup, thumbnail, trash,
+};
+use crate::types::BackgroundTaskKind;
 
 pub(super) async fn run_claimed_tasks(
     state: &PrimaryAppState,
@@ -347,14 +343,10 @@ pub(super) fn task_retry_class(kind: BackgroundTaskKind, error: &AsterError) -> 
         BackgroundTaskKind::MediaMetadataExtract => {
             media_metadata::MediaMetadataRetryPolicy::retry_class(error)
         }
-        BackgroundTaskKind::TrashPurgeAll => super::super::retry::default_retry_class(error),
-        BackgroundTaskKind::StoragePolicyTempCleanup => {
-            super::super::retry::default_retry_class(error)
-        }
-        BackgroundTaskKind::StoragePolicyMigration => {
-            super::super::retry::default_retry_class(error)
-        }
-        BackgroundTaskKind::BlobMaintenance => super::super::retry::default_retry_class(error),
+        BackgroundTaskKind::TrashPurgeAll => retry::default_retry_class(error),
+        BackgroundTaskKind::StoragePolicyTempCleanup => retry::default_retry_class(error),
+        BackgroundTaskKind::StoragePolicyMigration => retry::default_retry_class(error),
+        BackgroundTaskKind::BlobMaintenance => retry::default_retry_class(error),
         BackgroundTaskKind::SystemRuntime => runtime::RuntimeRetryPolicy::retry_class(error),
     }
 }
