@@ -158,7 +158,7 @@ pub mod fallback {
         _size: i64,
     ) -> Result<String>
     where
-        D: super::super::driver::StorageDriver + ?Sized,
+        D: crate::storage::driver::StorageDriver + ?Sized,
     {
         // 创建临时文件
         let temp_dir = std::env::temp_dir();

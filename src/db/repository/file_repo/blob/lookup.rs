@@ -1,7 +1,8 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, FromQueryResult,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TryInsertResult,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
+    FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TryInsertResult,
+    sea_query::Expr,
 };
 
 use crate::api::pagination::{AdminFileBlobSortBy, SortOrder};
@@ -107,27 +108,24 @@ pub async fn summarize_blobs_by_policy<C: ConnectionTrait>(
     db: &C,
     policy_id: i64,
 ) -> Result<StoragePolicyBlobSummary> {
-    let backend = db.get_database_backend();
-    let sql = match backend {
-        DbBackend::Postgres => {
-            r#"SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS total_size FROM file_blobs WHERE policy_id = $1"#
-        }
-        DbBackend::MySql => {
-            "SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS total_size FROM file_blobs WHERE policy_id = ?"
-        }
-        DbBackend::Sqlite | _ => {
-            "SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS total_size FROM file_blobs WHERE policy_id = ?"
-        }
-    };
-    StoragePolicyBlobSummary::find_by_statement(sea_orm::Statement::from_sql_and_values(
-        backend,
-        sql,
-        [policy_id.into()],
-    ))
-    .one(db)
-    .await
-    .map_err(AsterError::from)?
-    .ok_or_else(|| AsterError::internal_error("storage policy blob summary query returned no row"))
+    let (count, total_size) = FileBlob::find()
+        .select_only()
+        .column_as(Expr::col(file_blob::Column::Id).count(), "count")
+        .column_as(
+            sum_blob_size_as_i64_expr(db.get_database_backend()),
+            "total_size",
+        )
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .into_tuple::<(i64, Option<i64>)>()
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .unwrap_or((0, None));
+
+    Ok(StoragePolicyBlobSummary {
+        count,
+        total_size: total_size.unwrap_or(0),
+    })
 }
 
 pub async fn summarize_blob_hash_kinds_by_policy<C: ConnectionTrait>(
@@ -555,4 +553,13 @@ fn apply_admin_blob_order(
             file_blob::Column::Id,
         ),
     }
+}
+
+pub(super) fn sum_blob_size_as_i64_expr(backend: DbBackend) -> sea_orm::sea_query::SimpleExpr {
+    let type_name = match backend {
+        DbBackend::Postgres => "bigint",
+        DbBackend::MySql => "signed",
+        _ => "integer",
+    };
+    Expr::col(file_blob::Column::Size).sum().cast_as(type_name)
 }

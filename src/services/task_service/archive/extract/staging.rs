@@ -14,25 +14,29 @@ use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::archive_service::io::copy_async_reader_to_writer_with_expected_size;
-use crate::services::archive_service::scan::{
-    ArchiveScanEntry, ArchiveScanLimits, ArchiveScanNamePolicy, ensure_archive_scan_deadline,
+use crate::services::{
+    archive_service::{
+        io::copy_async_reader_to_writer_with_expected_size,
+        scan::{
+            ArchiveScanEntry, ArchiveScanLimits, ArchiveScanNamePolicy,
+            ensure_archive_scan_deadline,
+        },
+        seven_zip_scan::{
+            map_seven_zip_entry_error, open_seven_zip_streaming_archive, scan_seven_zip_archive,
+            seven_zip_streaming_config,
+        },
+        zip_scan::scan_zip_archive,
+    },
+    task_service::{
+        TaskLeaseGuard, TaskStepInfo,
+        archive::common::copy_reader_to_writer_with_lease_and_expected_size,
+        steps::{TASK_STEP_EXTRACT_ARCHIVE, set_task_step_active, set_task_step_succeeded},
+        update_task_progress_db,
+    },
+    workspace_storage_service::{self, WorkspaceStorageScope},
 };
-use crate::services::archive_service::seven_zip_scan::{
-    map_seven_zip_entry_error, open_seven_zip_streaming_archive, scan_seven_zip_archive,
-    seven_zip_streaming_config,
-};
-use crate::services::archive_service::zip_scan::scan_zip_archive;
-use crate::services::task_service::TaskStepInfo;
-use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::storage::PolicySnapshot;
 use crate::types::ArchiveFilenameEncoding;
-
-use super::super::super::TaskLeaseGuard;
-use super::super::super::steps::{
-    TASK_STEP_EXTRACT_ARCHIVE, set_task_step_active, set_task_step_succeeded,
-};
-use super::super::common::copy_reader_to_writer_with_lease_and_expected_size;
 
 #[derive(Debug)]
 pub(super) struct StagedArchiveStats {
@@ -98,7 +102,7 @@ impl ArchiveStagingProgressSink<'_, '_> {
             Some((self.progress.processed_bytes, self.progress.total_bytes)),
         )?;
         self.runtime.handle.block_on(async {
-            super::super::super::update_task_progress_db(
+            update_task_progress_db(
                 self.runtime.db,
                 self.runtime.lease_guard,
                 self.progress.processed_bytes,
@@ -491,7 +495,7 @@ fn set_archive_staging_reading_step(
         step_progress,
     )?;
     handle.block_on(async {
-        super::super::super::update_task_progress_db(
+        update_task_progress_db(
             db,
             lease_guard,
             0,
@@ -940,4 +944,27 @@ fn ensure_seven_zip_entry_matches_preflight(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_seven_zip_entry_count_matches_preflight;
+
+    #[test]
+    fn seven_zip_preflight_entry_count_match_accepts_equal_counts() {
+        ensure_seven_zip_entry_count_matches_preflight(2, 2)
+            .expect("matching preflight and archive entry counts should pass");
+    }
+
+    #[test]
+    fn seven_zip_preflight_entry_count_match_rejects_mismatch() {
+        let error = ensure_seven_zip_entry_count_matches_preflight(1, 2)
+            .expect_err("mismatched preflight and archive entry counts should fail");
+
+        assert!(
+            error
+                .message()
+                .contains("preflight entry count 1 differs from archive entry count 2")
+        );
+    }
 }

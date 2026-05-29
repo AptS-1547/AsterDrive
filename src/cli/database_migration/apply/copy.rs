@@ -11,14 +11,15 @@ use crate::cli::db_shared::{quote_ident, quote_literal, scalar_i64};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::utils::numbers::{i64_to_usize, usize_to_i64};
 
-use super::super::checkpoint::update_checkpoint;
-use super::super::helpers::now_ms;
-use super::super::schema::{binding_kind_from_raw_type, load_column_type_rows};
-use super::super::{
+use super::convert::decode_row_values;
+use crate::cli::database_migration::checkpoint::update_checkpoint;
+use crate::cli::database_migration::helpers::now_ms;
+use crate::cli::database_migration::schema::{binding_kind_from_raw_type, load_column_type_rows};
+use crate::cli::database_migration::ui::ProgressReporter;
+use crate::cli::database_migration::{
     BindingKind, COPY_BATCH_SIZE_ENV, DEFAULT_COPY_BATCH_SIZE, FAIL_AFTER_BATCHES_ENV,
     MigrationCheckpoint, TablePlan,
 };
-use super::convert::decode_row_values;
 
 /// Copies all planned tables in batches and persists checkpoint progress after each commit.
 pub(super) async fn copy_tables_with_resume(
@@ -27,7 +28,7 @@ pub(super) async fn copy_tables_with_resume(
     plans: &[TablePlan],
     target_type_hints: &BTreeMap<String, BTreeMap<String, BindingKind>>,
     checkpoint: &mut MigrationCheckpoint,
-    progress: &super::super::ui::ProgressReporter,
+    progress: &ProgressReporter,
 ) -> Result<()> {
     let batch_size = copy_batch_size()?;
     let fail_after_batches = fail_after_batches()?;

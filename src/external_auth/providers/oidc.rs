@@ -16,7 +16,7 @@ use crate::services::auth_service;
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
 use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
-use super::super::driver::{
+use crate::external_auth::driver::{
     ExternalAuthAuthorizationStart, ExternalAuthCallback, ExternalAuthProfile,
     ExternalAuthProviderConfig, ExternalAuthProviderDescriptor, ExternalAuthProviderDriver,
     ExternalAuthProviderTestCheck, ExternalAuthProviderTestResult,

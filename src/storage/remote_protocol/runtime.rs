@@ -173,7 +173,7 @@ mod tests {
             "/root/api/v1/internal/storage/objects/object.bin"
         );
         assert!(parsed.query_pairs().any(|(key, value)| key
-            == super::super::PRESIGNED_AUTH_ACCESS_KEY_QUERY
+            == crate::storage::remote_protocol::PRESIGNED_AUTH_ACCESS_KEY_QUERY
             && value == "runtime-access"));
     }
 }

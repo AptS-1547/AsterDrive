@@ -2,33 +2,36 @@
 
 use std::path::Path;
 
-use crate::entities::background_task;
-use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
-use crate::services::{
-    batch_service,
-    workspace_storage_service::{self, WorkspaceStorageScope},
-};
-use crate::types::BackgroundTaskKind;
-
-use super::super::steps::{
-    TASK_STEP_BUILD_ARCHIVE, TASK_STEP_PREPARE_SOURCES, TASK_STEP_STORE_RESULT, TASK_STEP_WAITING,
-    parse_task_steps_json, set_task_step_active, set_task_step_succeeded,
-};
-use super::super::types::{
-    ArchiveCompressTaskPayload, ArchiveCompressTaskResult, CreateArchiveCompressTaskParams,
-    CreateArchiveTaskParams, TaskStepInfo, parse_task_payload, serialize_task_result,
-};
-use super::super::{
-    TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress,
-    mark_task_succeeded, prepare_task_temp_dir, task_scope,
-};
 use super::common::{ArchiveSinkContext, build_file_display_path, write_archive_to_sink};
 use super::selection::{
     ArchiveBuildLimits, collect_archive_entries_from_selection_in_scope,
     ensure_archive_selection_active, resolve_archive_compress_target_folder_id,
     resolve_archive_download_in_scope,
 };
+use crate::entities::background_task;
+use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::runtime::PrimaryAppState;
+use crate::services::{
+    batch_service,
+    task_service::{
+        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, get_task_in_scope,
+        mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
+        steps::{
+            TASK_STEP_BUILD_ARCHIVE, TASK_STEP_PREPARE_SOURCES, TASK_STEP_STORE_RESULT,
+            TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
+            set_task_step_succeeded,
+        },
+        task_scope,
+        types::{
+            ArchiveCompressTaskPayload, ArchiveCompressTaskResult, CreateArchiveCompressTaskParams,
+            CreateArchiveTaskParams, TaskInfo, TaskStepInfo, parse_task_payload,
+            serialize_task_result,
+        },
+        update_task_progress_db,
+    },
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
+use crate::types::BackgroundTaskKind;
 
 const EMIT_ARCHIVE_STORAGE_EVENT: bool = true;
 
@@ -36,7 +39,7 @@ pub(crate) async fn create_archive_compress_task_in_scope(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     params: CreateArchiveCompressTaskParams,
-) -> Result<super::super::TaskInfo> {
+) -> Result<TaskInfo> {
     let resolved = resolve_archive_download_in_scope(
         state,
         scope,
@@ -74,7 +77,7 @@ pub(crate) async fn create_archive_compress_task_in_scope(
         &payload,
     )
     .await?;
-    super::super::get_task_in_scope(state, scope, task.id).await
+    get_task_in_scope(state, scope, task.id).await
 }
 
 pub(super) async fn process_archive_compress_task(
@@ -190,7 +193,7 @@ pub(super) async fn process_archive_compress_task(
                         Some((current, progress_total)),
                     )?;
                     handle.block_on(async {
-                        super::super::update_task_progress_db(
+                        update_task_progress_db(
                             &db,
                             &lease_guard_for_worker,
                             current,

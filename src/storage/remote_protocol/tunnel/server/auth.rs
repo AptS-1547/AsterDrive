@@ -5,7 +5,7 @@ use crate::runtime::PrimaryRuntimeState;
 
 use hmac::Mac;
 
-use super::super::super::{
+use crate::storage::remote_protocol::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_NONCE_TTL_SECS,
     INTERNAL_AUTH_SIGNATURE_HEADER, INTERNAL_AUTH_SKEW_SECS, INTERNAL_AUTH_TIMESTAMP_HEADER,
     internal_request_mac, sign_internal_request,

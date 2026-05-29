@@ -10,8 +10,8 @@ use sea_orm::{QueryResult, TryGetError, Value};
 
 use crate::errors::{AsterError, Result};
 
-use super::super::helpers::{parse_bool, parse_timestamp};
-use super::super::{BindingKind, CellValue, TablePlan};
+use crate::cli::database_migration::helpers::{parse_bool, parse_timestamp};
+use crate::cli::database_migration::{BindingKind, CellValue, TablePlan};
 
 /// Decodes a source row and converts each cell into the target backend value shape.
 pub(super) fn decode_row_values(
