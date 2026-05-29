@@ -40,6 +40,7 @@ pub const REMOTE_TUNNEL_COMPLETE_PATH: &str = "/api/v1/internal/remote-tunnel/co
 pub const REMOTE_TUNNEL_CONNECT_PATH: &str = "/api/v1/internal/remote-tunnel/connect";
 
 const REMOTE_TUNNEL_POLL_TIMEOUT: Duration = Duration::from_secs(25);
+const REMOTE_TUNNEL_STREAM_READ_TIMEOUT: Duration = Duration::from_secs(60);
 pub const REMOTE_TUNNEL_BODY_LIMIT: usize = 64 * 1024 * 1024;
 pub const REMOTE_TUNNEL_JSON_LIMIT: usize = REMOTE_TUNNEL_BODY_LIMIT * 2 + 1024 * 1024;
 pub const REMOTE_TUNNEL_STREAM_CHUNK_SIZE: usize = 64 * 1024;
@@ -147,8 +148,19 @@ pub async fn connect_stream(
     loop {
         tokio::select! {
             biased;
-            message = stream.next() => {
-                let Some(message) = message else {
+            message = tokio::time::timeout(REMOTE_TUNNEL_STREAM_READ_TIMEOUT, stream.next()) => {
+                let Some(message) = (match message {
+                    Ok(message) => message,
+                    Err(_) => {
+                        tracing::warn!(
+                            remote_node_id = remote_node.id,
+                            lane_id = %lane_id,
+                            timeout_secs = REMOTE_TUNNEL_STREAM_READ_TIMEOUT.as_secs(),
+                            "reverse tunnel streaming lane timed out waiting for follower frames"
+                        );
+                        break;
+                    }
+                }) else {
                     break;
                 };
                 let message = match message {
@@ -166,6 +178,7 @@ pub async fn connect_stream(
                     actix_ws::Message::Binary(bytes) => {
                         match decode_stream_frame(bytes) {
                             Ok(frame) => {
+                                registry.update_last_seen(remote_node.id);
                                 if let Err(error) = registry
                                     .complete_stream_frame(&remote_node, &lane_id, frame)
                                     .await
@@ -187,11 +200,15 @@ pub async fn connect_stream(
                             }
                         }
                     }
-                    actix_ws::Message::Ping(bytes)
-                        if session.pong(&bytes).await.is_err() => {
+                    actix_ws::Message::Ping(bytes) => {
+                        if session.pong(&bytes).await.is_err() {
                             break;
                         }
-                    actix_ws::Message::Pong(_) => {}
+                        registry.update_last_seen(remote_node.id);
+                    }
+                    actix_ws::Message::Pong(_) => {
+                        registry.update_last_seen(remote_node.id);
+                    }
                     actix_ws::Message::Close(_) => break,
                     _ => {}
                 }

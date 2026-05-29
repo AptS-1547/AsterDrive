@@ -3,10 +3,12 @@ use crate::entities::managed_follower;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryRuntimeState;
 
+use hmac::Mac;
+
 use super::super::super::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_NONCE_TTL_SECS,
     INTERNAL_AUTH_SIGNATURE_HEADER, INTERNAL_AUTH_SKEW_SECS, INTERNAL_AUTH_TIMESTAMP_HEADER,
-    sign_internal_request,
+    internal_request_mac, sign_internal_request,
 };
 
 pub async fn authorize_tunnel_request<S: PrimaryRuntimeState>(
@@ -45,7 +47,24 @@ pub async fn authorize_tunnel_request<S: PrimaryRuntimeState>(
         &nonce,
         content_length,
     );
-    if expected != signature {
+    let expected = hex::decode(&expected).map_err(|error| {
+        AsterError::internal_error(format!("decode reverse tunnel expected signature: {error}"))
+    })?;
+    let signature = hex::decode(&signature).map_err(|_| {
+        AsterError::auth_invalid_credentials("reverse tunnel auth signature mismatch")
+    })?;
+    let valid_len = signature.len() == expected.len();
+    let valid_signature = internal_request_mac(
+        &remote_node.secret_key,
+        method.as_str(),
+        path_and_query,
+        timestamp,
+        &nonce,
+        content_length,
+    )
+    .verify_slice(&signature)
+    .is_ok();
+    if !(valid_len & valid_signature) {
         return Err(AsterError::auth_invalid_credentials(
             "reverse tunnel auth signature mismatch",
         ));

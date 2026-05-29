@@ -153,5 +153,8 @@ pub async fn touch_tunnel_result<C: ConnectionTrait>(
     let mut active: managed_follower::ActiveModel = existing.into();
     active.tunnel_last_error = Set(tunnel_last_error);
     active.tunnel_last_seen_at = Set(tunnel_last_seen_at);
+    // Tunnel 心跳和错误是运行态遥测，不代表远端节点配置被修改。
+    // 保持 updated_at 只用于名称、base_url、transport_mode 等管理面变更；
+    // 需要按 tunnel 活跃度排序时应显式使用 tunnel_last_seen_at。
     update(db, active).await
 }

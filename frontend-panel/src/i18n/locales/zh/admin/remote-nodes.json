@@ -117,7 +117,7 @@
 	"ingress_policy_hint": "对端把对象写入当前节点时使用的接收落点。这里不能选择远程存储策略。",
 	"remote_node_ingress_profiles_title": "主控指定的接收落点",
 	"remote_node_ingress_profiles_desc": "这里由主控端直接指定 follower 接收对象时写到哪里。本地路径始终限制在 follower 的接收根目录下；如果 follower 绑定了多个 primary，这个模式会被直接拒绝。没有默认接收落点时，这台 follower 不会接收主控写入。",
-	"remote_node_ingress_profiles_base_url_required": "Direct 传输需要先保存一个可访问的 follower `base_url`，主控端才能通过 follower API 下发这些接收落点。",
+	"remote_node_ingress_profiles_base_url_required": "直连 传输需要先保存一个可访问的 follower `base_url`，主控端才能通过 follower API 下发这些接收落点。",
 	"remote_node_ingress_profiles_create": "新增接收落点",
 	"remote_node_ingress_profiles_empty": "还没有接收落点",
 	"remote_node_ingress_profiles_empty_desc": "至少创建一个 local 或 s3 落点，并设出默认项；否则这台 follower 不会接收写到它的对象。",

@@ -353,11 +353,9 @@ async fn stop_test_reverse_tunnel_worker(
     handle: tokio::task::JoinHandle<()>,
 ) {
     shutdown.cancel();
-    if tokio::time::timeout(Duration::from_secs(7), handle)
-        .await
-        .is_err()
-    {
-        panic!("reverse tunnel test worker did not shut down");
+    match tokio::time::timeout(Duration::from_secs(7), handle).await {
+        Ok(join_result) => join_result.expect("reverse tunnel test worker task failed"),
+        Err(_) => panic!("reverse tunnel test worker did not shut down"),
     }
 }
 
@@ -1915,7 +1913,9 @@ async fn test_remote_node_probe_rejects_incompatible_protocol_version() {
         Some(aster_drive::storage::StorageErrorKind::Misconfigured)
     );
     assert!(error.message().contains("protocol incompatible"));
-    assert!(error.message().contains("local supports v2-v3"));
+    assert!(error.message().contains(&format!(
+        "local supports {INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL}-{INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL}"
+    )));
 
     let stored = managed_follower_repo::find_by_id(state.writer_db(), node.id)
         .await
@@ -1991,11 +1991,9 @@ async fn test_remote_node_probe_rejects_presigned_download_when_range_cors_missi
             .last_error
             .contains("browser CORS contract is incomplete")
     );
-    assert!(
-        stored
-            .last_capabilities
-            .contains("\"protocol_version\":\"v3\"")
-    );
+    assert!(stored.last_capabilities.contains(&format!(
+        "\"protocol_version\":\"{INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL}\""
+    )));
 
     capabilities_server.stop().await;
 }
@@ -2597,7 +2595,10 @@ async fn test_remote_storage_end_to_end_via_reverse_tunnel() {
         probed.tunnel.status,
         aster_drive::storage::remote_protocol::tunnel::server::RemoteTunnelOnlineStatus::Online
     );
-    assert_eq!(probed.capabilities.protocol_version, "v3");
+    assert_eq!(
+        probed.capabilities.protocol_version,
+        INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL
+    );
 
     let remote_policy = create_remote_policy(
         &consumer_state,
@@ -2876,7 +2877,10 @@ async fn test_reverse_tunnel_e2e_over_http_with_follower_worker() {
         probed.tunnel.status,
         aster_drive::storage::remote_protocol::tunnel::server::RemoteTunnelOnlineStatus::Online
     );
-    assert_eq!(probed.capabilities.protocol_version, "v3");
+    assert_eq!(
+        probed.capabilities.protocol_version,
+        INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL
+    );
 
     let remote_policy = create_remote_policy(
         &consumer_state,
@@ -2995,7 +2999,10 @@ async fn test_reverse_tunnel_production_worker_falls_back_to_poll_when_stream_un
         probed.tunnel.status,
         aster_drive::storage::remote_protocol::tunnel::server::RemoteTunnelOnlineStatus::Online
     );
-    assert_eq!(probed.capabilities.protocol_version, "v3");
+    assert_eq!(
+        probed.capabilities.protocol_version,
+        INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL
+    );
     assert!(
         !consumer_state
             .remote_protocol

@@ -69,6 +69,8 @@ impl RemoteTunnelRegistry {
         oneshot::Receiver<QueuedTunnelRequest>,
         RemoteTunnelRegistrationGuard<'_>,
     ) {
+        // Poll registrations are single-dispatch: request_sender consumes the
+        // oneshot request_tx, so concurrent senders wait for later polls.
         let (request_tx, request_rx) = oneshot::channel();
         let connection_id = crate::utils::id::new_uuid();
         self.connections.insert(
@@ -79,6 +81,7 @@ impl RemoteTunnelRegistry {
                 request_tx,
             },
         );
+        self.update_last_seen(remote_node.id);
         self.connection_notify.notify_waiters();
         let guard = RemoteTunnelRegistrationGuard {
             registry: self,

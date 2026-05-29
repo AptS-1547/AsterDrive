@@ -138,6 +138,8 @@ export function RemoteNodesTable({
 				const deleteLabel = isDeleting
 					? t("remote_node_deleting")
 					: t("delete_remote_node");
+				const transportMode = node.transport_mode ?? "direct";
+				const transportBadge = getRemoteNodeTransportBadge(t, transportMode);
 
 				return (
 					<TableRow
@@ -181,23 +183,12 @@ export function RemoteNodesTable({
 									<div className="flex flex-wrap gap-1.5">
 										<Badge
 											variant="outline"
-											className={getRemoteNodeTransportTone(
-												node.transport_mode ?? "direct",
-											)}
+											className={getRemoteNodeTransportTone(transportMode)}
 										>
-											{getRemoteNodeTransportLabel(
-												t,
-												node.transport_mode ?? "direct",
-											)}
-											{getRemoteNodeTransportBadge(
-												t,
-												node.transport_mode ?? "direct",
-											) ? (
+											{getRemoteNodeTransportLabel(t, transportMode)}
+											{transportBadge ? (
 												<span className="ml-1.5 rounded border border-amber-500/40 bg-amber-500/10 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-													{getRemoteNodeTransportBadge(
-														t,
-														node.transport_mode ?? "direct",
-													)}
+													{transportBadge}
 												</span>
 											) : null}
 										</Badge>

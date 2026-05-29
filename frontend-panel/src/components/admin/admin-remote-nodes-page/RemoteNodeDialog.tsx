@@ -139,10 +139,6 @@ export function RemoteNodeDialog({
 	const enabledToneClass = form.is_enabled
 		? "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
 		: "border-slate-500/40 bg-slate-500/10 text-slate-600 dark:text-slate-300";
-	const remoteNodeModeLabel = getRemoteNodeTransportLabel(
-		t,
-		normalizedTransportMode,
-	);
 	const hasConnectionFieldChanges =
 		editingNode == null
 			? true
@@ -257,7 +253,6 @@ export function RemoteNodeDialog({
 								modeToneClass={modeToneClass}
 								onCreateStepChange={onCreateStepChange}
 								onFieldChange={onFieldChange}
-								remoteNodeModeLabel={remoteNodeModeLabel}
 								stepAnimationKey={stepAnimationKey}
 								summaryItems={createSummaryItems}
 								transportOptions={transportOptions}
@@ -277,7 +272,6 @@ export function RemoteNodeDialog({
 								onDeleteManagedIngressProfile={onDeleteManagedIngressProfile}
 								onFieldChange={onFieldChange}
 								onUpdateManagedIngressProfile={onUpdateManagedIngressProfile}
-								remoteNodeModeLabel={remoteNodeModeLabel}
 								summaryItems={createSummaryItems}
 								transportOptions={transportOptions}
 							/>

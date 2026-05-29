@@ -62,7 +62,6 @@ interface RemoteNodeSummaryCardProps {
 	enabledToneClass: string;
 	form: RemoteNodeFormData;
 	modeToneClass: string;
-	remoteNodeModeLabel: string;
 	summaryItems: RemoteNodeSummaryItem[];
 }
 
@@ -72,7 +71,6 @@ export function RemoteNodeSummaryCard({
 	enabledToneClass,
 	form,
 	modeToneClass,
-	remoteNodeModeLabel,
 	summaryItems,
 }: RemoteNodeSummaryCardProps) {
 	const { t } = useTranslation("admin");
@@ -101,11 +99,7 @@ export function RemoteNodeSummaryCard({
 			</p>
 			<div className="mt-4 flex flex-wrap gap-2">
 				<Badge variant="outline" className={modeToneClass}>
-					{form.transport_mode === "reverse_tunnel" ? (
-						<RemoteNodeTransportBadgeContent mode={form.transport_mode} />
-					) : (
-						remoteNodeModeLabel
-					)}
+					<RemoteNodeTransportBadgeContent mode={form.transport_mode} />
 				</Badge>
 				{editingNode ? (
 					<Badge

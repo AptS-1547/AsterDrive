@@ -33,6 +33,9 @@ const FOLLOWER_TUNNEL_BASE_BACKOFF: Duration = Duration::from_secs(1);
 const FOLLOWER_TUNNEL_MAX_BACKOFF: Duration = Duration::from_secs(30);
 const FOLLOWER_TUNNEL_RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
 const FOLLOWER_TUNNEL_WORKER_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+const FOLLOWER_TUNNEL_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const FOLLOWER_TUNNEL_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const FOLLOWER_TUNNEL_OPERATION_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const FORBIDDEN_TUNNEL_TARGET_BODY: &[u8] = b"reverse tunnel can only proxy internal storage paths";
 const REVERSE_TUNNEL_STREAM_REQUEST_BODY_CHANNEL_CAPACITY: usize = 16;
 
@@ -1046,10 +1049,14 @@ async fn parse_empty_api_response(response: reqwest::Response, action: &str) -> 
 
 fn tunnel_http_client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(60 * 60))
+        .connect_timeout(FOLLOWER_TUNNEL_CONNECT_TIMEOUT)
+        .read_timeout(FOLLOWER_TUNNEL_READ_TIMEOUT)
+        .timeout(FOLLOWER_TUNNEL_OPERATION_TIMEOUT)
         .user_agent(OUTBOUND_HTTP_USER_AGENT)
         .build()
-        .map_err(|error| AsterError::internal_error(format!("build tunnel client: {error}")))
+        .map_err(|error| {
+            AsterError::internal_error(format!("tunnel_http_client build tunnel client: {error}"))
+        })
 }
 
 fn binding_worker_fingerprint(binding: &master_binding::Model) -> String {

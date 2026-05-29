@@ -10,6 +10,7 @@ mod tests;
 mod transport;
 pub mod tunnel;
 
+pub(crate) use auth::internal_request_mac;
 pub use auth::{normalize_remote_base_url, sign_internal_request, sign_presigned_request};
 pub use client::RemoteStorageClient;
 pub use models::{

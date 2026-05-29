@@ -22,6 +22,7 @@ use streaming::{PendingStreamResponse, StreamingTunnelLane};
 
 const REMOTE_TUNNEL_CONNECT_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 const REMOTE_TUNNEL_REQUEST_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+const REMOTE_TUNNEL_ONLINE_TTL: Duration = Duration::from_secs(75);
 const REMOTE_TUNNEL_STREAM_CHANNEL_CAPACITY: usize = 16;
 
 #[derive(Default)]
@@ -31,6 +32,7 @@ pub struct RemoteTunnelRegistry {
     pending: DashMap<String, PendingTunnelResponse>,
     stream_pending: DashMap<String, PendingStreamResponse>,
     last_errors: DashMap<i64, String>,
+    last_seen_at: DashMap<i64, chrono::DateTime<chrono::Utc>>,
     persistence_db: parking_lot::RwLock<Option<DatabaseConnection>>,
     connection_notify: Notify,
 }
@@ -45,7 +47,11 @@ impl RemoteTunnelRegistry {
     }
 
     pub fn is_online(&self, remote_node: &managed_follower::Model) -> bool {
-        self.connections.contains_key(&remote_node.access_key)
+        let has_registered_lane = self
+            .connections
+            .get(&remote_node.access_key)
+            .map(|connection| connection.remote_node_id == remote_node.id)
+            .unwrap_or(false)
             || self
                 .stream_lanes
                 .get(&remote_node.access_key)
@@ -62,7 +68,21 @@ impl RemoteTunnelRegistry {
             || self
                 .stream_pending
                 .iter()
-                .any(|entry| entry.remote_node_id == remote_node.id)
+                .any(|entry| entry.remote_node_id == remote_node.id);
+        has_registered_lane
+            && self
+                .last_seen_at
+                .get(&remote_node.id)
+                .and_then(|last_seen_at| {
+                    chrono::Duration::from_std(REMOTE_TUNNEL_ONLINE_TTL)
+                        .ok()
+                        .map(|ttl| *last_seen_at.value() + ttl > chrono::Utc::now())
+                })
+                .unwrap_or(false)
+    }
+
+    pub(crate) fn update_last_seen(&self, remote_node_id: i64) {
+        self.last_seen_at.insert(remote_node_id, chrono::Utc::now());
     }
 
     pub fn last_error(&self, remote_node_id: i64) -> Option<String> {

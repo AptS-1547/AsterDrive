@@ -137,6 +137,10 @@ impl RemoteTunnelRegistry {
         mpsc::Receiver<RemoteTunnelStreamFrame>,
         RemoteTunnelStreamRegistrationGuard,
     ) {
+        // Each stream lane can carry one in-flight request. The number of
+        // registered lanes for a follower is therefore its streaming
+        // concurrency limit; one lane serializes requests, so size lanes for
+        // the expected parallel traffic.
         let (request_tx, request_rx) = mpsc::channel(REMOTE_TUNNEL_STREAM_CHANNEL_CAPACITY);
         let lane_id = crate::utils::id::new_uuid();
         let lane = Arc::new(StreamingTunnelLane {
@@ -149,6 +153,7 @@ impl RemoteTunnelRegistry {
             .entry(remote_node.access_key.clone())
             .or_default()
             .push(lane);
+        self.update_last_seen(remote_node.id);
         self.connection_notify.notify_waiters();
         let guard = RemoteTunnelStreamRegistrationGuard {
             registry: self.clone(),

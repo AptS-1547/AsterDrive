@@ -48,11 +48,15 @@ pub(crate) fn tunnel_http_response(
 pub fn response_headers_for_tunnel(headers: &HeaderMap) -> Vec<(String, String)> {
     headers
         .iter()
-        .filter_map(|(name, value)| {
-            value
-                .to_str()
-                .ok()
-                .map(|value| (name.as_str().to_string(), value.to_string()))
+        .filter_map(|(name, value)| match value.to_str() {
+            Ok(value) => Some((name.as_str().to_string(), value.to_string())),
+            Err(error) => {
+                tracing::debug!(
+                    header = name.as_str(),
+                    "dropping reverse tunnel response header with non-UTF-8 value: {error}"
+                );
+                None
+            }
         })
         .collect()
 }

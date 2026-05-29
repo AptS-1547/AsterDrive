@@ -10,7 +10,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::storage::StorageErrorKind;
 use crate::storage::driver::StorageDriver;
-use crate::storage::drivers::{local::LocalDriver, remote::RemoteDriver, s3::S3Driver};
+use crate::storage::drivers::{local::LocalDriver, s3::S3Driver};
 use crate::types::{
     BackgroundTaskKind, BackgroundTaskStatus, DriverType, StoredStoragePolicyAllowedTypes,
     StoredStoragePolicyOptions,
@@ -138,7 +138,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
     )
     .await?;
 
-    let driver = driver_from_payload(&payload)?;
+    let driver = driver_from_payload(state, &payload)?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_PREPARE_SOURCES,
@@ -292,12 +292,14 @@ async fn remote_node_snapshot_for_policy(
         id: remote.id,
         name: remote.name,
         base_url: remote.base_url,
+        transport_mode: remote.transport_mode,
         access_key: remote.access_key,
         secret_key: remote.secret_key,
     }))
 }
 
 fn driver_from_payload(
+    state: &PrimaryAppState,
     payload: &StoragePolicyTempCleanupTaskPayload,
 ) -> Result<Box<dyn StorageDriver>> {
     let policy = storage_policy::Model {
@@ -335,7 +337,7 @@ fn driver_from_payload(
                 access_key: remote.access_key.clone(),
                 secret_key: remote.secret_key.clone(),
                 is_enabled: true,
-                transport_mode: crate::types::RemoteNodeTransportMode::Direct,
+                transport_mode: remote.transport_mode,
                 last_capabilities: String::new(),
                 last_error: String::new(),
                 last_checked_at: None,
@@ -344,7 +346,11 @@ fn driver_from_payload(
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             };
-            Ok(Box::new(RemoteDriver::new(&policy, &follower)?))
+            Ok(Box::new(
+                state
+                    .remote_protocol
+                    .driver_for_policy(&policy, &follower)?,
+            ))
         }
     }
 }
