@@ -42,6 +42,22 @@ describe("remoteNodeDialogShared", () => {
 		});
 	});
 
+	it("defaults legacy remote nodes without a transport mode to direct", () => {
+		expect(
+			getRemoteNodeForm({
+				name: "Legacy Edge",
+				base_url: "https://legacy.example.com",
+				transport_mode: null,
+				is_enabled: false,
+			} as unknown as RemoteNodeInfo),
+		).toEqual({
+			name: "Legacy Edge",
+			base_url: "https://legacy.example.com",
+			transport_mode: "direct",
+			is_enabled: false,
+		});
+	});
+
 	it("builds create payloads", () => {
 		expect(
 			buildCreateRemoteNodePayload({
@@ -54,6 +70,22 @@ describe("remoteNodeDialogShared", () => {
 			name: "Edge Alpha",
 			base_url: "https://remote.example.com",
 			transport_mode: "auto",
+			is_enabled: true,
+		});
+	});
+
+	it("omits empty base URLs from create payloads", () => {
+		expect(
+			buildCreateRemoteNodePayload({
+				name: "Tunnel Edge",
+				base_url: "",
+				transport_mode: "reverse_tunnel",
+				is_enabled: true,
+			}),
+		).toEqual({
+			name: "Tunnel Edge",
+			base_url: undefined,
+			transport_mode: "reverse_tunnel",
 			is_enabled: true,
 		});
 	});

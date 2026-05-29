@@ -442,6 +442,7 @@ where
     let (body_tx, body_rx) = tokio::sync::mpsc::channel::<std::io::Result<Bytes>>(
         REVERSE_TUNNEL_STREAM_REQUEST_BODY_CHANNEL_CAPACITY,
     );
+    let mut body_tx = Some(body_tx);
     let request_body = reqwest::Body::wrap_stream(async_stream::stream! {
         let mut body_rx = body_rx;
         while let Some(chunk) = body_rx.recv().await {
@@ -478,23 +479,19 @@ where
                 }
                 match frame.kind {
                     RemoteTunnelStreamFrameKind::RequestBody => {
-                        body_tx.send(Ok(frame.body)).await.map_err(|_| {
-                            storage_driver_error(
-                                StorageErrorKind::Transient,
-                                "reverse tunnel local request body reader closed",
-                            )
-                        })?;
+                        if let Some(tx) = body_tx.as_ref()
+                            && tx.send(Ok(frame.body)).await.is_err()
+                        {
+                            body_tx = None;
+                        }
                     }
                     RemoteTunnelStreamFrameKind::RequestEnd => {
+                        body_tx = None;
                         body_finished = true;
                     }
                     RemoteTunnelStreamFrameKind::Error => {
-                        return Err(storage_driver_error(
-                            StorageErrorKind::Transient,
-                            frame.message.unwrap_or_else(|| {
-                                "primary failed to stream reverse tunnel request".to_string()
-                            }),
-                        ));
+                        response_task.abort();
+                        return Ok(());
                     }
                     _ => {
                         return Err(AsterError::validation_error(
@@ -523,18 +520,31 @@ where
     }
     drop(body_tx);
 
-    let response = response_task.await.map_err(|error| {
-        storage_driver_error(
-            StorageErrorKind::Transient,
-            format!("reverse tunnel local request task failed: {error}"),
-        )
-    })?;
-    let response = response.map_err(|error| {
-        storage_driver_error(
-            StorageErrorKind::Transient,
-            format!("execute reverse tunnel streaming local request: {error}"),
-        )
-    })?;
+    let response = match response_task.await {
+        Ok(Ok(response)) => response,
+        Ok(Err(error)) => {
+            let _ = send_stream_frame(
+                write,
+                RemoteTunnelStreamFrame::error(
+                    request_id,
+                    format!("execute reverse tunnel streaming local request: {error}"),
+                ),
+            )
+            .await;
+            return Ok(());
+        }
+        Err(error) => {
+            let _ = send_stream_frame(
+                write,
+                RemoteTunnelStreamFrame::error(
+                    request_id,
+                    format!("reverse tunnel local request task failed: {error}"),
+                ),
+            )
+            .await;
+            return Ok(());
+        }
+    };
     send_stream_response(write, &request_id, response).await
 }
 
@@ -1051,13 +1061,82 @@ fn binding_worker_fingerprint(binding: &master_binding::Model) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_allowed_tunnel_target, signed_master_ws_request, stream_connect_url};
+    use super::{
+        execute_stream_tunnel_request, is_allowed_tunnel_target, signed_master_ws_request,
+        stream_connect_url,
+    };
     use crate::entities::master_binding;
+    use crate::storage::remote_protocol::tunnel::server::{
+        RemoteTunnelStreamFrame, RemoteTunnelStreamFrameKind, decode_stream_frame,
+        encode_stream_frame,
+    };
     use crate::storage::remote_protocol::{
         INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER,
         INTERNAL_AUTH_SIGNATURE_HEADER, INTERNAL_AUTH_TIMESTAMP_HEADER, INTERNAL_STORAGE_BASE_PATH,
         sign_internal_request,
     };
+    use actix_web::{App, HttpResponse, HttpServer, web};
+    use bytes::Bytes;
+    use futures::Sink;
+    use std::pin::Pin;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::task::{Context, Poll};
+    use tokio::sync::mpsc;
+    use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
+
+    struct TestServer {
+        base_url: String,
+        handle: actix_web::dev::ServerHandle,
+        task: tokio::task::JoinHandle<std::io::Result<()>>,
+    }
+
+    impl TestServer {
+        async fn stop(self) {
+            self.handle.stop(true).await;
+            let _ = self.task.await;
+        }
+    }
+
+    struct ChannelSink {
+        tx: mpsc::UnboundedSender<WsMessage>,
+    }
+
+    impl Sink<WsMessage> for ChannelSink {
+        type Error = tokio_tungstenite::tungstenite::Error;
+
+        fn poll_ready(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn start_send(
+            self: Pin<&mut Self>,
+            item: WsMessage,
+        ) -> std::result::Result<(), Self::Error> {
+            self.tx
+                .send(item)
+                .map_err(|_| tokio_tungstenite::tungstenite::Error::ConnectionClosed)
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_close(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
 
     #[test]
     fn tunnel_target_guard_only_allows_internal_storage_paths() {
@@ -1167,6 +1246,190 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some(expected.as_str())
         );
+    }
+
+    #[tokio::test]
+    async fn streaming_request_body_reader_close_keeps_lane_and_returns_local_response() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let server = spawn_stream_early_response_server(calls.clone()).await;
+
+        let request_id = "stream-local-early-response";
+        let frames = vec![
+            request_body_frame(request_id, b"chunk-a"),
+            request_body_frame(request_id, b"chunk-b"),
+            request_end_frame(request_id),
+        ];
+        let mut read = futures::stream::iter(frames.into_iter().map(|frame| {
+            encode_stream_frame(&frame)
+                .map(WsMessage::Binary)
+                .map_err(|_| tokio_tungstenite::tungstenite::Error::ConnectionClosed)
+        }));
+        let (mut write, mut written_rx) = channel_sink();
+
+        execute_stream_tunnel_request(
+            &reqwest::Client::new(),
+            &server.base_url,
+            request_start_frame(
+                request_id,
+                "PUT",
+                "/api/v1/internal/storage/objects/too-large.bin",
+            ),
+            &mut read,
+            &mut write,
+        )
+        .await
+        .expect("local early response should not close the streaming lane");
+
+        let start = next_written_frame(&mut written_rx).await;
+        assert_eq!(start.kind, RemoteTunnelStreamFrameKind::ResponseStart);
+        assert_eq!(start.status, Some(413));
+        let body = next_written_frame(&mut written_rx).await;
+        assert_eq!(body.kind, RemoteTunnelStreamFrameKind::ResponseBody);
+        assert_eq!(body.body, Bytes::from_static(b"too large"));
+        let end = next_written_frame(&mut written_rx).await;
+        assert_eq!(end.kind, RemoteTunnelStreamFrameKind::ResponseEnd);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn streaming_local_request_failure_sends_error_frame_without_lane_error() {
+        let listener =
+            std::net::TcpListener::bind(("127.0.0.1", 0)).expect("ephemeral listener should bind");
+        let port = listener
+            .local_addr()
+            .expect("listener should have local addr")
+            .port();
+        drop(listener);
+
+        let request_id = "stream-local-connect-failure";
+        let frames = vec![request_end_frame(request_id)];
+        let mut read = futures::stream::iter(frames.into_iter().map(|frame| {
+            encode_stream_frame(&frame)
+                .map(WsMessage::Binary)
+                .map_err(|_| tokio_tungstenite::tungstenite::Error::ConnectionClosed)
+        }));
+        let (mut write, mut written_rx) = channel_sink();
+
+        execute_stream_tunnel_request(
+            &reqwest::Client::new(),
+            &format!("http://127.0.0.1:{port}"),
+            request_start_frame(
+                request_id,
+                "GET",
+                "/api/v1/internal/storage/objects/missing-server.bin",
+            ),
+            &mut read,
+            &mut write,
+        )
+        .await
+        .expect("local request failure should be reported as a stream error frame");
+
+        let error = next_written_frame(&mut written_rx).await;
+        assert_eq!(error.kind, RemoteTunnelStreamFrameKind::Error);
+        assert_eq!(error.request_id, request_id);
+        assert!(
+            error
+                .message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("execute reverse tunnel streaming local request")
+        );
+    }
+
+    fn channel_sink() -> (ChannelSink, mpsc::UnboundedReceiver<WsMessage>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        (ChannelSink { tx }, rx)
+    }
+
+    async fn next_written_frame(
+        written_rx: &mut mpsc::UnboundedReceiver<WsMessage>,
+    ) -> RemoteTunnelStreamFrame {
+        let message = written_rx
+            .recv()
+            .await
+            .expect("stream should write a websocket message");
+        let WsMessage::Binary(bytes) = message else {
+            panic!("stream should write binary frames");
+        };
+        decode_stream_frame(bytes).expect("written stream frame should decode")
+    }
+
+    async fn spawn_stream_early_response_server(calls: Arc<AtomicUsize>) -> TestServer {
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+            .expect("test server listener should bind");
+        let port = listener
+            .local_addr()
+            .expect("test server listener should have address")
+            .port();
+        let server = HttpServer::new(move || {
+            App::new().app_data(web::Data::new(calls.clone())).route(
+                "/api/v1/internal/storage/objects/too-large.bin",
+                web::put().to(
+                    |calls: web::Data<Arc<AtomicUsize>>, _body: web::Payload| async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        HttpResponse::PayloadTooLarge().body("too large")
+                    },
+                ),
+            )
+        })
+        .listen(listener)
+        .expect("test server should listen")
+        .run();
+        let handle = server.handle();
+        let task = tokio::spawn(server);
+        TestServer {
+            base_url: format!("http://127.0.0.1:{port}"),
+            handle,
+            task,
+        }
+    }
+
+    fn request_start_frame(
+        request_id: &str,
+        method: &str,
+        path_and_query: &str,
+    ) -> RemoteTunnelStreamFrame {
+        RemoteTunnelStreamFrame {
+            kind: RemoteTunnelStreamFrameKind::RequestStart,
+            request_id: request_id.to_string(),
+            method: Some(method.to_string()),
+            path_and_query: Some(path_and_query.to_string()),
+            headers: Vec::new(),
+            content_length: None,
+            status: None,
+            message: None,
+            body: Bytes::new(),
+        }
+    }
+
+    fn request_body_frame(request_id: &str, body: &'static [u8]) -> RemoteTunnelStreamFrame {
+        RemoteTunnelStreamFrame {
+            kind: RemoteTunnelStreamFrameKind::RequestBody,
+            request_id: request_id.to_string(),
+            method: None,
+            path_and_query: None,
+            headers: Vec::new(),
+            content_length: None,
+            status: None,
+            message: None,
+            body: Bytes::from_static(body),
+        }
+    }
+
+    fn request_end_frame(request_id: &str) -> RemoteTunnelStreamFrame {
+        RemoteTunnelStreamFrame {
+            kind: RemoteTunnelStreamFrameKind::RequestEnd,
+            request_id: request_id.to_string(),
+            method: None,
+            path_and_query: None,
+            headers: Vec::new(),
+            content_length: None,
+            status: None,
+            message: None,
+            body: Bytes::new(),
+        }
     }
 
     fn build_binding() -> master_binding::Model {

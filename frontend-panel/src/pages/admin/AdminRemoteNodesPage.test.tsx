@@ -274,12 +274,12 @@ vi.mock("@/components/common/ConfirmDialog", () => ({
 		title: string;
 	}) =>
 		open ? (
-			<div role="dialog">
+			<dialog open>
 				<h2>{title}</h2>
 				<button type="button" onClick={onConfirm}>
 					{confirmLabel}
 				</button>
-			</div>
+			</dialog>
 		) : null,
 }));
 

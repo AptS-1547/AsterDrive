@@ -640,6 +640,59 @@ describe("AdminOverviewPage", () => {
 		expect(screen.queryByText(/database=healthy/)).not.toBeInTheDocument();
 	});
 
+	it("renders unknown health without checked time or history action", async () => {
+		const overview = createOverview();
+		overview.system_health = {
+			checked_at: null,
+			components: [],
+			details: null,
+			status: "unknown",
+			summary: null,
+			task_id: null,
+		};
+		mockState.get.mockResolvedValueOnce(overview);
+
+		render(<AdminOverviewPage />);
+
+		expect(
+			await screen.findByText("overview_system_health_unknown"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("overview_system_health_unknown_desc"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("overview_system_health_not_checked"),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText("overview_system_health_view_history"),
+		).not.toBeInTheDocument();
+	});
+
+	it("uses issue details when an unhealthy summary has no component failures", async () => {
+		const overview = createOverview();
+		overview.system_health = {
+			checked_at: null,
+			components: [],
+			details: "runtime probe failed before component checks",
+			status: "unhealthy",
+			summary: null,
+			task_id: null,
+		};
+		mockState.get.mockResolvedValueOnce(overview);
+
+		render(<AdminOverviewPage />);
+
+		expect(
+			await screen.findByText("overview_system_health_unhealthy"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("overview_system_health_no_summary"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("runtime probe failed before component checks"),
+		).toBeInTheDocument();
+	});
+
 	it("keeps the daily reports block naturally expanded", async () => {
 		render(<AdminOverviewPage />);
 

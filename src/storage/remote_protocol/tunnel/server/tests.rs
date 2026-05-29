@@ -1,5 +1,5 @@
-use super::*;
 use super::frame::{REMOTE_TUNNEL_STREAM_FRAME_VERSION, REMOTE_TUNNEL_STREAM_META_LIMIT};
+use super::*;
 use crate::storage::remote_protocol::INTERNAL_AUTH_ACCESS_KEY_HEADER;
 use bytes::Bytes;
 use http::{Method, StatusCode};
@@ -109,7 +109,10 @@ fn stream_frame_roundtrips_metadata_and_body() {
         method: Some("PUT".to_string()),
         path_and_query: Some("/api/v1/internal/storage/objects/a.bin?offset=7".to_string()),
         headers: vec![
-            ("content-type".to_string(), "application/octet-stream".to_string()),
+            (
+                "content-type".to_string(),
+                "application/octet-stream".to_string(),
+            ),
             ("x-extra".to_string(), "yes".to_string()),
         ],
         content_length: Some(11),
@@ -148,7 +151,11 @@ fn stream_frame_decode_rejects_unsupported_version() {
     let error = decode_stream_frame(Bytes::from(bytes))
         .expect_err("unsupported stream frame version should fail");
 
-    assert!(error.message().contains("unsupported reverse tunnel streaming frame version"));
+    assert!(
+        error
+            .message()
+            .contains("unsupported reverse tunnel streaming frame version")
+    );
 }
 
 #[test]
@@ -192,8 +199,8 @@ fn stream_frame_encode_rejects_metadata_above_limit() {
         body: Bytes::new(),
     };
 
-    let error = encode_stream_frame(&frame)
-        .expect_err("oversized stream frame metadata should fail");
+    let error =
+        encode_stream_frame(&frame).expect_err("oversized stream frame metadata should fail");
 
     assert!(error.message().contains("metadata is too large"));
 }
@@ -336,6 +343,83 @@ async fn stale_poll_registration_guard_does_not_remove_newer_connection() {
         .expect("send task should join")
         .expect("send should complete through newer connection");
     assert_eq!(response.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn poll_request_sender_does_not_remove_connection_for_same_key_wrong_node() {
+    let registry = Arc::new(RemoteTunnelRegistry::new());
+    let node = build_remote_node(56, "poll-shared-key");
+    let wrong_node = build_remote_node(57, "poll-shared-key");
+    let (request_rx, _registration) = registry.register_poll(&node);
+
+    let wrong_send_handle = tokio::spawn({
+        let registry = registry.clone();
+        let wrong_node = wrong_node.clone();
+        async move {
+            registry
+                .send(
+                    &wrong_node,
+                    Method::GET,
+                    "/api/v1/internal/storage/objects/wrong-node.txt".to_string(),
+                    None,
+                    Vec::new(),
+                    Bytes::new(),
+                )
+                .await
+        }
+    });
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let send_handle = tokio::spawn({
+        let registry = registry.clone();
+        let node = node.clone();
+        async move {
+            registry
+                .send(
+                    &node,
+                    Method::GET,
+                    "/api/v1/internal/storage/objects/right-node.txt".to_string(),
+                    None,
+                    Vec::new(),
+                    Bytes::new(),
+                )
+                .await
+        }
+    });
+
+    let queued = tokio::time::timeout(Duration::from_millis(500), request_rx)
+        .await
+        .expect("matching node should still receive the registered poll connection")
+        .expect("registered poll receiver should stay open");
+    let request = queued.request;
+    assert_eq!(
+        request.path_and_query,
+        "/api/v1/internal/storage/objects/right-node.txt"
+    );
+
+    registry
+        .complete(
+            &node,
+            RemoteTunnelResponse {
+                request_id: request.request_id,
+                status: 200,
+                headers: Vec::new(),
+                body: b"ok".to_vec(),
+            },
+        )
+        .expect("matching poll request should complete");
+    let response = send_handle
+        .await
+        .expect("matching send task should join")
+        .expect("matching send should complete");
+    assert_eq!(response.status, StatusCode::OK);
+
+    let wrong_error = wrong_send_handle
+        .await
+        .expect("wrong-node send task should join")
+        .expect_err("wrong-node send should time out instead of consuming another node connection");
+    assert!(wrong_error.message().contains("reverse tunnel is offline"));
 }
 
 #[tokio::test]
@@ -487,10 +571,11 @@ async fn registry_stream_request_roundtrips_start_body_and_end() {
                     Method::PUT,
                     "/api/v1/internal/storage/objects/stream.bin".to_string(),
                     Some(12),
-                    vec![("content-type".to_string(), "application/octet-stream".to_string())],
-                    Box::new(std::io::Cursor::new(Bytes::from_static(
-                        b"request-body",
-                    ))),
+                    vec![(
+                        "content-type".to_string(),
+                        "application/octet-stream".to_string(),
+                    )],
+                    Box::new(std::io::Cursor::new(Bytes::from_static(b"request-body"))),
                 )
                 .await
         }
@@ -511,8 +596,7 @@ async fn registry_stream_request_roundtrips_start_body_and_end() {
         start
             .headers
             .iter()
-            .any(|(name, value)| name == "content-type"
-                && value == "application/octet-stream")
+            .any(|(name, value)| name == "content-type" && value == "application/octet-stream")
     );
 
     let body = request_rx
@@ -568,7 +652,11 @@ async fn registry_stream_request_roundtrips_start_body_and_end() {
         .await
         .expect("second response_body should be accepted");
     registry
-        .complete_stream_frame(&node, &lane_id, stream_response_end_frame(&start.request_id))
+        .complete_stream_frame(
+            &node,
+            &lane_id,
+            stream_response_end_frame(&start.request_id),
+        )
         .await
         .expect("response_end should be accepted");
 
@@ -652,6 +740,20 @@ async fn registry_serializes_stream_requests_on_single_lane_until_body_drops() {
     );
 
     drop(first_response);
+
+    let first_abort = tokio::time::timeout(Duration::from_millis(500), request_rx.recv())
+        .await
+        .expect("first stream drop should notify follower before lane reuse")
+        .expect("stream lane should stay open for first abort frame");
+    assert_eq!(first_abort.kind, RemoteTunnelStreamFrameKind::Error);
+    assert_eq!(first_abort.request_id, first_start.request_id);
+    assert!(
+        first_abort
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("local response reader closed")
+    );
 
     let second_start = tokio::time::timeout(Duration::from_millis(500), request_rx.recv())
         .await
@@ -865,9 +967,7 @@ async fn registry_stream_error_frame_fails_waiting_start() {
         .expect_err("error frame should return error to lane handler");
     assert!(error.message().contains("follower stream exploded"));
 
-    let send_result = send_handle
-        .await
-        .expect("stream send task should join");
+    let send_result = send_handle.await.expect("stream send task should join");
     let send_error = match send_result {
         Ok(_) => panic!("waiting stream start should fail on error frame"),
         Err(error) => error,
@@ -901,6 +1001,12 @@ async fn registry_stream_error_frame_after_start_surfaces_as_body_read_error() {
         .recv()
         .await
         .expect("stream lane should receive request_start");
+    let request_end = request_rx
+        .recv()
+        .await
+        .expect("stream lane should receive request_end");
+    assert_eq!(request_end.kind, RemoteTunnelStreamFrameKind::RequestEnd);
+    assert_eq!(request_end.request_id, start.request_id);
     registry
         .complete_stream_frame(
             &node,
@@ -918,10 +1024,7 @@ async fn registry_stream_error_frame_after_start_surfaces_as_body_read_error() {
         .complete_stream_frame(
             &node,
             &lane_id,
-            RemoteTunnelStreamFrame::error(
-                start.request_id,
-                "body stream failed".to_string(),
-            ),
+            RemoteTunnelStreamFrame::error(start.request_id, "body stream failed".to_string()),
         )
         .await
         .expect_err("error frame should return error to lane handler");
@@ -934,6 +1037,85 @@ async fn registry_stream_error_frame_after_start_surfaces_as_body_read_error() {
         .await
         .expect_err("response body read should surface stream error");
     assert!(read_error.to_string().contains("body stream failed"));
+}
+
+#[tokio::test]
+async fn registry_stream_body_send_failure_notifies_follower_and_releases_pending() {
+    let registry = Arc::new(RemoteTunnelRegistry::new());
+    let node = build_remote_node(58, "stream-reader-drop");
+    let (lane_id, mut request_rx, _guard) = registry.register_stream_lane(&node);
+
+    let send_handle = tokio::spawn({
+        let registry = registry.clone();
+        let node = node.clone();
+        async move {
+            registry
+                .send_stream(
+                    &node,
+                    Method::GET,
+                    "/api/v1/internal/storage/objects/drop-reader.bin".to_string(),
+                    None,
+                    Vec::new(),
+                    Box::new(std::io::Cursor::new(Bytes::new())),
+                )
+                .await
+        }
+    });
+    let start = request_rx
+        .recv()
+        .await
+        .expect("stream lane should receive request_start");
+    let request_end = request_rx
+        .recv()
+        .await
+        .expect("stream lane should receive request_end");
+    assert_eq!(request_end.kind, RemoteTunnelStreamFrameKind::RequestEnd);
+    assert_eq!(request_end.request_id, start.request_id);
+    registry
+        .complete_stream_frame(
+            &node,
+            &lane_id,
+            stream_response_start_frame(&start.request_id, StatusCode::OK),
+        )
+        .await
+        .expect("response_start should be accepted");
+    let response = send_handle
+        .await
+        .expect("stream send task should join")
+        .expect("response_start should produce a response reader");
+    drop(response);
+
+    let abort = tokio::time::timeout(Duration::from_millis(500), request_rx.recv())
+        .await
+        .expect("follower should be notified to abort the stream")
+        .expect("stream lane should stay open for abort frame");
+    assert_eq!(abort.kind, RemoteTunnelStreamFrameKind::Error);
+    assert_eq!(abort.request_id, start.request_id);
+    assert!(
+        abort
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("local response reader closed")
+    );
+
+    tokio::time::timeout(Duration::from_millis(500), async {
+        while registry.has_pending_stream_response(&start.request_id) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("pending stream response should be released after abort notification");
+
+    let error = registry
+        .complete_stream_frame(
+            &node,
+            &lane_id,
+            stream_response_body_frame(&start.request_id, b"late body"),
+        )
+        .await
+        .expect_err("late response_body should fail after local reader drops");
+    assert!(error.message().contains("no longer pending"));
 }
 
 #[tokio::test]
@@ -968,9 +1150,7 @@ async fn dropping_stream_registration_fails_pending_stream_request_and_releases_
     assert!(!registry.has_stream_lane(&node));
     assert!(!registry.has_pending_stream_response(&start.request_id));
 
-    let send_result = send_handle
-        .await
-        .expect("stream send task should join");
+    let send_result = send_handle.await.expect("stream send task should join");
     let error = match send_result {
         Ok(_) => panic!("pending stream request should fail when lane registration drops"),
         Err(error) => error,

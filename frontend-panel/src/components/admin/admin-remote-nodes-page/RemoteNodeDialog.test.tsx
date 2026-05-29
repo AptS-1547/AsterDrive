@@ -272,6 +272,45 @@ describe("RemoteNodeDialog", () => {
 		expect(screen.getByText("remote_node_base_url_hint")).toBeInTheDocument();
 	});
 
+	it("shows create-step validation messages and blocks invalid connection URLs", () => {
+		const onCreateNext = vi.fn();
+
+		const { rerender } = render(
+			<RemoteNodeDialog
+				{...baseProps}
+				createStepTouched
+				mode="create"
+				onCreateNext={onCreateNext}
+			/>,
+		);
+
+		expect(
+			screen.getByText("remote_node_wizard_name_required"),
+		).toBeInTheDocument();
+
+		rerender(
+			<RemoteNodeDialog
+				{...baseProps}
+				createStep={1}
+				form={{
+					name: "Edge Alpha",
+					base_url: "ftp://edge.example.com",
+					transport_mode: "direct",
+					is_enabled: true,
+				}}
+				mode="create"
+				onCreateNext={onCreateNext}
+			/>,
+		);
+
+		expect(
+			screen.getByText("remote_node_base_url_invalid"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		).toBeDisabled();
+	});
+
 	it("shows the reverse tunnel test badge in edit mode", () => {
 		render(
 			<RemoteNodeDialog
@@ -293,5 +332,37 @@ describe("RemoteNodeDialog", () => {
 		expect(
 			screen.getAllByText("remote_node_transport_test_badge").length,
 		).toBeGreaterThan(0);
+	});
+
+	it("falls back invalid transport form values to direct and blocks invalid edits", () => {
+		const onSubmit = vi.fn();
+
+		render(
+			<RemoteNodeDialog
+				{...baseProps}
+				mode="edit"
+				editingNode={remoteNode({
+					enrollment_status: "completed",
+					transport_mode: "direct",
+				})}
+				form={
+					{
+						name: "Edge Alpha",
+						base_url: "mailto:edge@example.com",
+						transport_mode: "legacy",
+						is_enabled: true,
+					} as typeof baseProps.form
+				}
+				onSubmit={onSubmit}
+			/>,
+		);
+
+		expect(
+			screen.getAllByText("remote_node_transport_direct").length,
+		).toBeGreaterThan(0);
+		expect(
+			screen.getByText("remote_node_base_url_invalid"),
+		).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "save_changes" })).toBeDisabled();
 	});
 });

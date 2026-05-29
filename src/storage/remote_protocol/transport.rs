@@ -522,11 +522,11 @@ fn presigned_expires_at(expires: Duration) -> Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use crate::storage::remote_protocol::tunnel::server::{
         REMOTE_TUNNEL_BODY_LIMIT, RemoteTunnelHttpResponse, RemoteTunnelStreamHttpResponse,
     };
     use crate::types::RemoteNodeTransportMode;
+    use async_trait::async_trait;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
     use tokio::io::AsyncReadExt;
@@ -616,9 +616,7 @@ mod tests {
             Ok(RemoteTunnelStreamHttpResponse {
                 status: StatusCode::OK,
                 headers: http::HeaderMap::new(),
-                body: Box::new(std::io::Cursor::new(Bytes::from_static(
-                    b"stream-response",
-                ))),
+                body: Box::new(std::io::Cursor::new(Bytes::from_static(b"stream-response"))),
             })
         }
 
@@ -687,8 +685,7 @@ mod tests {
                 .lock()
                 .expect("request header lock should not be poisoned")
                 .iter()
-                .any(|(name, value)| name == "content-type"
-                    && value == "application/octet-stream")
+                .any(|(name, value)| name == "content-type" && value == "application/octet-stream")
         );
     }
 
@@ -735,8 +732,7 @@ mod tests {
                 .lock()
                 .expect("stream header lock should not be poisoned")
                 .iter()
-                .any(|(name, value)| name == "content-type"
-                    && value == "application/octet-stream")
+                .any(|(name, value)| name == "content-type" && value == "application/octet-stream")
         );
     }
 
@@ -744,9 +740,8 @@ mod tests {
     async fn reverse_tunnel_poll_fallback_rejects_oversized_reader_before_dispatch() {
         let broker = Arc::new(TestTunnelBroker::new(false));
         let transport = ReverseTunnelTransport::new(&build_remote_node(), broker.clone());
-        let oversized = u64::try_from(REMOTE_TUNNEL_BODY_LIMIT)
-            .expect("tunnel body limit should fit u64")
-            + 1;
+        let oversized =
+            u64::try_from(REMOTE_TUNNEL_BODY_LIMIT).expect("tunnel body limit should fit u64") + 1;
 
         let result = transport
             .send(RemoteTransportRequest {
@@ -764,7 +759,10 @@ mod tests {
             Err(error) => error,
         };
 
-        assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Unsupported));
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
+        );
         assert!(error.message().contains("streaming upload exceeds"));
         assert_eq!(broker.request_calls.load(Ordering::SeqCst), 0);
         assert_eq!(broker.stream_calls.load(Ordering::SeqCst), 0);

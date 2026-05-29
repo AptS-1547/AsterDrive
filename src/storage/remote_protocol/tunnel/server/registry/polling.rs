@@ -6,14 +6,14 @@ use crate::entities::managed_follower;
 use crate::errors::{AsterError, Result};
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 
+use super::super::response::tunnel_http_response;
+use super::super::{REMOTE_TUNNEL_BODY_LIMIT, RemoteTunnelRequest, RemoteTunnelResponse};
 use super::broker::RemoteTunnelHttpResponse;
 use super::headers::request_headers;
 use super::{
     REMOTE_TUNNEL_CONNECT_WAIT_TIMEOUT, REMOTE_TUNNEL_REQUEST_TIMEOUT, RemoteTunnelRegistry,
     reverse_tunnel_offline_error,
 };
-use super::super::response::tunnel_http_response;
-use super::super::{REMOTE_TUNNEL_BODY_LIMIT, RemoteTunnelRequest, RemoteTunnelResponse};
 
 #[derive(Debug)]
 pub(crate) struct QueuedTunnelRequest {
@@ -213,8 +213,11 @@ impl RemoteTunnelRegistry {
         tokio::time::timeout(REMOTE_TUNNEL_CONNECT_WAIT_TIMEOUT, async {
             loop {
                 let notified = self.connection_notify.notified();
-                if let Some((_, connection)) = self.connections.remove(&remote_node.access_key)
-                    && connection.remote_node_id == remote_node.id
+                if let Some((_, connection)) = self
+                    .connections
+                    .remove_if(&remote_node.access_key, |_, connection| {
+                        connection.remote_node_id == remote_node.id
+                    })
                 {
                     return connection.request_tx;
                 }

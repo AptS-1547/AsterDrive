@@ -14,9 +14,7 @@ mod persistence;
 mod polling;
 mod streaming;
 
-pub use broker::{
-    RemoteTunnelBroker, RemoteTunnelHttpResponse, RemoteTunnelStreamHttpResponse,
-};
+pub use broker::{RemoteTunnelBroker, RemoteTunnelHttpResponse, RemoteTunnelStreamHttpResponse};
 
 use persistence::persist_tunnel_error;
 use polling::{PendingTunnelResponse, RemoteTunnelConnection};

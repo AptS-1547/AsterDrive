@@ -175,8 +175,7 @@ async fn spawn_reverse_tunnel_poll_only_primary_server(
                 web::scope("/api/v1/internal/remote-tunnel")
                     .route(
                         "/poll",
-                        web::post()
-                            .to(aster_drive::api::routes::remote_tunnel::poll_remote_tunnel),
+                        web::post().to(aster_drive::api::routes::remote_tunnel::poll_remote_tunnel),
                     )
                     .route(
                         "/complete",
@@ -654,7 +653,11 @@ async fn wait_for_stream_lane(
 ) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(7);
     while tokio::time::Instant::now() < deadline {
-        if state.remote_protocol.tunnel_registry().has_stream_lane(node) {
+        if state
+            .remote_protocol
+            .tunnel_registry()
+            .has_stream_lane(node)
+        {
             return;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;

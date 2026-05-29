@@ -122,7 +122,10 @@ mod tests {
             .presigned_put_url("object.bin", Duration::from_secs(60))
             .expect_err("reverse tunnel transport should not support presigned PUT URLs");
 
-        assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Unsupported));
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
+        );
         assert!(error.message().contains("does not support presigned"));
     }
 
@@ -142,14 +145,20 @@ mod tests {
             )
             .expect_err("auto empty base_url should not support direct presigned URLs");
 
-        assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Unsupported));
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
+        );
         assert!(error.message().contains("does not support presigned"));
     }
 
     #[test]
     fn auto_mode_with_base_url_resolves_to_direct_transport() {
         let runtime = RemoteProtocolRuntime::new();
-        let node = build_node(RemoteNodeTransportMode::Auto, "http://storage.example.com/root/");
+        let node = build_node(
+            RemoteNodeTransportMode::Auto,
+            "http://storage.example.com/root/",
+        );
         let client = runtime
             .client_for_node(&node)
             .expect("auto client with base_url should use direct transport");
@@ -163,11 +172,8 @@ mod tests {
             parsed.path(),
             "/root/api/v1/internal/storage/objects/object.bin"
         );
-        assert!(
-            parsed
-                .query_pairs()
-                .any(|(key, value)| key == super::super::PRESIGNED_AUTH_ACCESS_KEY_QUERY
-                    && value == "runtime-access")
-        );
+        assert!(parsed.query_pairs().any(|(key, value)| key
+            == super::super::PRESIGNED_AUTH_ACCESS_KEY_QUERY
+            && value == "runtime-access"));
     }
 }

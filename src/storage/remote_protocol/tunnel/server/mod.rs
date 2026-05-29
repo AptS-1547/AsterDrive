@@ -20,8 +20,7 @@ mod tests;
 
 pub use auth::authorize_tunnel_request;
 pub use frame::{
-    RemoteTunnelStreamFrame, RemoteTunnelStreamFrameKind, decode_stream_frame,
-    encode_stream_frame,
+    RemoteTunnelStreamFrame, RemoteTunnelStreamFrameKind, decode_stream_frame, encode_stream_frame,
 };
 pub use payload::{
     RemoteTunnelPollRequest, RemoteTunnelPollResponse, RemoteTunnelRequest, RemoteTunnelResponse,
@@ -81,10 +80,6 @@ pub async fn poll<S: PrimaryRuntimeState>(
     )
     .await?;
     registry.clear_error(remote_node.id);
-    state
-        .driver_registry()
-        .reload_managed_followers(state.writer_db())
-        .await?;
 
     let request = tokio::time::timeout(REMOTE_TUNNEL_POLL_TIMEOUT, request_rx)
         .await
@@ -148,10 +143,6 @@ pub async fn connect_stream(
     )
     .await?;
     registry.clear_error(remote_node.id);
-    state
-        .driver_registry()
-        .reload_managed_followers(state.writer_db())
-        .await?;
 
     loop {
         tokio::select! {
@@ -256,10 +247,6 @@ pub async fn mark_tunnel_error<S: SharedRuntimeState>(
         remote_node.tunnel_last_seen_at,
     )
     .await?;
-    state
-        .driver_registry()
-        .reload_managed_followers(state.writer_db())
-        .await?;
     Ok(())
 }
 

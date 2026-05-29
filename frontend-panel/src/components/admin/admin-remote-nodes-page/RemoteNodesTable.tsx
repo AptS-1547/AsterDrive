@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	ADMIN_INTERACTIVE_TABLE_ROW_CLASS,
@@ -68,6 +69,52 @@ export function RemoteNodesTable({
 	sortOrder,
 }: RemoteNodesTableProps) {
 	const { t } = useTranslation("admin");
+	const headerRow = useMemo(
+		() => (
+			<TableHeader>
+				<TableRow>
+					<AdminSortableTableHead
+						className="w-16"
+						sortKey="id"
+						sortBy={sortBy}
+						sortOrder={sortOrder}
+						onSortChange={onSortChange}
+					>
+						{t("id")}
+					</AdminSortableTableHead>
+					<AdminSortableTableHead
+						sortKey="name"
+						sortBy={sortBy}
+						sortOrder={sortOrder}
+						onSortChange={onSortChange}
+					>
+						{t("core:name")}
+					</AdminSortableTableHead>
+					<AdminSortableTableHead
+						sortKey="base_url"
+						sortBy={sortBy}
+						sortOrder={sortOrder}
+						onSortChange={onSortChange}
+					>
+						{t("base_url")}
+					</AdminSortableTableHead>
+					<TableHead>{t("remote_node_transport_mode")}</TableHead>
+					<AdminSortableTableHead
+						sortKey="last_checked_at"
+						sortBy={sortBy}
+						sortOrder={sortOrder}
+						onSortChange={onSortChange}
+					>
+						{t("remote_node_status")}
+					</AdminSortableTableHead>
+					<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
+						{t("core:actions")}
+					</TableHead>
+				</TableRow>
+			</TableHeader>
+		),
+		[onSortChange, sortBy, sortOrder, t],
+	);
 
 	return (
 		<AdminTableList
@@ -77,49 +124,7 @@ export function RemoteNodesTable({
 			rows={6}
 			emptyTitle={t("no_remote_nodes")}
 			emptyDescription={t("no_remote_nodes_desc")}
-			headerRow={
-				<TableHeader>
-					<TableRow>
-						<AdminSortableTableHead
-							className="w-16"
-							sortKey="id"
-							sortBy={sortBy}
-							sortOrder={sortOrder}
-							onSortChange={onSortChange}
-						>
-							{t("id")}
-						</AdminSortableTableHead>
-						<AdminSortableTableHead
-							sortKey="name"
-							sortBy={sortBy}
-							sortOrder={sortOrder}
-							onSortChange={onSortChange}
-						>
-							{t("core:name")}
-						</AdminSortableTableHead>
-						<AdminSortableTableHead
-							sortKey="base_url"
-							sortBy={sortBy}
-							sortOrder={sortOrder}
-							onSortChange={onSortChange}
-						>
-							{t("base_url")}
-						</AdminSortableTableHead>
-						<TableHead>{t("remote_node_transport_mode")}</TableHead>
-						<AdminSortableTableHead
-							sortKey="last_checked_at"
-							sortBy={sortBy}
-							sortOrder={sortOrder}
-							onSortChange={onSortChange}
-						>
-							{t("remote_node_status")}
-						</AdminSortableTableHead>
-						<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
-							{t("core:actions")}
-						</TableHead>
-					</TableRow>
-				</TableHeader>
-			}
+			headerRow={headerRow}
 			renderRow={(node) => {
 				const isDeleting = deletingRemoteNodeId === node.id;
 				const enrollmentCompleted = hasCompletedRemoteNodeEnrollment(node);
