@@ -318,7 +318,7 @@ describe("FileBrowserItemContextMenu", () => {
 		expect(mockState.browserContext.onInfo).toHaveBeenCalledWith("file", 2);
 	});
 
-	it("allows archive extraction for 7z files", () => {
+	it("does not expose archive extraction for 7z files", () => {
 		render(
 			<FileBrowserItemContextMenu
 				item={{ id: 3, name: "bundle.7z", is_locked: false } as never}
@@ -328,9 +328,7 @@ describe("FileBrowserItemContextMenu", () => {
 			</FileBrowserItemContextMenu>,
 		);
 
-		fireEvent.click(screen.getByRole("button", { name: "extract" }));
-
-		expect(mockState.browserContext.onArchiveExtract).toHaveBeenCalledWith(3);
+		expect(screen.queryByRole("button", { name: "extract" })).toBeNull();
 	});
 
 	it("does not expose archive extraction for unsupported file names", () => {

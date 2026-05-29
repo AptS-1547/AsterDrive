@@ -17,7 +17,7 @@ This page is not a full troubleshooting manual. It routes symptoms to the right 
 | --- | --- | --- |
 | Small files upload, large files fail | [Uploads and Large Files](./upload-modes) | Reverse proxy size limit, timeout, chunk size, temporary directory space |
 | Direct-to-object-storage upload fails | [Storage Policies](/en/config/storage) / [Uploads and Large Files](./upload-modes) | S3 CORS, exposed `ETag`, browser origin not allowed |
-| Follower-node policy upload fails | [Follower Nodes](./remote-nodes) | Follower unreachable, wrong `base_url`, default ingress target not applied |
+| Follower-node policy upload fails | [Follower Nodes](./remote-nodes) | Transport not reachable, wrong direct URL, default ingress target not applied |
 | Capacity looks wrong | [Operations CLI: doctor](/en/deployment/ops-cli#deployment-checks-doctor) | Storage usage counters drifted and need a deep check |
 
 ## Sharing, WebDAV, and Online Editing

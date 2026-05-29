@@ -28,6 +28,7 @@
 | 运维 CLI 怎么执行 | `src/main.rs`、`src/cli/**` | `cli` feature 下的子命令在进入 HTTP 启动前分派 |
 | 主节点挂了哪些路由 | `src/api/primary.rs`、`src/api/routes/` | 这里决定 `/api/v1`、`/health`、`/d`、`/pv`、WebDAV 和前端兜底的注册顺序 |
 | 从节点到底暴露什么 | `src/api/follower.rs`、`src/api/routes/internal_storage.rs` | follower 只负责内部存储协议和健康检查 |
+| 远端节点反向隧道怎么走 | `src/api/routes/remote_tunnel.rs`、`src/storage/remote_protocol/tunnel/` | primary 暴露 tunnel 控制面，follower 主动连回 primary |
 | 一个 REST 接口怎么实现 | 对应 `src/api/routes/**` 文件 | route 层做参数解析、鉴权包装和响应适配 |
 | 文件 / 团队 / 分享 / 上传的业务规则在哪 | `src/services/**` | 业务语义集中在 service 层，不应散落在 route 里 |
 | 数据怎么查怎么写 | `src/db/repository/**` | repo 层封装数据库访问和跨库兼容细节 |
@@ -49,6 +50,7 @@
 primary 会注册这些入口：
 
 - REST API：`/api/v1/*`
+- 远端节点反向隧道内部接口：`/api/v1/internal/remote-tunnel/*`
 - 健康检查：`/health*`
 - 公开分享与直链：
   - `/api/v1/s/{token}*`
@@ -68,6 +70,8 @@ follower 不提供普通用户 API、WebDAV 或前端页面，只注册：
 - 内部对象存储协议：`/api/v1/internal/storage/*`
 
 这条内部协议当前用于主节点和受管远端节点之间的对象写入、对象拼接、对象列举、绑定同步与受管 ingress profile 控制面。
+
+如果远端节点使用 `reverse_tunnel` 或 `auto` 且没有可直连的 `base_url`，follower 不会额外暴露 primary 可直连的入口，而是由 follower 进程里的 tunnel worker 主动连接 primary 的 `/api/v1/internal/remote-tunnel/*`。
 
 ## 一个请求如何流转
 
@@ -102,6 +106,13 @@ follower 不提供普通用户 API、WebDAV 或前端页面，只注册：
 5. 请求落到本地 / S3 / 远端驱动能力接口
 
 如果你在查远端节点写入问题，不要先去普通 `files` / `upload` 路由里找。
+
+远端节点有两种传输方式：
+
+- `direct`：primary 直接向 follower 的 `/api/v1/internal/storage/*` 发 HTTP 请求。
+- `reverse_tunnel`：primary 把内部存储请求登记到 tunnel registry；follower 通过 `/api/v1/internal/remote-tunnel/poll` / `/complete` 或 `/connect` WebSocket 主动取走请求并回传结果。
+
+`auto` 会根据远端节点是否有非空 `base_url` 选择 direct 或 reverse tunnel。
 
 ### WebDAV 请求
 
@@ -160,7 +171,7 @@ WebDAV 不走 `src/api/routes/**`，而是：
 | --- | --- |
 | `src/main.rs` | 进程入口、选择节点模式、启动 HTTP 服务、优雅退出 |
 | `src/runtime/startup/common.rs` | 连接数据库、跑 migration、准备默认策略和运行时配置、加载 policy snapshot / driver registry / cache |
-| `src/runtime/startup/primary.rs` | 构造 primary 运行时：`RuntimeConfig`、邮件发送器、SSE 广播、分享下载回滚队列 |
+| `src/runtime/startup/primary.rs` | 构造 primary 运行时：`RuntimeConfig`、邮件发送器、SSE 广播、分享下载回滚队列和远端协议运行时 |
 | `src/runtime/startup/follower.rs` | 构造 follower 运行时：只保留 follower 需要的共享状态 |
 | `src/runtime/tasks.rs` | primary 周期任务注册和关闭；metrics 系统指标任务通过 `MetricsRecorder` 注入 |
 | `src/metrics_core.rs` | 始终编译的指标记录 trait 与 `NoopMetrics`，业务层只依赖这层 |
@@ -173,8 +184,10 @@ WebDAV 不走 `src/api/routes/**`，而是：
 | `src/api/routes/admin/` | 管理后台接口，包括策略、远端节点、用户、团队、分享审计、后台任务、存储迁移、文件 / Blob 可观测、配置、锁、审计 |
 | `src/api/routes/share_public.rs` | 公开分享页 API、`/d` 直链、`/pv` 预览直链 |
 | `src/api/routes/internal_storage.rs` | follower 内部对象存储协议 |
+| `src/api/routes/remote_tunnel.rs` | primary 侧远端节点 reverse tunnel 内部入口 |
 | `src/services/` | 业务规则集中层 |
 | `src/storage/drivers/` | 本地、S3、远端驱动 |
+| `src/storage/remote_protocol/tunnel/` | reverse tunnel 传输运行时、鉴权、注册表和流式响应 |
 | `src/webdav/` | WebDAV 文件系统、认证、锁与 DeltaV 支持 |
 | `frontend-panel/` | React 19 + Vite 前端，构建产物由后端服务 |
 
@@ -232,6 +245,7 @@ Prometheus 指标不在 `main.rs` 直接初始化，而是在 `prepare_common()`
 - 运行时邮件发送器
 - 存储变更广播通道
 - 分享下载回滚队列
+- `RemoteProtocolRuntime`，包括 reverse tunnel registry，并注入到 `DriverRegistry`
 
 随后 `src/api/primary.rs` 注册主路由，并在 `src/runtime/tasks.rs` 启动 primary 周期任务。
 
@@ -244,7 +258,7 @@ Prometheus 指标不在 `main.rs` 直接初始化，而是在 `prepare_common()`
 - `/api/v1/internal/storage/*`
 - `/health*`
 
-`spawn_follower_background_tasks(metrics)` 当前只启动通过 `MetricsRecorder` 注入的通用后台任务，不会启动 primary 的业务清理任务，也不会启动 `background-task-dispatch`。
+`spawn_follower_background_tasks(state)` 当前启动 follower-safe 的通用指标后台任务，并启动 reverse tunnel follower worker；它不会启动 primary 的业务清理任务，也不会启动 `background-task-dispatch`。
 
 ## 后台任务
 
@@ -270,12 +284,12 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
 
 周期任务按运行时配置里的间隔执行。它们只有在有实际结果或失败时才写 `SystemRuntime` 任务记录；空轮询使用 `RuntimeTaskRunOutcome::quiet()` 不灌历史表。`system-health-check` 在连续健康成功时会刷新最近一条成功记录，而不是每轮新增一条噪音记录。
 
-用户可见的 `background_task` 由 `background-task-dispatch` 派发。当前 dispatcher 按任务类型分四条 lane：
+用户可见的 `background_tasks` 记录由 `background-task-dispatch` 派发。当前 dispatcher 按任务类型分四条 lane：
 
 - `Archive`：`archive_compress`、`archive_extract`、`archive_preview_generate`
 - `Thumbnail`：`thumbnail_generate`、`media_metadata_extract`
 - `StorageMigration`：`storage_policy_migration`
-- `Fallback`：`storage_policy_temp_cleanup`、`trash_purge_all`、`system_runtime`
+- `Fallback`：`storage_policy_temp_cleanup`、`trash_purge_all`、`blob_maintenance`、`system_runtime`
 
 前三条 lane 分别有自己的运行时并发配置；Fallback 使用通用 `background_task_max_concurrency`。
 
@@ -309,6 +323,7 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
 - 数据库连接
 - WebDAV 前缀
 - 缓存和日志
+- follower 受管 local ingress profile 根目录：`server.follower.managed_ingress_local_root`，默认 `managed-ingress`
 
 首次启动会自动创建 `data/config.toml`。配置文件里的相对路径默认相对于 `data/` 解析；兼容旧值时，已经写成 `data/...` 的相对路径会避免二次拼出 `data/data/...`。根目录下的旧 `config.toml` 不再是默认读取位置。
 

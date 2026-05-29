@@ -5,6 +5,125 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.3] - 2026-05-29
+
+### Release Highlights
+
+**AsterDrive `0.2.3` 聚焦远程存储反向隧道、Blob 维护任务和归档能力收口。** 本版本新增反向隧道传输模式，支持无公网 IP 的远程节点通过主动连接方式接入；新增 Blob 维护后台任务，支持孤立对象清理、引用计数协调和健康状态检查；归档服务继续聚焦 ZIP 预览与解包，并保留后续扩展更多格式的抽象边界；任务展示逻辑全面重构，新增 688 行任务展示模块，支持 20+ 种系统任务的运行时名称映射和 70+ 种状态的国际化；远程存储协议传输层重构，统一请求/响应编码和流式帧处理；数据库查询优化，使用 SeaORM 查询构建器替代手动 SQL 拼接。
+
+- **反向隧道传输模式** — 远程节点支持 Direct/ReverseTunnel/Auto 三种传输模式，无公网 IP 节点可通过反向隧道主动连接主节点
+- **归档能力收口** — 继续支持 ZIP 预览和在线解包，7z 支持在开发期评估后未纳入本次发布，避免 `crc64fast` i686 构建失败及 FFI/GPL 路线风险
+- **Blob 维护任务** — 新增 `BlobMaintenance` 后台任务类型，支持扫描、检查、协调引用、清理孤立对象
+- **任务展示重构** — 新增 `taskPresentation.ts` 模块（688 行），支持运行时任务名称映射和状态国际化
+- **远程存储协议重构** — 传输层重构，新增 `transport.rs` 和 `runtime.rs`，统一请求/响应编码和流式帧处理
+- **数据库查询优化** — 使用 SeaORM 查询构建器替代手动 SQL 拼接，提高安全性和可维护性
+- **管理员文件信息增强** — 新增创建者信息、Blob 引用计数、健康状态、上传者信息
+- **前端页面重构** — 远程节点页面逻辑提取为 controller hook（637 行），任务页面、管理员文件页面、管理员任务页面全面重构
+
+### Added
+
+- **反向隧道传输模式**
+  - 新增 `/internal/remote-tunnel` API 端点（poll/complete/connect）
+  - 新增 `RemoteNodeTransportMode` 枚举（Direct/ReverseTunnel/Auto）
+  - 新增隧道客户端实现（1456 行），支持多通道流式传输、自动重连、背压处理
+  - 新增隧道服务器实现（1160+ 行测试），包含认证、帧编码、注册表管理、持久化轮询
+  - 支持 WebSocket 和 HTTP 长轮询两种传输方式
+  - 数据库新增 `managed_followers.transport_mode/tunnel_last_error/tunnel_last_seen_at` 字段
+  - 前端新增 `TransportModeSelector.tsx` 组件，支持无障碍性
+  - 新增 `useAdminRemoteNodesPageController.ts` hook（637 行），远程节点页面逻辑提取
+- **归档格式能力声明**
+  - 新增 `ArchiveFormat` 抽象，统一 ZIP 预览与解包格式管理，为未来接入更多格式保留边界
+  - 前端新增 `archivePreviewFormatCapabilities.ts`，集中维护归档预览格式能力
+  - 过滤不支持的格式（如 RAR、7z）预览选项，避免前端暴露不可用入口
+- **Blob 维护任务**
+  - 新增 `BackgroundTaskKind::BlobMaintenance` 任务类型
+  - 新增 `blob_maintenance.rs` 服务（767 行），支持扫描、检查、协调引用、清理孤立对象
+  - 批量处理（1000 条/批）、进度跟踪、事务支持
+  - 新增 `POST /admin/files/blobs/maintenance` API 端点
+  - 新增 `AdminFileBlobHealth` 枚举（Healthy/Orphan/RefCountMismatch/CleanupClaimed）
+  - 数据库新增 `storage_migration_checkpoints.renamed_opaque_blobs` 字段
+- **任务展示增强**
+  - 新增 `taskPresentation.ts` 模块（688 行），运行时任务名称映射和状态国际化
+  - 支持 20+ 种系统任务的显示名称映射
+  - 支持 70+ 种状态的国际化文本
+  - 新增 `tasks/common.json` 和 `tasks/status-kind.json` 国际化文件（中英文）
+  - 新增 `steps.rs` 模块（44 行），统一的步骤状态管理接口
+- **存储策略增强**
+  - 新增 `StoragePolicySummaryFields.tsx` 组件（165 行），存储策略摘要展示
+  - 新增 `S3DownloadStrategyField.tsx` 和 `S3UploadStrategyField.tsx`，S3 策略字段分离
+- **管理员文件信息增强**
+  - `AdminFileInfo` 新增 `created_by` 字段（创建者用户摘要）
+  - `AdminFileBlobInfo` 新增 `file_ref_count/version_ref_count/actual_ref_count` 字段（引用计数）
+  - `AdminFileBlobInfo` 新增 `health` 字段（Blob 健康状态）
+  - `AdminFileBlobInfo` 新增 `uploader_count/uploaders` 字段（上传者信息）
+  - `AdminFileBlobReferenceFile` 新增 `created_by_*` 字段
+- **用户身份组件**
+  - 新增 `UserIdentityGroup.tsx` 组件（49 行），用户身份展示
+
+### Changed
+
+- 根 crate 版本从 `0.2.2` 升级到 `0.2.3`
+- **远程存储协议重构**
+  - 新增 `transport.rs`（770 行），统一的请求/响应编码和流式帧处理
+  - 新增 `runtime.rs`（179 行），异步任务管理和连接生命周期管理
+  - 重构 `client.rs`（536 行改动），支持多种传输模式和改进的错误处理
+  - 增强 `errors.rs`（72 行改动），新增隧道相关错误类型
+- **归档服务重构**
+  - 提取 `format.rs`（格式管理）、`io.rs`（I/O 操作）、`scan.rs`（扫描逻辑）
+  - 重构 `zip_scan/` 模块，优化 Zip 扫描性能
+  - 改进 `archive_preview_service/`，保留 ZIP 原始清单缓存重建和旧版缓存兼容
+- **数据库查询优化**
+  - 使用 SeaORM 查询构建器替代手动 SQL 拼接（`apply/copy.rs`）
+  - 优化 Blob 查询性能（`blob/lookup.rs`，177 行改动）
+- **任务服务重构**
+  - 存储迁移任务支持 opaque key 重命名计数（`storage_migration.rs`，210 行改动）
+  - 任务分发支持新的 blob 维护任务类型（`dispatch/execute.rs`，41 行改动）
+  - 提取解压暂存逻辑（`archive/extract/staging.rs`），归档解包流程继续复用 ZIP 安全校验和暂存导入路径
+- **前端页面重构**
+  - `AdminRemoteNodesPage.tsx` 从 588 行简化为 72 行，逻辑提取为 controller hook
+  - `TasksPage.tsx` 改进任务展示逻辑和国际化支持（137 行改动）
+  - `AdminFilesPage.tsx` 新增 Blob 健康状态展示（846 行改动）
+  - `AdminTasksPage.tsx` 支持新任务类型和改进的过滤排序（577 行改动）
+  - `AdminOverviewPage.tsx` 新增后台任务部分和系统健康状态横幅（146 行改动）
+- **配置和文档更新**
+  - 运行时配置文档新增隧道相关配置说明（`runtime.md`，40+ 行改动）
+  - 存储驱动配置更新（`storage.md`，43 行改动）
+  - API 文档新增 Blob 维护和远程隧道 API 文档
+
+### Fixed
+
+- 修复归档预览旧版缓存兼容性问题，处理 `zip_utf8` 字段别名和缺失字段
+- 修复反向隧道流式传输错误处理和流中止逻辑
+- 修复存储迁移 blob 摘要构建，使用 SeaORM 查询构建器替代手动 SQL
+
+### Notes
+
+- 本版本为 `0.2.3` 功能增强版本
+- 7z 在线预览与在线解包在 `0.2.3` 开发期经过评估，最终未纳入本次发布：
+  - 纯 Rust 方案选择少，当前候选依赖会间接触发 `crc64fast` i686 构建失败
+  - FFI/xz 绑定路线存在 GPL 许可风险
+  - `.7z` 文件仍会作为普通压缩包文件类型显示，但不会暴露归档预览或在线解包入口
+  - issue #206 已标记为 `not planned`，后续只有在依赖许可、跨平台构建和维护成本都可控时才重新评估
+- 新增数据库迁移：
+  - `m20260528_000001_add_storage_migration_opaque_rename_count`
+  - `m20260529_000001_add_remote_node_transport`
+- **Breaking Change**：数据库 Schema 变更
+  - `managed_followers` 表新增 `transport_mode/tunnel_last_error/tunnel_last_seen_at` 字段
+  - `storage_migration_checkpoints` 表新增 `renamed_opaque_blobs` 字段
+  - 必须运行数据库迁移后才能启动
+- **Breaking Change**：API 变更
+  - 新增 `blob_maintenance` 任务类型，客户端需要更新任务类型枚举
+  - `RemoteNodeInfo` 新增 `transport_mode` 字段（默认为 "direct"）
+  - `AdminFileInfo` 新增 `created_by` 字段（可选）
+  - `AdminFileBlobInfo` 新增多个引用计数和健康状态字段
+
+---
+
+**统计数据**：
+- 271 files changed, 23,475 insertions(+), 3,416 deletions(-)
+- 33 commits
+- Rust Edition 2024, MSRV 1.91.1
+
 ## [v0.2.2] - 2026-05-28
 
 ### Release Highlights
@@ -3675,7 +3794,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.3...HEAD
+[v0.2.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.2...v0.2.3
 [v0.2.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.1...v0.2.2
 [v0.2.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-hotfix.1...v0.2.1
 [v0.2.0-hotfix.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0...v0.2.0-hotfix.1

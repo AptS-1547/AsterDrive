@@ -24,7 +24,7 @@
 
 - 主控后台可以正常打开
 - `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 已经填成真实可访问的 HTTP(S) 来源；多来源配置时，follower 能访问到的主控来源应放第一行
-- 你已经想好这个 follower 的名称、命名空间，以及主控将来访问它的 `base_url`
+- 你已经想好这个 follower 的名称，以及准备用直连、反向通道还是自动传输
 
 ### 2. follower 必须有自己独立的 `data/`
 
@@ -37,9 +37,9 @@
 
 从节点不是“主控的另一个副本”，它是另一台独立的 AsterDrive。
 
-### 3. 主控必须能访问 follower 的 `base_url`
+### 3. 先决定直连还是反向通道
 
-如果主控和 follower 在不同机器上，`base_url` 通常会是：
+如果你选择**直连**，主控必须能访问 follower 的 `base_url`。不同机器上通常会是：
 
 - `https://follower.example.com`
 - `http://10.0.0.23:3000`
@@ -49,9 +49,9 @@
 不要默认填写 `http://localhost:3000`，那通常只对 follower 自己成立。
 
 ::: tip 如果 follower 在 NAT 或 CGNAT 后方
-当前 Docker bootstrap 解决的是“从节点首次自动 enroll”，还不是“主控无法回连从节点时也能读写对象”。
+如果主控访问不到 follower，但 follower 能访问主控的 `公开站点地址`，可以在创建远程节点时选择**反向通道**或 `auto + 空 base_url`。
 
-如果主控访问不到 follower 的 `base_url`，远程存储策略仍然不能稳定工作。只出站连接的反向通道正在 [issue #136](https://github.com/AptS-1547/AsterDrive/issues/136) 跟进。
+反向通道仍处于测试阶段，适合 `relay_stream` 上传/下载；如果你要使用远程 `presigned` 上传或下载，仍然需要直连，并且浏览器也要能访问 follower 的 `base_url`。
 :::
 
 ### 4. token 是一次性的
@@ -74,8 +74,8 @@
 先创建一条远程节点记录，至少填好：
 
 - 名称
-- 命名空间
-- `base_url`
+- 传输方式
+- `base_url`：直连必填；反向通道可以留空；自动模式下留空即走反向通道
 
 保存后，后台会生成一组 enroll 信息。Docker follower 启动时真正需要的是这两个值：
 
@@ -196,7 +196,7 @@ curl http://127.0.0.1:3001/health/ready
 管理 -> 远程节点
 ```
 
-点击“测试连接”。通过后，先打开这台 follower 的远程节点详情，创建一个**默认接收落点**。
+点击“测试连接”。直连节点会访问 `base_url`；反向通道节点会通过 follower 主动建立的通道访问，刚启动时可能需要等几十秒让通道变成在线。测试通过后，先打开这台 follower 的远程节点详情，创建一个**默认接收落点**。
 
 测试连接通过时，主控也会读取 follower 的内部存储协议能力。当前内部协议版本是 `v2`；如果能力摘要显示协议不兼容，先升级主控或 follower，别急着创建 remote 策略。
 
@@ -217,7 +217,7 @@ local 接收落点的路径会被限制在 follower 的 `server.follower.managed
 
 创建 `远程节点` 类型的存储策略。
 
-如果远程策略选择 `presigned` 上传或下载，还要确认浏览器能访问 follower 的 `base_url`，并且 follower 前面的反向代理没有吞掉内部存储 API 的 CORS 头。上传需要允许 `content-type` 并暴露 `ETag`；下载 Range 需要允许 `range` 并暴露 `Accept-Ranges`、`Content-Range`、`Content-Length`。
+如果远程策略选择 `presigned` 上传或下载，还要确认远程节点使用直连传输、浏览器能访问 follower 的 `base_url`，并且 follower 前面的反向代理没有吞掉内部存储 API 的 CORS 头。上传需要允许 `content-type` 并暴露 `ETag`；下载 Range 需要允许 `range` 并暴露 `Accept-Ranges`、`Content-Range`、`Content-Length`。
 
 ## 6. 首次成功后，把一次性 bootstrap ENV 移掉
 
@@ -253,10 +253,12 @@ docker compose up -d
 
 ### follower 能启动，但主控测试连接失败
 
-优先检查这三件事：
+优先检查这些事：
 
-- 主控后台里填的 `base_url` 是不是主控真正能访问到的地址
-- 端口映射、反向代理或 NAT 有没有把流量正确转到 follower 的 `3000`
+- 远程节点传输方式是不是选对了
+- 直连模式下，主控后台里填的 `base_url` 是不是主控真正能访问到的地址
+- 反向通道模式下，follower 能不能访问主控的 `公开站点地址`，代理或防火墙有没有拦 WebSocket / 长连接
+- 直连模式下，端口映射、反向代理或 NAT 有没有把流量正确转到 follower 的 `3000`
 - follower 的 `server.host` 是否允许外部访问
 
 ### 已有旧的 `/data/config.toml`，里面还是 `primary`

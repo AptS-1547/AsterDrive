@@ -118,7 +118,7 @@
 | `GET` | `/admin/remote-nodes` | 分页列出受管 follower 节点 |
 | `POST` | `/admin/remote-nodes` | 创建远端节点记录 |
 | `GET` | `/admin/remote-nodes/{id}` | 读取远端节点详情 |
-| `PATCH` | `/admin/remote-nodes/{id}` | 更新名称、地址或启用状态 |
+| `PATCH` | `/admin/remote-nodes/{id}` | 更新名称、地址、传输模式或启用状态 |
 | `DELETE` | `/admin/remote-nodes/{id}` | 删除远端节点；仍被策略引用时会拒绝 |
 | `POST` | `/admin/remote-nodes/{id}/test` | 测试已保存远端节点连接 |
 | `POST` | `/admin/remote-nodes/test` | 用临时参数测试远端节点连接 |
@@ -134,16 +134,23 @@
 {
   "name": "edge-sh-01",
   "base_url": "",
+  "transport_mode": "auto",
   "is_enabled": true
 }
 ```
 
 当前实现注意点：
 
+- `transport_mode` 支持 `direct`、`reverse_tunnel`、`auto`；创建时不传默认 `direct`，更新时可通过 `PATCH /admin/remote-nodes/{id}` 修改
+- `direct` 要求 `base_url` 可由 primary 直连；如果远端策略引用这个节点，`base_url` 不能为空
+- `reverse_tunnel` 不要求 follower 被 primary 直连，但 follower 必须能主动连到 primary 的 `/api/v1/internal/remote-tunnel/*`
+- `auto` 在 `base_url` 非空时按 direct 连接，`base_url` 为空时走 reverse tunnel
 - `base_url` 为空时通常走 enrollment 流程，由 follower 兑换绑定信息后再完成实际接入
 - `/enrollment-token` 返回给 CLI 使用的命令信息；follower 会再调用公开 enrollment 接口完成 redeem / ack
 - `GET /admin/remote-nodes` 支持 `limit`、`offset`、`sort_by`、`sort_order`
-- 远端节点详情会返回 `enrollment_status`、`last_error`、`capabilities` 和 `last_checked_at`
+- 远端节点详情会返回 `transport_mode`、`enrollment_status`、`last_error`、`capabilities`、`last_checked_at` 和 `tunnel`
+- `tunnel` 当前包含 `status`、`last_error`、`last_seen_at`，用于管理端展示 reverse tunnel 在线状态
+- reverse tunnel 模式不能配合 remote 浏览器预签名上传 / 下载策略使用。创建或更新远端策略、切换远端节点传输模式时，如果引用该节点的策略使用 `remote_upload_strategy = "presigned"` 或 `remote_download_strategy = "presigned"`，服务端会拒绝这个组合
 - ingress profile 的请求体和 follower 内部协议一致，见 [内部存储协议](./internal-storage.md)
 
 ## 外部认证提供商

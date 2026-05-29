@@ -112,11 +112,6 @@ const manifest: ArchivePreviewManifest = {
 	],
 };
 
-const sevenZipManifest: ArchivePreviewManifest = {
-	...manifest,
-	format: "7z",
-};
-
 describe("ArchivePreview", () => {
 	it("shows unavailable state without a loader", () => {
 		render(<ArchivePreview />);
@@ -264,16 +259,16 @@ describe("ArchivePreview", () => {
 		).toBeInTheDocument();
 	});
 
-	it("hides filename encoding selector for formats that do not use it", async () => {
-		const loadManifest = vi.fn(async () => sevenZipManifest);
+	it("shows filename encoding selector for zip manifests", async () => {
+		const loadManifest = vi.fn(async () => manifest);
 		render(<ArchivePreview loadManifest={loadManifest} />);
 
 		expect(await screen.findByText("docs")).toBeInTheDocument();
 		expect(
-			screen.queryByRole("button", {
+			screen.getByRole("button", {
 				name: "archive_preview_filename_encoding",
 			}),
-		).not.toBeInTheDocument();
+		).toBeInTheDocument();
 	});
 
 	it("shows retry UI when loading fails", async () => {
@@ -510,7 +505,7 @@ describe("ArchivePreview", () => {
 	it.each([
 		[
 			ApiSubcode.ArchivePreviewUnsupportedType,
-			"archive preview currently supports .zip and .7z files only",
+			"archive preview currently supports .zip files only",
 			"archive_preview_unsupported_type",
 		],
 		[

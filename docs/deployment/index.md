@@ -132,5 +132,6 @@ bootstrap_insecure_cookies = false
 - 准备挂 HTTPS：看 [反向代理](/deployment/reverse-proxy)
 - 准备接 Prometheus / Grafana：看 [监控与 Grafana](/deployment/monitoring)
 - 想确认首次启动到底自动做了哪些事：看 [首次启动检查](/deployment/runtime-behavior)
-- 准备升级：看 [升级与浏览器缓存](/deployment/frontend-assets)
+- 准备升级：看 [升级与版本迁移](/deployment/upgrade)
+- 升级后浏览器仍显示旧界面：看 [前端资源缓存](/deployment/frontend-assets)
 - 想建立或复跑性能基准：看 [性能基准与压测](/deployment/performance-benchmarking)

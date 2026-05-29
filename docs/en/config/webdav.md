@@ -14,14 +14,16 @@ Regular WebDAV users usually only need to create a dedicated account on the `Web
 [webdav]
 prefix = "/webdav"
 payload_limit = 10737418240
+xml_payload_limit = 1048576
 ```
 
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `prefix` | `"/webdav"` | WebDAV path prefix. Client addresses must change with it. |
-| `payload_limit` | `10737418240` | Hard WebDAV upload size limit. Default is 10 GiB. |
+| `payload_limit` | `10737418240` | Hard WebDAV file write body limit. Default is 10 GiB. |
+| `xml_payload_limit` | `1048576` | Hard XML request body limit. Default is 1 MiB; used by `PROPFIND`, `PROPPATCH`, `REPORT`, and `LOCK`. |
 
-::: warning Restart the service after changing these two options
+::: warning Restart the service after changing these static options
 Unlike the runtime global switch, static configuration is read only once during startup.
 :::
 
@@ -89,6 +91,8 @@ When uploading large files through WebDAV, these three limits apply, and **the s
 3. Single-file size limit in the storage policy
 
 If any one of them blocks the upload, the whole upload is blocked. Check all three while troubleshooting.
+
+`xml_payload_limit` does not limit file content uploads. It only limits XML control requests. Most deployments do not need to adjust it unless a client sends unusually large directory queries, lock requests, or property updates.
 
 ## Do Not Drop These When Using a Reverse Proxy
 

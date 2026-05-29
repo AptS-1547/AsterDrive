@@ -124,7 +124,7 @@
 - `steps` 会给出更细的阶段状态、阶段进度和阶段文案
 - `can_retry = true` 目前只在 `status = failed` 且失败类型允许手动重试时出现
 - `progress_total <= 0` 时，成功任务的 `progress_percent` 会直接视为 `100`
-- `expires_at` 表示任务临时产物什么时候可以清理，不表示 `background_task` 历史记录一定会在这个时间删库
+- `expires_at` 表示任务临时产物什么时候可以清理，不表示 `background_tasks` 历史记录一定会在这个时间删库
 
 ## 当前任务类型
 
@@ -175,7 +175,7 @@
 
 有两件事别搞混：
 
-- `/batch/archive-download` 及团队对应接口走的是“短期 stream ticket + 直接 ZIP 流下载”，不会创建 `background_task`
+- `/batch/archive-download` 及团队对应接口走的是“短期 stream ticket + 直接 ZIP 流下载”，不会创建 `background_tasks` 任务记录
 - `/batch/archive-compress` 和 `/files/{id}/extract` 才会真正创建这里能看到的后台任务
 - `/files/{id}/archive-preview` 和公开分享归档预览接口第一次命中未生成缓存时，会创建 `archive_preview_generate`；接口本身返回 `202`，前端应稍后重试原接口，而不是轮询任务详情作为唯一入口
 - `DELETE /trash` 和团队对应接口不会同步清空回收站，而是创建 `trash_purge_all` 任务并返回 `TaskInfo`

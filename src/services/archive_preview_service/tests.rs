@@ -244,7 +244,6 @@ fn serialized_cache_uses_current_raw_schema_and_signature() {
 
     assert_eq!(RAW_CACHE_SCHEMA_VERSION, 2);
     assert_eq!(ZIP_RAW_MANIFEST_CACHE_NAME, "zip_raw_manifest.v2");
-    assert_eq!(SEVEN_ZIP_RAW_MANIFEST_CACHE_NAME, "7z_raw_manifest.v2");
     assert_eq!(value["schema_version"], 2);
     assert_eq!(value["limit_signature"], "raw-limits");
     assert!(value.get("filename_encoding").is_none());
@@ -457,82 +456,6 @@ async fn raw_manifest_can_be_redecoded_without_rescanning_storage() {
         driver.range_calls.load(Ordering::SeqCst),
         range_calls_after_scan
     );
-}
-
-#[test]
-fn seven_zip_raw_manifest_ignores_zip_filename_encoding_on_replay() {
-    let entry_name = "docs/测试.txt";
-    let raw_manifest = ArchiveRawManifest {
-        format: ArchiveFormat::SevenZip.as_str().to_string(),
-        entry_count: 1,
-        file_count: 1,
-        directory_count: 1,
-        total_uncompressed_size: 5,
-        total_compressed_base: 64,
-        entries: vec![ArchiveRawEntry {
-            index: 0,
-            raw_name: base64::engine::general_purpose::STANDARD.encode(entry_name.as_bytes()),
-            display_name: entry_name.to_string(),
-            raw_name_utf8: true,
-            kind: ArchivePreviewEntryKind::File,
-            size: 5,
-            compressed_size: 64,
-            modified_at: None,
-        }],
-        ..preview_test_raw_manifest()
-    };
-    let mut limits = preview_test_limits_with_encoding(ArchiveFilenameEncoding::Cp437);
-    limits.archive_format = ArchiveFormat::SevenZip;
-
-    let manifest = build_manifest_from_raw(7, &raw_manifest, &limits)
-        .expect("7z raw manifest should replay independently of ZIP filename encoding");
-
-    assert_eq!(manifest.format, "7z");
-    assert_eq!(manifest.entries[0].path, entry_name);
-    assert_eq!(manifest.entries[0].name, "测试.txt");
-}
-
-#[test]
-fn seven_zip_raw_manifest_falls_back_to_legacy_compressed_base() {
-    let raw_manifest = ArchiveRawManifest {
-        format: ArchiveFormat::SevenZip.as_str().to_string(),
-        entry_count: 2,
-        file_count: 2,
-        directory_count: 0,
-        total_uncompressed_size: 10,
-        total_compressed_base: 0,
-        entries: vec![
-            ArchiveRawEntry {
-                index: 0,
-                raw_name: base64::engine::general_purpose::STANDARD.encode(b"first.txt"),
-                display_name: "first.txt".to_string(),
-                raw_name_utf8: true,
-                kind: ArchivePreviewEntryKind::File,
-                size: 5,
-                compressed_size: 64,
-                modified_at: None,
-            },
-            ArchiveRawEntry {
-                index: 1,
-                raw_name: base64::engine::general_purpose::STANDARD.encode(b"second.txt"),
-                display_name: "second.txt".to_string(),
-                raw_name_utf8: true,
-                kind: ArchivePreviewEntryKind::File,
-                size: 5,
-                compressed_size: 64,
-                modified_at: None,
-            },
-        ],
-        ..preview_test_raw_manifest()
-    };
-    let mut limits = preview_test_limits();
-    limits.archive_format = ArchiveFormat::SevenZip;
-
-    let manifest = build_manifest_from_raw(7, &raw_manifest, &limits)
-        .expect("legacy 7z raw cache should infer the source compressed base");
-
-    assert_eq!(manifest.format, "7z");
-    assert_eq!(manifest.entries.len(), 2);
 }
 
 #[test]

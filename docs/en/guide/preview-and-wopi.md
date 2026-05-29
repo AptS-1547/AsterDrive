@@ -132,7 +132,7 @@ Admin -> System Settings -> Site Configuration -> Preview Apps
 
 It provides a **read-only listing preview**:
 
-- ZIP and 7z
+- ZIP
 - Reads archive metadata and shows folders, files, sizes, and modification times
 - Does not extract the archive into the user's folder
 - Does not provide downloads for individual files inside the archive

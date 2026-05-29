@@ -151,7 +151,7 @@ The `Follower Nodes` page registers follower nodes, generates one-time enroll co
 You can:
 
 - Create remote node records
-- Fill name, namespace, and optional `base_url`
+- Fill name, transport mode, and optional `base_url`
 - Generate the enroll command the follower needs to run after saving
 - View last test time, capability summary, and errors
 - Enable, disable, edit, or delete nodes
@@ -159,7 +159,8 @@ You can:
 
 Notes:
 
-- When `base_url` is empty, you can register and generate an enroll command first, but the primary node cannot actively test connectivity and cannot really send remote storage traffic to it
+- Direct mode needs `base_url`; reverse tunnel can leave it empty; in auto mode, empty means reverse tunnel
+- Reverse tunnel is still under test and is suitable for `relay_stream`; remote `presigned` still needs direct transport and a follower `base_url` reachable by browsers
 - Ingress targets are pushed from the primary node to the follower; currently `local` and `s3` are supported
 - A `local` ingress target only accepts a relative path, and it ultimately lands under the follower's `server.follower.managed_ingress_local_root`
 - Without an applied default ingress target, remote writes are rejected
@@ -262,6 +263,7 @@ You will see:
 - Online compression, online extraction, package download, and system runtime task records
 - storage policy data migration task records
 - Thumbnail generation task records
+- Media metadata extraction task records
 - Archive preview generation task records
 
 This page is best for:
@@ -325,11 +327,13 @@ Commonly changed items include:
 - Trash retention, version count, and team archive retention
 - Default quota for new users
 - Task retention and thumbnail source file size limit
-- Online extraction staging size limit
+- Online extraction source, staging, uncompressed size, entry count, path, and compression-ratio limits
+- Entry count, total source size, and output size limits for online compression and archive downloads
 - Archive preview switches and limits
 - Media processors, vips / ffmpeg / ffprobe commands, and extension bindings
 - Mail queue, background task, and periodic cleanup frequency
 - Background task lane concurrency limits, maximum attempts, and system health check interval
+- Storage policy migration task concurrency limit; inspect concrete migration plans, checkpoints, and results under `Admin -> Storage Policies` and `Admin -> Tasks`
 - Share streaming session TTL
 - Whether to record audit logs
 - Preview apps, and TTLs related to online Office / WOPI open methods

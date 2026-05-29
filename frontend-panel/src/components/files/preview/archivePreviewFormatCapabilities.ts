@@ -24,9 +24,6 @@ const archivePreviewFormatCapabilities = {
 	zip: {
 		filenameEncoding: true,
 	},
-	"7z": {
-		filenameEncoding: false,
-	},
 } satisfies Record<SupportedArchiveFormat, ArchivePreviewFormatCapabilities>;
 
 export function getArchivePreviewFormatCapabilities(

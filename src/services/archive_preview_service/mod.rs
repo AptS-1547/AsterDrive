@@ -39,8 +39,6 @@ const CACHE_NAMESPACE: &str = "system.archive_preview";
 const FORMAT_ZIP: &str = ArchiveFormat::Zip.as_str();
 #[cfg(test)]
 const ZIP_RAW_MANIFEST_CACHE_NAME: &str = ArchiveFormat::Zip.raw_manifest_cache_name();
-#[cfg(test)]
-const SEVEN_ZIP_RAW_MANIFEST_CACHE_NAME: &str = ArchiveFormat::SevenZip.raw_manifest_cache_name();
 const ENTITY_PROPERTY_VALUE_MAX_BYTES: usize = 65_536;
 const ARCHIVE_PREVIEW_CACHE_WRAPPER_RESERVED_BYTES: usize = 1024;
 const ARCHIVE_PREVIEW_MAX_CACHEABLE_MANIFEST_BYTES: usize =
@@ -283,7 +281,7 @@ pub(crate) fn ensure_archive_preview_source_supported(
     detect_archive_preview_format(source_file).ok_or_else(|| {
         archive_preview_validation_error(
             ApiSubcode::ArchivePreviewUnsupportedType,
-            "archive preview currently supports .zip and .7z files only",
+            "archive preview currently supports .zip files only",
         )
     })
 }
@@ -305,7 +303,7 @@ pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
         Some(ApiSubcode::ArchivePreviewUnsupportedType) => {
             return archive_preview_validation_error(
                 ApiSubcode::ArchivePreviewUnsupportedType,
-                "archive preview currently supports .zip and .7z files only",
+                "archive preview currently supports .zip files only",
             );
         }
         Some(ApiSubcode::ArchivePreviewSourceTooLarge) => {

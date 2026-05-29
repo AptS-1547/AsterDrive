@@ -13,10 +13,6 @@ use crate::services::archive_service::range_reader::StorageRangeReader;
 use crate::services::archive_service::scan::{
     ArchiveRawScanEntry, ArchiveScanEntryKind, ArchiveScanLimits, ArchiveScanNamePolicy,
 };
-use crate::services::archive_service::seven_zip_scan::{
-    build_seven_zip_scan_result_from_raw_entries, open_seven_zip_streaming_archive,
-    scan_seven_zip_archive_raw,
-};
 use crate::services::archive_service::zip_scan::{
     build_zip_scan_result_from_raw_entries, scan_zip_archive_raw,
 };
@@ -44,7 +40,6 @@ pub(crate) async fn scan_manifest_from_temp(
         source_file.id,
         blob.id,
         blob.hash.clone(),
-        crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
         limits,
         move || {
             let file = std::fs::File::open(&path).map_aster_err_ctx(
@@ -70,7 +65,6 @@ pub(crate) async fn scan_manifest_from_storage_range(
         source_file.id,
         blob.id,
         blob.hash.clone(),
-        source_size,
         limits,
         move || {
             Ok(StorageRangeReader::new(
@@ -88,7 +82,6 @@ async fn scan_manifest_with_reader<R, F>(
     source_file_id: i64,
     source_blob_id: i64,
     source_hash: String,
-    source_archive_size: u64,
     limits: &ArchivePreviewLimits,
     make_reader: F,
 ) -> Result<ArchiveRawManifest>
@@ -111,12 +104,6 @@ where
                 let mut archive =
                     zip::ZipArchive::new(reader).map_err(map_zip_preview_open_error)?;
                 scan_zip_archive_raw(&mut archive, scan_limits, deadline)
-                    .map_err(map_archive_preview_scan_error)?
-            }
-            ArchiveFormat::SevenZip => {
-                let archive = open_seven_zip_streaming_archive(reader, scan_limits)
-                    .map_err(map_seven_zip_preview_open_error)?;
-                scan_seven_zip_archive_raw(&archive, scan_limits, source_archive_size, deadline)
                     .map_err(map_archive_preview_scan_error)?
             }
         };
@@ -220,14 +207,6 @@ pub(super) fn build_manifest_from_raw(
             ArchiveScanNamePolicy::PreviewDisplayName,
             |_| Ok(()),
         ),
-        ArchiveFormat::SevenZip => build_seven_zip_scan_result_from_raw_entries(
-            &raw_entries,
-            seven_zip_total_compressed_base(raw_manifest, &raw_entries)?,
-            scan_limits,
-            None,
-            ArchiveScanNamePolicy::PreviewDisplayName,
-            |_| Ok(()),
-        ),
     }
     .map_err(map_archive_preview_scan_error)?;
     let entry_count = max_i64_u64_count(
@@ -288,41 +267,6 @@ pub(super) fn build_manifest_from_raw(
     };
 
     fit_manifest_to_limit(source_file_id, manifest, limits.max_manifest_bytes)
-}
-
-fn seven_zip_total_compressed_base(
-    raw_manifest: &ArchiveRawManifest,
-    raw_entries: &[ArchiveRawScanEntry],
-) -> Result<u64> {
-    if raw_manifest.total_compressed_base > 0 {
-        return Ok(raw_manifest.total_compressed_base);
-    }
-
-    raw_entries.iter().try_fold(0_u64, |base, entry| {
-        if entry.kind.is_dir() {
-            return Ok(base);
-        }
-        let compressed_size = crate::utils::numbers::i64_to_u64(
-            entry.compressed_size,
-            "archive entry compressed size",
-        )?;
-        Ok(base.max(compressed_size))
-    })
-}
-
-fn map_seven_zip_preview_open_error(error: AsterError) -> AsterError {
-    if matches!(error, AsterError::ValidationError(_))
-        && error
-            .message()
-            .to_ascii_lowercase()
-            .contains("invalid 7z archive")
-    {
-        return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewInvalidArchive,
-            "invalid archive",
-        );
-    }
-    map_archive_preview_scan_error(error)
 }
 
 fn cached_raw_display_scan_limits(

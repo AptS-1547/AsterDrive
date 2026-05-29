@@ -162,7 +162,9 @@ ASTER__WEBDAV__PREFIX=/dav
 
 - `data/config.toml` 的位置 —— **相对当前工作目录**
 - `[database]` 和 `[server]` 里的相对路径 —— **相对 `data/config.toml` 所在目录**（也就是 `./data/`）
-- 默认本地存储策略 `data/uploads` —— **相对当前工作目录**（不是 `data/` 内）
+- 默认本地存储策略的 `base_path = "data/uploads"` —— **相对当前工作目录**，通常就是工作目录下的 `data/uploads`
+
+也就是说，自动生成的 `[server].temp_dir = ".tmp"` 会在运行时落到 `data/.tmp`；而默认本地存储策略本身已经把 `data/` 写进了 `base_path`，不会再按 `data/config.toml` 的目录额外拼成 `data/data/uploads`。
 
 不同部署方式默认落点：
 

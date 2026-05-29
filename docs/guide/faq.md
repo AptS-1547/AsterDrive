@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | 小文件能传，大文件失败 | [上传与大文件](./upload-modes) | 反向代理大小限制、超时、分片大小、临时目录空间 |
 | 对象存储直传失败 | [存储策略](/config/storage) / [上传与大文件](./upload-modes) | S3 CORS、`ETag` 暴露、浏览器来源没放行 |
-| 远程节点策略上传失败 | [远程节点](./remote-nodes) | follower 不可达、`base_url` 错、默认接收落点未应用 |
+| 远程节点策略上传失败 | [远程节点](./remote-nodes) | 传输方式不通、直连地址错误、默认接收落点未应用 |
 | 容量显示不对 | [运维 CLI：doctor](/deployment/ops-cli#部署检查doctor) | 存储用量计数漂移，需要深度检查 |
 
 ## 分享、WebDAV 和在线编辑

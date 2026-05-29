@@ -55,7 +55,7 @@ If the administrator enables share-side archive preview, public share pages can 
 
 Key points:
 
-- ZIP and 7z
+- ZIP
 - Shows directories, files, sizes, and modification times
 - Does not extract the archive into the user's folder
 - Does not provide downloads for individual files inside the archive

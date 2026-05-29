@@ -112,6 +112,8 @@
 
 如果用户状态是 `disabled`，登录会直接失败。
 
+`GET /auth/me` 支持用 `fields` query 返回局部资料，例如 `GET /auth/me?fields=profile,preferences,quota,session`。支持的字段组是 `profile`、`preferences`、`quota`、`session`；不传或传空值时返回完整模型，传未知字段会返回 `400`。
+
 如果用户启用了 TOTP，或者邮箱验证码 MFA 策略对该已验证邮箱用户可用，`POST /auth/login` 不会立即写入认证 Cookie，而是返回：
 
 ```json

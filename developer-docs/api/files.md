@@ -70,7 +70,7 @@
 - `relay_stream`：`init` 仍返回 `direct` / `chunked`，但服务端直接把字节流中继到 S3 / follower，不落本地临时文件
 - `presigned`：`init` 才会返回 `presigned` / `presigned_multipart`
 
-缺省时 S3 和 Remote 上传都会回退为 `relay_stream`。旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`；旧的 `{"s3_upload_strategy":"proxy_tempfile"}` 会回退为 `relay_stream`。使用预签名模式时，对象存储侧或 follower 内部存储接口还必须配置好浏览器可用的 CORS。
+缺省时 S3 和 Remote 上传都会回退为 `relay_stream`。旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`；旧的 `{"s3_upload_strategy":"proxy_tempfile"}` 会回退为 `relay_stream`。使用预签名模式时，对象存储侧或 follower 内部存储接口还必须配置好浏览器可用的 CORS。Remote 预签名上传只适用于可直连的远端节点；如果远端节点解析为 reverse tunnel，服务端会拒绝 `remote_upload_strategy = "presigned"` 这类策略组合。
 
 ### 直传、分片和完成阶段
 
@@ -123,7 +123,7 @@
 - `GET /files/{id}/image-preview`：为图片预览返回 WebP 原始响应，不走统一 JSON 包装；成功响应带 `ETag`，支持 `If-None-Match` 命中返回 `304`
 - `GET /files/{id}/media-metadata`：读取按 blob 缓存的媒体元数据；缓存未生成时返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
-- `POST /files/{id}/extract`：把 .zip 和 .7z 文件解包成后台任务，结果会出现在 `/tasks`
+- `POST /files/{id}/extract`：把 .zip 文件解包成后台任务，结果会出现在 `/tasks`
 - `PATCH /files/{id}`：改名或移动
 - `DELETE /files/{id}`：软删除到回收站
 
@@ -235,10 +235,10 @@
 
 当前实现细节：
 
-- 目前支持 `.zip`、`.7z` 以及对应 MIME 类型；其他格式返回带 `archive_preview.unsupported_type` 子码的 `400`
+- 目前支持 `.zip` 以及对应 MIME 类型；其他格式返回带 `archive_preview.unsupported_type` 子码的 `400`
 - 默认关闭，需要同时打开 `archive_preview_enabled` 和 `archive_preview_user_enabled`
 - 首次请求如果没有可用缓存，会创建或复用 `archive_preview_generate` 后台任务，返回 `202`、`Retry-After: 2` 和空成功响应
-- 任务完成后，原始清单缓存在 `entity_properties` 的 `system.archive_preview / zip_raw_manifest.v2` 或 `7z_raw_manifest.v2`
+- 任务完成后，原始清单缓存在 `entity_properties` 的 `system.archive_preview / zip_raw_manifest.v2`
 - 成功响应带 `ETag`，支持 `If-None-Match` 命中返回 `304`
 - 限制由 `archive_preview_max_source_bytes`、`archive_preview_max_entries`、`archive_preview_max_manifest_bytes`、`archive_preview_max_duration_secs` 以及归档解压相关上限共同控制
 - 对支持 Range 的存储驱动，生成任务会优先用范围读取扫描归档元数据；必要时才下载到临时文件扫描
@@ -342,10 +342,10 @@
 要点：
 
 - 这条接口不会同步返回解包结果，而是创建一个 `archive_extract` 后台任务
-- 当前支持 `.zip` 和 `.7z` 文件名的源文件
+- 当前支持 `.zip` 文件名的源文件
 - `target_folder_id = null` 时，解包结果会写到源压缩包所在目录；如果源压缩包在根目录，就写到根目录
 - `output_folder_name` 不传时，服务端会为解包结果推导输出目录名
-- `filename_encoding` 可选，默认 `auto`；支持值和 `GET /files/{id}/archive-preview` 的同名 query 参数一致，用于兼容非 UTF-8 ZIP entry name，7z 会忽略该覆盖值
+- `filename_encoding` 可选，默认 `auto`；支持值和 `GET /files/{id}/archive-preview` 的同名 query 参数一致，用于兼容非 UTF-8 ZIP entry name
 - 真正的解包进度、失败原因和最终输出目录信息，要去 [`后台任务 API`](./tasks.md) 里看对应 `TaskInfo`
 
 ## 锁与复制

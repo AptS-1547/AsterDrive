@@ -162,7 +162,9 @@ If you write relative paths, remember these three semantics differ:
 
 - Location of `data/config.toml` - **relative to the current working directory**
 - Relative paths in `[database]` and `[server]` - **relative to the directory containing `data/config.toml`**, meaning `./data/`
-- Default local storage policy `data/uploads` - **relative to the current working directory**, not inside `data/`
+- Default local storage policy `base_path = "data/uploads"` - **relative to the current working directory**, usually the `data/uploads` directory under that working directory
+
+In other words, the generated `[server].temp_dir = ".tmp"` resolves to `data/.tmp` at runtime, while the default local storage policy already includes `data/` in its `base_path`. It is not joined again as `data/data/uploads`.
 
 Default locations by deployment method:
 

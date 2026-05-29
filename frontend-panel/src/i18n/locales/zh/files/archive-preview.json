@@ -27,7 +27,7 @@
 	"archive_preview_empty": "这个压缩包没有可显示的条目。",
 	"archive_preview_no_matches": "没有匹配的压缩包条目。",
 	"archive_preview_disabled": "管理员尚未启用压缩包预览。",
-	"archive_preview_unsupported_type": "压缩包预览目前只支持 ZIP 和 7z 文件。",
+	"archive_preview_unsupported_type": "压缩包预览目前只支持 ZIP 文件。",
 	"archive_preview_source_too_large": "这个压缩包超过了管理员设置的预览大小上限。",
 	"archive_preview_invalid_archive": "这个文件不是有效的压缩包。",
 	"archive_preview_encoding_failed": "当前文件名编码无法解析这个压缩包，请切换文件名编码后重试。",

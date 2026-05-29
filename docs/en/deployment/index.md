@@ -132,5 +132,6 @@ Validate other role-specific areas (WebDAV, WOPI, mail, trash, and so on) accord
 - Preparing HTTPS: see [Reverse Proxy](/en/deployment/reverse-proxy)
 - Preparing Prometheus / Grafana: see [Monitoring and Grafana](/en/deployment/monitoring)
 - Want to confirm exactly what first startup does automatically: see [First-Start Checklist](/en/deployment/runtime-behavior)
-- Preparing to upgrade: see [Upgrades and Browser Cache](/en/deployment/frontend-assets)
+- Preparing to upgrade: see [Upgrade and Version Migration](/en/deployment/upgrade)
+- Browser still shows the old UI after an upgrade: see [Frontend Asset Cache](/en/deployment/frontend-assets)
 - Want to establish or rerun performance baselines: see [Performance Benchmarking and Load Testing](/en/deployment/performance-benchmarking)

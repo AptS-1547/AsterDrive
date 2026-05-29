@@ -39,6 +39,8 @@ Primary node is already available
   |
   +-- Admin -> Follower Nodes: create node record
   |     |
+  |     +-- Choose direct, reverse tunnel, or auto transport
+  |     |
   |     +-- Generate one-time enroll command
   |
   +-- Follower node: run node enroll
@@ -83,23 +85,24 @@ Admin -> System Settings -> Site Configuration -> Public site URL
 
 If this is not set to a real reachable HTTP(S) origin, the admin console cannot sign the command. With multiple origins, the enroll command uses the first line as the primary address, so place the primary address reachable by the follower on the first line.
 
-### `base_url` Decides Whether the Primary Can Actively Reach the Follower
+### Choose Transport Before Deciding `base_url`
 
-When creating a remote node record, `base_url` can be left empty temporarily.
-This lets you register and enroll first, but the primary node later has two limits:
+When creating a remote node record, choose one of three transport modes:
 
-- It cannot actively test connectivity
-- It cannot really send remote storage traffic to the follower
+| Transport | How to fill `base_url` | Best for |
+| --- | --- | --- |
+| Direct | Required; an HTTP(S) follower address reachable by the primary | Same datacenter, same private network, VPN, existing reverse proxy |
+| Reverse tunnel | Can stay empty | The follower can reach the primary, but the primary cannot connect back to the follower |
+| Auto | Uses direct when `base_url` is set; uses reverse tunnel when it is empty | Let the presence of an address decide the route |
 
-So the conclusion is simple:
+`auto` does not fail over to the reverse tunnel after a direct connection fails. It only checks whether `base_url` is empty.
 
-- **Only registering first**: `base_url` can be empty
-- **If it needs to serve a remote storage policy**: you must fill an `http://` or `https://` address reachable by the primary
+If a remote policy needs `presigned` upload or download, use direct transport and make sure browsers can also reach the follower `base_url`. Reverse tunnel is suitable for `relay_stream`; it currently cannot generate presigned URLs that browsers use to connect directly to the follower.
 
-::: warning Current boundary for followers behind NAT
-The current version has no reverse-connection channel. If the follower can actively access the primary but the primary cannot actively access the follower, enroll may complete, but remote storage capability probing, ingress target synchronization, and object reads/writes will not work normally.
+::: warning Reverse tunnel is still under test
+Reverse tunnel lets the follower actively connect to the primary and does not require the primary to connect back to the follower. It still depends on the follower being able to reach the primary `public_site_url`, and proxies or firewalls in between must not block WebSocket or long-lived connections.
 
-This direction is tracked in [issue #136](https://github.com/AptS-1547/AsterDrive/issues/136). For now, if you want to use a follower as a remote storage policy, the primary still needs to reach the follower's `base_url`.
+If your network can already make the follower reliably reachable from the primary, direct transport is still easier to operate in production.
 :::
 
 ### Use a Local Ingress Target First
@@ -122,9 +125,9 @@ Before connecting a follower, confirm:
 
 - The primary admin console opens normally
 - `Public site URL` is set
-- You have decided the namespace to assign to this follower
+- You have decided the follower name and transport mode
 
-The namespace does not need to be complex. For a first test, split by environment, region, or tenant, for example:
+The name does not need to be complex. For a first test, name it by environment, region, or tenant, for example:
 
 - `home-storage`
 - `hangzhou-a`
@@ -184,8 +187,8 @@ Admin -> Follower Nodes
 The three most important fields when creating the record:
 
 - **Name**: human-readable, for recognizing it in the admin console and policies
-- **Namespace**: the object prefix agreed by primary and follower
-- **`base_url`**: the address the primary will use to access the follower
+- **Transport mode**: direct, reverse tunnel, or auto
+- **`base_url`**: required for direct; optional for reverse tunnel; in auto mode, empty means reverse tunnel and non-empty means direct
 
 After saving, the admin console generates a one-time command, roughly like:
 
@@ -211,7 +214,7 @@ aster_drive node enroll \
 This command does several things:
 
 - Exchanges the token with the primary node for one-time bootstrap configuration
-- Writes primary binding and receive namespace into the follower locally
+- Writes the primary binding locally on the follower; the object isolation prefix is generated automatically by the follower
 - Writes the enroll receipt back to the primary node so the primary knows this enrollment has completed
 
 Note that this step **does not automatically create an ingress target**.
@@ -228,6 +231,8 @@ So the flow must be:
 1. Run `node enroll`
 2. Restart the follower service
 3. Return to the primary node and click "Test connection"
+
+The connection test uses the node's current transport mode: direct nodes access `base_url`; reverse-tunnel nodes use the outbound channel maintained by the follower. For reverse tunnel, wait a few dozen seconds after restart and test after the tunnel status becomes online.
 
 One easy-to-misread detail:
 
@@ -277,9 +282,10 @@ Successful enroll only means the primary-follower identity binding succeeded.
 Before actually receiving objects, the follower still needs an applied default ingress target. Otherwise, remote policy uploads return "no default ingress target yet".
 :::
 
-Ingress targets are pushed by the primary through the follower API, so there are two more prerequisites:
+Ingress targets are pushed by the primary through the follower API, so there are a few more prerequisites:
 
-- The remote node must have a `base_url` reachable by the primary
+- Direct nodes must have a `base_url` reachable by the primary
+- Reverse tunnel nodes, and `auto` nodes with empty `base_url`, must show the tunnel as online
 - The current follower can only bind to one primary; multiple primary bindings reject this managed ingress target mode
 
 ## 7. Create a Remote Storage Policy on the Primary
@@ -296,7 +302,7 @@ Its biggest differences from local / S3 policies are:
 
 - The real network transfer, access key, and signature are all handled by the "remote node" record
 - The policy itself only controls remote path prefix, upload limits, and whether it is the default
-- A remote storage policy can only bind to a remote node that is **enabled and has `base_url` configured**
+- A remote storage policy should bind to a remote node that is **enrolled, enabled, and reachable through its current transport mode**
 - Where the follower actually writes is decided by the default ingress target from the previous step
 
 In other words, **remote storage policies no longer configure endpoint, access key, or secret key**. That layer is already managed by the remote node record.
@@ -305,14 +311,14 @@ After creating the policy, put it into a policy group or set it as the default r
 
 ## Protocol Capabilities and Extra Requirements for `presigned`
 
-Remote policies check more than whether `base_url` is reachable. The primary validates follower capabilities according to the upload/download mode of the current policy:
+Remote policies check more than whether the current transport can connect. The primary validates follower capabilities according to the upload/download mode of the current policy:
 
 - Basic reads/writes require object `GET`, `HEAD`, `PUT`, and `DELETE`
 - Folder and object maintenance require `list`, `compose`, and `metadata`
 - Preview, resume, and streaming reads require `range_get` and `accept_ranges_header`
-- Remote `presigned` upload or download also requires `browser_presigned_cors`
+- Remote `presigned` upload or download also requires `browser_presigned_cors`, and the remote node must not be using reverse tunnel
 
-If you choose remote `presigned`, the browser accesses the follower directly, so the follower's reverse proxy must also pass the CORS headers of the internal storage API.
+If you choose remote `presigned`, the browser accesses the follower directly. Use direct transport, make sure browsers can reach the follower `base_url`, and make sure the follower's reverse proxy passes the CORS headers of the internal storage API.
 
 Upload `presigned` requires at least:
 
@@ -330,17 +336,13 @@ The browser CORS contract declared by the default follower currently covers `con
 
 ### Can `base_url` Be Empty and Still enroll?
 
-Yes.
+Yes, but it depends on the transport mode:
 
-But the result is only:
+- `direct`: you can only save the record and complete enrollment. Without `base_url`, the primary cannot test connectivity or send remote storage traffic.
+- `reverse_tunnel`: after the follower restarts, it actively connects to the primary. Once the tunnel is online, you can test connectivity, push ingress targets, and use `relay_stream` remote policies.
+- `auto`: empty `base_url` behaves like reverse tunnel; a non-empty `base_url` behaves like direct.
 
-- The primary saves the node record
-- The follower writes the primary binding
-
-It still cannot:
-
-- Let the primary actively test connectivity
-- Really write remote storage traffic to this node
+For any mode, remote `presigned` upload/download requires direct transport and a follower `base_url` reachable from the browser.
 
 ### Can the Follower Node Be Opened for Regular User Login?
 

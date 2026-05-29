@@ -64,6 +64,15 @@ fn content_sha256_sql_condition(backend: DbBackend, column: &str) -> String {
     }
 }
 
+fn i64_cast_sql(backend: DbBackend, expr: &str) -> String {
+    let type_name = match backend {
+        DbBackend::Postgres => "BIGINT",
+        DbBackend::MySql => "SIGNED",
+        DbBackend::Sqlite | _ => "INTEGER",
+    };
+    format!("CAST({expr} AS {type_name})")
+}
+
 // `find_or_create_blob()` only retries short-lived races:
 // 1. another transaction inserted the same (hash, policy_id) row but has not become visible yet;
 // 2. a cleanup worker deleted a zero-ref blob after we read it but before we bumped ref_count.
@@ -138,10 +147,18 @@ pub async fn summarize_blob_hash_kinds_by_policy<C: ConnectionTrait>(
         DbBackend::MySql => "hash REGEXP '^[0-9A-Fa-f]{64}$'",
         DbBackend::Sqlite | _ => "length(hash) = 64 AND hash NOT GLOB '*[^0-9A-Fa-f]*'",
     };
+    let content_count = i64_cast_sql(
+        backend,
+        &format!("COALESCE(SUM(CASE WHEN {condition} THEN 1 ELSE 0 END), 0)"),
+    );
+    let opaque_count = i64_cast_sql(
+        backend,
+        &format!("COALESCE(SUM(CASE WHEN {condition} THEN 0 ELSE 1 END), 0)"),
+    );
     let sql = format!(
         "SELECT \
-            COALESCE(SUM(CASE WHEN {condition} THEN 1 ELSE 0 END), 0) AS content_sha256_count, \
-            COALESCE(SUM(CASE WHEN {condition} THEN 0 ELSE 1 END), 0) AS opaque_count \
+            {content_count} AS content_sha256_count, \
+            {opaque_count} AS opaque_count \
          FROM file_blobs WHERE policy_id = ?"
     );
     let statement = match backend {
@@ -266,10 +283,11 @@ pub async fn summarize_missing_blobs_between_policies<C: ConnectionTrait>(
 ) -> Result<StoragePolicyMissingBlobSummary> {
     let backend = db.get_database_backend();
     let content_hash_condition = content_sha256_sql_condition(backend, "source.hash");
+    let total_size = i64_cast_sql(backend, "COALESCE(SUM(source.size), 0)");
     let sql = match backend {
         DbBackend::Postgres => {
             format!(
-                r#"SELECT COUNT(*) AS count, COALESCE(SUM(source.size), 0) AS total_size
+                r#"SELECT COUNT(*) AS count, {total_size} AS total_size
                FROM file_blobs source
                WHERE source.policy_id = $1
                  AND NOT EXISTS (
@@ -283,7 +301,7 @@ pub async fn summarize_missing_blobs_between_policies<C: ConnectionTrait>(
         }
         DbBackend::MySql | DbBackend::Sqlite | _ => {
             format!(
-                r#"SELECT COUNT(*) AS count, COALESCE(SUM(source.size), 0) AS total_size
+                r#"SELECT COUNT(*) AS count, {total_size} AS total_size
                FROM file_blobs source
                WHERE source.policy_id = ?
                  AND NOT EXISTS (

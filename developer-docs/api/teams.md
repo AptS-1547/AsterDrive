@@ -134,7 +134,7 @@
 - 团队 `POST /teams/{team_id}/files/{id}/extract` 语义和个人空间一致：创建 `archive_extract` 任务，不会同步阻塞到解包完成
 - 团队 `POST /teams/{team_id}/files/{id}/extract` 支持 `filename_encoding`，且 `target_folder_id = null` 时默认解包到源压缩包所在目录
 - 团队 `POST /teams/{team_id}/batch/archive-compress` 语义和个人空间一致：创建 `archive_compress` 任务，把打包结果写回团队工作空间；`target_folder_id = null` 时优先写回选中项的共同父目录，没有共同父目录时写回团队根目录
-- 团队 `GET /teams/{team_id}/files/{id}/archive-preview` 语义和个人空间一致：目前支持 ZIP 和 7z，只读返回 manifest；缓存未生成时创建或复用 `archive_preview_generate` 任务并返回 `202`
+- 团队 `GET /teams/{team_id}/files/{id}/archive-preview` 语义和个人空间一致：目前支持 ZIP，只读返回 manifest；缓存未生成时创建或复用 `archive_preview_generate` 任务并返回 `202`
 
 团队文件的 `GET /teams/{team_id}/files/{id}/direct-link` 语义和个人空间一致：接口只返回 token，真正下载仍然走根路径 `/d/{token}/{filename}`。默认 inline 直链由 AsterDrive 流式返回；追加 `?download=1` 后会复用附件下载分流，命中 `presigned` 策略时返回 `302`。
 

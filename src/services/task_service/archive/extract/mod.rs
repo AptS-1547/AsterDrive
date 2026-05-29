@@ -36,8 +36,7 @@ use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 use import::materialize_archive_extract_stage;
 use staging::{
     ArchiveExtractLimits, ArchiveExtractPolicyResolver, ArchiveExtractStageOptions,
-    StageArchiveForExtractParams, download_file_to_temp, stage_seven_zip_archive_for_extract,
-    stage_zip_archive_for_extract,
+    StageArchiveForExtractParams, download_file_to_temp, stage_zip_archive_for_extract,
 };
 
 pub(crate) async fn create_archive_extract_task_in_scope(
@@ -168,9 +167,6 @@ pub(super) async fn process_archive_extract_task(
             };
             let staged = match archive_format {
                 ArchiveFormat::Zip => stage_zip_archive_for_extract(stage_params, &mut steps)?,
-                ArchiveFormat::SevenZip => {
-                    stage_seven_zip_archive_for_extract(stage_params, &mut steps)?
-                }
             };
             Ok::<_, AsterError>((staged, steps))
         })
@@ -399,7 +395,7 @@ async fn cleanup_created_extract_root(
 
 fn ensure_extract_source_supported(source_file: &file::Model) -> Result<ArchiveFormat> {
     detect_archive_extract_format(source_file).ok_or_else(|| {
-        AsterError::validation_error("online extract currently supports .zip and .7z files only")
+        AsterError::validation_error("online extract currently supports .zip files only")
     })
 }
 
@@ -416,7 +412,7 @@ fn resolve_extract_output_folder_name(
 }
 
 fn default_extract_output_folder_name(source_file_name: &str) -> String {
-    for archive_format in [ArchiveFormat::Zip, ArchiveFormat::SevenZip] {
+    for archive_format in [ArchiveFormat::Zip] {
         if let Some(stripped) = archive_format.strip_extension(source_file_name)
             && !stripped.is_empty()
         {

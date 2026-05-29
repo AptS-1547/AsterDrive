@@ -15,9 +15,6 @@ describe("archive preview format capabilities", () => {
 		expect(getArchivePreviewFormatCapabilities("zip")).toEqual({
 			filenameEncoding: true,
 		});
-		expect(getArchivePreviewFormatCapabilities("7z")).toEqual({
-			filenameEncoding: false,
-		});
 	});
 
 	it("falls back to conservative defaults for unknown formats", () => {

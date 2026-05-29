@@ -334,10 +334,10 @@ Check by driver type:
 
 - `local`: check directory permissions and disk space
 - `s3`: check endpoint, credentials, and whether the bucket exists; if the S3 side is slow or down, AsterDrive's configured timeout may trigger
-- `remote`: check whether the bound remote node is enabled, whether `base_url` is reachable, and whether the follower has completed enrollment and is healthy; also confirm the follower has an applied default ingress target
+- `remote`: check whether the bound remote node is enabled, whether the current transport mode passes connection testing, and whether the follower has completed enrollment and is healthy; also confirm the follower has an applied default ingress target
 - Other: read the concrete error
 
-If the remote policy uses `presigned`, also check whether the remote node capability summary supports internal protocol `v2` and `browser_presigned_cors`. When the browser connects directly to the follower, CORS must allow `content-type` / `range` and expose response headers such as `ETag`, `Accept-Ranges`, `Content-Range`, and `Content-Length`.
+If the remote policy uses `presigned`, also check whether the remote node uses direct transport, whether browsers can reach the follower `base_url`, and whether the remote node capability summary supports internal protocol `v2` and `browser_presigned_cors`. When the browser connects directly to the follower, CORS must allow `content-type` / `range` and expose response headers such as `ETag`, `Accept-Ranges`, `Content-Range`, and `Content-Length`.
 
 ### `storage_quota_exceeded` (4002)
 

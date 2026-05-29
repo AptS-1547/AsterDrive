@@ -2,6 +2,8 @@
 
 这组接口是主节点和 follower 节点之间的内部对象存储协议，不是给浏览器前端或第三方普通客户端用的公开 API。
 
+这页描述的是 follower 侧实际执行对象读写的 `/api/v1/internal/storage/*`。primary 侧还有一组 reverse tunnel 内部入口 `/api/v1/internal/remote-tunnel/*`，用于让不能被 primary 直连的 follower 主动连回 primary。
+
 以下路径都相对于：
 
 ```text
@@ -9,6 +11,25 @@
 ```
 
 并且只会在 `follower` 节点注册。
+
+## Direct 与 Reverse Tunnel
+
+远端节点的对象协议有两层，别混在一起看：
+
+- `/api/v1/internal/storage/*` 只在 follower 注册，是实际对象读写、绑定同步、ingress profile 管理的协议。
+- `/api/v1/internal/remote-tunnel/*` 只在 primary 注册，是 reverse tunnel 的控制面和传输入口。
+
+`direct` 模式下，primary 直接请求 follower 的 `/api/v1/internal/storage/*`。`reverse_tunnel` 模式下，primary 把同样的内部存储请求登记到 tunnel registry，follower 主动向 primary 轮询或建立 WebSocket 连接取走请求，再在本地调用内部存储处理逻辑并回传响应。
+
+primary 侧 reverse tunnel 当前入口：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/v1/internal/remote-tunnel/poll` | follower 长轮询待处理请求 |
+| `POST` | `/api/v1/internal/remote-tunnel/complete` | follower 回传轮询请求的处理结果 |
+| `GET` | `/api/v1/internal/remote-tunnel/connect` | follower 建立 WebSocket 流式 tunnel |
+
+这组 reverse tunnel 接口同样使用远端节点签名鉴权，不是浏览器或第三方客户端 API。
 
 ## 认证方式
 

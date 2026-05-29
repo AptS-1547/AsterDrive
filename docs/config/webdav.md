@@ -14,14 +14,16 @@
 [webdav]
 prefix = "/webdav"
 payload_limit = 10737418240
+xml_payload_limit = 1048576
 ```
 
 | 选项 | 默认值 | 作用 |
 | --- | --- | --- |
 | `prefix` | `"/webdav"` | WebDAV 路径前缀；改完客户端地址也要一起改 |
-| `payload_limit` | `10737418240` | WebDAV 上传体积硬上限，默认 10 GiB |
+| `payload_limit` | `10737418240` | WebDAV 文件写入请求体硬上限，默认 10 GiB |
+| `xml_payload_limit` | `1048576` | WebDAV XML 类请求体硬上限，默认 1 MiB；用于 `PROPFIND`、`PROPPATCH`、`REPORT`、`LOCK` |
 
-::: warning 这两项改完要重启服务
+::: warning 这些静态项改完要重启服务
 和后台总开关不一样，静态配置只在启动时读一次。
 :::
 
@@ -89,6 +91,8 @@ https://你的域名/dav/
 3. 存储策略里的单文件大小限制
 
 任何一个卡住，整体就卡住——排查时三处都要看。
+
+`xml_payload_limit` 不限制文件内容上传，它只限制 WebDAV 的 XML 控制请求。除非客户端发出特别大的目录查询、锁请求或属性更新请求，否则一般不用调整。
 
 ## 反向代理时不要丢这些
 

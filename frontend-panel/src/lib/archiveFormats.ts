@@ -1,4 +1,4 @@
-export type SupportedArchiveFormat = "zip" | "7z";
+export type SupportedArchiveFormat = "zip";
 
 type ArchiveFileLike = {
 	name: string;
@@ -7,14 +7,11 @@ type ArchiveFileLike = {
 
 const archiveFormatByExtension: Record<string, SupportedArchiveFormat> = {
 	zip: "zip",
-	"7z": "7z",
 };
 
 const archivePreviewFormatByMime: Record<string, SupportedArchiveFormat> = {
 	"application/zip": "zip",
 	"application/x-zip-compressed": "zip",
-	"application/x-7z": "7z",
-	"application/x-7z-compressed": "7z",
 };
 
 function fileExtension(name: string) {

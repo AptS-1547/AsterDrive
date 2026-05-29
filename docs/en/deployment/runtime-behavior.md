@@ -44,7 +44,7 @@ Default background task frequencies:
 - Background task queue scans every `5` seconds.
 - Periodic cleanup runs every `1` hour.
 - Low-level file consistency check runs every `6` hours.
-- Enabled follower nodes with a configured `base_url` are probed every `5` minutes.
+- Enabled, enrolled follower nodes whose current transport can be used are probed every `5` minutes.
 
 Periodic cleanup covers by default:
 

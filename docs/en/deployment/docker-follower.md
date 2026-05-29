@@ -24,7 +24,7 @@ At minimum:
 
 - The primary admin panel can open normally.
 - `Admin -> System Settings -> Site Configuration -> Public Site URL` is set to a real reachable HTTP(S) origin. If multiple origins are configured, put the primary origin that the follower can reach on the first line.
-- You have decided this follower's name, namespace, and the future `base_url` the primary node will use to access it.
+- You have decided this follower's name, and whether it should use direct, reverse tunnel, or auto transport.
 
 ### 2. The Follower Must Have Its Own Independent `data/`
 
@@ -37,9 +37,9 @@ The primary node and follower **must never share**:
 
 A follower node is not "another copy of the primary node". It is another independent AsterDrive instance.
 
-### 3. The Primary Node Must Be Able to Access the Follower `base_url`
+### 3. Decide Between Direct and Reverse Tunnel
 
-If the primary and follower run on different machines, `base_url` will usually be one of:
+If you choose **direct** transport, the primary must be able to access the follower `base_url`. On different machines, it is usually one of:
 
 - `https://follower.example.com`
 - `http://10.0.0.23:3000`
@@ -49,9 +49,9 @@ If both instances are in a Docker network and the primary can resolve the contai
 Do not default to `http://localhost:3000`; that usually only works from the follower itself.
 
 ::: tip If the follower is behind NAT or CGNAT
-The current Docker bootstrap solves "automatic first enrollment for a follower node". It does not yet solve "the primary cannot connect back to the follower but still needs to read and write objects".
+If the primary cannot reach the follower, but the follower can reach the primary public site URL, choose **reverse tunnel** or `auto` with an empty `base_url` when creating the remote node.
 
-If the primary cannot access the follower `base_url`, follower storage policies still cannot work reliably. An outbound-only reverse channel is being tracked in [issue #136](https://github.com/AptS-1547/AsterDrive/issues/136).
+Reverse tunnel is still under test and is suitable for `relay_stream` upload/download. If you need remote `presigned` upload or download, you still need direct transport, and browsers must also be able to reach the follower `base_url`.
 :::
 
 ### 4. The Token Is Single-Use
@@ -74,8 +74,8 @@ Admin -> Follower Nodes
 Create a follower node record first, and at least fill in:
 
 - name
-- namespace
-- `base_url`
+- transport mode
+- `base_url`: required for direct; optional for reverse tunnel; in auto mode, empty means reverse tunnel
 
 After saving, the admin panel generates enrollment information. The Docker follower needs these two values at startup:
 
@@ -196,7 +196,7 @@ Then go back to the primary admin panel:
 Admin -> Follower Nodes
 ```
 
-Click "Test Connection". After it passes, open the follower node details and create a **default receiving target**.
+Click "Test Connection". Direct nodes access `base_url`; reverse-tunnel nodes use the outbound channel maintained by the follower, which may need a few dozen seconds after startup before it becomes online. After the test passes, open the follower node details and create a **default receiving target**.
 
 When the connection test passes, the primary also reads the follower's internal storage protocol capabilities. The current internal protocol version is `v2`. If the capability summary says the protocol is incompatible, upgrade the primary or follower before creating remote policies.
 
@@ -217,7 +217,7 @@ Admin -> Storage Policies
 
 Create a storage policy of type `Follower Node`.
 
-If the follower policy uses `presigned` upload or download, also confirm the browser can access the follower `base_url`, and that the reverse proxy in front of the follower does not strip CORS headers from internal storage APIs. Uploads need to allow `content-type` and expose `ETag`; Range downloads need to allow `range` and expose `Accept-Ranges`, `Content-Range`, and `Content-Length`.
+If the follower policy uses `presigned` upload or download, also confirm the remote node uses direct transport, the browser can access the follower `base_url`, and the reverse proxy in front of the follower does not strip CORS headers from internal storage APIs. Uploads need to allow `content-type` and expose `ETag`; Range downloads need to allow `range` and expose `Accept-Ranges`, `Content-Range`, and `Content-Length`.
 
 ## 6. Remove Single-Use Bootstrap ENV After First Success
 
@@ -253,10 +253,12 @@ This usually means the follower process is alive, but the primary binding has no
 
 ### The Follower Starts, but the Primary Connection Test Fails
 
-Check these three things first:
+Check these things first:
 
-- Whether the `base_url` in the primary admin panel is an address the primary can actually reach.
-- Whether port mapping, reverse proxy, or NAT routes traffic correctly to the follower's `3000`.
+- Whether the remote node transport mode is correct.
+- In direct mode, whether the `base_url` in the primary admin panel is an address the primary can actually reach.
+- In reverse tunnel mode, whether the follower can reach the primary public site URL, and whether proxies or firewalls block WebSocket / long-lived connections.
+- In direct mode, whether port mapping, reverse proxy, or NAT routes traffic correctly to the follower's `3000`.
 - Whether the follower `server.host` allows external access.
 
 ### Existing `/data/config.toml` Still Says `primary`

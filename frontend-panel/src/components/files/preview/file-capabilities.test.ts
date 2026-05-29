@@ -532,9 +532,7 @@ describe("file preview capabilities", () => {
 		expect(detectFilePreviewProfile(archive).defaultMode).toBe(
 			"builtin.archive",
 		);
-		expect(detectFilePreviewProfile(sevenZip).defaultMode).toBe(
-			"builtin.archive",
-		);
+		expect(detectFilePreviewProfile(sevenZip).defaultMode).toBeNull();
 	});
 
 	it("does not expose archive preview for unsupported archive MIME types", () => {

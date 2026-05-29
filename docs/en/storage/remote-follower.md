@@ -18,12 +18,14 @@ Follower nodes are suitable for these scenarios:
 
 It is not a multi-primary cluster or automatic failover. The primary node is still the only control plane.
 
-::: warning The current version requires the primary node to access the follower node
-The current remote storage policy still requires the primary node to actively access the follower node's `base_url`.
+::: warning Choose transport according to your network
+Follower nodes now have three transport modes:
 
-If the follower node is behind NAT, CGNAT, or a private-only network, and it can only actively access the primary node while the primary node cannot connect back to it, enrollment may still complete, but later capability probes, ingress target synchronization, and object reads and writes will fail.
+- `direct`: the primary connects directly to the follower `base_url`
+- `reverse_tunnel`: the follower actively connects to the primary, and `base_url` can stay empty
+- `auto`: direct when `base_url` is set, reverse tunnel when it is empty
 
-This type of "outbound-only" follower node access requires a reverse connection channel and is being tracked in [issue #136](https://github.com/AptS-1547/AsterDrive/issues/136). Before that capability lands, make the follower node reachable by the primary node through a public domain, routable private network, VPN, WireGuard, frp, or a reverse proxy.
+If the follower is behind NAT, CGNAT, or a private-only network and can only reach the primary outbound, choose reverse tunnel. Reverse tunnel is still under test and is suitable for `relay_stream` upload/download. If you need `presigned`, you still need direct transport, and browsers must also be able to reach the follower `base_url`.
 :::
 
 ## First, Separate the Three Layers
@@ -63,13 +65,14 @@ Confirm that the target node meets these conditions:
 
 - Enrollment is complete
 - It is enabled
-- `base_url` is an address the primary node can access
-- The current network is not a "follower node can only make outbound connections, and the primary node cannot connect back" scenario
+- The transport mode matches the network topology
+- If using direct transport, `base_url` is an address the primary node can access
+- If using reverse tunnel, the tunnel status is online
 - "Test Connection" succeeds
 - The internal protocol version in the capability summary is compatible with the current primary node; currently `v2` is required
 - `/health/ready` returns successfully
 
-If `base_url` is empty, you can complete enrollment first, but the node cannot actually receive remote storage traffic. Before production, you must fill in an HTTP(S) address that the primary node can access.
+If `base_url` is empty, only `reverse_tunnel` or `auto` can carry remote traffic. A `direct` node must have an HTTP(S) address reachable by the primary. Before production, confirm that "Test Connection" passes with the current transport mode.
 
 ## 2. Create the Default Ingress Target
 
@@ -177,7 +180,7 @@ Advantages:
 
 - The browser only needs to access the primary node
 - The troubleshooting path is clear
-- The follower node requires less public exposure
+- Works with both direct transport and reverse tunnel
 
 Trade-off:
 
@@ -190,18 +193,20 @@ During upload or download, the browser directly accesses a short-lived URL gener
 Suitable when:
 
 - You want to reduce bandwidth pressure on the primary node
+- The remote node uses direct transport
 - The browser can reliably access the follower node `base_url`
 - The reverse proxy already exposes the follower node correctly
 
 Before using it, confirm:
 
+- The remote node transport is not reverse tunnel
 - The follower node `base_url` is reachable from the browser
 - The HTTPS certificate is trusted
 - The reverse proxy does not intercept upload / download paths or required response headers
 - The follower node ingress target has been applied successfully
 - The primary node connection test shows that the follower supports `browser_presigned_cors`
 
-If the primary node can access the follower node, but user browsers cannot, do not use remote `presigned`.
+If the primary node can access the follower node, but user browsers cannot, do not use remote `presigned`. If the remote node uses reverse tunnel, also avoid `presigned` and use `relay_stream` instead.
 
 Browser CORS requirements for remote `presigned` are stricter than ordinary primary-node relaying:
 
@@ -308,7 +313,8 @@ Changing a policy group only affects future uploads. Old files are still read th
 
 Check regularly:
 
-- Whether the connection test from the primary node to the follower node succeeds
+- Whether the remote node connection test succeeds
+- If reverse tunnel is used, whether the tunnel is online and has no recent errors
 - Whether the follower node `/health/ready` is normal
 - Whether the default ingress target is still applied
 - Whether the follower ingress root directory has enough disk space
@@ -318,3 +324,56 @@ Check regularly:
 
 The follower node's local ingress directory is formal data and must be included in the backup strategy.  
 If the ingress target is S3, handle it according to the backup and versioning strategy for object storage.
+
+## 12. Common Issues
+
+### Primary Connection Test Fails
+
+Check first:
+
+- Whether the remote node transport mode is correct
+- In direct mode, whether `base_url` is an address the primary can actually reach
+- In reverse tunnel mode, whether the follower can reach the primary `public_site_url`, and whether proxies allow WebSocket and long-lived connections
+- Whether the follower service is running
+- Whether the follower is listening on an externally reachable address
+- Whether the reverse proxy or firewall allows the traffic
+- Whether `/health/ready` returns successfully
+- Whether the internal protocol version returned by the follower is compatible with the current primary; the current primary requires `v2`
+
+### remote Policy Upload Fails
+
+Check in this order:
+
+1. Whether the remote node is enabled
+2. Whether enrollment is complete
+3. Whether an applied default ingress target exists
+4. Whether the follower ingress root directory is writable
+5. Whether policy group rules really match the remote policy
+6. Whether the user or team quota is already full
+7. Whether the primary and follower logs contain matching errors
+
+### `presigned` Fails but `relay_stream` Works
+
+This usually means the path from primary to follower is fine, but the browser-to-follower path is not.
+
+Check:
+
+- Whether the remote node uses direct transport
+- Whether the browser can access the follower `base_url`
+- Whether the HTTPS certificate is trusted
+- Whether the reverse proxy forwards upload/download paths
+- Whether CORS allows `content-type` / `range`
+- Whether responses expose `ETag`, `Accept-Ranges`, `Content-Range`, and `Content-Length`
+- Whether a company network or browser policy blocks the follower domain
+
+### Existing Files Suddenly Disappear
+
+First confirm whether anyone recently changed:
+
+- the remote node bound by the remote policy
+- the follower ingress target
+- `managed_ingress_local_root`
+- the follower local directory
+- the S3 endpoint / bucket / prefix used by the follower ingress target
+
+All of these fields decide where old objects live. Do not directly edit a real target that is already in use.

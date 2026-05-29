@@ -3,35 +3,30 @@ use crate::entities::file;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ArchiveFormat {
     Zip,
-    SevenZip,
 }
 
 impl ArchiveFormat {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Zip => "zip",
-            Self::SevenZip => "7z",
         }
     }
 
     pub(crate) const fn raw_manifest_cache_name(self) -> &'static str {
         match self {
             Self::Zip => "zip_raw_manifest.v2",
-            Self::SevenZip => "7z_raw_manifest.v2",
         }
     }
 
     pub(crate) const fn temp_file_name(self) -> &'static str {
         match self {
             Self::Zip => "source.zip",
-            Self::SevenZip => "source.7z",
         }
     }
 
     pub(crate) fn strip_extension(self, name: &str) -> Option<&str> {
         let extension = match self {
             Self::Zip => ".zip",
-            Self::SevenZip => ".7z",
         };
         if ends_with_ignore_ascii_case(name, extension) && name.len() > extension.len() {
             Some(&name[..name.len() - extension.len()])
@@ -47,9 +42,6 @@ pub(crate) fn detect_archive_extract_format(source_file: &file::Model) -> Option
     if ends_with_ignore_ascii_case(&source_file.name, ".zip") {
         return Some(ArchiveFormat::Zip);
     }
-    if ends_with_ignore_ascii_case(&source_file.name, ".7z") {
-        return Some(ArchiveFormat::SevenZip);
-    }
     None
 }
 
@@ -59,19 +51,13 @@ pub(crate) fn detect_archive_preview_format(source_file: &file::Model) -> Option
         return Some(ArchiveFormat::Zip);
     }
     if ends_with_ignore_ascii_case(&source_file.name, ".7z") {
-        return Some(ArchiveFormat::SevenZip);
+        return None;
     }
     if matches!(
         mime.as_str(),
         "application/zip" | "application/x-zip-compressed"
     ) {
         return Some(ArchiveFormat::Zip);
-    }
-    if matches!(
-        mime.as_str(),
-        "application/x-7z" | "application/x-7z-compressed"
-    ) {
-        return Some(ArchiveFormat::SevenZip);
     }
     None
 }
@@ -114,7 +100,7 @@ mod tests {
     fn detect_archive_preview_format_prefers_extension_over_mime() {
         assert_eq!(
             detect_archive_preview_format(&source_file("bundle.7z", "application/zip")),
-            Some(ArchiveFormat::SevenZip)
+            None
         );
         assert_eq!(
             detect_archive_preview_format(&source_file(

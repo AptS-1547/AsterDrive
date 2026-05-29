@@ -505,7 +505,7 @@ async fn file_media_metadata_extracts_image_and_reuses_blob_cache() {
         .expect("media metadata task should be queued");
     assert_eq!(task.status, BackgroundTaskStatus::Pending);
     let payload: Value = serde_json::from_str(task.payload_json.as_ref()).unwrap();
-    assert_eq!(payload["kind"], "image");
+    assert_eq!(payload["media_kind"], "image");
     assert_eq!(task.max_attempts, 3);
 
     let stats = aster_drive::services::task_service::drain(&state)
@@ -559,7 +559,7 @@ async fn file_media_metadata_extracts_image_and_reuses_blob_cache() {
             .as_ref(),
     )
     .unwrap();
-    assert_eq!(payload["kind"], "image");
+    assert_eq!(payload["media_kind"], "image");
     assert_eq!(stats.succeeded, 1);
 }
 

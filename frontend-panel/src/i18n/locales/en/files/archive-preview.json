@@ -27,7 +27,7 @@
 	"archive_preview_empty": "This archive does not contain visible entries.",
 	"archive_preview_no_matches": "No archive entries match this search.",
 	"archive_preview_disabled": "Archive preview is disabled by the administrator.",
-	"archive_preview_unsupported_type": "Archive preview currently supports ZIP and 7z files only.",
+	"archive_preview_unsupported_type": "Archive preview currently supports ZIP files only.",
 	"archive_preview_source_too_large": "This archive exceeds the preview size limit set by the administrator.",
 	"archive_preview_invalid_archive": "This file is not a valid archive.",
 	"archive_preview_encoding_failed": "This filename encoding cannot decode the archive. Choose a different filename encoding and try again.",

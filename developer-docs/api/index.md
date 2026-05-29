@@ -15,6 +15,7 @@
 - `primary` 节点：
   - 普通用户 REST API
   - 公开分享 API
+  - 远端节点 reverse tunnel 内部入口 `/api/v1/internal/remote-tunnel/*`
   - WebDAV
   - 前端页面
   - 健康检查
@@ -25,7 +26,7 @@
 这意味着：
 
 - 你在浏览器、前端 SDK、公开分享页会碰到的，基本都在本目录这些页面里
-- `/api/v1/internal/storage/*` 是主从节点之间的内部协议，不是给浏览器客户端用的普通公开 API
+- `/api/v1/internal/storage/*` 和 `/api/v1/internal/remote-tunnel/*` 是主从节点之间的内部协议，不是给浏览器客户端用的普通公开 API
 
 ## 不在 `/api/v1` 下的入口
 
@@ -120,6 +121,7 @@
 - WebDAV 协议响应
 - Prometheus 指标
 - follower 内部对象读取流 `/api/v1/internal/storage/objects/{tail:.*}`
+- primary reverse tunnel WebSocket `/api/v1/internal/remote-tunnel/connect`
 
 公开品牌配置、公开预览应用配置、公开缩略图能力、公开媒体数据能力和公开 enrollment 虽然不需要登录，但仍然是普通 `/api/v1/public/*` JSON 接口。
 
@@ -155,6 +157,11 @@
   - `x-aster-nonce`
   - `x-aster-signature`
 - 某些对象 GET / PUT 也支持预签名 query 参数
+
+### Remote Tunnel 内部入口
+
+- follower 用远端节点签名头主动连接 primary 的 `/api/v1/internal/remote-tunnel/*`
+- 这组入口不支持浏览器预签名 query；它只负责 reverse tunnel 的轮询、完成回传和 WebSocket 流式通道
 
 ## 工作空间作用域
 
@@ -210,7 +217,7 @@
 - Office / WOPI 预览与回调：见 [WOPI](./wopi.md)
 - WebDAV 协议、账号与 DeltaV：见 [WebDAV](./webdav.md)
 - 登录页、匿名页、缩略图 / 媒体数据能力与远端节点注册握手：见 [公共接口](./public.md)
-- 主从节点内部对象协议：见 [内部存储协议（follower）](./internal-storage.md)
+- 主从节点内部对象协议和 reverse tunnel 内部入口：见 [内部存储协议（follower）](./internal-storage.md)
 - 后台策略、远端节点、存储迁移、文件 / Blob 可观测、外部认证 provider、锁、运行时配置与审计：见 [管理](./admin.md)
 
 ## OpenAPI 与 Swagger

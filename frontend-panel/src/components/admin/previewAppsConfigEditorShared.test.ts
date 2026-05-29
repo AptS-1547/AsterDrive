@@ -68,7 +68,7 @@ describe("previewAppsConfigEditorShared", () => {
 					provider: "url_template",
 				}),
 				expect.objectContaining({
-					extensions: ["zip", "7z"],
+					extensions: ["zip"],
 					key: "builtin.archive",
 					provider: "builtin",
 				}),

@@ -185,9 +185,10 @@ Administrators decide the pace of background work here. Default behavior:
 You can also tune:
 
 - Background task idle backoff maximum
-- Default background task concurrency limit
+- Reserved fallback background task concurrency limit. It is currently used only by future unclassified task kinds, not by existing task lanes
 - Concurrency limit for archive tasks: online compression, online extraction, and archive preview
 - Thumbnail generation task concurrency limit
+- Storage policy migration task concurrency limit
 - Maximum background task attempts
 - Share download rollback queue capacity
 - Share streaming playback session TTL
@@ -196,7 +197,7 @@ You can also tune:
 - Task list page size limit
 
 If there are no obvious performance issues, queue backlogs, or follower node detection delays, keep the defaults.  
-If you increase background task concurrency, online compression, online extraction, archive preview, and thumbnail tasks can run together more easily, and CPU, memory, and I/O pressure will increase with them.
+If you increase concurrency for the archive, thumbnail, or storage-migration lanes, matching tasks can run together more easily, and CPU, memory, network, and I/O pressure will increase with them. The reserved fallback concurrency cap is not a "global total concurrency" setting, so do not rely on it to limit every background task.
 
 Audio and video on share pages create a short-lived streaming playback session first to support Range playback. The default TTL is `3` hours, configurable from `5` minutes to `24` hours. Longer TTLs work better for long background music playback; shorter TTLs reduce the access window after a link leak.
 
@@ -211,7 +212,14 @@ This group decides "how long data is kept" and "how much space new objects get b
 | Team archive retention | `7` days |
 | Task retention | `24` hours |
 | New user default storage quota | `0` (unlimited) |
+| Online extraction source archive size limit | `512 MiB` |
 | Online extraction staging size limit | `2 GiB` |
+| Online extraction uncompressed size limit | `1 GiB` |
+| Online extraction entry count limit | `10000` |
+| Online extraction duration limit | `300` seconds |
+| Archive build entry count limit | `10000` |
+| Archive build total source size limit | `2 GiB` |
+| Archive build output size limit | `2 GiB` |
 | Archive preview global switch | Disabled |
 | Archive preview user-side switch | Disabled |
 | Archive preview share-side switch | Disabled |
@@ -220,6 +228,8 @@ This group decides "how long data is kept" and "how much space new objects get b
 | Archive preview manifest size limit | `64 KiB` |
 | Archive preview scan duration limit | `30` seconds |
 | Thumbnail source file size limit | `64 MiB` |
+| Media metadata extraction | Enabled |
+| Media metadata source file size limit | `256 MiB` |
 
 ::: warning Default quotas affect only new objects
 
@@ -244,6 +254,19 @@ All three are disabled by default. Enable them only when users really need to in
 Limits control source archive size, entry count, returned manifest size, and single-scan duration. When an archive is opened for the first time and the manifest has not been cached, the system creates an `archive_preview_generate` background task. After generation completes, reopening reuses the cached manifest.
 
 When users switch `filename encoding` in the preview toolbar, AsterDrive rereads or regenerates the manifest with the selected encoding. This is for old ZIP files or ZIP file names created across language environments that display as garbled text. It does not modify the original archive.
+
+### Online Extraction and Archive Building
+
+Online extraction, online compression, and folder archive download all use the archive background-task lane, and all of them use the server temporary directory. The defaults are sized for common personal and small-team files. Do not raise every limit immediately.
+
+If users often process large archives or large folders, check these settings separately:
+
+- **Online extraction source archive size limit**: rejects source archives that are too large
+- **Online extraction staging size limit**: counts the source archive downloaded locally plus files extracted into staging
+- **Online extraction uncompressed size, entry count, path depth, compression ratio, and duration limits**: protect against archive bombs and abnormal metadata-heavy archives
+- **Archive build entry count, total source size, and output size limits**: affect batch online compression and folder archive downloads
+
+Before raising these limits, confirm that the disk backing `server.temp_dir`, CPU, and archive-task concurrency can handle the extra load. Otherwise the usual result is not "larger files work", but "tasks queue longer or the temp disk fills faster".
 
 ### Media Processing
 
@@ -337,6 +360,8 @@ If you want to later investigate "who deleted files, who created shares, who cha
 | Trash, team archive, task artifact, audit log retention | Background cleanup tasks work with the new rules |
 | Version history limit | Applied when new versions are produced later |
 | Online extraction staging limit | Applied to online extraction tasks created later |
+| Online extraction source, uncompressed size, entry count, path depth, compression ratio, and duration limits | Applied to online extraction tasks created later |
+| Archive build entry, total source size, and output size limits | Applied to online compression and archive download tasks created later |
 | Archive preview switches and limits | Applied to later requests and new `archive_preview_generate` tasks |
 | Thumbnail source file size limit | Applied to files entering thumbnail tasks later |
 | Media processor switches, commands, extension bindings | Applied to files entering thumbnail tasks later |

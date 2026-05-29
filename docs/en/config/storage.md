@@ -116,7 +116,7 @@ Remember three points first:
 - Remote downloads support `relay_stream` and `presigned`
 - Remote uploads support `relay_stream` and `presigned`; `presigned` requires the browser to reach the follower node directly
 
-To actually use it, first register the node under `Admin -> Follower Nodes`, and make sure it is enrolled, enabled, has a reachable `base_url`, and has at least one applied default ingress target. See [follower nodes](/en/guide/remote-nodes) for the complete flow.
+To actually use it, first register the node under `Admin -> Follower Nodes`, and make sure it is enrolled, enabled, passes connection testing through its current transport mode, and has at least one applied default ingress target. See [follower nodes](/en/guide/remote-nodes) for the complete flow.
 
 ## S3 Upload Methods
 
@@ -233,9 +233,9 @@ More common advanced combinations:
 - Local policies disable content deduplication by default; enable it only when you need to save disk space
 - Configure object storage CORS before `presigned` uploads
 - Before `presigned` downloads, confirm clients can reach object storage directly, and accept that bandwidth moves from AsterDrive nodes to object storage
-- For remote policies, first confirm the bound follower node is enrolled, enabled, has a reachable `base_url`, and has an applied default ingress target
+- For remote policies, first confirm the bound follower node is enrolled, enabled, passes connection testing through its current transport mode, and has an applied default ingress target
 - Remote policies depend on internal remote storage protocol `v2` capability negotiation; if connection tests fail or the capability summary is incompatible, do not switch real traffic to it
-- Before remote `presigned` uploads/downloads, confirm the browser can reach the follower node directly, and that the follower exposes `content-type` / `range` request headers and `ETag` / Range-related response headers externally
+- Before remote `presigned` uploads/downloads, confirm the remote node uses direct transport, the browser can reach the follower node directly, and that the follower exposes `content-type` / `range` request headers and `ETag` / Range-related response headers externally
 - Local storage / server-side temporary processing paths need enough local temporary directory space
 - Neither S3 upload method performs content deduplication
 - Single-file size limits, policy group rules, and user/team quotas can all affect upload success

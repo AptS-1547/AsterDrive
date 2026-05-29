@@ -35,36 +35,6 @@ fn create_stored_zip_bytes(entries: &[(&str, Option<&[u8]>)]) -> Vec<u8> {
     zip.finish().expect("zip writer should finish").into_inner()
 }
 
-fn create_7z_bytes(entries: &[(&str, Option<&[u8]>)]) -> Vec<u8> {
-    let cursor = Cursor::new(Vec::new());
-    let mut writer = zesven::Writer::create(cursor).expect("7z writer should start");
-
-    for (path, content) in entries {
-        match content {
-            Some(bytes) => {
-                writer
-                    .add_bytes(
-                        zesven::ArchivePath::new(path).expect("7z file path should be valid"),
-                        bytes,
-                    )
-                    .expect("7z file entry should be writable");
-            }
-            None => {
-                writer
-                    .add_directory(
-                        zesven::ArchivePath::new(path.trim_end_matches('/'))
-                            .expect("7z directory path should be valid"),
-                        zesven::write::EntryMeta::directory(),
-                    )
-                    .expect("7z directory entry should be writable");
-            }
-        }
-    }
-
-    let (_, cursor) = writer.finish_into_inner().expect("7z writer should finish");
-    cursor.into_inner()
-}
-
 fn create_stored_zip_bytes_with_raw_name(
     placeholder_name: &str,
     raw_name: &[u8],
@@ -567,91 +537,6 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
 }
 
 #[actix_web::test]
-async fn test_archive_preview_returns_7z_manifest_and_caches_it() {
-    let state = common::setup().await;
-    enable_archive_preview(&state, true, false).await;
-    let app = create_test_app!(state.clone());
-    let (token, _) = register_and_login!(app);
-    let file_id = upload_bytes(
-        &app,
-        &token,
-        "bundle.7z",
-        "application/x-7z-compressed",
-        create_7z_bytes(&[
-            ("docs", None),
-            ("docs/readme.txt", Some(b"hello".as_slice())),
-            ("docs/测试.txt", Some(b"hello".as_slice())),
-        ]),
-    )
-    .await;
-
-    let resp = request_personal_archive_preview(&app, &token, file_id).await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-    aster_drive::services::task_service::drain(&state)
-        .await
-        .expect("archive preview task should drain");
-
-    let resp = request_personal_archive_preview(&app, &token, file_id).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: Value = test::read_body_json(resp).await;
-    let data = &body["data"];
-    assert_eq!(data["format"], "7z");
-    assert_eq!(data["entry_count"], 3);
-    assert_eq!(data["file_count"], 2);
-    assert_eq!(data["directory_count"], 1);
-    assert!(
-        data["entries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|entry| entry["path"] == "docs/readme.txt"
-                && entry["parent"] == "docs"
-                && entry["kind"] == "file"
-                && entry["size"] == 5)
-    );
-    assert!(
-        data["entries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|entry| entry["path"] == "docs/测试.txt"
-                && entry["parent"] == "docs"
-                && entry["kind"] == "file")
-    );
-
-    let cached = property_repo::find_by_key(
-        state.writer_db(),
-        EntityType::File,
-        file_id,
-        "system.archive_preview",
-        "7z_raw_manifest.v2",
-    )
-    .await
-    .expect("cache lookup should succeed");
-    assert!(
-        cached.is_some(),
-        "7z archive preview manifest should be cached"
-    );
-
-    let tasks_before_replay = archive_preview_tasks(&state).await.len();
-    let resp =
-        request_personal_archive_preview_with_encoding(&app, &token, file_id, Some("cp437")).await;
-    let tasks_after_replay = archive_preview_tasks(&state).await.len();
-    assert_eq!(tasks_after_replay, tasks_before_replay);
-    assert_eq!(resp.status(), StatusCode::OK);
-    let body: Value = test::read_body_json(resp).await;
-    let encoded_data = &body["data"];
-    assert!(
-        encoded_data["entries"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|entry| entry["path"] == "docs/测试.txt"),
-        "7z preview cache replay should ignore ZIP filename encoding overrides"
-    );
-}
-
-#[actix_web::test]
 async fn test_archive_preview_allows_display_only_names_that_extract_rejects() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
@@ -885,39 +770,6 @@ async fn test_archive_preview_rejects_unsupported_type_and_source_limit() {
     assert!(
         archive_preview_tasks(&state).await.is_empty(),
         "oversized sources should fail before task creation"
-    );
-}
-
-#[actix_web::test]
-async fn test_archive_preview_rejects_7z_source_limit() {
-    let state = common::setup().await;
-    enable_archive_preview(&state, true, false).await;
-    aster_drive::services::config_service::set(&state, "archive_preview_max_source_bytes", "1", 1)
-        .await
-        .expect("archive preview source limit should update");
-    let app = create_test_app!(state.clone());
-    let (token, _) = register_and_login!(app);
-
-    let file_id = upload_bytes(
-        &app,
-        &token,
-        "too-large.7z",
-        "application/x-7z-compressed",
-        create_7z_bytes(&[("payload.txt", Some(b"payload".as_slice()))]),
-    )
-    .await;
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/files/{file_id}/archive-preview"))
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.source_too_large");
-    assert!(
-        archive_preview_tasks(&state).await.is_empty(),
-        "oversized 7z sources should fail before task creation"
     );
 }
 
