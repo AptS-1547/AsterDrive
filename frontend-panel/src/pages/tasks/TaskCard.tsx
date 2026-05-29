@@ -9,9 +9,9 @@ import { TaskDetailsContent, TaskStepsPreview } from "./TaskDetailsPanel";
 import { taskHasExpandableDetails } from "./taskDetails";
 import {
 	currentTaskStep,
-	formatRuntimeTaskName,
 	formatTaskDisplayName,
 	formatTaskKind,
+	formatTaskPresentationStatus,
 	formatTaskStatus,
 	formatTaskStatusText,
 	parseTaskResult,
@@ -215,7 +215,7 @@ function summaryParts(
 					key: "action",
 					kind: "text",
 					value: t("tasks:summary_system_runtime", {
-						name: formatRuntimeTaskName(t, task.payload.task_name),
+						name: displayName,
 					}),
 				},
 			];
@@ -251,7 +251,9 @@ export function TaskCard({
 		activeStepDetail,
 		task,
 	);
-	const localizedStatusText = formatTaskStatusText(t, statusText, task);
+	const localizedStatusText =
+		formatTaskPresentationStatus(t, task) ??
+		formatTaskStatusText(t, statusText, task);
 	const summaryTimestamp = taskSummaryTimestamp(t, task);
 	const detailsSectionId = `task-details-${task.id}`;
 	const hasExpandableDetails = taskHasExpandableDetails(task);
