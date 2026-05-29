@@ -6,10 +6,11 @@ import {
 	formatProgressCounts,
 	formatTaskDetail,
 	formatTaskDisplayName,
-	formatTaskDisplayNameFromRaw,
 	formatTaskKind,
+	formatTaskStatus,
 	formatTaskStepStatus,
 	formatTaskStepTitle,
+	getTaskDisplayNameFallback,
 	parseStoragePolicyMigrationResult,
 	parseTaskResult,
 	statusBadgeVariant,
@@ -291,6 +292,29 @@ describe("taskPresentation structured presentation", () => {
 				}),
 			),
 		).toBe("backend fallback detail");
+		expect(
+			formatTaskDetail(
+				t,
+				createTask({
+					status_text: "backend fallback detail",
+					presentation: {
+						status: {
+							code: "runtime_system_health_issue_detail",
+							params: {
+								components: [
+									{
+										message: "ignored because name is not a string",
+										name: 42,
+										status: "degraded",
+									},
+								],
+								status: 7,
+							},
+						},
+					},
+				}),
+			),
+		).toBe("backend fallback detail");
 	});
 
 	it("falls back safely for unknown or missing structured messages", () => {
@@ -472,17 +496,13 @@ describe("taskPresentation storage policy migration", () => {
 			),
 		).toBe("Custom runtime task");
 		expect(
-			formatTaskDisplayNameFromRaw(t, "system_runtime", "System health check"),
+			getTaskDisplayNameFallback(t, "system_runtime", "System health check"),
 		).toBe("System health check");
 		expect(
-			formatTaskDisplayNameFromRaw(t, "system_runtime", "unknown runtime"),
+			getTaskDisplayNameFallback(t, "system_runtime", "unknown runtime"),
 		).toBe("unknown runtime");
 		expect(
-			formatTaskDisplayNameFromRaw(
-				t,
-				"system_runtime",
-				"Task artifact cleanup",
-			),
+			getTaskDisplayNameFallback(t, "system_runtime", "Task artifact cleanup"),
 		).toBe("Task artifact cleanup");
 	});
 
@@ -523,99 +543,95 @@ describe("taskPresentation storage policy migration", () => {
 		).toBe("Extract audio metadata for blob #12");
 	});
 
-	it("keeps legacy raw task display names as backend fallback text", () => {
+	it("returns raw backend display names without parsing", () => {
 		expect(
-			formatTaskDisplayNameFromRaw(t, "archive_extract", "Extract logs.zip"),
+			getTaskDisplayNameFallback(t, "archive_extract", "Extract logs.zip"),
 		).toBe("Extract logs.zip");
 		expect(
-			formatTaskDisplayNameFromRaw(
-				t,
-				"archive_compress",
-				"Compress export.zip",
-			),
+			getTaskDisplayNameFallback(t, "archive_compress", "Compress export.zip"),
 		).toBe("Compress export.zip");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"archive_preview_generate",
 				"Generate archive preview for file #7 blob #9 logs.zip",
 			),
 		).toBe("Generate archive preview for file #7 blob #9 logs.zip");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"archive_preview_generate",
 				"Generate archive preview for file #7 blob #9",
 			),
 		).toBe("Generate archive preview for file #7 blob #9");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"thumbnail_generate",
 				"Generate thumbnail for blob #11 via storage_native",
 			),
 		).toBe("Generate thumbnail for blob #11 via storage_native");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"thumbnail_generate",
 				"Generate thumbnail for blob #11 via native",
 			),
 		).toBe("Generate thumbnail for blob #11 via native");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"media_metadata_extract",
 				"Extract audio metadata for blob #12",
 			),
 		).toBe("Extract audio metadata for blob #12");
 		expect(
-			formatTaskDisplayNameFromRaw(t, "trash_purge_all", "Empty trash"),
+			getTaskDisplayNameFallback(t, "trash_purge_all", "Empty trash"),
 		).toBe("Empty trash");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"storage_policy_temp_cleanup",
 				"Clean deleted storage policy #5 temporary uploads",
 			),
 		).toBe("Clean deleted storage policy #5 temporary uploads");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"storage_policy_temp_cleanup",
 				"Clean storage policy #5 temporary uploads",
 			),
 		).toBe("Clean storage policy #5 temporary uploads");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"storage_policy_migration",
 				"Migrate storage policy #1 to #2",
 			),
 		).toBe("Migrate storage policy #1 to #2");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"blob_maintenance",
 				"Check integrity for 3 blob(s)",
 			),
 		).toBe("Check integrity for 3 blob(s)");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"blob_maintenance",
 				"Reconcile references for all blobs",
 			),
 		).toBe("Reconcile references for all blobs");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"blob_maintenance",
 				"Clean orphan blobs for custom scope",
 			),
 		).toBe("Clean orphan blobs for custom scope");
 		expect(
-			formatTaskDisplayNameFromRaw(
+			getTaskDisplayNameFallback(
 				t,
 				"thumbnail_generate",
 				"backend custom name",
@@ -723,11 +739,16 @@ describe("taskPresentation storage policy migration", () => {
 		expect(statusBadgeVariant("succeeded")).toBe("default");
 		expect(statusBadgeVariant("failed")).toBe("destructive");
 		expect(statusBadgeVariant("canceled")).toBe("outline");
+		expect(statusBadgeVariant("pending")).toBe("secondary");
+		expect(statusBadgeVariant("processing")).toBe("secondary");
 		expect(taskMetaTextClass("processing")).toBe("text-primary");
+		expect(taskMetaTextClass("retry")).toBe("text-primary");
 		expect(taskMetaTextClass("succeeded")).toBe("text-foreground");
 		expect(taskMetaTextClass("failed")).toBe("text-destructive");
 		expect(taskMetaTextClass("pending")).toBe("text-muted-foreground");
+		expect(taskMetaTextClass("canceled")).toBe("text-muted-foreground");
 		expect(stepCircleLabel(2, "failed")).toBe("!");
+		expect(stepCircleLabel(2, "skipped")).toBe("3");
 		expect(stepCircleLabel(2, "canceled")).toBe("X");
 		expect(stepCircleLabel(2, "pending")).toBe("3");
 		expect(stepStatusTextClass("active")).toBe("text-primary");
@@ -761,6 +782,12 @@ describe("taskPresentation storage policy migration", () => {
 		expect(formatTaskStepStatus(t, "canceled")).toBe(
 			"tasks:step_status_canceled",
 		);
+		expect(formatTaskStatus(t, "pending")).toBe("tasks:status_pending");
+		expect(formatTaskStatus(t, "processing")).toBe("tasks:status_processing");
+		expect(formatTaskStatus(t, "retry")).toBe("tasks:status_retry");
+		expect(formatTaskStatus(t, "succeeded")).toBe("tasks:status_succeeded");
+		expect(formatTaskStatus(t, "failed")).toBe("tasks:status_failed");
+		expect(formatTaskStatus(t, "canceled")).toBe("tasks:status_canceled");
 		expect(formatProgressCounts(1200, 3400)).toBe("1,200 / 3,400");
 		expect(
 			stepProgressPercent({
@@ -856,6 +883,15 @@ describe("taskPresentation storage policy migration", () => {
 			taskSummaryTimestamp(
 				t,
 				createTask({
+					finished_at: "2026-04-17T00:02:00Z",
+					status: "succeeded",
+				}),
+			),
+		).toMatch(/^Finished /);
+		expect(
+			taskSummaryTimestamp(
+				t,
+				createTask({
 					finished_at: null,
 					status: "succeeded",
 					started_at: "2026-04-17T00:01:00Z",
@@ -939,6 +975,25 @@ describe("taskPresentation storage policy migration", () => {
 				}),
 			).map((entry) => entry.label),
 		).toEqual(["Created", "Canceled"]);
+		expect(
+			buildTaskTimeline(
+				t,
+				createTask({
+					finished_at: "2026-04-17T00:02:00Z",
+					started_at: "2026-04-17T00:01:00Z",
+					status: "failed",
+				}),
+			).map((entry) => entry.label),
+		).toEqual(["Created", "Started", "Failed"]);
+		expect(
+			buildTaskTimeline(
+				t,
+				createTask({
+					finished_at: "2026-04-17T00:02:00Z",
+					status: "succeeded",
+				}),
+			).map((entry) => entry.label),
+		).toEqual(["Created", "Finished"]);
 	});
 
 	it("translates known storage migration steps and falls back to backend titles", () => {
@@ -1056,6 +1111,7 @@ describe("taskPresentation storage policy migration", () => {
 	});
 
 	it("parses archive task results and ignores non-archive results", () => {
+		expect(parseTaskResult(createTask())).toBeNull();
 		expect(
 			parseTaskResult(
 				createTask({

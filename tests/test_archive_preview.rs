@@ -755,7 +755,7 @@ async fn test_archive_preview_rejects_unsupported_type_and_source_limit() {
         &token,
         "archive-by-mime.bin",
         "application/zip",
-        create_stored_zip_bytes(&[("payload.txt", Some(b"payload".as_slice()))]),
+        b"not a zip".to_vec(),
     )
     .await;
     let req = test::TestRequest::get()

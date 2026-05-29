@@ -111,7 +111,7 @@ const AUDIT_ACTION_TONE_CLASSES = {
 export function getAuditActionBadgeClass(action: AuditAction | string) {
 	const tone =
 		typeof action === "string" &&
-		action in AUDIT_ACTION_TONES &&
+		Object.hasOwn(AUDIT_ACTION_TONES, action) &&
 		AUDIT_ACTION_TONES[action as keyof typeof AUDIT_ACTION_TONES];
 	if (tone) {
 		return AUDIT_ACTION_TONE_CLASSES[tone];

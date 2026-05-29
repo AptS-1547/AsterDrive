@@ -352,7 +352,18 @@ fn build_background_task_event(
         )),
         _ => None,
     };
-    let presentation = crate::services::task_service::build_task_presentation_for_model(&task)?;
+    let presentation = match crate::services::task_service::build_task_presentation_for_model(&task)
+    {
+        Ok(presentation) => presentation,
+        Err(error) => {
+            tracing::warn!(
+                task_id = task.id,
+                error = %error,
+                "failed to build background task presentation for admin overview"
+            );
+            None
+        }
+    };
 
     Ok(AdminBackgroundTaskEvent {
         id: task.id,

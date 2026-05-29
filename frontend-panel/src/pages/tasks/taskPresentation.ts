@@ -147,7 +147,7 @@ export function formatTaskPresentationTitle(
 	return formatPresentationMessage(t, message, task.display_name);
 }
 
-export function formatTaskDisplayNameFromRaw(
+export function getTaskDisplayNameFallback(
 	_t: TaskTranslate,
 	_kind: BackgroundTaskKind,
 	displayName: string,
@@ -167,11 +167,7 @@ export function formatTaskPresentationStatus(
 	return formatPresentationMessage(t, message, fallback);
 }
 
-export function formatTaskStatusText(
-	_t: TaskTranslate,
-	text: string | null | undefined,
-	_task?: Pick<TaskInfo, "kind" | "result">,
-) {
+export function trimTaskStatus(text: string | null | undefined) {
 	const trimmed = text?.trim();
 	if (!trimmed) {
 		return null;
@@ -185,11 +181,11 @@ export function formatTaskDetail(
 	emptyFallback = "-",
 ) {
 	if (task.last_error) {
-		return formatTaskStatusText(t, task.last_error, task) ?? emptyFallback;
+		return trimTaskStatus(task.last_error) ?? emptyFallback;
 	}
 	return (
 		formatTaskPresentationStatus(t, task) ??
-		formatTaskStatusText(t, task.status_text, task) ??
+		trimTaskStatus(task.status_text) ??
 		emptyFallback
 	);
 }
@@ -359,7 +355,7 @@ export function formatTaskDisplayName(t: TaskTranslate, task: TaskInfo) {
 	const presentationTitle = formatTaskPresentationTitle(t, task);
 	return (
 		presentationTitle ??
-		formatTaskDisplayNameFromRaw(t, task.kind, task.display_name)
+		getTaskDisplayNameFallback(t, task.kind, task.display_name)
 	);
 }
 

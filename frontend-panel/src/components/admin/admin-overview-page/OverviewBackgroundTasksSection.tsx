@@ -20,7 +20,7 @@ import {
 	formatTaskKind as formatSharedTaskKind,
 	formatTaskPresentationStatus,
 	formatTaskPresentationTitle,
-	formatTaskStatusText,
+	trimTaskStatus,
 } from "@/pages/tasks/taskPresentation";
 import type {
 	AdminOverview,
@@ -106,10 +106,10 @@ export function OverviewBackgroundTasksSection({
 						{overview.recent_background_tasks.map((task) => {
 							const duration = formatOverviewRuntimeDuration(task.duration_ms);
 							const detail =
-								(task.last_error
-									? formatTaskStatusText(t, task.last_error)
-									: (formatTaskPresentationStatus(t, task) ??
-										formatTaskStatusText(t, task.status_text))) ?? "---";
+								task.last_error?.trim() ||
+								formatTaskPresentationStatus(t, task) ||
+								trimTaskStatus(task.status_text) ||
+								"---";
 
 							return (
 								<TableRow key={task.id}>

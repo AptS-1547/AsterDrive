@@ -13,11 +13,11 @@ import {
 	formatTaskKind,
 	formatTaskPresentationStatus,
 	formatTaskStatus,
-	formatTaskStatusText,
 	parseTaskResult,
 	statusBadgeVariant,
 	taskMetaTextClass,
 	taskSummaryTimestamp,
+	trimTaskStatus,
 } from "./taskPresentation";
 
 type SummaryPart =
@@ -246,14 +246,9 @@ export function TaskCard({
 	const activeStep = currentTaskStep(task);
 	const activeStepDetail = activeStep?.detail?.trim() ?? null;
 	const statusText = task.status_text?.trim() ?? null;
-	const localizedActiveStepDetail = formatTaskStatusText(
-		t,
-		activeStepDetail,
-		task,
-	);
+	const localizedActiveStepDetail = trimTaskStatus(activeStepDetail);
 	const localizedStatusText =
-		formatTaskPresentationStatus(t, task) ??
-		formatTaskStatusText(t, statusText, task);
+		formatTaskPresentationStatus(t, task) ?? trimTaskStatus(statusText);
 	const summaryTimestamp = taskSummaryTimestamp(t, task);
 	const detailsSectionId = `task-details-${task.id}`;
 	const hasExpandableDetails = taskHasExpandableDetails(task);
