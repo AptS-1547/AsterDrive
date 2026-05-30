@@ -13,7 +13,7 @@ import { ExternalAuthClaimFields } from "./ExternalAuthClaimFields";
 import { ExternalAuthConnectionFields } from "./ExternalAuthConnectionFields";
 import {
 	CallbackUrlField,
-	DEFAULT_SCOPES,
+	defaultScopesForKind,
 	type ExternalAuthProviderFieldChange,
 	type ExternalAuthProviderFormData,
 	ExternalAuthProviderIcon,
@@ -202,9 +202,7 @@ export function ExternalAuthSummaryPanel({
 						{t("external_auth_provider_scopes")}
 					</dt>
 					<dd className="mt-1 break-words text-xs">
-						{form.scopes.trim() ||
-							selectedKind?.default_scopes ||
-							DEFAULT_SCOPES}
+						{form.scopes.trim() || defaultScopesForKind(selectedKind)}
 					</dd>
 				</div>
 				<div>
@@ -450,7 +448,7 @@ export function ExternalAuthProviderRulesPanel({
 					<Input
 						id="external-auth-provider-scopes"
 						value={form.scopes}
-						placeholder={selectedKind?.default_scopes ?? DEFAULT_SCOPES}
+						placeholder={defaultScopesForKind(selectedKind)}
 						onChange={(event) => onFieldChange("scopes", event.target.value)}
 					/>
 					<p className="text-xs text-muted-foreground">

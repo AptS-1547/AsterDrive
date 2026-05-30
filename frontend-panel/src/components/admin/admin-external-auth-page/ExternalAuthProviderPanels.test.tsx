@@ -502,12 +502,23 @@ describe("ExternalAuthProviderPanels", () => {
 					scopes: "",
 				})}
 				isCreate
-				providerKind="oidc"
-				providerKinds={providerKinds}
-				selectedKind={null}
+				providerKind="generic_oauth2"
+				providerKinds={[
+					kind({
+						default_scopes: "email profile",
+						display_name: "Generic OAuth2",
+						kind: "generic_oauth2",
+						protocol: "oauth2",
+					}),
+				]}
+				selectedKind={kind({
+					default_scopes: "email profile",
+					kind: "generic_oauth2",
+					protocol: "oauth2",
+				})}
 			/>,
 		);
-		expect(screen.getByText("openid email profile")).toBeInTheDocument();
+		expect(screen.getByText("email profile")).toBeInTheDocument();
 		expect(
 			screen.getByText("external_auth_provider_allowed_domains_all"),
 		).toBeInTheDocument();

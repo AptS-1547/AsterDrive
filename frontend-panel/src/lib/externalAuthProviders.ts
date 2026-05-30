@@ -4,11 +4,12 @@ export function externalAuthKindIconPath(
 	kind: ExternalAuthProviderKind,
 ): string {
 	switch (kind) {
+		case "generic_oauth2":
+			return "";
 		case "oidc":
 			return "/static/external-auth/openid-seeklogo.svg";
-		default:
-			return "";
 	}
+	return "";
 }
 
 export function normalizeExternalAuthIconUrl(

@@ -12,7 +12,7 @@ import {
 	connectionRequirementsMissing,
 	createPayload,
 	DEFAULT_EXTERNAL_AUTH_PAGE_SIZE,
-	DEFAULT_SCOPES,
+	defaultScopesForKind,
 	EXTERNAL_AUTH_PAGE_SIZE_OPTIONS,
 	type ExternalAuthCreateStep,
 	type ExternalAuthProviderFormData,
@@ -102,6 +102,13 @@ export default function AdminExternalAuthPage() {
 		[providers],
 	);
 	const providerKindCount = providerKinds.length;
+	const selectedKind = useMemo(
+		() =>
+			providerKinds.find((kind) => kind.kind === form.providerKind) ??
+			providerKinds[0] ??
+			null,
+		[form.providerKind, providerKinds],
+	);
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
@@ -256,7 +263,7 @@ export default function AdminExternalAuthPage() {
 		setForm((prev) => ({
 			...prev,
 			providerKind: kind,
-			scopes: descriptor?.default_scopes || prev.scopes || DEFAULT_SCOPES,
+			scopes: descriptor?.default_scopes || defaultScopesForKind(descriptor),
 		}));
 	};
 
@@ -275,7 +282,7 @@ export default function AdminExternalAuthPage() {
 		setForm({
 			...emptyForm,
 			providerKind: firstKind?.kind ?? "oidc",
-			scopes: firstKind?.default_scopes ?? DEFAULT_SCOPES,
+			scopes: defaultScopesForKind(firstKind),
 		});
 		setCreateStep(0);
 		setCreateStepTouched(false);
@@ -291,7 +298,7 @@ export default function AdminExternalAuthPage() {
 						setForm((prev) => ({
 							...prev,
 							providerKind: nextKind.kind,
-							scopes: nextKind.default_scopes || DEFAULT_SCOPES,
+							scopes: defaultScopesForKind(nextKind),
 						}));
 					}
 				})
@@ -324,10 +331,6 @@ export default function AdminExternalAuthPage() {
 			return providerKinds.length > 0;
 		}
 		if (createStep === 1) {
-			const selectedKind =
-				providerKinds.find((kind) => kind.kind === form.providerKind) ??
-				providerKinds[0] ??
-				null;
 			return !requiredFieldsMissing(form, selectedKind);
 		}
 		return true;
@@ -360,7 +363,7 @@ export default function AdminExternalAuthPage() {
 			if (editingProvider) {
 				const updated = await adminExternalAuthService.update(
 					editingProvider.id,
-					updatePayload(form),
+					updatePayload(form, selectedKind),
 				);
 				setProviders((prev) =>
 					prev.map((provider) =>
@@ -370,7 +373,7 @@ export default function AdminExternalAuthPage() {
 				toast.success(t("external_auth_provider_updated"));
 			} else {
 				const created = await adminExternalAuthService.create(
-					createPayload(form),
+					createPayload(form, selectedKind),
 				);
 				toast.success(t("external_auth_provider_created"));
 				setCreatedProviderCallback(created);
@@ -402,24 +405,23 @@ export default function AdminExternalAuthPage() {
 	};
 
 	const testFormConnection = async () => {
-		const selectedKind =
-			providerKinds.find((kind) => kind.kind === form.providerKind) ??
-			providerKinds[0] ??
-			null;
 		if (connectionRequirementsMissing(form, selectedKind)) {
 			setCreateStepTouched(true);
 			return false;
 		}
 
 		try {
-			if (editingProvider && !formConnectionChanged(form, editingProvider)) {
+			if (
+				editingProvider &&
+				!formConnectionChanged(form, editingProvider, selectedKind)
+			) {
 				const result = await adminExternalAuthService.test(editingProvider.id);
 				applyTestResult(result, { touchedProviderId: editingProvider.id });
 				return true;
 			}
 
 			const result = await adminExternalAuthService.testParams(
-				testParamsPayload(form),
+				testParamsPayload(form, selectedKind),
 			);
 			applyTestResult(result);
 			return true;
