@@ -2,7 +2,16 @@ export type QueryParamValue = boolean | number | string | null | undefined;
 
 export type QueryParamRecord = Record<string, QueryParamValue>;
 
-export function buildQueryParams(params?: QueryParamRecord): URLSearchParams {
+function isQueryParamValue(value: unknown): value is QueryParamValue {
+	return (
+		value == null ||
+		typeof value === "boolean" ||
+		typeof value === "number" ||
+		typeof value === "string"
+	);
+}
+
+export function buildQueryParams(params?: object): URLSearchParams {
 	const query = new URLSearchParams();
 
 	if (!params) {
@@ -10,6 +19,9 @@ export function buildQueryParams(params?: QueryParamRecord): URLSearchParams {
 	}
 
 	for (const [key, value] of Object.entries(params)) {
+		if (!isQueryParamValue(value)) {
+			continue;
+		}
 		if (value === undefined || value === null || value === "") {
 			continue;
 		}
@@ -19,11 +31,11 @@ export function buildQueryParams(params?: QueryParamRecord): URLSearchParams {
 	return query;
 }
 
-export function buildQueryString(params?: QueryParamRecord): string {
+export function buildQueryString(params?: object): string {
 	return buildQueryParams(params).toString();
 }
 
-export function withQuery(path: string, params?: QueryParamRecord): string {
+export function withQuery(path: string, params?: object): string {
 	const query = buildQueryString(params);
 	if (!query) {
 		return path;

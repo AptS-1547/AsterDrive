@@ -44,7 +44,7 @@ describe("shareService", () => {
 			max_downloads: 9,
 		});
 		shareService.delete(7);
-		shareService.batchDelete([7, 8]);
+		shareService.batchDelete({ share_ids: [7, 8] });
 
 		expect(apiPost).toHaveBeenCalledWith("/shares", createPayload);
 		expect(apiGet).toHaveBeenCalledWith("/shares", {
@@ -69,7 +69,7 @@ describe("shareService", () => {
 			max_downloads: 2,
 		});
 		teamShareService.delete(7);
-		teamShareService.batchDelete([7]);
+		teamShareService.batchDelete({ share_ids: [7] });
 
 		expect(apiPost).toHaveBeenNthCalledWith(
 			3,
@@ -97,7 +97,7 @@ describe("shareService", () => {
 		};
 
 		shareService.getInfo("token-1");
-		shareService.verifyPassword("token-1", "secret");
+		shareService.verifyPassword("token-1", { password: "secret" });
 		shareService.createPreviewLink("token-1");
 		shareService.getArchivePreview("token-1");
 		shareService.getMediaMetadata("token-1");

@@ -1,4 +1,4 @@
-import type { FormEvent, SetStateAction } from "react";
+import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
@@ -69,7 +69,7 @@ interface MembersSectionProps {
 	roleLabel: (role: TeamMemberRole) => string;
 	roleOptions: TeamMemberRole[];
 	setMemberIdentifier: (value: string) => void;
-	setMemberOffset: (offset: SetStateAction<number>) => void;
+	setMemberOffset: (offset: number) => void;
 	setMemberQuery: (value: string) => void;
 	setMemberRole: (value: TeamMemberRole) => void;
 	setMemberRoleFilter: (value: "__all__" | TeamMemberRole) => void;
@@ -91,7 +91,7 @@ export function TeamManageMembersSection({
 	memberCurrentPage,
 	memberIdentifier,
 	memberLoading,
-	memberOffset: _memberOffset,
+	memberOffset,
 	memberPageSize,
 	memberQuery,
 	memberRole,
@@ -121,6 +121,8 @@ export function TeamManageMembersSection({
 	viewerRole,
 }: MembersSectionProps) {
 	const { t } = useTranslation(["core", "settings"]);
+	const prevMemberOffset = Math.max(0, memberOffset - memberPageSize);
+	const nextMemberOffset = memberOffset + memberPageSize;
 
 	return (
 		<section className="rounded-2xl border bg-background/60 p-6">
@@ -136,10 +138,7 @@ export function TeamManageMembersSection({
 				<div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_160px_160px]">
 					<Input
 						value={memberQuery}
-						onChange={(event) => {
-							setMemberOffset(0);
-							setMemberQuery(event.target.value);
-						}}
+						onChange={(event) => setMemberQuery(event.target.value)}
 						placeholder={t("settings:settings_team_member_search_placeholder")}
 						className={ADMIN_CONTROL_HEIGHT_CLASS}
 					/>
@@ -147,7 +146,6 @@ export function TeamManageMembersSection({
 						items={roleFilterOptions}
 						value={memberRoleFilter}
 						onValueChange={(value) => {
-							setMemberOffset(0);
 							setMemberRoleFilter(
 								(value as "__all__" | TeamMemberRole) ?? "__all__",
 							);
@@ -168,7 +166,6 @@ export function TeamManageMembersSection({
 						items={statusFilterOptions}
 						value={memberStatusFilter}
 						onValueChange={(value) => {
-							setMemberOffset(0);
 							setMemberStatusFilter(
 								(value as "__all__" | UserStatus) ?? "__all__",
 							);
@@ -209,7 +206,6 @@ export function TeamManageMembersSection({
 						variant="ghost"
 						size="sm"
 						onClick={() => {
-							setMemberOffset(0);
 							setMemberQuery("");
 							setMemberRoleFilter("__all__");
 							setMemberStatusFilter("__all__");
@@ -434,11 +430,7 @@ export function TeamManageMembersSection({
 									variant="outline"
 									size="sm"
 									disabled={prevMemberPageDisabled || memberLoading}
-									onClick={() =>
-										setMemberOffset((current) =>
-											Math.max(0, current - memberPageSize),
-										)
-									}
+									onClick={() => setMemberOffset(prevMemberOffset)}
 								>
 									<Icon name="CaretLeft" className="size-4" />
 								</Button>
@@ -447,9 +439,7 @@ export function TeamManageMembersSection({
 									variant="outline"
 									size="sm"
 									disabled={nextMemberPageDisabled || memberLoading}
-									onClick={() =>
-										setMemberOffset((current) => current + memberPageSize)
-									}
+									onClick={() => setMemberOffset(nextMemberOffset)}
 								>
 									<Icon name="CaretRight" className="size-4" />
 								</Button>

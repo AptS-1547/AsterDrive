@@ -11,6 +11,8 @@ import ShareViewPage from "@/pages/ShareViewPage";
 import { ApiError } from "@/services/http";
 import { ErrorCode } from "@/types/api-helpers";
 
+const TEST_SHARE_PASSWORD = "TEST_PASSWORD";
+
 const mockState = vi.hoisted(() => ({
 	downloadFolderFileUrl: vi.fn(
 		(token: string, fileId: number) =>
@@ -703,15 +705,14 @@ describe("ShareViewPage", () => {
 		expect(passwordInput).toHaveAttribute("autocomplete", "current-password");
 		expect(passwordInput).not.toHaveAttribute("autofocus");
 		fireEvent.change(passwordInput, {
-			target: { value: "letmein" },
+			target: { value: TEST_SHARE_PASSWORD },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "verify" }));
 
 		await waitFor(() => {
-			expect(mockState.verifyPassword).toHaveBeenCalledWith(
-				"share-token",
-				"letmein",
-			);
+			expect(mockState.verifyPassword).toHaveBeenCalledWith("share-token", {
+				password: TEST_SHARE_PASSWORD,
+			});
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("password-verified");
 		expect(mockState.listContent).toHaveBeenCalledWith("share-token", {
@@ -790,10 +791,9 @@ describe("ShareViewPage", () => {
 		fireEvent.click(screen.getByRole("button", { name: "verify" }));
 
 		await waitFor(() => {
-			expect(mockState.verifyPassword).toHaveBeenCalledWith(
-				"share-token",
-				"first-password",
-			);
+			expect(mockState.verifyPassword).toHaveBeenCalledWith("share-token", {
+				password: "first-password",
+			});
 		});
 		expect(
 			await screen.findByRole("button", { name: "folder:Docs" }),

@@ -11,6 +11,7 @@ use crate::db::repository::lock_repo;
 use crate::entities::resource_lock;
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service::{self, AuditContext};
+use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::types::EntityType;
 use crate::webdav::dav::{DavLock, DavLockSystem, DavPath, LsFuture};
 use crate::webdav::path_resolver::{self, ResolvedNode};
@@ -21,7 +22,7 @@ use crate::webdav::path_resolver::{self, ResolvedNode};
 #[derive(Clone)]
 pub struct DbLockSystem {
     db: DatabaseConnection,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     root_folder_id: Option<i64>,
     audit_state: Option<PrimaryAppState>,
     audit_ctx: AuditContext,
@@ -31,7 +32,7 @@ impl DbLockSystem {
     pub fn new(db: DatabaseConnection, user_id: i64, root_folder_id: Option<i64>) -> Box<Self> {
         Box::new(Self {
             db,
-            user_id,
+            scope: WorkspaceStorageScope::Personal { user_id },
             root_folder_id,
             audit_state: None,
             audit_ctx: AuditContext {
@@ -42,15 +43,15 @@ impl DbLockSystem {
         })
     }
 
-    pub fn new_with_audit(
+    pub(crate) fn new_with_audit(
         state: PrimaryAppState,
-        user_id: i64,
+        scope: WorkspaceStorageScope,
         root_folder_id: Option<i64>,
         audit_ctx: AuditContext,
     ) -> Box<Self> {
         Box::new(Self {
             db: state.writer_db().clone(),
-            user_id,
+            scope,
             root_folder_id,
             audit_state: Some(state),
             audit_ctx,
@@ -102,7 +103,7 @@ impl DavLockSystem for DbLockSystem {
 
             // 解析路径到 entity
             let (entity_type, entity_id) =
-                resolve_path_to_entity(&self.db, self.user_id, self.root_folder_id, &path_str)
+                resolve_path_to_entity(&self.db, self.scope, self.root_folder_id, &path_str)
                     .await
                     .map_err(|_| empty_dav_lock(&path_owned))?;
 
@@ -149,7 +150,10 @@ impl DavLockSystem for DbLockSystem {
                 entity_type: sea_orm::Set(entity_type),
                 entity_id: sea_orm::Set(entity_id),
                 path: sea_orm::Set(path_str.clone()),
-                owner_id: sea_orm::Set(None), // WebDAV 没有 user_id（用 principal 代替）
+                // WebDAV 协议层用 token 判定持锁者；业务存储层用 owner_id
+                // 区分“自己的锁”和“其他用户的锁”，否则 Finder 持锁 PUT 会被
+                // workspace_storage_service 误判为被其他用户锁定。
+                owner_id: sea_orm::Set(Some(self.scope.actor_user_id())),
                 owner_info: sea_orm::Set(
                     crate::services::lock_service::serialize_resource_lock_owner_info(
                         owner_info.as_ref(),
@@ -411,12 +415,12 @@ fn path_ancestors(path: &str) -> Vec<String> {
 /// 从 WebDAV 路径解析出 (entity_type, entity_id)
 async fn resolve_path_to_entity(
     db: &sea_orm::DatabaseConnection,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     root_folder_id: Option<i64>,
     path: &str,
 ) -> Result<(EntityType, i64), ()> {
     let dav_path = DavPath::new(path).map_err(|_| ())?;
-    match path_resolver::resolve_path(db, user_id, &dav_path, root_folder_id).await {
+    match path_resolver::resolve_path_in_scope(db, scope, &dav_path, root_folder_id).await {
         Ok(ResolvedNode::File(f)) => Ok((EntityType::File, f.id)),
         Ok(ResolvedNode::Folder(f)) => Ok((EntityType::Folder, f.id)),
         _ => Err(()),
@@ -442,7 +446,8 @@ fn model_to_dav_lock(lock: &resource_lock::Model) -> DavLock {
     DavLock {
         token: lock.token.clone(),
         path: Box::new(dav_path),
-        principal: lock.owner_id.map(|id| id.to_string()),
+        // owner_id 是 AsterDrive 内部 actor，不要作为 WebDAV principal 暴露。
+        principal: None,
         owner: lock_owner_xml(lock)
             .as_deref()
             .and_then(deserialize_element)

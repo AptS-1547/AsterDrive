@@ -5,7 +5,7 @@ use std::pin::Pin;
 use futures::stream;
 use tokio::io::AsyncRead;
 
-use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
+use crate::db::repository::{file_repo, folder_repo, property_repo, team_repo, user_repo};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
@@ -23,11 +23,11 @@ use crate::webdav::file::AsterDavFile;
 use crate::webdav::metadata::AsterDavMeta;
 use crate::webdav::path_resolver::{self, ResolvedNode};
 
-/// AsterDrive WebDAV 文件系统，per-user 实例
+/// AsterDrive WebDAV 文件系统，per-account workspace 实例。
 #[derive(Clone)]
 pub struct AsterDavFs {
     state: PrimaryAppState,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     /// 限制访问范围：None = 用户全部文件，Some(id) = 只能访问该文件夹及子目录
     root_folder_id: Option<i64>,
     audit_ctx: AuditContext,
@@ -36,7 +36,7 @@ pub struct AsterDavFs {
 impl std::fmt::Debug for AsterDavFs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AsterDavFs")
-            .field("user_id", &self.user_id)
+            .field("scope", &self.scope)
             .field("root_folder_id", &self.root_folder_id)
             .finish()
     }
@@ -46,7 +46,7 @@ impl AsterDavFs {
     pub fn new(state: PrimaryAppState, user_id: i64, root_folder_id: Option<i64>) -> Self {
         Self::new_with_audit(
             state,
-            user_id,
+            WorkspaceStorageScope::Personal { user_id },
             root_folder_id,
             AuditContext {
                 user_id,
@@ -56,15 +56,15 @@ impl AsterDavFs {
         )
     }
 
-    pub fn new_with_audit(
+    pub(crate) fn new_with_audit(
         state: PrimaryAppState,
-        user_id: i64,
+        scope: WorkspaceStorageScope,
         root_folder_id: Option<i64>,
         audit_ctx: AuditContext,
     ) -> Self {
         Self {
             state,
-            user_id,
+            scope,
             root_folder_id,
             audit_ctx,
         }
@@ -75,18 +75,25 @@ impl AsterDavFs {
     }
 
     fn scope(&self) -> WorkspaceStorageScope {
-        WorkspaceStorageScope::Personal {
-            user_id: self.user_id,
-        }
+        self.scope
     }
 
     pub(crate) async fn open_read_stream(
         &self,
         path: &DavPath,
     ) -> Result<Box<dyn AsyncRead + Unpin + Send>, FsError> {
-        let node = path_resolver::resolve_path_cached(
+        self.open_read_stream_with_range(path, None, None).await
+    }
+
+    pub(crate) async fn open_read_stream_with_range(
+        &self,
+        path: &DavPath,
+        offset: Option<u64>,
+        length: Option<u64>,
+    ) -> Result<Box<dyn AsyncRead + Unpin + Send>, FsError> {
+        let node = path_resolver::resolve_path_cached_in_scope(
             &self.state,
-            self.user_id,
+            self.scope,
             path,
             self.root_folder_id,
         )
@@ -111,10 +118,16 @@ impl AsterDavFs {
             .get_driver(&policy)
             .map_err(|_| FsError::GeneralFailure)?;
 
-        let stream = driver
-            .get_stream(&blob.storage_path)
-            .await
-            .map_err(|_| FsError::NotFound)?;
+        let stream = match offset {
+            Some(offset) => driver
+                .get_range(&blob.storage_path, offset, length)
+                .await
+                .map_err(|_| FsError::NotFound)?,
+            None => driver
+                .get_stream(&blob.storage_path)
+                .await
+                .map_err(|_| FsError::NotFound)?,
+        };
         audit_service::log(
             &self.state,
             &self.audit_ctx,
@@ -138,22 +151,17 @@ impl DavFileSystem for AsterDavFs {
         Box::pin(async move {
             if options.write {
                 // 写模式
-                let (parent_id, filename) = path_resolver::resolve_parent_cached(
+                let (parent_id, filename) = path_resolver::resolve_parent_cached_in_scope(
                     &self.state,
-                    self.user_id,
+                    self.scope,
                     path,
                     self.root_folder_id,
                 )
                 .await?;
 
-                let existing_file = file_repo::find_by_name_in_folder(
-                    self.state.writer_db(),
-                    self.user_id,
-                    parent_id,
-                    &filename,
-                )
-                .await
-                .map_err(|_| FsError::GeneralFailure)?;
+                let existing_file =
+                    find_file_by_name_in_scope(&self.state, self.scope, parent_id, &filename)
+                        .await?;
 
                 // WebDAV handler 会在入口处做 lock token 校验，
                 // 这里不要再用 is_locked 把合法持锁写入挡掉。
@@ -163,10 +171,13 @@ impl DavFileSystem for AsterDavFs {
                 if options.create_new && existing_file_id.is_some() {
                     return Err(FsError::Exists);
                 }
+                if !options.create && existing_file_id.is_none() {
+                    return Err(FsError::NotFound);
+                }
 
                 let dav_file = AsterDavFile::for_write_with_audit(
                     self.app_state(),
-                    self.user_id,
+                    self.scope,
                     parent_id,
                     filename,
                     existing_file_id,
@@ -190,9 +201,9 @@ impl DavFileSystem for AsterDavFs {
         _meta: ReadDirMeta,
     ) -> FsFuture<'a, FsStream<Box<dyn DavDirEntry>>> {
         Box::pin(async move {
-            let folder_id = match path_resolver::resolve_path_cached(
+            let folder_id = match path_resolver::resolve_path_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 path,
                 self.root_folder_id,
             )
@@ -203,13 +214,20 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(_) => return Err(FsError::Forbidden),
             };
 
-            let folders =
-                folder_repo::find_children(self.state.writer_db(), self.user_id, folder_id)
-                    .await
-                    .map_err(|_| FsError::GeneralFailure)?;
-            let files = file_repo::find_by_folder(self.state.writer_db(), self.user_id, folder_id)
-                .await
-                .map_err(|_| FsError::GeneralFailure)?;
+            let folders = crate::services::workspace_storage_service::list_folders_in_parent(
+                &self.state,
+                self.scope,
+                folder_id,
+            )
+            .await
+            .map_err(|_| FsError::GeneralFailure)?;
+            let files = crate::services::workspace_storage_service::list_files_in_folder(
+                &self.state,
+                self.scope,
+                folder_id,
+            )
+            .await
+            .map_err(|_| FsError::GeneralFailure)?;
 
             let mut entries: Vec<Box<dyn DavDirEntry>> = Vec::new();
 
@@ -236,9 +254,9 @@ impl DavFileSystem for AsterDavFs {
 
     fn metadata<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, Box<dyn DavMetaData>> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path_cached(
+            let node = path_resolver::resolve_path_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 path,
                 self.root_folder_id,
             )
@@ -261,9 +279,9 @@ impl DavFileSystem for AsterDavFs {
 
     fn create_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let (parent_id, name) = path_resolver::resolve_parent_cached(
+            let (parent_id, name) = path_resolver::resolve_parent_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 path,
                 self.root_folder_id,
             )
@@ -286,9 +304,9 @@ impl DavFileSystem for AsterDavFs {
 
     fn remove_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path_cached(
+            let node = path_resolver::resolve_path_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 path,
                 self.root_folder_id,
             )
@@ -299,7 +317,7 @@ impl DavFileSystem for AsterDavFs {
             };
 
             let state = self.app_state();
-            webdav_service::recursive_soft_delete(&state, self.user_id, folder.id)
+            webdav_service::recursive_soft_delete_in_scope(&state, self.scope, folder.id)
                 .await
                 .map_err(to_fs_error)?;
             audit_service::log(
@@ -319,9 +337,9 @@ impl DavFileSystem for AsterDavFs {
 
     fn remove_file<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path_cached(
+            let node = path_resolver::resolve_path_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 path,
                 self.root_folder_id,
             )
@@ -347,17 +365,17 @@ impl DavFileSystem for AsterDavFs {
 
     fn rename<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path_cached(
+            let node = path_resolver::resolve_path_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 from,
                 self.root_folder_id,
             )
             .await?;
 
-            let (dest_parent_id, dest_name) = path_resolver::resolve_parent_cached(
+            let (dest_parent_id, dest_name) = path_resolver::resolve_parent_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 to,
                 self.root_folder_id,
             )
@@ -368,14 +386,13 @@ impl DavFileSystem for AsterDavFs {
             match node {
                 ResolvedNode::File(f) => {
                     // 如果目标已有同名文件，先删除（WebDAV MOVE 覆盖语义）
-                    if let Some(existing) = file_repo::find_by_name_in_folder(
-                        self.state.writer_db(),
-                        self.user_id,
+                    if let Some(existing) = find_file_by_name_in_scope(
+                        &self.state,
+                        self.scope,
                         dest_parent_id,
                         &dest_name,
                     )
-                    .await
-                    .map_err(|_| FsError::GeneralFailure)?
+                    .await?
                     {
                         file_service::delete_in_scope_with_audit(
                             &state,
@@ -420,16 +437,16 @@ impl DavFileSystem for AsterDavFs {
 
     fn copy<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path_cached(
+            let node = path_resolver::resolve_path_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 from,
                 self.root_folder_id,
             )
             .await?;
-            let (dest_parent_id, dest_name) = path_resolver::resolve_parent_cached(
+            let (dest_parent_id, dest_name) = path_resolver::resolve_parent_cached_in_scope(
                 &self.state,
-                self.user_id,
+                self.scope,
                 to,
                 self.root_folder_id,
             )
@@ -440,14 +457,13 @@ impl DavFileSystem for AsterDavFs {
             match node {
                 ResolvedNode::File(f) => {
                     // WebDAV COPY 覆盖语义：目标已存在先删除
-                    if let Some(existing) = file_repo::find_by_name_in_folder(
-                        self.state.writer_db(),
-                        self.user_id,
+                    if let Some(existing) = find_file_by_name_in_scope(
+                        &self.state,
+                        self.scope,
                         dest_parent_id,
                         &dest_name,
                     )
-                    .await
-                    .map_err(|_| FsError::GeneralFailure)?
+                    .await?
                     {
                         file_service::delete_in_scope_with_audit(
                             &state,
@@ -475,9 +491,9 @@ impl DavFileSystem for AsterDavFs {
                     .await;
                 }
                 ResolvedNode::Folder(f) => {
-                    let copied = webdav_service::copy_folder_tree(
+                    let copied = webdav_service::copy_folder_tree_in_scope(
                         &state,
-                        self.user_id,
+                        self.scope,
                         f.id,
                         dest_parent_id,
                         &dest_name,
@@ -504,15 +520,26 @@ impl DavFileSystem for AsterDavFs {
 
     fn get_quota(&self) -> FsFuture<'_, (u64, Option<u64>)> {
         Box::pin(async move {
-            let user = user_repo::find_by_id(self.state.writer_db(), self.user_id)
-                .await
-                .map_err(|_| FsError::GeneralFailure)?;
+            let (storage_used, storage_quota) = match self.scope {
+                WorkspaceStorageScope::Personal { user_id } => {
+                    let user = user_repo::find_by_id(self.state.writer_db(), user_id)
+                        .await
+                        .map_err(|_| FsError::GeneralFailure)?;
+                    (user.storage_used, user.storage_quota)
+                }
+                WorkspaceStorageScope::Team { team_id, .. } => {
+                    let team = team_repo::find_by_id(self.state.writer_db(), team_id)
+                        .await
+                        .map_err(|_| FsError::GeneralFailure)?;
+                    (team.storage_used, team.storage_quota)
+                }
+            };
 
-            let used = i64_to_u64(user.storage_used, "webdav storage_used")
+            let used = i64_to_u64(storage_used, "webdav storage_used")
                 .map_err(|_| FsError::GeneralFailure)?;
-            let total = if user.storage_quota > 0 {
+            let total = if storage_quota > 0 {
                 Some(
-                    i64_to_u64(user.storage_quota, "webdav storage_quota")
+                    i64_to_u64(storage_quota, "webdav storage_quota")
                         .map_err(|_| FsError::GeneralFailure)?,
                 )
             } else {
@@ -529,7 +556,7 @@ impl DavFileSystem for AsterDavFs {
     ) -> Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                match resolve_entity(&self.state, self.user_id, path, self.root_folder_id).await {
+                match resolve_entity(&self.state, self.scope, path, self.root_folder_id).await {
                     Some(v) => v,
                     None => return false,
                 };
@@ -547,7 +574,7 @@ impl DavFileSystem for AsterDavFs {
     fn get_props<'a>(&'a self, path: &'a DavPath, do_content: bool) -> FsFuture<'a, Vec<DavProp>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                resolve_entity(&self.state, self.user_id, path, self.root_folder_id)
+                resolve_entity(&self.state, self.scope, path, self.root_folder_id)
                     .await
                     .ok_or(FsError::NotFound)?;
 
@@ -584,7 +611,7 @@ impl DavFileSystem for AsterDavFs {
     ) -> FsFuture<'a, Vec<(http::StatusCode, DavProp)>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                resolve_entity(&self.state, self.user_id, path, self.root_folder_id)
+                resolve_entity(&self.state, self.scope, path, self.root_folder_id)
                     .await
                     .ok_or(FsError::NotFound)?;
 
@@ -662,15 +689,33 @@ impl DavFileSystem for AsterDavFs {
 /// 从 DavPath 解析出 (entity_type, entity_id)
 async fn resolve_entity(
     state: &PrimaryAppState,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     path: &DavPath,
     root_folder_id: Option<i64>,
 ) -> Option<(EntityType, i64)> {
-    match path_resolver::resolve_path_cached(state, user_id, path, root_folder_id).await {
+    match path_resolver::resolve_path_cached_in_scope(state, scope, path, root_folder_id).await {
         Ok(ResolvedNode::File(f)) => Some((EntityType::File, f.id)),
         Ok(ResolvedNode::Folder(f)) => Some((EntityType::Folder, f.id)),
         _ => None,
     }
+}
+
+async fn find_file_by_name_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<Option<crate::entities::file::Model>, FsError> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::find_by_name_in_folder(state.writer_db(), user_id, folder_id, name).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::find_by_name_in_team_folder(state.writer_db(), team_id, folder_id, name)
+                .await
+        }
+    }
+    .map_err(|_| FsError::GeneralFailure)
 }
 
 /// AsterError → FsError 映射

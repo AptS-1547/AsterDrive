@@ -361,6 +361,16 @@ pub(crate) async fn require_team_access(
         .map(|_| ())
 }
 
+pub(crate) async fn load_team_member_role(
+    state: &PrimaryAppState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<TeamMemberRole> {
+    load_team_access(state, state.reader_db(), team_id, user_id)
+        .await
+        .map(|access| access.role)
+}
+
 pub(crate) async fn require_team_access_with_db<C: ConnectionTrait>(
     state: &PrimaryAppState,
     db: &C,

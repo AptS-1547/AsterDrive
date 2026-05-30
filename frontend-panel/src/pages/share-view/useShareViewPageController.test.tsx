@@ -10,6 +10,8 @@ import type {
 import { ErrorCode } from "@/types/api-helpers";
 import { useShareViewPageController } from "./useShareViewPageController";
 
+const TEST_SHARE_PASSWORD = "TEST_PASSWORD";
+
 const mockState = vi.hoisted(() => ({
 	buildShareFolderMusicQueue: vi.fn(),
 	buildSingleShareMusicTrack: vi.fn(),
@@ -372,7 +374,7 @@ describe("useShareViewPageController", () => {
 			expect(result.current.needsPassword).toBe(true);
 		});
 		act(() => {
-			result.current.setPassword("letmein");
+			result.current.setPassword(TEST_SHARE_PASSWORD);
 		});
 		await act(async () => {
 			await result.current.handleVerifyPassword({
@@ -380,10 +382,9 @@ describe("useShareViewPageController", () => {
 			} as never);
 		});
 
-		expect(mockState.verifyPassword).toHaveBeenCalledWith(
-			"share-token",
-			"letmein",
-		);
+		expect(mockState.verifyPassword).toHaveBeenCalledWith("share-token", {
+			password: TEST_SHARE_PASSWORD,
+		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"t:share:password_verified",
 		);

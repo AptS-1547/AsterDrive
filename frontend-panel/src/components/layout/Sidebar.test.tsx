@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { setUserSidebarScrollTop } from "@/components/layout/sidebarScrollState";
 import { STORAGE_KEYS } from "@/config/app";
+import type { TeamInfo } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	scrollAreaTestIds: [] as Array<string | undefined>,
@@ -12,7 +14,7 @@ const mockState = vi.hoisted(() => ({
 			storage_used: 25,
 		},
 	},
-	teams: [],
+	teams: [] as TeamInfo[],
 	workspace: {
 		kind: "personal" as const,
 	},
@@ -37,6 +39,7 @@ vi.mock("react-i18next", () => ({
 vi.mock("react-router-dom", () => ({
 	Link: ({
 		children,
+		to,
 		onClick,
 		onDragOver,
 		onDragLeave,
@@ -44,6 +47,7 @@ vi.mock("react-router-dom", () => ({
 		className,
 	}: {
 		children: React.ReactNode;
+		to: string;
 		onClick?: () => void;
 		onDragOver?: (event: React.DragEvent<HTMLButtonElement>) => void;
 		onDragLeave?: (event: React.DragEvent<HTMLButtonElement>) => void;
@@ -53,6 +57,7 @@ vi.mock("react-router-dom", () => ({
 		<button
 			type="button"
 			className={className}
+			data-to={to}
 			onClick={onClick}
 			onDragOver={onDragOver}
 			onDragLeave={onDragLeave}
@@ -124,16 +129,26 @@ vi.mock("@/components/ui/scroll-area", () => ({
 	ScrollArea: ({
 		children,
 		className,
+		ref,
+		viewportProps,
 		"data-testid": testId,
 	}: {
 		children: React.ReactNode;
 		className?: string;
+		ref?: React.Ref<HTMLDivElement>;
+		viewportProps?: React.ComponentProps<"div">;
 		"data-testid"?: string;
 	}) => (
 		<div
 			data-testid={testId ?? "scroll-area"}
 			className={className}
-			ref={() => {
+			onScroll={viewportProps?.onScroll}
+			ref={(node) => {
+				if (typeof ref === "function") {
+					ref(node);
+				} else if (ref) {
+					ref.current = node;
+				}
 				mockState.scrollAreaTestIds.push(testId);
 			}}
 		>
@@ -160,6 +175,7 @@ vi.mock("@/lib/dragDrop", () => ({
 describe("Sidebar", () => {
 	beforeEach(() => {
 		localStorage.clear();
+		setUserSidebarScrollTop(0);
 		mockState.pathname = "/";
 		mockState.auth.user = {
 			storage_quota: 100,
@@ -215,6 +231,9 @@ describe("Sidebar", () => {
 			screen.getByRole("button", { name: /translated:webdav/i }),
 		).toBeInTheDocument();
 		expect(
+			screen.getByRole("button", { name: /translated:webdav/i }),
+		).toHaveAttribute("data-to", "/settings/webdav");
+		expect(
 			screen.getByText("translated:files:storage_space"),
 		).toBeInTheDocument();
 		expect(
@@ -227,6 +246,49 @@ describe("Sidebar", () => {
 		expect(
 			screen.getByText("files:storage_quota:formatted:25/formatted:100"),
 		).toBeInTheDocument();
+	});
+
+	it("restores the sidebar scroll position after remounting", () => {
+		const { unmount } = render(
+			<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />,
+		);
+		const scrollArea = screen.getByTestId("user-sidebar-scroll");
+
+		scrollArea.scrollTop = 180;
+		fireEvent.scroll(scrollArea);
+		unmount();
+
+		render(<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />);
+
+		expect(screen.getByTestId("user-sidebar-scroll").scrollTop).toBe(180);
+	});
+
+	it("shows the WebDAV entry for team workspaces", () => {
+		mockState.workspace = {
+			kind: "team",
+			teamId: 42,
+		};
+		mockState.teams = [
+			{
+				id: 42,
+				name: "Design",
+				slug: "design",
+				description: null,
+				status: "active",
+				owner_id: 1,
+				storage_quota: 0,
+				storage_used: 0,
+				member_count: 2,
+				created_at: "2026-05-30T00:00:00Z",
+				updated_at: "2026-05-30T00:00:00Z",
+			},
+		];
+
+		render(<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />);
+
+		expect(
+			screen.getByRole("button", { name: /translated:webdav/i }),
+		).toHaveAttribute("data-to", "/settings/teams/42/webdav");
 	});
 
 	it("renders storage used copy when no quota is configured", () => {

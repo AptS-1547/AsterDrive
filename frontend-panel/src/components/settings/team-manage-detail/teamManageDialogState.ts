@@ -6,8 +6,9 @@ export const TEAM_MANAGE_AUDIT_PAGE_SIZE = 10;
 export const TEAM_MANAGE_TAB_INDEX: Record<TeamManageTab, number> = {
 	overview: 0,
 	members: 1,
-	audit: 2,
-	danger: 3,
+	webdav: 2,
+	audit: 3,
+	danger: 4,
 };
 
 export const teamManageContentScrollPositions = new Map<number, number>();
@@ -17,6 +18,7 @@ export function isTeamManageTab(value: string): value is TeamManageTab {
 	return (
 		value === "overview" ||
 		value === "members" ||
+		value === "webdav" ||
 		value === "audit" ||
 		value === "danger"
 	);
@@ -30,6 +32,7 @@ export function isTeamManageTabAllowed(
 	return (
 		tab === "overview" ||
 		tab === "members" ||
+		tab === "webdav" ||
 		(tab === "audit" && canManageTeam) ||
 		(tab === "danger" && canArchiveTeam)
 	);

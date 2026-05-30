@@ -74,6 +74,8 @@ export function workspaceTrashPath(workspace: Workspace) {
 		: "/trash";
 }
 
-export function workspaceWebdavPath() {
-	return "/settings/webdav";
+export function workspaceWebdavPath(workspace: Workspace = PERSONAL_WORKSPACE) {
+	return isTeamWorkspace(workspace)
+		? `/settings/teams/${workspace.teamId}/webdav`
+		: "/settings/webdav";
 }

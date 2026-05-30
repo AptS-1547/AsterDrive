@@ -15,6 +15,7 @@ function isTeamManageTab(value: string | undefined): value is TeamManageTab {
 	return (
 		value === "overview" ||
 		value === "members" ||
+		value === "webdav" ||
 		value === "audit" ||
 		value === "danger"
 	);
@@ -27,6 +28,8 @@ function getTeamManageSectionTitle(
 	switch (section) {
 		case "members":
 			return t("settings:settings_team_members");
+		case "webdav":
+			return t("settings:settings_team_webdav_title");
 		case "audit":
 			return t("settings:settings_team_audit_title");
 		case "danger":

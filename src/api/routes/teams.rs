@@ -6,7 +6,7 @@ use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::LimitOffsetQuery;
 use crate::api::response::ApiResponse;
-use crate::api::routes::{batch, folders, search, shares, tasks, trash};
+use crate::api::routes::{batch, folders, search, shares, tasks, trash, webdav_accounts};
 use crate::config::{NetworkTrustConfig, RateLimitConfig};
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
@@ -32,6 +32,22 @@ pub fn routes(
         .route("/{id}", web::delete().to(delete_team))
         .route("/{id}/restore", web::post().to(restore_team))
         .route("/{id}/audit-logs", web::get().to(list_audit_logs))
+        .route(
+            "/{team_id}/webdav-accounts",
+            web::get().to(webdav_accounts::list_team_accounts),
+        )
+        .route(
+            "/{team_id}/webdav-accounts",
+            web::post().to(webdav_accounts::create_team_account),
+        )
+        .route(
+            "/{team_id}/webdav-accounts/{account_id}",
+            web::delete().to(webdav_accounts::delete_team_account),
+        )
+        .route(
+            "/{team_id}/webdav-accounts/{account_id}/toggle",
+            web::post().to(webdav_accounts::toggle_team_account),
+        )
         .route("/{id}/members", web::get().to(list_members))
         .route("/{id}/members", web::post().to(add_member))
         .route(

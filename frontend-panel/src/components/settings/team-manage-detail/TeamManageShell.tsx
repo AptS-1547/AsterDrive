@@ -45,6 +45,7 @@ interface TeamManageShellProps {
 	usagePercentage: number;
 	used: number;
 	viewerRole: TeamMemberRole | null;
+	webdavSection: ReactNode;
 }
 
 interface TeamManageFrameProps {
@@ -100,6 +101,7 @@ export function TeamManageShell({
 	usagePercentage,
 	used,
 	viewerRole,
+	webdavSection,
 }: TeamManageShellProps) {
 	const { t } = useTranslation(["core", "settings"]);
 	return (
@@ -272,6 +274,12 @@ export function TeamManageShell({
 										>
 											{t("settings:settings_team_members")}
 										</TabsTrigger>
+										<TabsTrigger
+											value="webdav"
+											className="h-10 min-w-0 rounded-none px-0"
+										>
+											{t("settings:settings_team_webdav_title")}
+										</TabsTrigger>
 										{canManageTeam ? (
 											<TabsTrigger
 												value="audit"
@@ -310,6 +318,15 @@ export function TeamManageShell({
 									>
 										{membersSection}
 									</TabsContent>
+									<TabsContent
+										value="webdav"
+										className={cn(
+											"outline-none",
+											currentTab === "webdav" && panelAnimationClass,
+										)}
+									>
+										{webdavSection}
+									</TabsContent>
 									{canManageTeam ? (
 										<TabsContent
 											value="audit"
@@ -338,6 +355,7 @@ export function TeamManageShell({
 							<div className="space-y-4 p-6">
 								{overviewSection}
 								{membersSection}
+								{webdavSection}
 								{auditSection}
 								{dangerSection}
 							</div>

@@ -8,22 +8,38 @@ use crate::cache::CacheExt;
 use crate::db::repository::{user_repo, webdav_account_repo};
 use crate::errors::{AsterError, MapAsterErr, auth_forbidden_with_subcode};
 use crate::runtime::PrimaryAppState;
+use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::utils::hash;
 
 const WEBDAV_AUTH_CACHE_TTL: u64 = 60;
 
 /// WebDAV 认证结果
 #[derive(Debug)]
-pub struct WebdavAuthResult {
-    pub user_id: i64,
+pub(crate) struct WebdavAuthResult {
+    pub(crate) scope: WorkspaceStorageScope,
     /// 限制访问范围：None = 全部，Some(folder_id) = 只能访问该文件夹及子目录
-    pub root_folder_id: Option<i64>,
+    pub(crate) root_folder_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedWebdavAuth {
     user_id: i64,
+    team_id: Option<i64>,
     root_folder_id: Option<i64>,
+}
+
+impl CachedWebdavAuth {
+    fn scope(&self) -> WorkspaceStorageScope {
+        match self.team_id {
+            Some(team_id) => WorkspaceStorageScope::Team {
+                team_id,
+                actor_user_id: self.user_id,
+            },
+            None => WorkspaceStorageScope::Personal {
+                user_id: self.user_id,
+            },
+        }
+    }
 }
 
 fn username_cache_component(username: &str) -> String {
@@ -68,7 +84,7 @@ pub(crate) async fn invalidate_webdav_auth_for_user(
 ///
 /// 支持：
 /// 1. `Authorization: Basic base64(username:password)` — 查 webdav_accounts 表
-pub async fn authenticate_webdav(
+pub(crate) async fn authenticate_webdav(
     headers: &actix_web::http::header::HeaderMap,
     state: &PrimaryAppState,
 ) -> Result<WebdavAuthResult, AsterError> {
@@ -78,22 +94,17 @@ pub async fn authenticate_webdav(
         .ok_or_else(|| AsterError::auth_token_invalid("missing Authorization header"))?;
 
     if let Some(basic) = auth_header.strip_prefix("Basic ") {
-        let (user_id, root_folder_id) = authenticate_basic(basic.trim(), state).await?;
-        Ok(WebdavAuthResult {
-            user_id,
-            root_folder_id,
-        })
+        authenticate_basic(basic.trim(), state).await
     } else {
         Err(AsterError::auth_token_invalid("unsupported auth scheme"))
     }
 }
 
 /// Basic Auth: 查 webdav_accounts 表（独立于登录密码）
-/// 返回 (user_id, root_folder_id)
 async fn authenticate_basic(
     encoded: &str,
     state: &PrimaryAppState,
-) -> Result<(i64, Option<i64>), AsterError> {
+) -> Result<WebdavAuthResult, AsterError> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded)
         .map_aster_err_with(|| AsterError::auth_invalid_credentials("invalid base64"))?;
@@ -107,8 +118,12 @@ async fn authenticate_basic(
 
     let cache_key = webdav_auth_cache_key(username, password);
     if let Some(cached) = state.cache.get::<CachedWebdavAuth>(&cache_key).await {
+        validate_cached_scope(state, cached.scope()).await?;
         tracing::debug!(username_hash = %username_cache_component(username), "webdav auth cache hit");
-        return Ok((cached.user_id, cached.root_folder_id));
+        return Ok(WebdavAuthResult {
+            scope: cached.scope(),
+            root_folder_id: cached.root_folder_id,
+        });
     }
 
     // 查 WebDAV 专用账号
@@ -136,19 +151,55 @@ async fn authenticate_basic(
         ));
     }
 
+    let scope = match account.team_id {
+        Some(team_id) => {
+            crate::services::workspace_storage_service::require_team_access(
+                state,
+                team_id,
+                account.user_id,
+            )
+            .await?;
+            WorkspaceStorageScope::Team {
+                team_id,
+                actor_user_id: account.user_id,
+            }
+        }
+        None => WorkspaceStorageScope::Personal {
+            user_id: account.user_id,
+        },
+    };
+
     state
         .cache
         .set(
             &cache_key,
             &CachedWebdavAuth {
                 user_id: account.user_id,
+                team_id: account.team_id,
                 root_folder_id: account.root_folder_id,
             },
             Some(WEBDAV_AUTH_CACHE_TTL),
         )
         .await;
     tracing::debug!(username_hash = %username_cache_component(username), "webdav auth cache miss");
-    Ok((account.user_id, account.root_folder_id))
+    Ok(WebdavAuthResult {
+        scope,
+        root_folder_id: account.root_folder_id,
+    })
+}
+
+async fn validate_cached_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+) -> Result<(), AsterError> {
+    let user = user_repo::find_by_id(state.writer_db(), scope.actor_user_id()).await?;
+    if !user.status.is_active() {
+        return Err(auth_forbidden_with_subcode(
+            ApiSubcode::AuthAccountDisabled,
+            "user account is disabled",
+        ));
+    }
+    crate::services::workspace_storage_service::require_scope_access(state, scope).await
 }
 
 #[cfg(test)]
@@ -294,7 +345,7 @@ mod tests {
             .await
             .expect("basic auth should succeed");
 
-        assert_eq!(result.user_id, user_id);
+        assert_eq!(result.scope.actor_user_id(), user_id);
         assert_eq!(result.root_folder_id, root_folder_id);
     }
 

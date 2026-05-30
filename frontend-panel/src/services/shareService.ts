@@ -5,7 +5,9 @@ import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
 	ArchivePreviewManifest,
+	BatchDeleteSharesRequest,
 	BatchResult,
+	CreateShareRequest,
 	FolderContents,
 	FolderListParams,
 	MediaMetadataInfo,
@@ -15,7 +17,8 @@ import type {
 	SharePage,
 	SharePublicInfo,
 	ShareStreamSessionInfo,
-	ShareTarget,
+	UpdateShareRequest,
+	VerifySharePasswordRequest,
 } from "@/types/api";
 import {
 	type ArchivePreviewRequestOptions,
@@ -35,41 +38,28 @@ export function createShareService(workspace: Workspace) {
 	}
 
 	return {
-		create: (data: {
-			target: ShareTarget;
-			password?: string;
-			expires_at?: string;
-			max_downloads?: number;
-		}) => api.post<ShareInfo>(workspaceSharesPrefix(workspace), data),
+		create: (data: CreateShareRequest) =>
+			api.post<ShareInfo>(workspaceSharesPrefix(workspace), data),
 
 		listMine: (params?: ShareListQuery) =>
 			api.get<SharePage>(workspaceSharesPrefix(workspace), { params }),
 
-		update: (
-			id: number,
-			data: {
-				password?: string;
-				expires_at: string | null;
-				max_downloads: number;
-			},
-		) =>
+		update: (id: number, data: UpdateShareRequest) =>
 			api.patch<ShareInfo>(`${workspaceSharesPrefix(workspace)}/${id}`, data),
 
 		delete: (id: number) =>
 			api.delete<void>(`${workspaceSharesPrefix(workspace)}/${id}`),
 
-		batchDelete: (shareIds: number[]) =>
+		batchDelete: (data: BatchDeleteSharesRequest) =>
 			api.post<BatchResult>(
 				`${workspaceSharesPrefix(workspace)}/batch-delete`,
-				{
-					share_ids: shareIds,
-				},
+				data,
 			),
 
 		getInfo: (token: string) => api.get<SharePublicInfo>(`/s/${token}`),
 
-		verifyPassword: (token: string, password: string) =>
-			api.post<void>(`/s/${token}/verify`, { password }),
+		verifyPassword: (token: string, data: VerifySharePasswordRequest) =>
+			api.post<void>(`/s/${token}/verify`, data),
 
 		pagePath: (token: string) => `/s/${token}`,
 

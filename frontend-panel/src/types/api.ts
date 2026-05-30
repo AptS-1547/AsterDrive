@@ -158,6 +158,12 @@ export type ShareListQuery = OperationQuery<"list_my_shares">;
 export type SharePublicInfo = components["schemas"]["SharePublicInfo"];
 export type ShareStatus = components["schemas"]["ShareStatus"];
 export type ShareTarget = components["schemas"]["ShareTarget"];
+export type BatchDeleteSharesRequest =
+	components["schemas"]["BatchDeleteSharesReq"];
+export type CreateShareRequest = components["schemas"]["CreateShareReq"];
+export type UpdateShareRequest = components["schemas"]["UpdateShareReq"];
+export type VerifySharePasswordRequest =
+	components["schemas"]["VerifyPasswordReq"];
 export type StorageChangeEvent = components["schemas"]["StorageChangeEvent"];
 export type StorageChangeKind = components["schemas"]["StorageChangeKind"];
 export type StorageChangeWorkspace =
@@ -383,6 +389,12 @@ export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
 export type WebdavAccountPage =
 	components["schemas"]["OffsetPage_WebdavAccountInfo"];
 export type WebdavAccountListQuery = OperationQuery<"list_webdav_accounts">;
+export type TeamWebdavAccountListQuery =
+	OperationQuery<"list_team_webdav_accounts">;
+export type CreateWebdavAccountRequest =
+	components["schemas"]["CreateWebdavAccountReq"];
+export type TestWebdavConnectionRequest =
+	components["schemas"]["TestConnectionReq"];
 export type WebdavSettingsInfo = components["schemas"]["WebdavSettingsInfo"];
 export type OpenWopiRequest = components["schemas"]["OpenWopiRequest"];
 export type WopiAccessQuery = components["schemas"]["WopiAccessQuery"];

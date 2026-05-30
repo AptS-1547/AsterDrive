@@ -33,6 +33,33 @@ pub async fn find_by_user<C: ConnectionTrait>(
 ) -> Result<Vec<webdav_account::Model>> {
     WebdavAccount::find()
         .filter(webdav_account::Column::UserId.eq(user_id))
+        .filter(webdav_account::Column::TeamId.is_null())
+        .order_by_asc(webdav_account::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_by_team<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+) -> Result<Vec<webdav_account::Model>> {
+    WebdavAccount::find()
+        .filter(webdav_account::Column::TeamId.eq(team_id))
+        .order_by_asc(webdav_account::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_by_team_and_user<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+) -> Result<Vec<webdav_account::Model>> {
+    WebdavAccount::find()
+        .filter(webdav_account::Column::TeamId.eq(team_id))
+        .filter(webdav_account::Column::UserId.eq(user_id))
         .order_by_asc(webdav_account::Column::Id)
         .all(db)
         .await
@@ -48,6 +75,43 @@ pub async fn find_by_user_paginated<C: ConnectionTrait>(
     fetch_offset_page(
         db,
         WebdavAccount::find()
+            .filter(webdav_account::Column::UserId.eq(user_id))
+            .filter(webdav_account::Column::TeamId.is_null())
+            .order_by_asc(webdav_account::Column::Id),
+        limit,
+        offset,
+    )
+    .await
+}
+
+pub async fn find_by_team_paginated<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<webdav_account::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        WebdavAccount::find()
+            .filter(webdav_account::Column::TeamId.eq(team_id))
+            .order_by_asc(webdav_account::Column::Id),
+        limit,
+        offset,
+    )
+    .await
+}
+
+pub async fn find_by_team_and_user_paginated<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<webdav_account::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        WebdavAccount::find()
+            .filter(webdav_account::Column::TeamId.eq(team_id))
             .filter(webdav_account::Column::UserId.eq(user_id))
             .order_by_asc(webdav_account::Column::Id),
         limit,
@@ -82,6 +146,15 @@ pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
 pub async fn delete_all_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<u64> {
     let res = WebdavAccount::delete_many()
         .filter(webdav_account::Column::UserId.eq(user_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(res.rows_affected)
+}
+
+pub async fn delete_all_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<u64> {
+    let res = WebdavAccount::delete_many()
+        .filter(webdav_account::Column::TeamId.eq(team_id))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

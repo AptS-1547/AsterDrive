@@ -200,6 +200,7 @@ async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) 
     let txn = crate::db::transaction::begin(state.writer_db()).await?;
     team_repo::lock_archived_by_id(&txn, team_id).await?;
     upload_session_repo::delete_all_by_team(&txn, team_id).await?;
+    crate::db::repository::webdav_account_repo::delete_all_by_team(&txn, team_id).await?;
     clear_team_locks(&txn, team_id).await?;
     let deleted_shares = share_repo::delete_all_by_team(&txn, team_id).await?;
 

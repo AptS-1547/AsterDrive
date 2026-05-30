@@ -387,7 +387,9 @@ describe("MySharesPage", () => {
 		fireEvent.click(screen.getByText("delete"));
 
 		await waitFor(() => {
-			expect(mockState.batchDelete).toHaveBeenCalledWith([11, 12]);
+			expect(mockState.batchDelete).toHaveBeenCalledWith({
+				share_ids: [11, 12],
+			});
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"share:my_shares_batch_delete_success",

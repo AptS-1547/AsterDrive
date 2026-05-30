@@ -4,11 +4,16 @@
 mod common;
 
 use actix_web::test;
-use actix_web::{App, web};
+use actix_web::{App, HttpServer, web};
 use aster_drive::config::{RateLimitConfig, WebDavConfig};
 use aster_drive::db::repository::{file_repo, property_repo};
-use aster_drive::types::EntityType;
+use aster_drive::entities::{team, team_member, user, webdav_account};
+use aster_drive::runtime::PrimaryAppState;
+use aster_drive::types::{EntityType, TeamMemberRole, UserRole, UserStatus};
 use base64::Engine;
+use chrono::Utc;
+use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+use tokio::task::JoinHandle;
 
 fn basic_auth_header(username: &str, password: &str) -> String {
     format!(
@@ -17,22 +22,231 @@ fn basic_auth_header(username: &str, password: &str) -> String {
     )
 }
 
+fn webdav_test_username(label: &str) -> String {
+    format!("webdav-{label}-{}", uuid::Uuid::new_v4().simple())
+}
+
+fn webdav_test_password(label: &str) -> String {
+    format!("TEST_PASSWORD_{label}_{}", uuid::Uuid::new_v4().simple())
+}
+
+struct RunningWebdavServer {
+    base_url: String,
+    handle: actix_web::dev::ServerHandle,
+    task: JoinHandle<std::io::Result<()>>,
+}
+
+impl RunningWebdavServer {
+    async fn stop(self) {
+        self.handle.stop(true).await;
+        let _ = self.task.await;
+    }
+}
+
+async fn start_real_webdav_server(state: PrimaryAppState) -> RunningWebdavServer {
+    let db = state.writer_db().clone();
+    let webdav_config = WebDavConfig::default();
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("real WebDAV test server should bind to a random local port");
+    let addr = listener
+        .local_addr()
+        .expect("real WebDAV test server local addr should be available");
+    let server = HttpServer::new(move || {
+        let db = db.clone();
+        let webdav_config = webdav_config.clone();
+        App::new()
+            .wrap(actix_web::middleware::Compress::default())
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state.clone()))
+            .configure(move |cfg| aster_drive::webdav::configure(cfg, &webdav_config, &db))
+    })
+    .listen(listener)
+    .expect("real WebDAV test server should listen")
+    .run();
+    let handle = server.handle();
+    let task = tokio::spawn(server);
+    RunningWebdavServer {
+        base_url: format!("http://{addr}"),
+        handle,
+        task,
+    }
+}
+
+async fn seed_real_webdav_account(state: &PrimaryAppState) -> (String, String) {
+    let now = Utc::now();
+    let default_policy_group =
+        aster_drive::db::repository::policy_group_repo::find_default_group(state.writer_db())
+            .await
+            .expect("default policy group lookup should succeed")
+            .expect("default policy group should exist");
+    let user = user::ActiveModel {
+        username: Set("real-webdav-user".to_string()),
+        email: Set("real-webdav-user@example.com".to_string()),
+        password_hash: Set("unused".to_string()),
+        role: Set(UserRole::User),
+        status: Set(UserStatus::Active),
+        session_version: Set(0),
+        email_verified_at: Set(Some(now)),
+        pending_email: Set(None),
+        storage_used: Set(0),
+        storage_quota: Set(0),
+        policy_group_id: Set(Some(default_policy_group.id)),
+        created_at: Set(now),
+        updated_at: Set(now),
+        config: Set(None),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("real WebDAV test user should be inserted");
+    state
+        .policy_snapshot
+        .set_user_policy_group(user.id, default_policy_group.id);
+
+    let username = webdav_test_username("real-account");
+    let password = webdav_test_password("REAL_ACCOUNT");
+    webdav_account::ActiveModel {
+        user_id: Set(user.id),
+        username: Set(username.clone()),
+        password_hash: Set(aster_drive::utils::hash::hash_password(&password)
+            .expect("real WebDAV test password should hash")),
+        root_folder_id: Set(None),
+        is_active: Set(true),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("real WebDAV account should be inserted");
+
+    (username, password)
+}
+
+async fn seed_real_team_webdav_accounts(
+    state: &PrimaryAppState,
+) -> (String, String, String, String, i64) {
+    let now = Utc::now();
+    let default_policy_group =
+        aster_drive::db::repository::policy_group_repo::find_default_group(state.writer_db())
+            .await
+            .expect("default policy group lookup should succeed")
+            .expect("default policy group should exist");
+    let user = user::ActiveModel {
+        username: Set("real-team-webdav-user".to_string()),
+        email: Set("real-team-webdav-user@example.com".to_string()),
+        password_hash: Set("unused".to_string()),
+        role: Set(UserRole::User),
+        status: Set(UserStatus::Active),
+        session_version: Set(0),
+        email_verified_at: Set(Some(now)),
+        pending_email: Set(None),
+        storage_used: Set(0),
+        storage_quota: Set(0),
+        policy_group_id: Set(Some(default_policy_group.id)),
+        created_at: Set(now),
+        updated_at: Set(now),
+        config: Set(None),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("real team WebDAV test user should be inserted");
+    state
+        .policy_snapshot
+        .set_user_policy_group(user.id, default_policy_group.id);
+
+    let team = team::ActiveModel {
+        name: Set("Real Team WebDAV".to_string()),
+        description: Set("WebDAV team workspace".to_string()),
+        created_by: Set(user.id),
+        storage_used: Set(0),
+        storage_quota: Set(0),
+        policy_group_id: Set(Some(default_policy_group.id)),
+        created_at: Set(now),
+        updated_at: Set(now),
+        archived_at: Set(None),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("real team WebDAV team should be inserted");
+
+    team_member::ActiveModel {
+        team_id: Set(team.id),
+        user_id: Set(user.id),
+        role: Set(TeamMemberRole::Owner),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("real team WebDAV owner membership should be inserted");
+
+    let personal_username = webdav_test_username("real-team-personal");
+    let personal_password = webdav_test_password("REAL_TEAM_PERSONAL");
+    webdav_account::ActiveModel {
+        user_id: Set(user.id),
+        team_id: Set(None),
+        username: Set(personal_username.clone()),
+        password_hash: Set(aster_drive::utils::hash::hash_password(&personal_password)
+            .expect("personal WebDAV password should hash")),
+        root_folder_id: Set(None),
+        is_active: Set(true),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("personal WebDAV account should be inserted");
+
+    let team_username = webdav_test_username("real-team-account");
+    let team_password = webdav_test_password("REAL_TEAM_ACCOUNT");
+    webdav_account::ActiveModel {
+        user_id: Set(user.id),
+        team_id: Set(Some(team.id)),
+        username: Set(team_username.clone()),
+        password_hash: Set(aster_drive::utils::hash::hash_password(&team_password)
+            .expect("team WebDAV password should hash")),
+        root_folder_id: Set(None),
+        is_active: Set(true),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("team WebDAV account should be inserted");
+
+    (
+        team_username,
+        team_password,
+        personal_username,
+        personal_password,
+        team.id,
+    )
+}
+
 macro_rules! create_webdav_basic_auth {
     ($app:expr, $token:expr) => {{
-        let username = "testuser-webdav";
-        let password = "webdav-pass-123";
+        let username = webdav_test_username("basic");
+        let password = webdav_test_password("BASIC");
         let req = test::TestRequest::post()
             .uri("/api/v1/webdav-accounts")
             .insert_header(("Cookie", common::access_cookie_header(&$token)))
             .insert_header(common::csrf_header_for(&$token))
             .set_json(serde_json::json!({
-                "username": username,
-                "password": password
+                "username": &username,
+                "password": &password
             }))
             .to_request();
         let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201, "create WebDAV account should return 201");
-        basic_auth_header(username, password)
+        basic_auth_header(&username, &password)
     }};
 }
 
@@ -307,6 +521,507 @@ async fn test_webdav_put_is_not_limited_by_xml_body_limit() {
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     let body = test::read_body(resp).await;
     assert_eq!(body.as_ref(), data.as_slice());
+}
+
+#[actix_web::test]
+async fn test_webdav_get_supports_binary_range_requests() {
+    let app = setup_with_webdav!();
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let data: Vec<u8> = (0..=255).cycle().take(4099).collect();
+    let req = test::TestRequest::put()
+        .uri("/webdav/range-image.bin")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .insert_header(("Content-Length", data.len().to_string()))
+        .set_payload(data.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/range-image.bin")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Range", "bytes=1024-2047"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        actix_web::http::StatusCode::PARTIAL_CONTENT,
+        "WebDAV GET should honor byte ranges"
+    );
+    assert_eq!(
+        resp.headers()
+            .get("Content-Range")
+            .and_then(|value| value.to_str().ok()),
+        Some("bytes 1024-2047/4099")
+    );
+    assert_eq!(
+        resp.headers()
+            .get("Accept-Ranges")
+            .and_then(|value| value.to_str().ok()),
+        Some("bytes")
+    );
+    assert_eq!(
+        resp.headers()
+            .get("Content-Encoding")
+            .and_then(|value| value.to_str().ok()),
+        Some("identity")
+    );
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), &data[1024..=2047]);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/range-image.bin")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Range", "bytes=-9"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), &data[data.len() - 9..]);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/range-image.bin")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), data.as_slice());
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_put_with_content_length_persists_bytes() {
+    let state = common::setup().await;
+    let (username, password) = seed_real_webdav_account(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+    let data: Vec<u8> = (0..=255).cycle().take(8193).collect();
+
+    let put = client
+        .put(format!("{}/webdav/finder-length.bin", server.base_url))
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .header(reqwest::header::CONTENT_LENGTH, data.len().to_string())
+        .body(data.clone())
+        .send()
+        .await
+        .expect("real WebDAV PUT with Content-Length should receive a response");
+    let put_status = put.status();
+    let put_body = put
+        .text()
+        .await
+        .expect("real WebDAV PUT error body should be readable");
+    assert!(
+        put_status == reqwest::StatusCode::CREATED || put_status == reqwest::StatusCode::NO_CONTENT,
+        "real WebDAV PUT should create or overwrite the file, got {put_status}: {put_body}"
+    );
+
+    let get = client
+        .get(format!("{}/webdav/finder-length.bin", server.base_url))
+        .basic_auth(&username, Some(&password))
+        .send()
+        .await
+        .expect("real WebDAV GET should receive a response");
+    assert_eq!(get.status(), reqwest::StatusCode::OK);
+    let bytes = get.bytes().await.expect("real WebDAV GET body should read");
+    assert_eq!(bytes.as_ref(), data.as_slice());
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_chunked_put_persists_bytes() {
+    let state = common::setup().await;
+    let (username, password) = seed_real_webdav_account(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+    let data: Vec<u8> = (0..=251).cycle().take(16 * 1024 + 17).collect();
+    let chunks = futures::stream::iter(
+        data.chunks(1024)
+            .map(|chunk| Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(chunk)))
+            .collect::<Vec<_>>(),
+    );
+
+    let put = client
+        .put(format!("{}/webdav/finder-chunked.bin", server.base_url))
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .body(reqwest::Body::wrap_stream(chunks))
+        .send()
+        .await
+        .expect("real WebDAV chunked PUT should receive a response");
+    let put_status = put.status();
+    let put_body = put
+        .text()
+        .await
+        .expect("real WebDAV chunked PUT error body should be readable");
+    assert!(
+        put_status == reqwest::StatusCode::CREATED || put_status == reqwest::StatusCode::NO_CONTENT,
+        "real WebDAV chunked PUT should create or overwrite the file, got {put_status}: {put_body}"
+    );
+
+    let get = client
+        .get(format!("{}/webdav/finder-chunked.bin", server.base_url))
+        .basic_auth(&username, Some(&password))
+        .send()
+        .await
+        .expect("real WebDAV GET after chunked PUT should receive a response");
+    assert_eq!(get.status(), reqwest::StatusCode::OK);
+    let bytes = get
+        .bytes()
+        .await
+        .expect("real WebDAV GET after chunked PUT body should read");
+    assert_eq!(bytes.as_ref(), data.as_slice());
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_finder_expected_length_put_persists_bytes() {
+    let state = common::setup().await;
+    let (username, password) = seed_real_webdav_account(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+    let data: Vec<u8> = (0..=253).cycle().take(32 * 1024 + 29).collect();
+    let chunks = futures::stream::iter(
+        data.chunks(2048)
+            .map(|chunk| Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(chunk)))
+            .collect::<Vec<_>>(),
+    );
+
+    let put = client
+        .put(format!(
+            "{}/webdav/finder-expected-length.bin",
+            server.base_url
+        ))
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .header("X-Expected-Entity-Length", data.len().to_string())
+        .body(reqwest::Body::wrap_stream(chunks))
+        .send()
+        .await
+        .expect("Finder-style expected-length PUT should receive a response");
+    assert!(
+        put.status() == reqwest::StatusCode::CREATED
+            || put.status() == reqwest::StatusCode::NO_CONTENT,
+        "Finder-style expected-length PUT should create or overwrite the file, got {}",
+        put.status()
+    );
+
+    let get = client
+        .get(format!(
+            "{}/webdav/finder-expected-length.bin",
+            server.base_url
+        ))
+        .basic_auth(&username, Some(&password))
+        .send()
+        .await
+        .expect("Finder-style expected-length GET should receive a response");
+    assert_eq!(get.status(), reqwest::StatusCode::OK);
+    let bytes = get
+        .bytes()
+        .await
+        .expect("Finder-style expected-length GET body should read");
+    assert_eq!(bytes.as_ref(), data.as_slice());
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_expected_length_mismatch_does_not_create_empty_file() {
+    let state = common::setup().await;
+    let (username, password) = seed_real_webdav_account(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+
+    let put = client
+        .put(format!("{}/webdav/finder-empty-shell.bin", server.base_url))
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .header("X-Expected-Entity-Length", "4096")
+        .body(Vec::<u8>::new())
+        .send()
+        .await
+        .expect("mismatched expected-length PUT should receive a response");
+    assert_eq!(
+        put.status(),
+        reqwest::StatusCode::BAD_REQUEST,
+        "mismatched expected length must be rejected instead of creating a zero-byte file"
+    );
+
+    let get = client
+        .get(format!("{}/webdav/finder-empty-shell.bin", server.base_url))
+        .basic_auth(&username, Some(&password))
+        .send()
+        .await
+        .expect("GET after mismatched expected-length PUT should receive a response");
+    assert_eq!(get.status(), reqwest::StatusCode::NOT_FOUND);
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_put_with_own_lock_overwrites_placeholder() {
+    let state = common::setup().await;
+    let (username, password) = seed_real_webdav_account(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+    let url = format!("{}/webdav/finder-locked-overwrite.jar", server.base_url);
+
+    let placeholder = client
+        .put(&url)
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_LENGTH, "0")
+        .body(Vec::<u8>::new())
+        .send()
+        .await
+        .expect("Finder-style placeholder PUT should receive a response");
+    assert!(
+        placeholder.status() == reqwest::StatusCode::CREATED
+            || placeholder.status() == reqwest::StatusCode::NO_CONTENT,
+        "placeholder PUT should create or overwrite the file, got {}",
+        placeholder.status()
+    );
+
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+  <D:owner><D:href>finder</D:href></D:owner>
+</D:lockinfo>"#;
+    let lock = client
+        .request(reqwest::Method::from_bytes(b"LOCK").unwrap(), &url)
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_TYPE, "application/xml")
+        .header("Timeout", "Second-3600")
+        .body(lock_body)
+        .send()
+        .await
+        .expect("LOCK before Finder overwrite should receive a response");
+    assert_eq!(lock.status(), reqwest::StatusCode::OK);
+    let lock_token = lock
+        .headers()
+        .get("Lock-Token")
+        .and_then(|value| value.to_str().ok())
+        .expect("LOCK response should include Lock-Token")
+        .to_string();
+    let submitted_lock_token = lock_token.trim_matches(|c| c == '<' || c == '>');
+
+    let data: Vec<u8> = (0..=251).cycle().take(128 * 1024 + 31).collect();
+    let overwrite = client
+        .put(&url)
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .header(reqwest::header::CONTENT_LENGTH, data.len().to_string())
+        .header("If", format!("(<{submitted_lock_token}>)"))
+        .body(data.clone())
+        .send()
+        .await
+        .expect("PUT with own WebDAV lock token should receive a response");
+    let overwrite_status = overwrite.status();
+    let overwrite_body = overwrite
+        .text()
+        .await
+        .expect("locked overwrite response body should be readable");
+    assert!(
+        overwrite_status == reqwest::StatusCode::CREATED
+            || overwrite_status == reqwest::StatusCode::NO_CONTENT,
+        "PUT with own WebDAV lock token should overwrite the placeholder, got {overwrite_status}: {overwrite_body}"
+    );
+
+    let get = client
+        .get(&url)
+        .basic_auth(&username, Some(&password))
+        .send()
+        .await
+        .expect("GET after locked overwrite should receive a response");
+    assert_eq!(get.status(), reqwest::StatusCode::OK);
+    let bytes = get
+        .bytes()
+        .await
+        .expect("GET after locked overwrite body should read");
+    assert_eq!(bytes.as_ref(), data.as_slice());
+
+    let unlock = client
+        .request(reqwest::Method::from_bytes(b"UNLOCK").unwrap(), &url)
+        .basic_auth(&username, Some(&password))
+        .header("Lock-Token", lock_token)
+        .send()
+        .await
+        .expect("UNLOCK after locked overwrite should receive a response");
+    assert!(
+        unlock.status() == reqwest::StatusCode::NO_CONTENT
+            || unlock.status() == reqwest::StatusCode::OK,
+        "UNLOCK should succeed after locked overwrite, got {}",
+        unlock.status()
+    );
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_team_account_uses_team_workspace() {
+    let state = common::setup().await;
+    let (team_username, team_password, personal_username, personal_password, _team_id) =
+        seed_real_team_webdav_accounts(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+    let url = format!("{}/webdav/team-scope.bin", server.base_url);
+    let data: Vec<u8> = (0..=247).cycle().take(64 * 1024 + 13).collect();
+
+    let put = client
+        .put(&url)
+        .basic_auth(&team_username, Some(&team_password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .header(reqwest::header::CONTENT_LENGTH, data.len().to_string())
+        .body(data.clone())
+        .send()
+        .await
+        .expect("team WebDAV PUT should receive a response");
+    let put_status = put.status();
+    let put_body = put
+        .text()
+        .await
+        .expect("team WebDAV PUT response body should be readable");
+    assert!(
+        put_status == reqwest::StatusCode::CREATED || put_status == reqwest::StatusCode::NO_CONTENT,
+        "team WebDAV PUT should create the file, got {put_status}: {put_body}"
+    );
+
+    let team_get = client
+        .get(&url)
+        .basic_auth(&team_username, Some(&team_password))
+        .send()
+        .await
+        .expect("team WebDAV GET should receive a response");
+    assert_eq!(team_get.status(), reqwest::StatusCode::OK);
+    let bytes = team_get
+        .bytes()
+        .await
+        .expect("team WebDAV GET body should read");
+    assert_eq!(bytes.as_ref(), data.as_slice());
+
+    let personal_get = client
+        .get(&url)
+        .basic_auth(&personal_username, Some(&personal_password))
+        .send()
+        .await
+        .expect("personal WebDAV GET should receive a response");
+    assert_eq!(
+        personal_get.status(),
+        reqwest::StatusCode::NOT_FOUND,
+        "personal account must not see files written through a team WebDAV account"
+    );
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_team_account_is_rejected_after_team_archive() {
+    let state = common::setup().await;
+    let (team_username, team_password, _, _, team_id) =
+        seed_real_team_webdav_accounts(&state).await;
+    let server = start_real_webdav_server(state.clone()).await;
+    let client = reqwest::Client::new();
+    let url = format!("{}/webdav/team-archive-check.bin", server.base_url);
+
+    let before_archive = client
+        .put(&url)
+        .basic_auth(&team_username, Some(&team_password))
+        .header(reqwest::header::CONTENT_LENGTH, "5")
+        .body("ready".to_string())
+        .send()
+        .await
+        .expect("team WebDAV PUT before archive should receive a response");
+    assert!(
+        before_archive.status() == reqwest::StatusCode::CREATED
+            || before_archive.status() == reqwest::StatusCode::NO_CONTENT,
+        "team WebDAV account should work before archive, got {}",
+        before_archive.status()
+    );
+
+    let team = aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team_id)
+        .await
+        .expect("team should exist");
+    let mut active_team = team.into_active_model();
+    active_team.archived_at = Set(Some(Utc::now()));
+    active_team
+        .update(state.writer_db())
+        .await
+        .expect("team should archive");
+    let after_archive = client
+        .get(&url)
+        .basic_auth(&team_username, Some(&team_password))
+        .send()
+        .await
+        .expect("team WebDAV GET after archive should receive a response");
+    assert_eq!(
+        after_archive.status(),
+        reqwest::StatusCode::UNAUTHORIZED,
+        "archived team WebDAV account must be rejected at auth boundary"
+    );
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_large_chunked_put_uses_webdav_payload_limit() {
+    let state = common::setup().await;
+    let (username, password) = seed_real_webdav_account(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+    let data: Vec<u8> = (0..=250).cycle().take(11 * 1024 * 1024).collect();
+    let chunks = futures::stream::iter(
+        data.chunks(64 * 1024)
+            .map(|chunk| Ok::<_, std::io::Error>(bytes::Bytes::copy_from_slice(chunk)))
+            .collect::<Vec<_>>(),
+    );
+
+    let put = client
+        .put(format!(
+            "{}/webdav/finder-large-chunked.bin",
+            server.base_url
+        ))
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .body(reqwest::Body::wrap_stream(chunks))
+        .send()
+        .await
+        .expect("large real WebDAV chunked PUT should receive a response");
+    let put_status = put.status();
+    let put_body = put
+        .text()
+        .await
+        .expect("large real WebDAV chunked PUT error body should be readable");
+    assert!(
+        put_status == reqwest::StatusCode::CREATED || put_status == reqwest::StatusCode::NO_CONTENT,
+        "large real WebDAV chunked PUT should create or overwrite the file, got {put_status}: {put_body}"
+    );
+
+    let get = client
+        .get(format!(
+            "{}/webdav/finder-large-chunked.bin",
+            server.base_url
+        ))
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::RANGE, "bytes=10485760-10485887")
+        .send()
+        .await
+        .expect("large real WebDAV range GET should receive a response");
+    assert_eq!(get.status(), reqwest::StatusCode::PARTIAL_CONTENT);
+    let bytes = get
+        .bytes()
+        .await
+        .expect("large real WebDAV range GET body should read");
+    assert_eq!(
+        bytes.as_ref(),
+        &data[10 * 1024 * 1024..10 * 1024 * 1024 + 128]
+    );
+
+    server.stop().await;
 }
 
 #[actix_web::test]
@@ -765,6 +1480,54 @@ async fn test_webdav_copy_move() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_webdav_copy_move_rejects_similar_destination_prefix() {
+    let app = setup_with_webdav!();
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    for (method, source, destination) in [
+        (
+            "COPY",
+            "/webdav/copy-prefix-source.txt",
+            "/webdav-team/copied.txt",
+        ),
+        (
+            "MOVE",
+            "/webdav/move-prefix-source.txt",
+            "/webdav-team/moved.txt",
+        ),
+    ] {
+        let req = test::TestRequest::put()
+            .uri(source)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload("prefix boundary")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status() == 201 || resp.status() == 204);
+
+        let req = test::TestRequest::with_uri(source)
+            .method(actix_web::http::Method::from_bytes(method.as_bytes()).unwrap())
+            .insert_header(("Authorization", auth.clone()))
+            .insert_header(("Destination", destination))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            400,
+            "{method} should reject destination outside the WebDAV prefix"
+        );
+
+        let req = test::TestRequest::get()
+            .uri(source)
+            .insert_header(("Authorization", auth.clone()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+    }
 }
 
 #[actix_web::test]
@@ -1537,20 +2300,22 @@ async fn test_webdav_basic_auth_root_scope() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
+    let basic_scope_username = webdav_test_username("basic-scope");
+    let basic_scope_password = webdav_test_password("BASIC_SCOPE");
     let req = test::TestRequest::post()
         .uri("/api/v1/webdav-accounts")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "username": "basic-scope-user",
-            "password": "basic-scope-pass",
+            "username": &basic_scope_username,
+            "password": &basic_scope_password,
             "root_folder_id": root_id,
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    let basic = basic_auth_header("basic-scope-user", "basic-scope-pass");
+    let basic = basic_auth_header(&basic_scope_username, &basic_scope_password);
 
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())

@@ -3481,6 +3481,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teams/{team_id}/webdav-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_team_webdav_accounts"];
+        put?: never;
+        post: operations["create_team_webdav_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/webdav-accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_team_webdav_account"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/webdav-accounts/{account_id}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["toggle_team_webdav_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trash": {
         parameters: {
             query?: never;
@@ -4330,7 +4378,7 @@ export interface components {
          * @description 审计日志动作
          * @enum {string}
          */
-        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_reset_user_mfa" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "admin_create_policy" | "admin_update_policy" | "admin_delete_policy" | "admin_delete_config" | "admin_delete_share" | "admin_force_unlock" | "admin_cleanup_expired_locks" | "admin_cleanup_tasks" | "admin_create_blob_maintenance_task" | "admin_create_remote_node" | "admin_update_remote_node" | "admin_delete_remote_node" | "admin_test_remote_node" | "admin_create_remote_node_enrollment_token" | "admin_create_remote_ingress_profile" | "admin_update_remote_ingress_profile" | "admin_delete_remote_ingress_profile" | "admin_create_external_auth_provider" | "admin_update_external_auth_provider" | "admin_delete_external_auth_provider" | "admin_test_external_auth_provider" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_create" | "file_delete" | "file_download" | "file_direct_link_create" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "file_preview_link_create" | "file_wopi_open" | "file_upload_cancel" | "file_restore" | "file_purge" | "file_lock" | "file_unlock" | "file_version_restore" | "file_version_delete" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "folder_restore" | "folder_purge" | "folder_lock" | "folder_unlock" | "property_set" | "property_delete" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "task_retry" | "archive_compress" | "archive_extract" | "archive_download" | "trash_purge_all" | "remote_enrollment_redeem" | "remote_enrollment_ack" | "user_revoke_other_sessions" | "user_revoke_session" | "user_update_preferences" | "user_update_profile" | "user_upload_avatar" | "user_set_avatar_source" | "user_update_wopi_info" | "webdav_account_create" | "webdav_account_delete" | "webdav_account_toggle" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_mfa_enable" | "user_mfa_disable" | "user_mfa_recovery_codes_regenerate" | "user_mfa_email_code_send" | "user_mfa_challenge_success" | "user_mfa_challenge_failed" | "user_passkey_delete" | "user_passkey_login" | "user_passkey_register" | "user_passkey_rename" | "user_external_auth_login" | "user_external_auth_link" | "user_external_auth_unlink" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
+        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_reset_user_mfa" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "admin_create_policy" | "admin_update_policy" | "admin_delete_policy" | "admin_delete_config" | "admin_delete_share" | "admin_force_unlock" | "admin_cleanup_expired_locks" | "admin_cleanup_tasks" | "admin_create_blob_maintenance_task" | "admin_create_remote_node" | "admin_update_remote_node" | "admin_delete_remote_node" | "admin_test_remote_node" | "admin_create_remote_node_enrollment_token" | "admin_create_remote_ingress_profile" | "admin_update_remote_ingress_profile" | "admin_delete_remote_ingress_profile" | "admin_create_external_auth_provider" | "admin_update_external_auth_provider" | "admin_delete_external_auth_provider" | "admin_test_external_auth_provider" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_create" | "file_delete" | "file_download" | "file_direct_link_create" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "file_preview_link_create" | "file_wopi_open" | "file_upload_cancel" | "file_restore" | "file_purge" | "file_lock" | "file_unlock" | "file_version_restore" | "file_version_delete" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "folder_restore" | "folder_purge" | "folder_lock" | "folder_unlock" | "property_set" | "property_delete" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "task_retry" | "archive_compress" | "archive_extract" | "archive_download" | "trash_purge_all" | "remote_enrollment_redeem" | "remote_enrollment_ack" | "user_revoke_other_sessions" | "user_revoke_session" | "user_update_preferences" | "user_update_profile" | "user_upload_avatar" | "user_set_avatar_source" | "user_update_wopi_info" | "webdav_account_create" | "webdav_account_delete" | "webdav_account_toggle" | "team_webdav_account_create" | "team_webdav_account_delete" | "team_webdav_account_toggle" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_mfa_enable" | "user_mfa_disable" | "user_mfa_recovery_codes_regenerate" | "user_mfa_email_code_send" | "user_mfa_challenge_success" | "user_mfa_challenge_failed" | "user_passkey_delete" | "user_passkey_login" | "user_passkey_register" | "user_passkey_rename" | "user_external_auth_login" | "user_external_auth_link" | "user_external_auth_unlink" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
         /**
          * @description 审计日志实体类型
          * @enum {string}
@@ -5699,7 +5747,12 @@ export interface components {
                 root_folder_id?: number | null;
                 /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
                 root_folder_path?: string | null;
+                /** Format: int64 */
+                team_id?: number | null;
                 updated_at: string;
+                user?: null | components["schemas"]["UserSummary"];
+                /** Format: int64 */
+                user_id: number;
                 username: string;
             }[];
             /** Format: int64 */
@@ -7094,6 +7147,8 @@ export interface components {
             is_active: boolean;
             /** Format: int64 */
             root_folder_id?: number | null;
+            /** Format: int64 */
+            team_id?: number | null;
             updated_at: string;
             /** Format: int64 */
             user_id: number;
@@ -7106,6 +7161,8 @@ export interface components {
             /** @description 明文密码，只返回一次 */
             password: string;
             root_folder_path?: string | null;
+            /** Format: int64 */
+            team_id?: number | null;
             username: string;
         };
         /** @description 列表返回用的带路径的账号信息 */
@@ -7118,7 +7175,12 @@ export interface components {
             root_folder_id?: number | null;
             /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
             root_folder_path?: string | null;
+            /** Format: int64 */
+            team_id?: number | null;
             updated_at: string;
+            user?: null | components["schemas"]["UserSummary"];
+            /** Format: int64 */
+            user_id: number;
             username: string;
         };
         WebdavLockOwnerInfo: {
@@ -22527,6 +22589,211 @@ export interface operations {
             };
         };
     };
+    list_team_webdav_accounts: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team WebDAV accounts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            items: {
+                                created_at: string;
+                                /** Format: int64 */
+                                id: number;
+                                is_active: boolean;
+                                /** Format: int64 */
+                                root_folder_id?: number | null;
+                                /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
+                                root_folder_path?: string | null;
+                                /** Format: int64 */
+                                team_id?: number | null;
+                                updated_at: string;
+                                user?: null | components["schemas"]["UserSummary"];
+                                /** Format: int64 */
+                                user_id: number;
+                                username: string;
+                            }[];
+                            /** Format: int64 */
+                            limit: number;
+                            /** Format: int64 */
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_team_webdav_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWebdavAccountReq"];
+            };
+        };
+        responses: {
+            /** @description Team WebDAV account created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        /** @description 创建账号后返回的响应（包含一次性明文密码） */
+                        data?: {
+                            /** Format: int64 */
+                            id: number;
+                            /** @description 明文密码，只返回一次 */
+                            password: string;
+                            root_folder_path?: string | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            username: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_team_webdav_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description Account ID */
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team WebDAV account deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    toggle_team_webdav_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description Account ID */
+                account_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team WebDAV account toggled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_active: boolean;
+                            /** Format: int64 */
+                            root_folder_id?: number | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                            username: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_trash: {
         parameters: {
             query?: {
@@ -22748,7 +23015,12 @@ export interface operations {
                                 root_folder_id?: number | null;
                                 /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
                                 root_folder_path?: string | null;
+                                /** Format: int64 */
+                                team_id?: number | null;
                                 updated_at: string;
+                                user?: null | components["schemas"]["UserSummary"];
+                                /** Format: int64 */
+                                user_id: number;
                                 username: string;
                             }[];
                             /** Format: int64 */
@@ -22800,6 +23072,8 @@ export interface operations {
                             /** @description 明文密码，只返回一次 */
                             password: string;
                             root_folder_path?: string | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
                             username: string;
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
@@ -22943,6 +23217,8 @@ export interface operations {
                             is_active: boolean;
                             /** Format: int64 */
                             root_folder_id?: number | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;

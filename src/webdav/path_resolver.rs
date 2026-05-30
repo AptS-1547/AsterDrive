@@ -1,6 +1,6 @@
 //! WebDAV 子模块：`path_resolver`。
 
-use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use serde::{Deserialize, Serialize};
 
 use crate::cache::CacheExt;
@@ -8,6 +8,7 @@ use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::AsterError;
 use crate::runtime::PrimaryAppState;
+use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::utils::hash;
 use crate::webdav::dav::{DavPath, FsError};
 
@@ -68,17 +69,37 @@ fn dav_path_digest(path: &DavPath) -> String {
     hash::sha256_hex(path.as_bytes())
 }
 
-fn resolve_path_cache_key(user_id: i64, path: &DavPath, root_folder_id: Option<i64>) -> String {
+fn scope_cache_part(scope: WorkspaceStorageScope) -> String {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => format!("personal:{user_id}"),
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id,
+        } => format!("team:{team_id}:actor:{actor_user_id}"),
+    }
+}
+
+fn resolve_path_cache_key(
+    scope: WorkspaceStorageScope,
+    path: &DavPath,
+    root_folder_id: Option<i64>,
+) -> String {
     format!(
-        "{WEBDAV_PATH_CACHE_PREFIX}{user_id}:{}:{}",
+        "{WEBDAV_PATH_CACHE_PREFIX}{}:{}:{}",
+        scope_cache_part(scope),
         root_cache_part(root_folder_id),
         dav_path_digest(path)
     )
 }
 
-fn resolve_parent_cache_key(user_id: i64, path: &DavPath, root_folder_id: Option<i64>) -> String {
+fn resolve_parent_cache_key(
+    scope: WorkspaceStorageScope,
+    path: &DavPath,
+    root_folder_id: Option<i64>,
+) -> String {
     format!(
-        "{WEBDAV_PARENT_CACHE_PREFIX}{user_id}:{}:{}",
+        "{WEBDAV_PARENT_CACHE_PREFIX}{}:{}:{}",
+        scope_cache_part(scope),
         root_cache_part(root_folder_id),
         dav_path_digest(path)
     )
@@ -144,25 +165,31 @@ fn folder_chain_matches_segments(
 
 async fn validate_cached_folder_path(
     state: &PrimaryAppState,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     root_folder_id: Option<i64>,
     folder_id: i64,
     segments: &[String],
 ) -> Result<bool, FsError> {
-    let chain = match folder_repo::find_ancestor_models(state.writer_db(), user_id, folder_id).await
-    {
+    let chain = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            folder_repo::find_ancestor_models(state.writer_db(), user_id, folder_id).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            folder_repo::find_team_ancestor_models(state.writer_db(), team_id, folder_id).await
+        }
+    };
+    let chain = match chain {
         Ok(chain) => chain,
         Err(error) if is_missing_entity(&error) => return Ok(false),
         Err(_) => return Err(FsError::GeneralFailure),
     };
-    if chain.is_empty()
-        || chain.iter().any(|folder| {
-            folder.owner_user_id != Some(user_id)
-                || folder.team_id.is_some()
-                || folder.deleted_at.is_some()
-        })
-    {
+    if chain.is_empty() || chain.iter().any(|folder| folder.deleted_at.is_some()) {
         return Ok(false);
+    }
+    for folder in &chain {
+        if crate::services::workspace_storage_service::ensure_folder_scope(folder, scope).is_err() {
+            return Ok(false);
+        }
     }
 
     Ok(folder_chain_matches_segments(
@@ -174,7 +201,7 @@ async fn validate_cached_folder_path(
 
 async fn load_cached_resolved_node(
     state: &PrimaryAppState,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     path: &DavPath,
     root_folder_id: Option<i64>,
     cache_key: &str,
@@ -203,9 +230,9 @@ async fn load_cached_resolved_node(
                 }
                 Err(_) => return Err(FsError::GeneralFailure),
             };
-            if folder.owner_user_id != Some(user_id)
-                || folder.team_id.is_some()
-                || folder.deleted_at.is_some()
+            if folder.deleted_at.is_some()
+                || crate::services::workspace_storage_service::ensure_folder_scope(&folder, scope)
+                    .is_err()
             {
                 state.cache.delete(cache_key).await;
                 return Ok(None);
@@ -217,7 +244,7 @@ async fn load_cached_resolved_node(
                 state.cache.delete(cache_key).await;
                 return Ok(None);
             }
-            if !validate_cached_folder_path(state, user_id, root_folder_id, id, &segments).await? {
+            if !validate_cached_folder_path(state, scope, root_folder_id, id, &segments).await? {
                 state.cache.delete(cache_key).await;
                 return Ok(None);
             }
@@ -236,9 +263,9 @@ async fn load_cached_resolved_node(
                 }
                 Err(_) => return Err(FsError::GeneralFailure),
             };
-            if file.owner_user_id != Some(user_id)
-                || file.team_id.is_some()
-                || file.deleted_at.is_some()
+            if file.deleted_at.is_some()
+                || crate::services::workspace_storage_service::ensure_file_scope(&file, scope)
+                    .is_err()
             {
                 state.cache.delete(cache_key).await;
                 return Ok(None);
@@ -256,7 +283,7 @@ async fn load_cached_resolved_node(
             };
             if !validate_cached_parent(
                 state,
-                user_id,
+                scope,
                 root_folder_id,
                 parent_segments,
                 file.folder_id,
@@ -280,15 +307,28 @@ pub async fn resolve_path(
     path: &DavPath,
     root_folder_id: Option<i64>,
 ) -> Result<ResolvedNode, FsError> {
+    resolve_path_in_scope(
+        db,
+        WorkspaceStorageScope::Personal { user_id },
+        path,
+        root_folder_id,
+    )
+    .await
+}
+
+pub(crate) async fn resolve_path_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    path: &DavPath,
+    root_folder_id: Option<i64>,
+) -> Result<ResolvedNode, FsError> {
     let segments = path_segments(path);
 
     if segments.is_empty() {
         return Ok(ResolvedNode::Root);
     }
 
-    let folders = folder_repo::resolve_path_chain(db, user_id, root_folder_id, &segments)
-        .await
-        .map_err(|_| FsError::GeneralFailure)?;
+    let folders = resolve_folder_chain(db, scope, root_folder_id, &segments).await?;
 
     if folders.len() == segments.len() {
         return Ok(ResolvedNode::Folder(
@@ -309,14 +349,52 @@ pub async fn resolve_path(
         .last()
         .expect("non-empty path must have a last segment");
 
-    if let Some(file) = file_repo::find_by_name_in_folder(db, user_id, current_parent, last)
-        .await
-        .map_err(|_| FsError::GeneralFailure)?
-    {
+    let file = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::find_by_name_in_folder(db, user_id, current_parent, last).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::find_by_name_in_team_folder(db, team_id, current_parent, last).await
+        }
+    }
+    .map_err(|_| FsError::GeneralFailure)?;
+
+    if let Some(file) = file {
         return Ok(ResolvedNode::File(file));
     }
 
     Err(FsError::NotFound)
+}
+
+async fn resolve_folder_chain<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    root_parent_id: Option<i64>,
+    segments: &[String],
+) -> Result<Vec<folder::Model>, FsError> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            folder_repo::resolve_path_chain(db, user_id, root_parent_id, segments)
+                .await
+                .map_err(|_| FsError::GeneralFailure)
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            let mut resolved = Vec::with_capacity(segments.len());
+            let mut current_parent = root_parent_id;
+            for segment in segments {
+                let Some(folder) =
+                    folder_repo::find_by_name_in_team_parent(db, team_id, current_parent, segment)
+                        .await
+                        .map_err(|_| FsError::GeneralFailure)?
+                else {
+                    break;
+                };
+                current_parent = Some(folder.id);
+                resolved.push(folder);
+            }
+            Ok(resolved)
+        }
+    }
 }
 
 pub async fn resolve_path_cached(
@@ -325,17 +403,32 @@ pub async fn resolve_path_cached(
     path: &DavPath,
     root_folder_id: Option<i64>,
 ) -> Result<ResolvedNode, FsError> {
-    let cache_key = resolve_path_cache_key(user_id, path, root_folder_id);
+    resolve_path_cached_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        path,
+        root_folder_id,
+    )
+    .await
+}
+
+pub(crate) async fn resolve_path_cached_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    path: &DavPath,
+    root_folder_id: Option<i64>,
+) -> Result<ResolvedNode, FsError> {
+    let cache_key = resolve_path_cache_key(scope, path, root_folder_id);
     if let Some(cached) = state.cache.get::<CachedResolvedNode>(&cache_key).await
         && let Some(node) =
-            load_cached_resolved_node(state, user_id, path, root_folder_id, &cache_key, cached)
+            load_cached_resolved_node(state, scope, path, root_folder_id, &cache_key, cached)
                 .await?
     {
-        tracing::debug!(user_id, root_folder_id, "webdav path cache hit");
+        tracing::debug!(?scope, root_folder_id, "webdav path cache hit");
         return Ok(node);
     }
 
-    let node = resolve_path(state.writer_db(), user_id, path, root_folder_id).await?;
+    let node = resolve_path_in_scope(state.writer_db(), scope, path, root_folder_id).await?;
     state
         .cache
         .set(
@@ -344,7 +437,7 @@ pub async fn resolve_path_cached(
             Some(WEBDAV_PATH_CACHE_TTL),
         )
         .await;
-    tracing::debug!(user_id, root_folder_id, "webdav path cache miss");
+    tracing::debug!(?scope, root_folder_id, "webdav path cache miss");
     Ok(node)
 }
 
@@ -358,6 +451,21 @@ pub async fn resolve_parent(
     path: &DavPath,
     root_folder_id: Option<i64>,
 ) -> Result<(Option<i64>, String), FsError> {
+    resolve_parent_in_scope(
+        db,
+        WorkspaceStorageScope::Personal { user_id },
+        path,
+        root_folder_id,
+    )
+    .await
+}
+
+pub(crate) async fn resolve_parent_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    path: &DavPath,
+    root_folder_id: Option<i64>,
+) -> Result<(Option<i64>, String), FsError> {
     let segments = path_segments(path);
 
     if segments.is_empty() {
@@ -365,9 +473,7 @@ pub async fn resolve_parent(
     }
 
     let parent_segments = &segments[..segments.len() - 1];
-    let folders = folder_repo::resolve_path_chain(db, user_id, root_folder_id, parent_segments)
-        .await
-        .map_err(|_| FsError::GeneralFailure)?;
+    let folders = resolve_folder_chain(db, scope, root_folder_id, parent_segments).await?;
 
     if folders.len() != parent_segments.len() {
         return Err(FsError::NotFound);
@@ -380,14 +486,14 @@ pub async fn resolve_parent(
 
 async fn validate_cached_parent(
     state: &PrimaryAppState,
-    user_id: i64,
+    scope: WorkspaceStorageScope,
     root_folder_id: Option<i64>,
     parent_segments: &[String],
     parent_id: Option<i64>,
 ) -> Result<bool, FsError> {
     match parent_id {
         Some(parent_id) => {
-            validate_cached_folder_path(state, user_id, root_folder_id, parent_id, parent_segments)
+            validate_cached_folder_path(state, scope, root_folder_id, parent_id, parent_segments)
                 .await
         }
         None => Ok(root_folder_id.is_none() && parent_segments.is_empty()),
@@ -400,31 +506,46 @@ pub async fn resolve_parent_cached(
     path: &DavPath,
     root_folder_id: Option<i64>,
 ) -> Result<(Option<i64>, String), FsError> {
+    resolve_parent_cached_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        path,
+        root_folder_id,
+    )
+    .await
+}
+
+pub(crate) async fn resolve_parent_cached_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    path: &DavPath,
+    root_folder_id: Option<i64>,
+) -> Result<(Option<i64>, String), FsError> {
     let segments = path_segments(path);
     if segments.is_empty() {
         return Err(FsError::Forbidden);
     }
 
     let parent_segments = &segments[..segments.len() - 1];
-    let cache_key = resolve_parent_cache_key(user_id, path, root_folder_id);
+    let cache_key = resolve_parent_cache_key(scope, path, root_folder_id);
     if let Some(cached) = state.cache.get::<CachedResolvedParent>(&cache_key).await {
         if validate_cached_parent(
             state,
-            user_id,
+            scope,
             root_folder_id,
             parent_segments,
             cached.parent_id,
         )
         .await?
         {
-            tracing::debug!(user_id, root_folder_id, "webdav parent path cache hit");
+            tracing::debug!(?scope, root_folder_id, "webdav parent path cache hit");
             return Ok((cached.parent_id, segments[segments.len() - 1].clone()));
         }
         state.cache.delete(&cache_key).await;
     }
 
     let (parent_id, name) =
-        resolve_parent(state.writer_db(), user_id, path, root_folder_id).await?;
+        resolve_parent_in_scope(state.writer_db(), scope, path, root_folder_id).await?;
     state
         .cache
         .set(
@@ -433,6 +554,6 @@ pub async fn resolve_parent_cached(
             Some(WEBDAV_PATH_CACHE_TTL),
         )
         .await;
-    tracing::debug!(user_id, root_folder_id, "webdav parent path cache miss");
+    tracing::debug!(?scope, root_folder_id, "webdav parent path cache miss");
     Ok((parent_id, name))
 }
