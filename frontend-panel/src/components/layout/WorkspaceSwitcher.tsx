@@ -294,7 +294,11 @@ export function WorkspaceSwitcher({
 						<Input
 							value={teamSearchState.query}
 							onChange={handleTeamQueryChange}
-							onKeyDown={(event) => event.stopPropagation()}
+							onKeyDown={(event) => {
+								if (event.key !== "Tab") {
+									event.stopPropagation();
+								}
+							}}
 							placeholder={t("workspace_search_placeholder")}
 							aria-label={t("workspace_search_placeholder")}
 							className="h-9 rounded-xl border-transparent bg-muted/35 pr-3 pl-9 text-sm shadow-none focus-visible:bg-background"

@@ -147,14 +147,6 @@ export function formatTaskPresentationTitle(
 	return formatPresentationMessage(t, message, task.display_name);
 }
 
-export function getTaskDisplayNameFallback(
-	_t: TaskTranslate,
-	_kind: BackgroundTaskKind,
-	displayName: string,
-) {
-	return displayName;
-}
-
 export function formatTaskPresentationStatus(
 	t: TaskTranslate,
 	task: Pick<TaskInfo, "presentation" | "status_text">,
@@ -353,10 +345,7 @@ export function formatTaskKind(t: TaskTranslate, kind: BackgroundTaskKind) {
 
 export function formatTaskDisplayName(t: TaskTranslate, task: TaskInfo) {
 	const presentationTitle = formatTaskPresentationTitle(t, task);
-	return (
-		presentationTitle ??
-		getTaskDisplayNameFallback(t, task.kind, task.display_name)
-	);
+	return presentationTitle ?? task.display_name;
 }
 
 export function formatTaskStepStatus(t: TaskTranslate, status: TaskStepStatus) {

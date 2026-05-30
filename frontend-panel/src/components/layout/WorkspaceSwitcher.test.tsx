@@ -1,5 +1,11 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceSwitcher } from "@/components/layout/WorkspaceSwitcher";
 
 const teamServiceMocks = vi.hoisted(() => ({
@@ -210,13 +216,21 @@ vi.mock("@/components/ui/dropdown-menu", () => {
 });
 
 describe("WorkspaceSwitcher", () => {
+	let dateNowSpy: ReturnType<typeof vi.spyOn>;
+
 	beforeEach(() => {
 		vi.useRealTimers();
+		dateNowSpy = vi.spyOn(Date, "now");
 		teamServiceMocks.list.mockReset();
 		mockState.navigate.mockReset();
 		mockState.workspace = { kind: "personal" };
 		mockState.teams = [];
 		mockState.loading = false;
+	});
+
+	afterEach(() => {
+		dateNowSpy.mockRestore();
+		cleanup();
 	});
 
 	it("renders the personal workspace state", () => {
@@ -311,60 +325,60 @@ describe("WorkspaceSwitcher", () => {
 
 		render(<WorkspaceSwitcher />);
 
-		fireEvent.keyDown(
-			screen.getByRole("textbox", {
-				name: "translated:workspace_search_placeholder",
-			}),
-			{ key: "ArrowDown" },
-		);
+		const searchInput = screen.getByRole("textbox", {
+			name: "translated:workspace_search_placeholder",
+		});
 
-		expect(stopPropagation).toHaveBeenCalled();
+		fireEvent.keyDown(searchInput, { key: "ArrowDown" });
+
+		expect(stopPropagation).toHaveBeenCalledTimes(1);
+		stopPropagation.mockClear();
+
+		fireEvent.keyDown(searchInput, { key: "Tab" });
+
+		expect(stopPropagation).not.toHaveBeenCalled();
 		stopPropagation.mockRestore();
 	});
 
 	it("restores the open menu after personal and team route branches remount", () => {
 		mockState.teams = [{ id: 9, name: "Design" }];
-		const dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000);
+		dateNowSpy.mockReturnValue(1_000);
 
-		try {
-			const { unmount } = render(<WorkspaceSwitcher variant="sidebar" />);
+		const { unmount } = render(<WorkspaceSwitcher variant="sidebar" />);
 
-			expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
-				"data-open",
-				"false",
-			);
+		expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
+			"data-open",
+			"false",
+		);
 
-			fireEvent.click(
-				screen.getByRole("button", { name: "toggle-workspace-menu" }),
-			);
-			expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
-				"data-open",
-				"true",
-			);
+		fireEvent.click(
+			screen.getByRole("button", { name: "toggle-workspace-menu" }),
+		);
+		expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
+			"data-open",
+			"true",
+		);
 
-			fireEvent.click(screen.getByRole("button", { name: /^Design/ }));
-			expect(mockState.navigate).toHaveBeenCalledWith("/teams/9");
+		fireEvent.click(screen.getByRole("button", { name: /^Design/ }));
+		expect(mockState.navigate).toHaveBeenCalledWith("/teams/9");
 
-			unmount();
-			mockState.workspace = { kind: "team", teamId: 9 };
-			dateNowSpy.mockReturnValue(2_000);
-			render(<WorkspaceSwitcher variant="sidebar" />);
+		unmount();
+		mockState.workspace = { kind: "team", teamId: 9 };
+		dateNowSpy.mockReturnValue(2_000);
+		render(<WorkspaceSwitcher variant="sidebar" />);
 
-			expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
-				"data-open",
-				"true",
-			);
+		expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
+			"data-open",
+			"true",
+		);
 
-			fireEvent.click(
-				screen.getByRole("button", { name: "close-workspace-menu" }),
-			);
-			expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
-				"data-open",
-				"false",
-			);
-		} finally {
-			dateNowSpy.mockRestore();
-		}
+		fireEvent.click(
+			screen.getByRole("button", { name: "close-workspace-menu" }),
+		);
+		expect(screen.getByTestId("workspace-menu-root")).toHaveAttribute(
+			"data-open",
+			"false",
+		);
 	});
 
 	it("searches team options with the backend after debounce", async () => {

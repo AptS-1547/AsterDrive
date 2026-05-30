@@ -10,7 +10,6 @@ import {
 	formatTaskStatus,
 	formatTaskStepStatus,
 	formatTaskStepTitle,
-	getTaskDisplayNameFallback,
 	parseStoragePolicyMigrationResult,
 	parseTaskResult,
 	statusBadgeVariant,
@@ -495,15 +494,6 @@ describe("taskPresentation storage policy migration", () => {
 				}),
 			),
 		).toBe("Custom runtime task");
-		expect(
-			getTaskDisplayNameFallback(t, "system_runtime", "System health check"),
-		).toBe("System health check");
-		expect(
-			getTaskDisplayNameFallback(t, "system_runtime", "unknown runtime"),
-		).toBe("unknown runtime");
-		expect(
-			getTaskDisplayNameFallback(t, "system_runtime", "Task artifact cleanup"),
-		).toBe("Task artifact cleanup");
 	});
 
 	it("keeps raw media metadata display names without structured presentation", () => {
@@ -541,102 +531,6 @@ describe("taskPresentation storage policy migration", () => {
 				}),
 			),
 		).toBe("Extract audio metadata for blob #12");
-	});
-
-	it("returns raw backend display names without parsing", () => {
-		expect(
-			getTaskDisplayNameFallback(t, "archive_extract", "Extract logs.zip"),
-		).toBe("Extract logs.zip");
-		expect(
-			getTaskDisplayNameFallback(t, "archive_compress", "Compress export.zip"),
-		).toBe("Compress export.zip");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"archive_preview_generate",
-				"Generate archive preview for file #7 blob #9 logs.zip",
-			),
-		).toBe("Generate archive preview for file #7 blob #9 logs.zip");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"archive_preview_generate",
-				"Generate archive preview for file #7 blob #9",
-			),
-		).toBe("Generate archive preview for file #7 blob #9");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"thumbnail_generate",
-				"Generate thumbnail for blob #11 via storage_native",
-			),
-		).toBe("Generate thumbnail for blob #11 via storage_native");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"thumbnail_generate",
-				"Generate thumbnail for blob #11 via native",
-			),
-		).toBe("Generate thumbnail for blob #11 via native");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"media_metadata_extract",
-				"Extract audio metadata for blob #12",
-			),
-		).toBe("Extract audio metadata for blob #12");
-		expect(
-			getTaskDisplayNameFallback(t, "trash_purge_all", "Empty trash"),
-		).toBe("Empty trash");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"storage_policy_temp_cleanup",
-				"Clean deleted storage policy #5 temporary uploads",
-			),
-		).toBe("Clean deleted storage policy #5 temporary uploads");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"storage_policy_temp_cleanup",
-				"Clean storage policy #5 temporary uploads",
-			),
-		).toBe("Clean storage policy #5 temporary uploads");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"storage_policy_migration",
-				"Migrate storage policy #1 to #2",
-			),
-		).toBe("Migrate storage policy #1 to #2");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"blob_maintenance",
-				"Check integrity for 3 blob(s)",
-			),
-		).toBe("Check integrity for 3 blob(s)");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"blob_maintenance",
-				"Reconcile references for all blobs",
-			),
-		).toBe("Reconcile references for all blobs");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"blob_maintenance",
-				"Clean orphan blobs for custom scope",
-			),
-		).toBe("Clean orphan blobs for custom scope");
-		expect(
-			getTaskDisplayNameFallback(
-				t,
-				"thumbnail_generate",
-				"backend custom name",
-			),
-		).toBe("backend custom name");
 	});
 
 	it("falls back to raw backend status detail text", () => {
