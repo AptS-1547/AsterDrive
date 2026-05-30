@@ -1,21 +1,12 @@
-import { lazy, Suspense, useLayoutEffect } from "react";
-import {
-	createBrowserRouter,
-	Navigate,
-	Outlet,
-	useParams,
-} from "react-router-dom";
-import { UploadAreaHost } from "@/components/files/UploadAreaHost";
-import { AdminSiteUrlMismatchPrompt } from "@/components/layout/AdminSiteUrlMismatchPrompt";
-import {
-	PERSONAL_WORKSPACE,
-	type Workspace,
-	workspaceEquals,
-} from "@/lib/workspace";
+import { lazy, Suspense } from "react";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import ErrorPage from "@/pages/ErrorPage";
-import { useAuthStore } from "@/stores/authStore";
-import { useFileStore } from "@/stores/fileStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
+import { AdminRoute } from "./AdminRoute";
+import { Loading } from "./Loading";
+import { LoginGuard } from "./LoginGuard";
+import { PersonalWorkspaceRoute } from "./PersonalWorkspaceRoute";
+import { ProtectedRoute } from "./ProtectedRoute";
+import { TeamWorkspaceRoute } from "./TeamWorkspaceRoute";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
@@ -50,93 +41,6 @@ const TeamManagePage = lazy(() => import("@/pages/TeamManagePage"));
 const MySharesPage = lazy(() => import("@/pages/MySharesPage"));
 const TasksPage = lazy(() => import("@/pages/TasksPage"));
 const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage"));
-
-function Loading() {
-	return (
-		<div className="min-h-screen flex items-center justify-center animate-in fade-in duration-500">
-			<div className="size-5 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
-		</div>
-	);
-}
-
-function ProtectedRoute() {
-	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-	const isChecking = useAuthStore((s) => s.isChecking);
-	if (!isAuthenticated && isChecking) return <Loading />;
-	if (!isAuthenticated) return <Navigate to="/login" replace />;
-	return (
-		<div
-			className="animate-in fade-in duration-300"
-			aria-busy={isChecking || undefined}
-		>
-			<Suspense fallback={<Loading />}>
-				<Outlet />
-			</Suspense>
-		</div>
-	);
-}
-
-function AdminRoute() {
-	const user = useAuthStore((s) => s.user);
-	const isChecking = useAuthStore((s) => s.isChecking);
-	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-	if (!isAuthenticated && isChecking) return <Loading />;
-	if (!isAuthenticated) return <Navigate to="/login" replace />;
-	if (!user && isChecking) return <Loading />;
-	if (user?.role !== "admin") return <Navigate to="/" replace />;
-	return (
-		<div aria-busy={isChecking || undefined}>
-			<Suspense fallback={<Loading />}>
-				<AdminSiteUrlMismatchPrompt />
-				<Outlet />
-			</Suspense>
-		</div>
-	);
-}
-
-function LoginGuard() {
-	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-	const isChecking = useAuthStore((s) => s.isChecking);
-	if (isAuthenticated) return <Navigate to="/" replace />;
-	if (isChecking) return <Loading />;
-	return (
-		<Suspense fallback={<Loading />}>
-			<Outlet />
-		</Suspense>
-	);
-}
-
-function WorkspaceOutlet({ workspace }: { workspace: Workspace }) {
-	useLayoutEffect(() => {
-		if (workspaceEquals(useWorkspaceStore.getState().workspace, workspace)) {
-			return;
-		}
-		useWorkspaceStore.getState().setWorkspace(workspace);
-		useFileStore.getState().resetWorkspaceState();
-	}, [workspace]);
-
-	return (
-		<>
-			<UploadAreaHost workspace={workspace} />
-			<Outlet />
-		</>
-	);
-}
-
-function PersonalWorkspaceRoute() {
-	return <WorkspaceOutlet workspace={PERSONAL_WORKSPACE} />;
-}
-
-function TeamWorkspaceRoute() {
-	const { teamId } = useParams<{ teamId?: string }>();
-	const parsedTeamId = Number(teamId);
-
-	if (!Number.isSafeInteger(parsedTeamId) || parsedTeamId <= 0) {
-		return <Navigate to="/" replace />;
-	}
-
-	return <WorkspaceOutlet workspace={{ kind: "team", teamId: parsedTeamId }} />;
-}
 
 export const router = createBrowserRouter([
 	{
