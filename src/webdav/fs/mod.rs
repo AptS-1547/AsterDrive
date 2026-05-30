@@ -383,9 +383,13 @@ impl DavFileSystem for AsterDavFs {
             match node {
                 ResolvedNode::File(f) => {
                     // 如果目标已有同名文件，先删除（WebDAV MOVE 覆盖语义）
-                    if let Some(existing) =
-                        find_file_by_name_in_scope(&self.state, self.scope, dest_parent_id, &dest_name)
-                            .await?
+                    if let Some(existing) = find_file_by_name_in_scope(
+                        &self.state,
+                        self.scope,
+                        dest_parent_id,
+                        &dest_name,
+                    )
+                    .await?
                     {
                         file_service::delete_in_scope_with_audit(
                             &state,
@@ -450,9 +454,13 @@ impl DavFileSystem for AsterDavFs {
             match node {
                 ResolvedNode::File(f) => {
                     // WebDAV COPY 覆盖语义：目标已存在先删除
-                    if let Some(existing) =
-                        find_file_by_name_in_scope(&self.state, self.scope, dest_parent_id, &dest_name)
-                            .await?
+                    if let Some(existing) = find_file_by_name_in_scope(
+                        &self.state,
+                        self.scope,
+                        dest_parent_id,
+                        &dest_name,
+                    )
+                    .await?
                     {
                         file_service::delete_in_scope_with_audit(
                             &state,

@@ -44,17 +44,13 @@ pub(crate) async fn handle_report(
         Err(_) => return error_response(400, "Invalid path"),
     };
 
-    let node = match path_resolver::resolve_path_in_scope(
-        db,
-        auth.scope,
-        &dav_path,
-        auth.root_folder_id,
-    )
-    .await
-    {
-        Ok(n) => n,
-        Err(_) => return error_response(404, "Not Found"),
-    };
+    let node =
+        match path_resolver::resolve_path_in_scope(db, auth.scope, &dav_path, auth.root_folder_id)
+            .await
+        {
+            Ok(n) => n,
+            Err(_) => return error_response(404, "Not Found"),
+        };
 
     let file = match node {
         ResolvedNode::File(f) => f,

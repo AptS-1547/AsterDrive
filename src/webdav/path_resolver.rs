@@ -373,26 +373,19 @@ async fn resolve_folder_chain<C: ConnectionTrait>(
     segments: &[String],
 ) -> Result<Vec<folder::Model>, FsError> {
     match scope {
-        WorkspaceStorageScope::Personal { user_id } => folder_repo::resolve_path_chain(
-            db,
-            user_id,
-            root_parent_id,
-            segments,
-        )
-        .await
-        .map_err(|_| FsError::GeneralFailure),
+        WorkspaceStorageScope::Personal { user_id } => {
+            folder_repo::resolve_path_chain(db, user_id, root_parent_id, segments)
+                .await
+                .map_err(|_| FsError::GeneralFailure)
+        }
         WorkspaceStorageScope::Team { team_id, .. } => {
             let mut resolved = Vec::with_capacity(segments.len());
             let mut current_parent = root_parent_id;
             for segment in segments {
-                let Some(folder) = folder_repo::find_by_name_in_team_parent(
-                    db,
-                    team_id,
-                    current_parent,
-                    segment,
-                )
-                .await
-                .map_err(|_| FsError::GeneralFailure)?
+                let Some(folder) =
+                    folder_repo::find_by_name_in_team_parent(db, team_id, current_parent, segment)
+                        .await
+                        .map_err(|_| FsError::GeneralFailure)?
                 else {
                     break;
                 };

@@ -5,10 +5,12 @@ mod common;
 
 use actix_web::test;
 use aster_drive::db::repository::webdav_account_repo;
-use aster_drive::entities::{team, team_member, user, webdav_account};
-use aster_drive::types::{TeamMemberRole, UserRole, UserStatus};
+use aster_drive::entities::{audit_log, team, team_member, user, webdav_account};
+use aster_drive::types::{AuditAction, TeamMemberRole, UserRole, UserStatus};
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
+};
 use serde_json::Value;
 
 async fn seed_team_for_webdav_account_test(
@@ -78,10 +80,8 @@ async fn seed_active_user_for_webdav_account_test(
     user::ActiveModel {
         username: Set(username.to_string()),
         email: Set(format!("{username}@example.com")),
-        password_hash: Set(
-            aster_drive::utils::hash::hash_password("password123")
-                .expect("test user password should hash"),
-        ),
+        password_hash: Set(aster_drive::utils::hash::hash_password("password123")
+            .expect("test user password should hash")),
         role: Set(UserRole::User),
         status: Set(UserStatus::Active),
         session_version: Set(0),
@@ -100,10 +100,22 @@ async fn seed_active_user_for_webdav_account_test(
     .expect("active user should be inserted")
 }
 
+async fn webdav_audit_action_count(
+    state: &aster_drive::runtime::PrimaryAppState,
+    action: AuditAction,
+) -> u64 {
+    aster_drive::services::audit_service::flush_global_audit_log_manager().await;
+    audit_log::Entity::find()
+        .filter(audit_log::Column::Action.eq(action))
+        .count(state.writer_db())
+        .await
+        .expect("audit log query should succeed")
+}
+
 #[actix_web::test]
 async fn test_webdav_account_crud() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
     // 创建 WebDAV 账号
@@ -122,6 +134,14 @@ async fn test_webdav_account_crud() {
     assert_eq!(status, 201, "personal account create failed: {body}");
     assert_eq!(body["data"]["username"], "webdav_user");
     let account_id = body["data"]["id"].as_i64().unwrap();
+    assert_eq!(
+        webdav_audit_action_count(&state, AuditAction::WebdavAccountCreate).await,
+        1
+    );
+    assert_eq!(
+        webdav_audit_action_count(&state, AuditAction::TeamWebdavAccountCreate).await,
+        0
+    );
 
     // 分页列出账号
     let req = test::TestRequest::get()
@@ -203,16 +223,24 @@ async fn test_team_webdav_account_crud_is_separate_from_personal_accounts() {
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "username": "team_webdav_user",
-            "password": "team_webdav_pass123"
-    }))
-    .to_request();
+                "username": "team_webdav_user",
+                "password": "team_webdav_pass123"
+        }))
+        .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["username"], "team_webdav_user");
     assert_eq!(body["data"]["team_id"], team_id);
     let account_id = body["data"]["id"].as_i64().unwrap();
+    assert_eq!(
+        webdav_audit_action_count(&team_state, AuditAction::TeamWebdavAccountCreate).await,
+        1
+    );
+    assert_eq!(
+        webdav_audit_action_count(&team_state, AuditAction::WebdavAccountCreate).await,
+        0
+    );
 
     let req = test::TestRequest::get()
         .uri("/api/v1/webdav-accounts")
@@ -250,6 +278,10 @@ async fn test_team_webdav_account_crud_is_separate_from_personal_accounts() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["is_active"], false);
     assert_eq!(body["data"]["team_id"], team_id);
+    assert_eq!(
+        webdav_audit_action_count(&team_state, AuditAction::TeamWebdavAccountToggle).await,
+        1
+    );
 
     let req = test::TestRequest::delete()
         .uri(&format!(
@@ -260,6 +292,10 @@ async fn test_team_webdav_account_crud_is_separate_from_personal_accounts() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    assert_eq!(
+        webdav_audit_action_count(&team_state, AuditAction::TeamWebdavAccountDelete).await,
+        1
+    );
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/teams/{team_id}/webdav-accounts"))
@@ -442,21 +478,20 @@ async fn test_team_webdav_accounts_are_deleted_when_archived_team_is_purged() {
     .await
     .expect("team WebDAV cleanup account should be inserted");
 
-    let mut active_team = aster_drive::db::repository::team_repo::find_by_id(
-        state.writer_db(),
-        team_id,
-    )
-    .await
-    .expect("team should exist")
-    .into_active_model();
+    let mut active_team =
+        aster_drive::db::repository::team_repo::find_by_id(state.writer_db(), team_id)
+            .await
+            .expect("team should exist")
+            .into_active_model();
     active_team.archived_at = Set(Some(now - chrono::Duration::days(2)));
     active_team
         .update(state.writer_db())
         .await
         .expect("team should be archived");
-    state
-        .runtime_config
-        .apply(common::system_config_model("team_archive_retention_days", "0"));
+    state.runtime_config.apply(common::system_config_model(
+        "team_archive_retention_days",
+        "0",
+    ));
 
     let deleted = aster_drive::services::team_service::cleanup_expired_archived_teams(&state)
         .await

@@ -6,6 +6,7 @@ import {
 	type PointerEvent as ReactPointerEvent,
 	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -35,6 +36,10 @@ import { useTeamStore } from "@/stores/teamStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import { SidebarContent } from "./SidebarContent";
 import { SidebarResizeHandle } from "./SidebarResizeHandle";
+import {
+	setUserSidebarScrollTop,
+	userSidebarScrollTop,
+} from "./sidebarScrollState";
 import type {
 	SidebarNavLink,
 	SidebarProps,
@@ -130,6 +135,7 @@ export function Sidebar({
 		startX: number;
 		width: number;
 	} | null>(null);
+	const scrollViewportRef = useRef<HTMLDivElement | null>(null);
 	const [trashDragOver, setTrashDragOver] = useState(false);
 	const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth);
 	const [sidebarResizing, setSidebarResizing] = useState(false);
@@ -189,6 +195,19 @@ export function Sidebar({
 		};
 	}, [sidebarResizing]);
 
+	useLayoutEffect(() => {
+		const viewport = scrollViewportRef.current;
+		if (viewport == null) {
+			return;
+		}
+
+		viewport.scrollTop = userSidebarScrollTop;
+
+		return () => {
+			setUserSidebarScrollTop(viewport.scrollTop);
+		};
+	}, []);
+
 	const sidebarStyle: CSSProperties & { "--user-sidebar-width": string } = {
 		"--user-sidebar-width": `${sidebarWidth}px`,
 	};
@@ -215,6 +234,15 @@ export function Sidebar({
 		},
 		[sidebarWidth],
 	);
+
+	const handleScrollViewport = useCallback(() => {
+		const viewport = scrollViewportRef.current;
+		if (viewport == null) {
+			return;
+		}
+
+		setUserSidebarScrollTop(viewport.scrollTop);
+	}, []);
 
 	const handleSidebarResizeKeyDown = useCallback(
 		(event: ReactKeyboardEvent<SidebarResizeHandleElement>) => {
@@ -317,9 +345,11 @@ export function Sidebar({
 					onMobileClose={onMobileClose}
 					onMoveToFolder={onMoveToFolder}
 					onSearchCategoryOpen={onSearchCategoryOpen}
+					onScrollViewport={handleScrollViewport}
 					onTrashDragLeave={handleTrashDragLeave}
 					onTrashDragOver={handleTrashDragOver}
 					onTrashDropEvent={handleTrashDrop}
+					scrollViewportRef={scrollViewportRef}
 					storageQuota={storageQuota}
 					storageUsed={storageUsed}
 					trashDragOver={trashDragOver}

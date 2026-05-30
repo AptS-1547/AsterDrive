@@ -375,6 +375,12 @@ pub enum AuditAction {
     WebdavAccountDelete,
     #[sea_orm(string_value = "webdav_account_toggle")]
     WebdavAccountToggle,
+    #[sea_orm(string_value = "team_webdav_account_create")]
+    TeamWebdavAccountCreate,
+    #[sea_orm(string_value = "team_webdav_account_delete")]
+    TeamWebdavAccountDelete,
+    #[sea_orm(string_value = "team_webdav_account_toggle")]
+    TeamWebdavAccountToggle,
     #[sea_orm(string_value = "user_change_password")]
     UserChangePassword,
     #[sea_orm(string_value = "user_confirm_password_reset")]
@@ -532,6 +538,9 @@ impl AuditAction {
             Self::WebdavAccountCreate => "webdav_account_create",
             Self::WebdavAccountDelete => "webdav_account_delete",
             Self::WebdavAccountToggle => "webdav_account_toggle",
+            Self::TeamWebdavAccountCreate => "team_webdav_account_create",
+            Self::TeamWebdavAccountDelete => "team_webdav_account_delete",
+            Self::TeamWebdavAccountToggle => "team_webdav_account_toggle",
             Self::UserChangePassword => "user_change_password",
             Self::UserConfirmPasswordReset => "user_confirm_password_reset",
             Self::UserConfirmEmailChange => "user_confirm_email_change",
@@ -664,6 +673,9 @@ impl AuditAction {
             "webdav_account_create" => Some(Self::WebdavAccountCreate),
             "webdav_account_delete" => Some(Self::WebdavAccountDelete),
             "webdav_account_toggle" => Some(Self::WebdavAccountToggle),
+            "team_webdav_account_create" => Some(Self::TeamWebdavAccountCreate),
+            "team_webdav_account_delete" => Some(Self::TeamWebdavAccountDelete),
+            "team_webdav_account_toggle" => Some(Self::TeamWebdavAccountToggle),
             "user_change_password" => Some(Self::UserChangePassword),
             "user_confirm_password_reset" => Some(Self::UserConfirmPasswordReset),
             "user_confirm_email_change" => Some(Self::UserConfirmEmailChange),

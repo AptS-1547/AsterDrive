@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { UserIdentity } from "@/components/common/UserIdentity";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -337,8 +338,11 @@ export function TeamManageWebdavSection({
 								</div>
 							</TableCell>
 							{canManageTeam ? (
-								<TableCell className="font-mono text-sm text-muted-foreground">
-									{account.user_id}
+								<TableCell>
+									<UserIdentity
+										user={account.user}
+										fallbackLabel={`#${account.user_id}`}
+									/>
 								</TableCell>
 							) : null}
 							<TableCell>

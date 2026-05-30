@@ -12,7 +12,11 @@ use crate::db::repository::webdav_account_repo;
 use crate::entities::webdav_account;
 use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use crate::runtime::PrimaryAppState;
-use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::services::{
+    profile_service,
+    user_service::{self, UserSummary},
+    workspace_storage_service::WorkspaceStorageScope,
+};
 use crate::utils::hash;
 
 fn webdav_username_exists_error() -> AsterError {
@@ -49,6 +53,7 @@ pub struct WebdavAccountInfo {
     pub id: i64,
     pub username: String,
     pub user_id: i64,
+    pub user: Option<UserSummary>,
     pub team_id: Option<i64>,
     pub root_folder_id: Option<i64>,
     /// 文件夹路径，如 "/Documents/Photos"，None 表示全部访问
@@ -208,13 +213,12 @@ pub async fn list_for_team(
     actor_user_id: i64,
     team_id: i64,
 ) -> Result<Vec<WebdavAccountInfo>> {
-    let role =
-        crate::services::workspace_storage_service::load_team_member_role(
-            state,
-            team_id,
-            actor_user_id,
-        )
-        .await?;
+    let role = crate::services::workspace_storage_service::load_team_member_role(
+        state,
+        team_id,
+        actor_user_id,
+    )
+    .await?;
     let accounts = if role.can_manage_team() {
         webdav_account_repo::find_by_team(state.writer_db(), team_id).await?
     } else {
@@ -247,13 +251,12 @@ pub async fn list_team_paginated(
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<WebdavAccountInfo>> {
-    let role =
-        crate::services::workspace_storage_service::load_team_member_role(
-            state,
-            team_id,
-            actor_user_id,
-        )
-        .await?;
+    let role = crate::services::workspace_storage_service::load_team_member_role(
+        state,
+        team_id,
+        actor_user_id,
+    )
+    .await?;
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) = if role.can_manage_team() {
             webdav_account_repo::find_by_team_paginated(state.writer_db(), team_id, limit, offset)
@@ -284,14 +287,23 @@ async fn build_account_infos(
         .collect();
     let paths =
         crate::services::folder_service::build_folder_paths_cached(state, &folder_ids).await?;
+    let user_ids: Vec<i64> = accounts.iter().map(|acc| acc.user_id).collect();
+    let users = user_service::user_summaries_by_ids(
+        state,
+        &user_ids,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
 
     let mut result = Vec::with_capacity(accounts.len());
     for acc in accounts {
         let root_folder_path = acc.root_folder_id.and_then(|fid| paths.get(&fid).cloned());
+        let user = users.get(&acc.user_id).cloned();
         result.push(WebdavAccountInfo {
             id: acc.id,
             username: acc.username,
             user_id: acc.user_id,
+            user,
             team_id: acc.team_id,
             root_folder_id: acc.root_folder_id,
             root_folder_path,
@@ -330,16 +342,17 @@ pub async fn delete_for_team(
     actor_user_id: i64,
     team_id: i64,
 ) -> Result<()> {
-    let role =
-        crate::services::workspace_storage_service::load_team_member_role(
-            state,
-            team_id,
-            actor_user_id,
-        )
-        .await?;
+    let role = crate::services::workspace_storage_service::load_team_member_role(
+        state,
+        team_id,
+        actor_user_id,
+    )
+    .await?;
     let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
     if account.team_id != Some(team_id) {
-        return Err(AsterError::record_not_found(format!("webdav_account #{id}")));
+        return Err(AsterError::record_not_found(format!(
+            "webdav_account #{id}"
+        )));
     }
     if account.user_id != actor_user_id && !role.can_manage_team() {
         return Err(AsterError::auth_forbidden(
@@ -389,16 +402,17 @@ pub async fn toggle_team_active(
     actor_user_id: i64,
     team_id: i64,
 ) -> Result<WebdavAccount> {
-    let role =
-        crate::services::workspace_storage_service::load_team_member_role(
-            state,
-            team_id,
-            actor_user_id,
-        )
-        .await?;
+    let role = crate::services::workspace_storage_service::load_team_member_role(
+        state,
+        team_id,
+        actor_user_id,
+    )
+    .await?;
     let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
     if account.team_id != Some(team_id) {
-        return Err(AsterError::record_not_found(format!("webdav_account #{id}")));
+        return Err(AsterError::record_not_found(format!(
+            "webdav_account #{id}"
+        )));
     }
     if account.user_id != actor_user_id && !role.can_manage_team() {
         return Err(AsterError::auth_forbidden(

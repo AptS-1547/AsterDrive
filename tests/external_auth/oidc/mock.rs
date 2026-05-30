@@ -8,9 +8,7 @@ use jsonwebtoken::{
         RSAKeyParameters,
     },
 };
-use rsa::{
-    RsaPrivateKey, RsaPublicKey, pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts,
-};
+use rsa::{RsaPrivateKey, RsaPublicKey, pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 

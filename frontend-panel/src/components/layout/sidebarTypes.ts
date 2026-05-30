@@ -2,6 +2,7 @@ import type {
 	DragEvent,
 	KeyboardEvent as ReactKeyboardEvent,
 	PointerEvent as ReactPointerEvent,
+	Ref,
 } from "react";
 import type { IconName } from "@/components/ui/icon";
 import type { InternalDragData } from "@/lib/dragDrop";
@@ -42,6 +43,8 @@ export interface SidebarContentProps
 	trashPath: string;
 	user: UserInfo | null;
 	workspace: Workspace;
+	scrollViewportRef: Ref<HTMLDivElement>;
+	onScrollViewport: () => void;
 	onTrashDragLeave: (event: DragEvent<HTMLAnchorElement>) => void;
 	onTrashDragOver: (event: DragEvent<HTMLAnchorElement>) => void;
 	onTrashDropEvent: (event: DragEvent<HTMLAnchorElement>) => void;

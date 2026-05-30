@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { setUserSidebarScrollTop } from "@/components/layout/sidebarScrollState";
 import { STORAGE_KEYS } from "@/config/app";
 import type { TeamInfo } from "@/types/api";
 
@@ -128,16 +129,26 @@ vi.mock("@/components/ui/scroll-area", () => ({
 	ScrollArea: ({
 		children,
 		className,
+		onScroll,
+		ref,
 		"data-testid": testId,
 	}: {
 		children: React.ReactNode;
 		className?: string;
+		onScroll?: React.UIEventHandler<HTMLDivElement>;
+		ref?: React.Ref<HTMLDivElement>;
 		"data-testid"?: string;
 	}) => (
 		<div
 			data-testid={testId ?? "scroll-area"}
 			className={className}
-			ref={() => {
+			onScroll={onScroll}
+			ref={(node) => {
+				if (typeof ref === "function") {
+					ref(node);
+				} else if (ref) {
+					ref.current = node;
+				}
 				mockState.scrollAreaTestIds.push(testId);
 			}}
 		>
@@ -164,6 +175,7 @@ vi.mock("@/lib/dragDrop", () => ({
 describe("Sidebar", () => {
 	beforeEach(() => {
 		localStorage.clear();
+		setUserSidebarScrollTop(0);
 		mockState.pathname = "/";
 		mockState.auth.user = {
 			storage_quota: 100,
@@ -234,6 +246,21 @@ describe("Sidebar", () => {
 		expect(
 			screen.getByText("files:storage_quota:formatted:25/formatted:100"),
 		).toBeInTheDocument();
+	});
+
+	it("restores the sidebar scroll position after remounting", () => {
+		const { unmount } = render(
+			<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />,
+		);
+		const scrollArea = screen.getByTestId("user-sidebar-scroll");
+
+		scrollArea.scrollTop = 180;
+		fireEvent.scroll(scrollArea);
+		unmount();
+
+		render(<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />);
+
+		expect(screen.getByTestId("user-sidebar-scroll").scrollTop).toBe(180);
 	});
 
 	it("shows the WebDAV entry for team workspaces", () => {

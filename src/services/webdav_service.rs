@@ -58,8 +58,12 @@ pub async fn recursive_soft_delete(
     user_id: i64,
     folder_id: i64,
 ) -> Result<()> {
-    recursive_soft_delete_in_scope(state, WorkspaceStorageScope::Personal { user_id }, folder_id)
-        .await
+    recursive_soft_delete_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        folder_id,
+    )
+    .await
 }
 
 pub(crate) async fn recursive_soft_delete_in_scope(

@@ -209,7 +209,7 @@ pub async fn create_team_account(
     audit_service::log(
         &state,
         &ctx,
-        audit_service::AuditAction::WebdavAccountCreate,
+        audit_service::AuditAction::TeamWebdavAccountCreate,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
         Some(result.id),
         Some(&result.username),
@@ -243,18 +243,13 @@ pub async fn delete_team_account(
     req: HttpRequest,
     path: web::Path<TeamWebdavAccountIdPath>,
 ) -> Result<HttpResponse> {
-    webdav_account_service::delete_for_team(
-        &state,
-        path.account_id,
-        claims.user_id,
-        path.team_id,
-    )
-    .await?;
+    webdav_account_service::delete_for_team(&state, path.account_id, claims.user_id, path.team_id)
+        .await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
         &state,
         &ctx,
-        audit_service::AuditAction::WebdavAccountDelete,
+        audit_service::AuditAction::TeamWebdavAccountDelete,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
         Some(path.account_id),
         None,
@@ -299,7 +294,7 @@ pub async fn toggle_team_account(
     audit_service::log(
         &state,
         &ctx,
-        audit_service::AuditAction::WebdavAccountToggle,
+        audit_service::AuditAction::TeamWebdavAccountToggle,
         crate::services::audit_service::AuditEntityType::WebdavAccount,
         Some(account.id),
         Some(&account.username),

@@ -126,10 +126,7 @@ impl AsterDavFile {
         let declared_size = declared_size.and_then(|size| i64::try_from(size).ok());
         let (file, temp_path, resolved_policy, hasher) = if let Some(size_hint) = declared_size {
             let policy = workspace_storage_service::resolve_policy_for_size(
-                &state,
-                scope,
-                folder_id,
-                size_hint,
+                &state, scope, folder_id, size_hint,
             )
             .await
             .map_err(|_| FsError::GeneralFailure)?;
@@ -162,18 +159,14 @@ impl AsterDavFile {
                 if policy.max_file_size > 0 && size_hint > policy.max_file_size {
                     return Err(FsError::TooLarge);
                 }
-                workspace_storage_service::check_quota(
-                    state.writer_db(),
-                    scope,
-                    size_hint,
-                )
-                .await
-                .map_err(|error| match error {
-                    crate::errors::AsterError::StorageQuotaExceeded(_) => {
-                        FsError::InsufficientStorage
-                    }
-                    _ => FsError::GeneralFailure,
-                })?;
+                workspace_storage_service::check_quota(state.writer_db(), scope, size_hint)
+                    .await
+                    .map_err(|error| match error {
+                        crate::errors::AsterError::StorageQuotaExceeded(_) => {
+                            FsError::InsufficientStorage
+                        }
+                        _ => FsError::GeneralFailure,
+                    })?;
 
                 let driver = state
                     .driver_registry
