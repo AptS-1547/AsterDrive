@@ -65,6 +65,8 @@ struct OAuth2TokenResponse {
 struct OAuth2ErrorResponse {
     #[serde(default)]
     error: Option<String>,
+    #[serde(default)]
+    error_description: Option<String>,
 }
 
 impl OAuth2ProviderDriver {
@@ -295,7 +297,7 @@ async fn exchange_code_for_token(
         send_token_request(http_client, token_request).await?
     };
     if !response.status().is_success() {
-        return Err(token_exchange_error(response).await);
+        return Err(oauth2_endpoint_error(response, "OAuth2 token exchange").await);
     }
     let token_response = response
         .json::<OAuth2TokenResponse>()
@@ -363,22 +365,44 @@ async fn send_token_request(
     )
 }
 
-async fn token_exchange_error(response: reqwest::Response) -> AsterError {
+async fn oauth2_endpoint_error(response: reqwest::Response, context: &str) -> AsterError {
     let status = response.status();
-    let provider_error = response
-        .json::<OAuth2ErrorResponse>()
-        .await
-        .ok()
-        .and_then(|body| body.error)
-        .map(|error| sanitize_error_fragment(&error))
-        .filter(|error| !error.is_empty());
-    match provider_error {
-        Some(error) => AsterError::auth_invalid_credentials(format!(
-            "OAuth2 token exchange failed ({status}; error={error})"
-        )),
-        None => {
-            AsterError::auth_invalid_credentials(format!("OAuth2 token exchange failed ({status})"))
-        }
+    let www_authenticate = response
+        .headers()
+        .get(header::WWW_AUTHENTICATE)
+        .and_then(|value| value.to_str().ok())
+        .map(sanitize_error_fragment)
+        .filter(|value| !value.is_empty());
+    let provider_error = response.json::<OAuth2ErrorResponse>().await.ok();
+
+    let mut details = Vec::new();
+    if let Some(error) = provider_error
+        .as_ref()
+        .and_then(|body| body.error.as_deref())
+        .map(sanitize_error_fragment)
+        .filter(|error| !error.is_empty())
+    {
+        details.push(format!("error={error}"));
+    }
+    if let Some(description) = provider_error
+        .as_ref()
+        .and_then(|body| body.error_description.as_deref())
+        .map(sanitize_error_fragment)
+        .filter(|description| !description.is_empty())
+    {
+        details.push(format!("description={description}"));
+    }
+    if let Some(www_authenticate) = www_authenticate {
+        details.push(format!("www-authenticate={www_authenticate}"));
+    }
+
+    if details.is_empty() {
+        AsterError::auth_invalid_credentials(format!("{context} failed ({status})"))
+    } else {
+        AsterError::auth_invalid_credentials(format!(
+            "{context} failed ({status}; {})",
+            details.join("; ")
+        ))
     }
 }
 
@@ -407,6 +431,7 @@ async fn fetch_userinfo(
         .get(userinfo_url)
         .bearer_auth(access_token)
         .header(header::ACCEPT, "application/json")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
         .send()
         .await
         .map_aster_err_ctx(
@@ -414,9 +439,7 @@ async fn fetch_userinfo(
             AsterError::auth_invalid_credentials,
         )?;
     if !response.status().is_success() {
-        return Err(AsterError::auth_invalid_credentials(
-            "OAuth2 userinfo request failed",
-        ));
+        return Err(oauth2_endpoint_error(response, "OAuth2 userinfo request").await);
     }
     response.json::<Value>().await.map_aster_err_ctx(
         "OAuth2 userinfo response is invalid",
@@ -636,5 +659,50 @@ mod tests {
                 .chars()
                 .all(|ch| { ch.is_ascii_alphanumeric() || matches!(ch, '-' | '.' | '_' | '~') })
         );
+    }
+
+    #[actix_web::test]
+    async fn userinfo_error_includes_safe_provider_diagnostics() {
+        use actix_web::{App, HttpResponse, HttpServer, web};
+
+        async fn unauthorized_userinfo() -> HttpResponse {
+            HttpResponse::Unauthorized()
+                .append_header((
+                    "WWW-Authenticate",
+                    r#"Bearer error="insufficient_scope", error_description="missing openid""#,
+                ))
+                .json(serde_json::json!({
+                    "error": "invalid_token",
+                    "error_description": "missing openid scope"
+                }))
+        }
+
+        let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener address should exist");
+        let server =
+            HttpServer::new(|| App::new().route("/userinfo", web::get().to(unauthorized_userinfo)))
+                .listen(listener)
+                .expect("mock server should listen")
+                .run();
+        let handle = server.handle();
+        tokio::spawn(server);
+
+        let mut provider = provider();
+        provider.userinfo_url = Some(format!("http://127.0.0.1:{}/userinfo", addr.port()));
+        let http_client = oauth2_http_client().expect("HTTP client should build");
+
+        let error = fetch_userinfo(&http_client, &provider, "opaque-access-token")
+            .await
+            .expect_err("userinfo should fail");
+        let message = error.to_string();
+
+        assert!(message.contains("OAuth2 userinfo request failed (401 Unauthorized"));
+        assert!(message.contains("error=invalid_token"));
+        assert!(message.contains("description=missing openid scope"));
+        assert!(message.contains("www-authenticate=Bearer"));
+
+        handle.stop(true).await;
     }
 }
