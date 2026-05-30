@@ -1,13 +1,29 @@
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, web};
+use base64::Engine as _;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
 use super::{TEST_CLIENT_ID, TEST_CLIENT_SECRET};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenAuthMode {
+    Basic,
+    Post,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenAuthObservation {
+    Basic,
+    Post,
+    None,
+}
+
 #[derive(Clone)]
 pub struct MockOAuth2Provider {
     pub base_url: String,
     authorization_requests: Arc<Mutex<Vec<AuthorizeRequest>>>,
+    token_auth_mode: Arc<Mutex<TokenAuthMode>>,
+    token_auth_observations: Arc<Mutex<Vec<TokenAuthObservation>>>,
     profile_subject: Arc<Mutex<Option<String>>>,
     profile_email: Arc<Mutex<Option<String>>>,
     profile_email_verified: Arc<Mutex<Option<bool>>>,
@@ -30,7 +46,7 @@ struct TokenRequest {
     grant_type: String,
     code: String,
     redirect_uri: String,
-    client_id: String,
+    client_id: Option<String>,
     client_secret: Option<String>,
     code_verifier: Option<String>,
 }
@@ -40,6 +56,8 @@ impl MockOAuth2Provider {
         Self {
             base_url: String::new(),
             authorization_requests: Arc::new(Mutex::new(Vec::new())),
+            token_auth_mode: Arc::new(Mutex::new(TokenAuthMode::Basic)),
+            token_auth_observations: Arc::new(Mutex::new(Vec::new())),
             profile_subject: Arc::new(Mutex::new(Some("oauth2-subject-1".to_string()))),
             profile_email: Arc::new(Mutex::new(Some("oauth2-user@example.com".to_string()))),
             profile_email_verified: Arc::new(Mutex::new(Some(true))),
@@ -57,6 +75,20 @@ impl MockOAuth2Provider {
             .expect("authorize requests lock should not be poisoned")
             .last()
             .expect("authorization request should be recorded")
+            .clone()
+    }
+
+    pub fn require_client_secret_post(&self) {
+        *self
+            .token_auth_mode
+            .lock()
+            .expect("token auth mode lock should not be poisoned") = TokenAuthMode::Post;
+    }
+
+    pub fn token_auth_observations(&self) -> Vec<TokenAuthObservation> {
+        self.token_auth_observations
+            .lock()
+            .expect("token auth observations lock should not be poisoned")
             .clone()
     }
 
@@ -151,12 +183,14 @@ async fn mock_authorize(
     HttpResponse::Ok().finish()
 }
 
-async fn mock_token(form: web::Form<TokenRequest>) -> impl Responder {
+async fn mock_token(
+    provider: web::Data<MockOAuth2Provider>,
+    req: HttpRequest,
+    form: web::Form<TokenRequest>,
+) -> impl Responder {
     let request = form.into_inner();
     assert_eq!(request.grant_type, "authorization_code");
     assert_eq!(request.code, "mock-code");
-    assert_eq!(request.client_id, TEST_CLIENT_ID);
-    assert_eq!(request.client_secret.as_deref(), Some(TEST_CLIENT_SECRET));
     assert!(!request.redirect_uri.is_empty());
     assert!(
         request
@@ -165,11 +199,71 @@ async fn mock_token(form: web::Form<TokenRequest>) -> impl Responder {
             .is_some_and(|value| !value.is_empty()),
         "PKCE code_verifier should be sent to token endpoint"
     );
+
+    let auth_observation = token_auth_observation(&req, &request);
+    provider
+        .token_auth_observations
+        .lock()
+        .expect("token auth observations lock should not be poisoned")
+        .push(auth_observation);
+
+    match *provider
+        .token_auth_mode
+        .lock()
+        .expect("token auth mode lock should not be poisoned")
+    {
+        TokenAuthMode::Basic => {
+            if auth_observation != TokenAuthObservation::Basic {
+                return HttpResponse::Unauthorized().json(serde_json::json!({
+                    "error": "invalid_client"
+                }));
+            }
+            assert_eq!(
+                basic_credentials(&req),
+                Some((TEST_CLIENT_ID.to_string(), TEST_CLIENT_SECRET.to_string()))
+            );
+            assert!(request.client_secret.is_none());
+        }
+        TokenAuthMode::Post => {
+            if auth_observation == TokenAuthObservation::Basic {
+                return HttpResponse::Unauthorized().json(serde_json::json!({
+                    "error": "invalid_client"
+                }));
+            }
+            assert_eq!(request.client_id.as_deref(), Some(TEST_CLIENT_ID));
+            assert_eq!(request.client_secret.as_deref(), Some(TEST_CLIENT_SECRET));
+        }
+    }
+
     HttpResponse::Ok().json(serde_json::json!({
         "access_token": "mock-access-token",
         "token_type": "Bearer",
         "expires_in": 300
     }))
+}
+
+fn token_auth_observation(req: &HttpRequest, form: &TokenRequest) -> TokenAuthObservation {
+    if basic_credentials(req).is_some() {
+        return TokenAuthObservation::Basic;
+    }
+    if form.client_secret.is_some() {
+        return TokenAuthObservation::Post;
+    }
+    TokenAuthObservation::None
+}
+
+fn basic_credentials(req: &HttpRequest) -> Option<(String, String)> {
+    let header = req
+        .headers()
+        .get("Authorization")
+        .and_then(|value| value.to_str().ok())?;
+    let encoded = header.strip_prefix("Basic ")?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    let decoded = String::from_utf8(decoded).ok()?;
+    let (client_id, client_secret) = decoded.split_once(':')?;
+    Some((client_id.to_string(), client_secret.to_string()))
 }
 
 async fn mock_userinfo(

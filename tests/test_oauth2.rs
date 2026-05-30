@@ -197,6 +197,41 @@ async fn finish_callback_exchanges_code_fetches_userinfo_and_issues_cookies() {
         identities[0].email_snapshot.as_deref(),
         Some("oauth2-user@example.com")
     );
+    assert_eq!(
+        mock_provider.token_auth_observations(),
+        vec![TokenAuthObservation::Basic]
+    );
+
+    server.stop(true).await;
+}
+
+#[actix_web::test]
+async fn finish_callback_falls_back_to_client_secret_post_token_auth() {
+    let (mock_provider, server) = start_mock_oauth2_provider().await;
+    mock_provider.require_client_secret_post();
+    let state = common::setup().await;
+    configure_oauth2_public_site_url(&state);
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+    let created = create_oauth2_provider_with(
+        &app,
+        &admin_token,
+        TestOAuth2ProviderOptions {
+            auto_provision_enabled: true,
+            ..TestOAuth2ProviderOptions::mock(&mock_provider.base_url)
+        },
+    )
+    .await;
+    let provider_key = created_provider_key(&created);
+
+    let state_value = start_oauth2_login(&app, &mock_provider, &provider_key, "/").await;
+    let resp = finish_oauth2_callback(&app, &provider_key, &state_value).await;
+    assert_eq!(resp.status(), 302);
+    assert!(common::extract_cookie(&resp, "aster_access").is_some());
+    assert_eq!(
+        mock_provider.token_auth_observations(),
+        vec![TokenAuthObservation::Basic, TokenAuthObservation::Post]
+    );
 
     server.stop(true).await;
 }

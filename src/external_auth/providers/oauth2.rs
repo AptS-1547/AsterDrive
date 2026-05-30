@@ -24,6 +24,33 @@ const OAUTH2_SUBJECT_MAX_LEN: usize = 255;
 const OAUTH2_SNAPSHOT_MAX_LEN: usize = 255;
 const TOKEN_ENDPOINT_TIMEOUT_SECS: u64 = 15;
 
+#[derive(Clone, Copy)]
+enum OAuth2TokenAuthMethod {
+    ClientSecretBasic,
+    ClientSecretPost,
+    PublicClient,
+}
+
+#[derive(Clone, Copy)]
+struct OAuth2TokenRequest<'a> {
+    token_url: &'a str,
+    provider: &'a ExternalAuthProviderConfig,
+    code: &'a str,
+    redirect_uri: &'a str,
+    pkce_verifier: &'a str,
+    auth_method: OAuth2TokenAuthMethod,
+    client_secret: Option<&'a str>,
+}
+
+impl<'a> OAuth2TokenRequest<'a> {
+    fn with_auth_method(self, auth_method: OAuth2TokenAuthMethod) -> Self {
+        Self {
+            auth_method,
+            ..self
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct OAuth2ProviderDriver;
 
@@ -32,6 +59,12 @@ struct OAuth2TokenResponse {
     access_token: String,
     #[serde(default)]
     token_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuth2ErrorResponse {
+    #[serde(default)]
+    error: Option<String>,
 }
 
 impl OAuth2ProviderDriver {
@@ -229,39 +262,40 @@ async fn exchange_code_for_token(
     )?;
     validate_url(token_url, "token_url", AsterError::config_error)?;
 
-    let form = {
-        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-        serializer.append_pair("grant_type", "authorization_code");
-        serializer.append_pair("code", code);
-        serializer.append_pair("redirect_uri", redirect_uri);
-        serializer.append_pair("client_id", &provider.client_id);
-        serializer.append_pair("code_verifier", pkce_verifier);
-        if let Some(secret) = provider
-            .client_secret
-            .as_deref()
-            .map(str::trim)
-            .filter(|secret| !secret.is_empty())
-        {
-            serializer.append_pair("client_secret", secret);
-        }
-        serializer.finish()
+    let client_secret = provider
+        .client_secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|secret| !secret.is_empty());
+    let token_request = OAuth2TokenRequest {
+        token_url,
+        provider,
+        code,
+        redirect_uri,
+        pkce_verifier,
+        auth_method: OAuth2TokenAuthMethod::PublicClient,
+        client_secret,
     };
-
-    let response = http_client
-        .post(token_url)
-        .header(header::ACCEPT, "application/json")
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(form)
-        .send()
-        .await
-        .map_aster_err_ctx(
-            "OAuth2 token exchange failed",
-            AsterError::auth_invalid_credentials,
-        )?;
+    let response = if client_secret.is_some() {
+        let response = send_token_request(
+            http_client,
+            token_request.with_auth_method(OAuth2TokenAuthMethod::ClientSecretBasic),
+        )
+        .await?;
+        if response.status().is_success() {
+            response
+        } else {
+            send_token_request(
+                http_client,
+                token_request.with_auth_method(OAuth2TokenAuthMethod::ClientSecretPost),
+            )
+            .await?
+        }
+    } else {
+        send_token_request(http_client, token_request).await?
+    };
     if !response.status().is_success() {
-        return Err(AsterError::auth_invalid_credentials(
-            "OAuth2 token exchange failed",
-        ));
+        return Err(token_exchange_error(response).await);
     }
     let token_response = response
         .json::<OAuth2TokenResponse>()
@@ -283,6 +317,79 @@ async fn exchange_code_for_token(
         ));
     }
     Ok(token_response.access_token)
+}
+
+async fn send_token_request(
+    http_client: &reqwest::Client,
+    token_request: OAuth2TokenRequest<'_>,
+) -> Result<reqwest::Response> {
+    let form = {
+        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+        serializer.append_pair("grant_type", "authorization_code");
+        serializer.append_pair("code", token_request.code);
+        serializer.append_pair("redirect_uri", token_request.redirect_uri);
+        serializer.append_pair("code_verifier", token_request.pkce_verifier);
+        match token_request.auth_method {
+            OAuth2TokenAuthMethod::ClientSecretBasic => {}
+            OAuth2TokenAuthMethod::ClientSecretPost => {
+                serializer.append_pair("client_id", &token_request.provider.client_id);
+                if let Some(secret) = token_request.client_secret {
+                    serializer.append_pair("client_secret", secret);
+                }
+            }
+            OAuth2TokenAuthMethod::PublicClient => {
+                serializer.append_pair("client_id", &token_request.provider.client_id);
+            }
+        }
+        serializer.finish()
+    };
+
+    let mut request = http_client
+        .post(token_request.token_url)
+        .header(header::ACCEPT, "application/json")
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(form);
+    if matches!(
+        token_request.auth_method,
+        OAuth2TokenAuthMethod::ClientSecretBasic
+    ) && let Some(secret) = token_request.client_secret
+    {
+        request = request.basic_auth(&token_request.provider.client_id, Some(secret));
+    }
+
+    request.send().await.map_aster_err_ctx(
+        "OAuth2 token exchange failed",
+        AsterError::auth_invalid_credentials,
+    )
+}
+
+async fn token_exchange_error(response: reqwest::Response) -> AsterError {
+    let status = response.status();
+    let provider_error = response
+        .json::<OAuth2ErrorResponse>()
+        .await
+        .ok()
+        .and_then(|body| body.error)
+        .map(|error| sanitize_error_fragment(&error))
+        .filter(|error| !error.is_empty());
+    match provider_error {
+        Some(error) => AsterError::auth_invalid_credentials(format!(
+            "OAuth2 token exchange failed ({status}; error={error})"
+        )),
+        None => {
+            AsterError::auth_invalid_credentials(format!("OAuth2 token exchange failed ({status})"))
+        }
+    }
+}
+
+fn sanitize_error_fragment(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(128)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 async fn fetch_userinfo(

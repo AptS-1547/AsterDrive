@@ -1,6 +1,6 @@
 pub mod mock;
 
-pub use mock::start_mock_oauth2_provider;
+pub use mock::{TokenAuthObservation, start_mock_oauth2_provider};
 
 use actix_web::{body::MessageBody, dev::ServiceResponse, test};
 use aster_drive::entities::{external_auth_provider, user};
