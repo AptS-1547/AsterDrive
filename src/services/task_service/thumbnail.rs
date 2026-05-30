@@ -1,8 +1,5 @@
 //! 后台任务服务子模块：`thumbnail`。
 
-use chrono::Utc;
-use sea_orm::Set;
-
 use crate::db::repository::background_task_repo;
 use crate::entities::{background_task, file_blob};
 use crate::errors::{AsterError, Result};
@@ -10,23 +7,28 @@ use crate::runtime::PrimaryAppState;
 use crate::services::media_processing_service;
 use crate::storage::StorageErrorKind;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
+use crate::utils::numbers::usize_to_i64;
 
 use super::retry::{TaskRetryClass, TaskRetryPolicy};
+use super::spec::{self, BackgroundTaskSpec, ThumbnailGenerateTask, decode_payload_as};
 use super::steps::{
     TASK_STEP_INSPECT_SOURCE, TASK_STEP_PERSIST_THUMBNAIL, TASK_STEP_RENDER_THUMBNAIL,
-    TASK_STEP_WAITING, initial_task_steps, parse_task_steps_json, serialize_task_steps,
-    set_task_step_active, set_task_step_succeeded,
+    TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active, set_task_step_succeeded,
 };
-use super::types::{
-    ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult, parse_task_payload,
-    serialize_task_payload, serialize_task_result,
-};
+use super::types::{ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult};
 use super::{
-    TaskLeaseGuard, configured_task_max_attempts, mark_task_progress, mark_task_succeeded,
-    task_expiration_from, truncate_display_name,
+    TaskLeaseGuard, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
+    mark_task_succeeded,
 };
 
 pub(super) struct ThumbnailRetryPolicy;
+
+fn thumbnail_step_count() -> Result<i64> {
+    usize_to_i64(
+        ThumbnailGenerateTask::step_specs().len(),
+        "thumbnail task step count",
+    )
+}
 
 impl TaskRetryPolicy for ThumbnailRetryPolicy {
     fn retry_class(error: &AsterError) -> TaskRetryClass {
@@ -89,7 +91,6 @@ pub(crate) async fn ensure_thumbnail_task(
         }
     }
 
-    let now = Utc::now();
     let payload = ThumbnailGenerateTaskPayload {
         blob_id: blob.id,
         blob_hash: blob.hash.clone(),
@@ -97,42 +98,11 @@ pub(crate) async fn ensure_thumbnail_task(
         source_mime_type: source_mime_type.to_string(),
         processor,
     };
-    let payload_json = serialize_task_payload(&payload)?;
-    let steps_json =
-        serialize_task_steps(&initial_task_steps(BackgroundTaskKind::ThumbnailGenerate))?;
-    background_task_repo::create(
+    insert_typed_task_record(
+        state,
         state.writer_db(),
-        background_task::ActiveModel {
-            kind: Set(BackgroundTaskKind::ThumbnailGenerate),
-            status: Set(BackgroundTaskStatus::Pending),
-            creator_user_id: Set(None),
-            team_id: Set(None),
-            share_id: Set(None),
-            display_name: Set(truncate_display_name(&display_name)),
-            payload_json: Set(payload_json),
-            result_json: Set(None),
-            steps_json: Set(Some(steps_json)),
-            progress_current: Set(0),
-            progress_total: Set(4),
-            status_text: Set(None),
-            attempt_count: Set(0),
-            max_attempts: Set(configured_task_max_attempts(
-                state,
-                BackgroundTaskKind::ThumbnailGenerate,
-            )),
-            next_run_at: Set(now),
-            processing_token: Set(0),
-            processing_started_at: Set(None),
-            last_heartbeat_at: Set(None),
-            lease_expires_at: Set(None),
-            started_at: Set(None),
-            finished_at: Set(None),
-            last_error: Set(None),
-            expires_at: Set(task_expiration_from(state, now)),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
+        TypedTaskCreate::<ThumbnailGenerateTask>::new(display_name, payload)
+            .progress(0, thumbnail_step_count()?),
     )
     .await?;
 
@@ -146,7 +116,7 @@ pub(super) async fn process_thumbnail_generate_task(
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
-    let payload: ThumbnailGenerateTaskPayload = parse_task_payload(task)?;
+    let payload = decode_payload_as::<ThumbnailGenerateTask>(task)?;
     tracing::debug!(
         task_id = task.id,
         blob_id = payload.blob_id,
@@ -253,25 +223,27 @@ pub(super) async fn process_thumbnail_generate_task(
         )?;
     }
 
-    let result_json = serialize_task_result(&ThumbnailGenerateTaskResult {
-        blob_id: blob.id,
-        thumbnail_path: stored.thumbnail_path.clone(),
-        thumbnail_processor: stored.thumbnail_processor.clone(),
-        thumbnail_version: stored.thumbnail_version.clone(),
-        processor: payload.processor,
-        reused_existing_thumbnail: stored.reused_existing_thumbnail,
-    })?;
+    let result_json =
+        spec::serialize_result::<ThumbnailGenerateTask>(&ThumbnailGenerateTaskResult {
+            blob_id: blob.id,
+            thumbnail_path: stored.thumbnail_path.clone(),
+            thumbnail_processor: stored.thumbnail_processor.clone(),
+            thumbnail_version: stored.thumbnail_version.clone(),
+            processor: payload.processor,
+            reused_existing_thumbnail: stored.reused_existing_thumbnail,
+        })?;
     let status_text = if stored.reused_existing_thumbnail {
         "Thumbnail already available"
     } else {
         "Thumbnail ready"
     };
+    let step_count = thumbnail_step_count()?;
     mark_task_succeeded(
         state,
         &lease_guard,
         Some(&result_json),
-        4,
-        4,
+        step_count,
+        step_count,
         Some(status_text),
         &steps,
     )

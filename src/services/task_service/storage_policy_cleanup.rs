@@ -1,22 +1,19 @@
 //! 存储策略删除后的临时对象兜底清理任务。
 
 use chrono::{Duration, Utc};
-use sea_orm::Set;
 
 use crate::api::constants::HOUR_SECS;
-use crate::db::repository::{background_task_repo, managed_follower_repo};
+use crate::db::repository::managed_follower_repo;
 use crate::entities::{background_task, managed_follower, storage_policy};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::storage::StorageErrorKind;
 use crate::storage::driver::StorageDriver;
 use crate::storage::drivers::{local::LocalDriver, s3::S3Driver};
-use crate::types::{
-    BackgroundTaskKind, BackgroundTaskStatus, DriverType, StoredStoragePolicyAllowedTypes,
-    StoredStoragePolicyOptions,
-};
+use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
 use crate::utils::numbers::u64_to_i64;
 
+use super::spec::{self, StoragePolicyTempCleanupTask, decode_payload_as};
 use super::steps::{
     TASK_STEP_CLEANUP_OBJECTS, TASK_STEP_PREPARE_SOURCES, parse_task_steps_json,
     set_task_step_active, set_task_step_succeeded,
@@ -24,12 +21,11 @@ use super::steps::{
 use super::types::{
     StoragePolicyCleanupPolicySnapshot, StoragePolicyCleanupRemoteNodeSnapshot,
     StoragePolicyTempCleanupTarget, StoragePolicyTempCleanupTaskPayload,
-    StoragePolicyTempCleanupTaskResult, parse_task_payload, serialize_task_payload,
-    serialize_task_result,
+    StoragePolicyTempCleanupTaskResult,
 };
 use super::{
-    TaskLeaseGuard, configured_task_max_attempts, initial_task_steps, mark_task_progress,
-    mark_task_succeeded, serialize_task_steps, task_expiration_from, truncate_display_name,
+    TaskLeaseGuard, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
+    mark_task_succeeded,
 };
 
 const TEMP_CLEANUP_GRACE_SECS: u64 = HOUR_SECS + 60;
@@ -59,57 +55,28 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
         multipart_uploads: dedup_multipart_targets(multipart_uploads.iter().cloned()),
     };
 
-    let now = Utc::now();
-    let cleanup_after = now
+    let cleanup_after = chrono::Utc::now()
         + Duration::seconds(u64_to_i64(
             TEMP_CLEANUP_GRACE_SECS,
             "storage policy temp cleanup grace",
         )?);
-    let payload_json = serialize_task_payload(&payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(
-        BackgroundTaskKind::StoragePolicyTempCleanup,
-    ))?;
-
-    background_task_repo::create(
+    let task = insert_typed_task_record(
+        state,
         state.writer_db(),
-        background_task::ActiveModel {
-            kind: Set(BackgroundTaskKind::StoragePolicyTempCleanup),
-            status: Set(BackgroundTaskStatus::Pending),
-            creator_user_id: Set(None),
-            team_id: Set(None),
-            share_id: Set(None),
-            display_name: Set(truncate_display_name(&format!(
+        TypedTaskCreate::<StoragePolicyTempCleanupTask>::new(
+            format!(
                 "Clean deleted storage policy #{} temporary uploads",
                 policy.id
-            ))),
-            payload_json: Set(payload_json),
-            result_json: Set(None),
-            steps_json: Set(Some(steps_json)),
-            progress_current: Set(0),
-            progress_total: Set(0),
-            status_text: Set(Some("Waiting for presigned URLs to expire".to_string())),
-            attempt_count: Set(0),
-            max_attempts: Set(configured_task_max_attempts(
-                state,
-                BackgroundTaskKind::StoragePolicyTempCleanup,
-            )),
-            next_run_at: Set(cleanup_after),
-            processing_token: Set(0),
-            processing_started_at: Set(None),
-            last_heartbeat_at: Set(None),
-            lease_expires_at: Set(None),
-            started_at: Set(None),
-            finished_at: Set(None),
-            last_error: Set(None),
-            failure_can_retry: Set(None),
-            expires_at: Set(task_expiration_from(state, cleanup_after)),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
+            ),
+            payload,
+        )
+        .next_run_at(cleanup_after)
+        .status_text("Waiting for presigned URLs to expire".to_string()),
     )
-    .await
-    .map(Some)
+    .await?;
+
+    state.wake_background_task_dispatcher();
+    Ok(Some(task))
 }
 
 pub(super) async fn process_storage_policy_temp_cleanup_task(
@@ -117,7 +84,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
-    let payload: StoragePolicyTempCleanupTaskPayload = parse_task_payload(task)?;
+    let payload = decode_payload_as::<StoragePolicyTempCleanupTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
     let total_targets = cleanup_target_count(&payload)?;
@@ -241,11 +208,13 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         Some("Temporary upload cleanup finished"),
         Some((total_targets, total_targets)),
     )?;
-    let result = serialize_task_result(&StoragePolicyTempCleanupTaskResult {
-        deleted_objects: stats.deleted_objects,
-        missing_objects: stats.missing_objects,
-        failed_objects: stats.failed_objects,
-    })?;
+    let result = spec::serialize_result::<StoragePolicyTempCleanupTask>(
+        &StoragePolicyTempCleanupTaskResult {
+            deleted_objects: stats.deleted_objects,
+            missing_objects: stats.missing_objects,
+            failed_objects: stats.failed_objects,
+        },
+    )?;
     mark_task_succeeded(
         state,
         &lease_guard,

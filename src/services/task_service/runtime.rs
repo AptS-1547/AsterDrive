@@ -1,28 +1,36 @@
 //! 后台任务服务子模块：`runtime`。
 
 use chrono::{DateTime, Utc};
-use sea_orm::Set;
 
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::TaskPresentationCode;
-use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
+use crate::types::{BackgroundTaskStatus, StoredTaskPayload};
 
-use super::retry::{TaskRetryClass, TaskRetryPolicy};
-use super::types::{
-    RuntimeSystemHealthResult, RuntimeTaskPayload, RuntimeTaskResult, serialize_task_payload,
-    serialize_task_result,
+use super::spec::{self, SystemRuntimeTask};
+use super::types::{RuntimeSystemHealthResult, RuntimeTaskPayload, RuntimeTaskResult};
+use super::{
+    TypedTaskCreate, insert_typed_task_record, task_expiration_from, truncate_error,
+    truncate_status_text,
 };
-use super::{task_expiration_from, truncate_display_name, truncate_error, truncate_status_text};
 
-pub(super) struct RuntimeRetryPolicy;
+pub(crate) fn system_runtime_payload_json(
+    task_name: SystemRuntimeTaskKind,
+) -> Result<StoredTaskPayload> {
+    spec::serialize_payload::<SystemRuntimeTask>(&RuntimeTaskPayload {
+        task_name: task_name.into(),
+    })
+}
 
-impl TaskRetryPolicy for RuntimeRetryPolicy {
-    fn retry_class(_error: &AsterError) -> TaskRetryClass {
-        TaskRetryClass::Never
-    }
+pub(crate) async fn find_latest_system_runtime_by_task_name(
+    state: &PrimaryAppState,
+    task_name: SystemRuntimeTaskKind,
+) -> Result<Option<background_task::Model>> {
+    let payload_json = system_runtime_payload_json(task_name)?;
+    background_task_repo::find_latest_system_runtime_by_payload(state.reader_db(), &payload_json)
+        .await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -244,21 +252,24 @@ pub async fn record_runtime_task_run(
         return Ok(None);
     }
 
-    let payload_json = serialize_task_payload(&RuntimeTaskPayload {
+    let payload = RuntimeTaskPayload {
         task_name: task_name.into(),
-    })?;
+    };
+    let payload_json = spec::serialize_payload::<SystemRuntimeTask>(&payload)?;
     let summary = outcome.summary().map(truncate_status_text);
     let last_error = outcome.error().map(truncate_error);
-    let result_json = serialize_task_result(&RuntimeTaskResult {
-        duration_ms: (finished_at - started_at).num_milliseconds().max(0),
-        summary: summary.clone(),
-        system_health: outcome.system_health(),
-    })?;
+    let result = RuntimeTaskResult::from_timestamps(
+        started_at,
+        finished_at,
+        summary.clone(),
+        outcome.system_health(),
+    );
+    let result_json = spec::serialize_result::<SystemRuntimeTask>(&result)?;
 
     if should_refresh_latest_success(task_name, outcome)
-        && let Some(existing) = background_task_repo::find_latest_system_runtime_by_task_name(
+        && let Some(existing) = background_task_repo::find_latest_system_runtime_by_payload(
             state.writer_db(),
-            task_name.as_str(),
+            &payload_json,
         )
         .await?
         && existing.status == BackgroundTaskStatus::Succeeded
@@ -284,47 +295,29 @@ pub async fn record_runtime_task_run(
     // 系统周期任务和用户后台任务共用 background_task 表。
     // 区别在于 runtime 任务的 kind 是 SystemRuntime，它们只是执行事件记录，
     // 不会再被 dispatcher 拿去执行。
-    let task = background_task_repo::create(
-        state.writer_db(),
-        background_task::ActiveModel {
-            kind: Set(BackgroundTaskKind::SystemRuntime),
-            status: Set(outcome.status()),
-            creator_user_id: Set(None),
-            team_id: Set(None),
-            share_id: Set(None),
-            display_name: Set(truncate_display_name(task_name.display_name())),
-            payload_json: Set(payload_json),
-            result_json: Set(Some(result_json)),
-            steps_json: Set(None),
-            progress_current: Set(if matches!(outcome, RuntimeTaskRunOutcome::Failed { .. }) {
-                0
-            } else {
-                1
-            }),
-            progress_total: Set(1),
-            status_text: Set(summary),
-            attempt_count: Set(0),
-            max_attempts: Set(1),
-            next_run_at: Set(finished_at),
-            processing_token: Set(0),
-            processing_started_at: Set(None),
-            last_heartbeat_at: Set(None),
-            lease_expires_at: Set(None),
-            started_at: Set(Some(started_at)),
-            finished_at: Set(Some(finished_at)),
-            last_error: Set(last_error),
-            failure_can_retry: Set(if matches!(outcome, RuntimeTaskRunOutcome::Failed { .. }) {
-                Some(false)
-            } else {
-                None
-            }),
-            expires_at: Set(task_expiration_from(state, finished_at)),
-            created_at: Set(started_at),
-            updated_at: Set(finished_at),
-            ..Default::default()
-        },
-    )
-    .await?;
+    let progress_current = if matches!(outcome, RuntimeTaskRunOutcome::Failed { .. }) {
+        0
+    } else {
+        1
+    };
+    let mut create = TypedTaskCreate::<SystemRuntimeTask>::new(task_name.display_name(), payload)
+        .status(outcome.status())
+        .without_steps()
+        .progress(progress_current, 1)
+        .started_at(started_at)
+        .finished_at(finished_at)
+        .last_error(last_error)
+        .failure_can_retry(if matches!(outcome, RuntimeTaskRunOutcome::Failed { .. }) {
+            Some(false)
+        } else {
+            None
+        })
+        .result(&result)?;
+    if let Some(summary) = summary {
+        create = create.status_text(summary);
+    }
+
+    let task = insert_typed_task_record(state, state.writer_db(), create).await?;
 
     Ok(Some(task))
 }

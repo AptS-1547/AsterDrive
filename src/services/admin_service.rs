@@ -236,9 +236,9 @@ pub async fn get_overview(
         file_repo::sum_blob_bytes(state.reader_db()),
         share_repo::count_all(state.reader_db()),
         build_daily_reports(state, today, days, timezone),
-        background_task_repo::find_latest_system_runtime_by_task_name(
-            state.reader_db(),
-            SystemRuntimeTaskKind::SystemHealthCheck.as_str()
+        crate::services::task_service::find_latest_system_runtime_by_task_name(
+            state,
+            SystemRuntimeTaskKind::SystemHealthCheck,
         ),
     )?;
     let today_report = daily_reports

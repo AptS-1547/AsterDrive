@@ -2,8 +2,10 @@ use crate::config::operations;
 use crate::runtime::PrimaryAppState;
 use crate::types::BackgroundTaskKind;
 
+use super::super::registry;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TaskLane {
+pub(in crate::services::task_service) enum TaskLane {
     Archive,
     Thumbnail,
     StorageMigration,
@@ -17,23 +19,6 @@ pub(super) struct TaskLaneConfig {
     pub(super) fast_continue: bool,
 }
 
-const ARCHIVE_TASK_KINDS: [BackgroundTaskKind; 3] = [
-    BackgroundTaskKind::ArchiveCompress,
-    BackgroundTaskKind::ArchiveExtract,
-    BackgroundTaskKind::ArchivePreviewGenerate,
-];
-const THUMBNAIL_TASK_KINDS: [BackgroundTaskKind; 2] = [
-    BackgroundTaskKind::ThumbnailGenerate,
-    BackgroundTaskKind::MediaMetadataExtract,
-];
-const STORAGE_MIGRATION_TASK_KINDS: [BackgroundTaskKind; 1] =
-    [BackgroundTaskKind::StoragePolicyMigration];
-const FALLBACK_TASK_KINDS: [BackgroundTaskKind; 4] = [
-    BackgroundTaskKind::SystemRuntime,
-    BackgroundTaskKind::StoragePolicyTempCleanup,
-    BackgroundTaskKind::TrashPurgeAll,
-    BackgroundTaskKind::BlobMaintenance,
-];
 pub(super) const TASK_LANES: [TaskLane; 4] = [
     TaskLane::Archive,
     TaskLane::Thumbnail,
@@ -68,7 +53,7 @@ pub(super) fn task_lane_configs(state: &PrimaryAppState) -> Vec<TaskLaneConfig> 
 
 impl TaskLaneConfig {
     pub(super) fn kinds(self) -> &'static [BackgroundTaskKind] {
-        task_lane_kinds(self.lane)
+        registry::task_lane_kinds(self.lane)
     }
 
     pub(super) fn lock_key(self) -> &'static str {
@@ -84,26 +69,5 @@ impl TaskLaneConfig {
 }
 
 pub(super) fn task_lane(kind: BackgroundTaskKind) -> TaskLane {
-    match kind {
-        BackgroundTaskKind::ArchiveCompress
-        | BackgroundTaskKind::ArchiveExtract
-        | BackgroundTaskKind::ArchivePreviewGenerate => TaskLane::Archive,
-        BackgroundTaskKind::ThumbnailGenerate | BackgroundTaskKind::MediaMetadataExtract => {
-            TaskLane::Thumbnail
-        }
-        BackgroundTaskKind::StoragePolicyMigration => TaskLane::StorageMigration,
-        BackgroundTaskKind::StoragePolicyTempCleanup
-        | BackgroundTaskKind::TrashPurgeAll
-        | BackgroundTaskKind::BlobMaintenance
-        | BackgroundTaskKind::SystemRuntime => TaskLane::Fallback,
-    }
-}
-
-pub(super) fn task_lane_kinds(lane: TaskLane) -> &'static [BackgroundTaskKind] {
-    match lane {
-        TaskLane::Archive => &ARCHIVE_TASK_KINDS,
-        TaskLane::Thumbnail => &THUMBNAIL_TASK_KINDS,
-        TaskLane::StorageMigration => &STORAGE_MIGRATION_TASK_KINDS,
-        TaskLane::Fallback => &FALLBACK_TASK_KINDS,
-    }
+    registry::task_lane(kind)
 }

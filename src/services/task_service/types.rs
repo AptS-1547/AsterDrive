@@ -1,17 +1,14 @@
 //! 后台任务服务子模块：`types`。
 
-use sea_orm::ActiveEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::entities::background_task;
-use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::user_service;
 use crate::types::{
     ArchiveFilenameEncoding, BackgroundTaskKind, BackgroundTaskStatus, DriverType,
-    RemoteNodeTransportMode, StoredTaskPayload, StoredTaskResult,
+    RemoteNodeTransportMode,
 };
 
 use super::runtime::SystemRuntimeTaskKind;
@@ -399,6 +396,21 @@ pub struct RuntimeTaskResult {
     pub system_health: Option<RuntimeSystemHealthResult>,
 }
 
+impl RuntimeTaskResult {
+    pub fn from_timestamps(
+        started_at: chrono::DateTime<chrono::Utc>,
+        finished_at: chrono::DateTime<chrono::Utc>,
+        summary: Option<String>,
+        system_health: Option<RuntimeSystemHealthResult>,
+    ) -> Self {
+        Self {
+            duration_ms: (finished_at - started_at).num_milliseconds().max(0),
+            summary,
+            system_health,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ThumbnailGenerateTaskResult {
@@ -585,166 +597,4 @@ pub struct TaskInfo {
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-pub(super) fn parse_task_payload<T>(task: &background_task::Model) -> Result<T>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    serde_json::from_str(task.payload_json.as_ref()).map_err(|error| {
-        AsterError::internal_error(format!(
-            "parse payload for task #{} ({}): {error}",
-            task.id,
-            task.kind.to_value()
-        ))
-    })
-}
-
-pub(super) fn parse_task_payload_info(task: &background_task::Model) -> Result<TaskPayload> {
-    match task.kind {
-        BackgroundTaskKind::ArchiveCompress => {
-            Ok(TaskPayload::ArchiveCompress(parse_task_payload(task)?))
-        }
-        BackgroundTaskKind::ArchiveExtract => {
-            Ok(TaskPayload::ArchiveExtract(parse_task_payload(task)?))
-        }
-        BackgroundTaskKind::ArchivePreviewGenerate => Ok(TaskPayload::ArchivePreviewGenerate(
-            parse_task_payload(task)?,
-        )),
-        BackgroundTaskKind::ThumbnailGenerate => {
-            Ok(TaskPayload::ThumbnailGenerate(parse_task_payload(task)?))
-        }
-        BackgroundTaskKind::MediaMetadataExtract => {
-            Ok(TaskPayload::MediaMetadataExtract(parse_task_payload(task)?))
-        }
-        BackgroundTaskKind::TrashPurgeAll => {
-            Ok(TaskPayload::TrashPurgeAll(parse_task_payload(task)?))
-        }
-        BackgroundTaskKind::StoragePolicyTempCleanup => Ok(TaskPayload::StoragePolicyTempCleanup(
-            parse_task_payload::<StoragePolicyTempCleanupTaskPayload>(task)?.into(),
-        )),
-        BackgroundTaskKind::StoragePolicyMigration => Ok(TaskPayload::StoragePolicyMigration(
-            parse_task_payload(task)?,
-        )),
-        BackgroundTaskKind::BlobMaintenance => {
-            Ok(TaskPayload::BlobMaintenance(parse_task_payload(task)?))
-        }
-        BackgroundTaskKind::SystemRuntime => {
-            Ok(TaskPayload::SystemRuntime(parse_task_payload(task)?))
-        }
-    }
-}
-
-pub(super) fn parse_task_result_info(task: &background_task::Model) -> Result<Option<TaskResult>> {
-    let raw = match task.result_json.as_ref() {
-        Some(raw) => raw,
-        None => return Ok(None),
-    };
-
-    match task.kind {
-        BackgroundTaskKind::ArchiveCompress => Ok(Some(TaskResult::ArchiveCompress(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-        BackgroundTaskKind::ArchiveExtract => Ok(Some(TaskResult::ArchiveExtract(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-        BackgroundTaskKind::ArchivePreviewGenerate => Ok(Some(TaskResult::ArchivePreviewGenerate(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-        BackgroundTaskKind::ThumbnailGenerate => Ok(Some(TaskResult::ThumbnailGenerate(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-        BackgroundTaskKind::MediaMetadataExtract => Ok(Some(TaskResult::MediaMetadataExtract(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-        BackgroundTaskKind::TrashPurgeAll => Ok(Some(TaskResult::TrashPurgeAll(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-        BackgroundTaskKind::StoragePolicyTempCleanup => {
-            Ok(Some(TaskResult::StoragePolicyTempCleanup(
-                serde_json::from_str(raw.as_ref()).map_err(|error| {
-                    AsterError::internal_error(format!(
-                        "parse result for task #{} ({}): {error}",
-                        task.id,
-                        task.kind.to_value()
-                    ))
-                })?,
-            )))
-        }
-        BackgroundTaskKind::StoragePolicyMigration => Ok(Some(TaskResult::StoragePolicyMigration(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-        BackgroundTaskKind::BlobMaintenance => Ok(Some(TaskResult::BlobMaintenance(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-        BackgroundTaskKind::SystemRuntime => Ok(Some(TaskResult::SystemRuntime(
-            serde_json::from_str(raw.as_ref()).map_err(|error| {
-                AsterError::internal_error(format!(
-                    "parse result for task #{} ({}): {error}",
-                    task.id,
-                    task.kind.to_value()
-                ))
-            })?,
-        ))),
-    }
-}
-
-pub(super) fn serialize_task_payload<T: Serialize>(payload: &T) -> Result<StoredTaskPayload> {
-    serde_json::to_string(payload)
-        .map(StoredTaskPayload)
-        .map_aster_err_ctx("serialize task payload", AsterError::internal_error)
-}
-
-pub(super) fn serialize_task_result<T: Serialize>(result: &T) -> Result<StoredTaskResult> {
-    serde_json::to_string(result)
-        .map(StoredTaskResult)
-        .map_aster_err_ctx("serialize task result", AsterError::internal_error)
 }

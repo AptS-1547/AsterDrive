@@ -171,7 +171,7 @@ impl DavFileSystem for AsterDavFs {
                 if options.create_new && existing_file_id.is_some() {
                     return Err(FsError::Exists);
                 }
-                if !options.create && existing_file_id.is_none() {
+                if !options.create && !options.create_new && existing_file_id.is_none() {
                     return Err(FsError::NotFound);
                 }
 

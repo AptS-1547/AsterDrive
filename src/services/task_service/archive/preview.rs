@@ -8,17 +8,15 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     archive_preview_service,
     task_service::{
-        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress,
-        mark_task_succeeded, prepare_task_temp_dir,
+        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
+        mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
+        spec::{self, ArchivePreviewGenerateTask, decode_payload_as},
         steps::{
             TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_PERSIST_MANIFEST, TASK_STEP_SCAN_ARCHIVE,
             TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
             set_task_step_succeeded,
         },
-        types::{
-            ArchivePreviewTaskPayload, ArchivePreviewTaskResult, parse_task_payload,
-            serialize_task_result,
-        },
+        types::{ArchivePreviewTaskPayload, ArchivePreviewTaskResult},
     },
     workspace_storage_service::WorkspaceStorageScope,
 };
@@ -64,14 +62,8 @@ pub(crate) async fn ensure_archive_preview_task(
         limit_signature: limit_signature.to_string(),
     };
     let scope = archive_preview_task_scope(source_file)?;
-    create_task_record(
-        state,
-        scope,
-        BackgroundTaskKind::ArchivePreviewGenerate,
-        &display_name,
-        &payload,
-    )
-    .await?;
+    create_typed_task_record::<ArchivePreviewGenerateTask>(state, scope, &display_name, &payload)
+        .await?;
     Ok(())
 }
 
@@ -116,7 +108,7 @@ pub(super) async fn process_archive_preview_task(
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
     let result = async {
-        let payload: ArchivePreviewTaskPayload = parse_task_payload(task)?;
+        let payload = decode_payload_as::<ArchivePreviewGenerateTask>(task)?;
         let mut steps =
             parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
         set_task_step_succeeded(
@@ -279,7 +271,7 @@ pub(super) async fn process_archive_preview_task(
             directory_count: manifest.directory_count,
             truncated: manifest.entries_truncated(),
         };
-        let result_json = serialize_task_result(&result)?;
+        let result_json = spec::serialize_result::<ArchivePreviewGenerateTask>(&result)?;
         mark_task_succeeded(
             state,
             &lease_guard,

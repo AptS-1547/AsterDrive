@@ -3,14 +3,33 @@
 //! 这里既管理用户可见的异步任务，也记录系统周期任务的执行结果。关键设计点是：
 //! 任务状态留在数据库里，dispatcher 通过 lease + fencing token 防止旧 worker
 //! 覆盖新 worker 的结果。
+//!
+//! ## 架构约束
+//!
+//! 后台任务的业务模块不要直接拼 `background_task::ActiveModel`，也不要手写
+//! `payload_json` / `result_json`。任务类型、payload/result 编解码、初始 steps、
+//! lane、max attempts、retry policy 和 process 入口都应先落到 `spec::BackgroundTaskSpec`，
+//! 再通过 `registry` 和本模块的 typed create helpers 使用。
+//!
+//! 新增一种后台任务时，正常流程是：
+//! 1. 在 `types.rs` 定义强类型 payload/result。
+//! 2. 在 `spec.rs` 实现一个 `BackgroundTaskSpec`，声明 kind、steps、lane、process 等。
+//! 3. 在 `registry.rs` 注册该 spec。
+//! 4. 创建任务时使用 `create_typed_task_record` 或 `insert_typed_task_record`。
+//!
+//! 这样做是为了避免同一种任务同时存在“强类型路径”和“手写 JSON/ActiveModel 路径”。
+//! 如果绕过这些入口，后续很容易出现 payload 缺字段、steps 不一致、max attempts
+//! 和 dispatcher 行为分叉的问题。
 
 mod archive;
 mod blob_maintenance;
 mod dispatch;
 mod media_metadata;
 mod presentation;
+mod registry;
 mod retry;
 mod runtime;
+mod spec;
 mod steps;
 mod storage_migration;
 mod storage_policy_cleanup;
@@ -20,8 +39,7 @@ mod types;
 
 use chrono::{Duration, Utc};
 use parking_lot::Mutex;
-use sea_orm::{DatabaseConnection, Set};
-use serde::Serialize;
+use sea_orm::{ConnectionTrait, DatabaseConnection, Set};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant};
@@ -38,9 +56,8 @@ use crate::services::{
     profile_service, user_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
-use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult};
+use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult, StoredTaskSteps};
 use crate::utils::numbers::{i64_to_i32, i64_to_u64};
-use presentation::build_task_presentation;
 
 pub(crate) use archive::ensure_archive_preview_task;
 pub(crate) use archive::{
@@ -50,8 +67,11 @@ pub(crate) use archive::{
 pub(crate) use blob_maintenance::create_blob_maintenance_task_for_admin;
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 pub(crate) use media_metadata::ensure_media_metadata_task;
+use registry::{build_task_presentation, decode_task_payload, decode_task_result};
+pub(crate) use runtime::find_latest_system_runtime_by_task_name;
 pub use runtime::{RuntimeTaskRunOutcome, SystemRuntimeTaskKind, record_runtime_task_run};
-use steps::{initial_task_steps, parse_task_steps_json, serialize_task_steps};
+use spec::BackgroundTaskSpec;
+use steps::{parse_task_steps_json, serialize_task_steps};
 pub(crate) use storage_migration::{
     CreateStoragePolicyMigrationInput, create_storage_policy_migration_task,
     dry_run_storage_policy_migration, resume_storage_policy_migration_for_admin,
@@ -72,7 +92,6 @@ pub use types::{
     TaskStepStatus, ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult,
     TrashPurgeAllTaskPayload, TrashPurgeAllTaskResult,
 };
-use types::{parse_task_payload_info, parse_task_result_info, serialize_task_payload};
 
 pub(super) const DEFAULT_TASK_RETENTION_HOURS: i64 = 24;
 pub(super) const TASK_HEARTBEAT_INTERVAL_SECS: u64 = 10;
@@ -300,8 +319,8 @@ async fn retry_task_record(state: &PrimaryAppState, task: &background_task::Mode
     cleanup_task_temp_dir_for_task(state, task.id).await?;
     // 手动重试会复用同一条任务记录，而不是新建“子任务”。
     // 这样前端和审计侧只需要跟踪一个稳定 task_id。
-    let steps_json = serialize_task_steps(&initial_task_steps(task.kind))?;
-    let max_attempts = configured_task_max_attempts(state, task.kind);
+    let steps_json = serialize_task_steps(&registry::initial_task_steps(task.kind))?;
+    let max_attempts = registry::max_attempts(state, task.kind);
 
     let now = Utc::now();
     if !background_task_repo::reset_for_manual_retry(
@@ -414,11 +433,11 @@ fn build_task_info_with_creator(
         )?
     };
     let kind = task.kind;
-    let payload = parse_task_payload_info(&task)?;
-    let result = parse_task_result_info(&task)?;
+    let payload = decode_task_payload(&task)?;
+    let result = decode_task_result_or_none(&task);
     let can_retry = task_can_retry(&task);
     let status_text = task.status_text;
-    let presentation = build_task_presentation(&payload, result.as_ref(), task.status);
+    let presentation = build_task_presentation(kind, &payload, result.as_ref(), task.status)?;
     let steps = parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), kind)?;
 
     Ok(TaskInfo {
@@ -455,66 +474,254 @@ fn build_task_info_with_creator(
 pub(crate) fn build_task_presentation_for_model(
     task: &background_task::Model,
 ) -> Result<Option<TaskPresentation>> {
-    let payload = parse_task_payload_info(task)?;
-    let result = parse_task_result_info(task)?;
-    Ok(build_task_presentation(
-        &payload,
-        result.as_ref(),
-        task.status,
-    ))
+    let payload = decode_task_payload(task)?;
+    let result = decode_task_result_or_none(task);
+    build_task_presentation(task.kind, &payload, result.as_ref(), task.status)
+}
+
+fn decode_task_result_or_none(task: &background_task::Model) -> Option<TaskResult> {
+    match decode_task_result(task) {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::warn!(
+                task_id = task.id,
+                error = %error,
+                "failed to decode background task result; continuing without result"
+            );
+            None
+        }
+    }
 }
 
 fn task_can_retry(task: &background_task::Model) -> bool {
     task.status == BackgroundTaskStatus::Failed && task.failure_can_retry.unwrap_or(true)
 }
 
-pub(super) async fn create_task_record<T: Serialize>(
-    state: &PrimaryAppState,
-    scope: WorkspaceStorageScope,
-    kind: BackgroundTaskKind,
-    display_name: &str,
-    payload: &T,
-) -> Result<background_task::Model> {
-    let now = Utc::now();
-    let payload_json = serialize_task_payload(payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(kind))?;
-    let display_name = truncate_display_name(display_name);
+pub(in crate::services::task_service) struct TypedTaskCreate<S: BackgroundTaskSpec> {
+    display_name: String,
+    payload: S::Payload,
+    creator_user_id: Option<i64>,
+    team_id: Option<i64>,
+    status: BackgroundTaskStatus,
+    result_json: Option<StoredTaskResult>,
+    include_steps: bool,
+    progress_current: i64,
+    progress_total: i64,
+    status_text: Option<String>,
+    next_run_at: chrono::DateTime<Utc>,
+    started_at: Option<chrono::DateTime<Utc>>,
+    finished_at: Option<chrono::DateTime<Utc>>,
+    last_error: Option<String>,
+    failure_can_retry: Option<bool>,
+    expires_at_anchor: chrono::DateTime<Utc>,
+    created_at: chrono::DateTime<Utc>,
+    updated_at: chrono::DateTime<Utc>,
+}
 
-    // expires_at 代表“任务临时产物何时可以清理”，不是“任务记录何时删库”。
-    // 我们保留 background_task 行作为历史留档；真正会按这个时间被清掉的是
-    // temp/tasks/{task_id}/... 下面的中间产物。
-    // 用户可见的新后台任务都应该走这个入口创建，这样 archive / 未来的
-    // download_background 一类任务能自动唤醒 dispatcher，而不是等空闲退避 timer。
-    let task = background_task_repo::create(
-        state.writer_db(),
-        background_task::ActiveModel {
-            kind: Set(kind),
-            status: Set(BackgroundTaskStatus::Pending),
-            creator_user_id: Set(Some(scope.actor_user_id())),
-            team_id: Set(scope.team_id()),
+impl<S: BackgroundTaskSpec> TypedTaskCreate<S> {
+    /// 构造一条后台任务记录的 typed insert request。
+    ///
+    /// 这里故意只接收 `S::Payload`，不接收已经序列化好的 JSON。这样所有创建路径
+    /// 都会通过 `BackgroundTaskSpec` 获得 kind、payload 编码、steps 和 max attempts。
+    /// 普通用户可见任务优先用 `create_typed_task_record`；需要事务、延迟调度、
+    /// runtime 记录或特殊状态时，用这个 builder 再交给 `insert_typed_task_record`。
+    ///
+    /// 如果你发现自己准备在业务模块里直接调用 `background_task_repo::create`，
+    /// 先停一下：大概率应该给这个 builder 增加一个很小的 override，而不是复制
+    /// 一整份 `background_task::ActiveModel`。
+    pub(in crate::services::task_service) fn new(
+        display_name: impl Into<String>,
+        payload: S::Payload,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            display_name: display_name.into(),
+            payload,
+            creator_user_id: None,
+            team_id: None,
+            status: BackgroundTaskStatus::Pending,
+            result_json: None,
+            include_steps: true,
+            progress_current: 0,
+            progress_total: 0,
+            status_text: None,
+            next_run_at: now,
+            started_at: None,
+            finished_at: None,
+            last_error: None,
+            failure_can_retry: None,
+            expires_at_anchor: now,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub(in crate::services::task_service) fn in_scope(
+        mut self,
+        scope: WorkspaceStorageScope,
+    ) -> Self {
+        self.creator_user_id = Some(scope.actor_user_id());
+        self.team_id = scope.team_id();
+        self
+    }
+
+    pub(in crate::services::task_service) fn creator_user_id(
+        mut self,
+        creator_user_id: Option<i64>,
+    ) -> Self {
+        self.creator_user_id = creator_user_id;
+        self
+    }
+
+    pub(in crate::services::task_service) fn next_run_at(
+        mut self,
+        next_run_at: chrono::DateTime<Utc>,
+    ) -> Self {
+        self.next_run_at = next_run_at;
+        self.expires_at_anchor = next_run_at;
+        self
+    }
+
+    pub(in crate::services::task_service) fn progress(mut self, current: i64, total: i64) -> Self {
+        self.progress_current = current;
+        self.progress_total = total;
+        self
+    }
+
+    pub(in crate::services::task_service) fn status_text(mut self, status_text: String) -> Self {
+        self.status_text = Some(status_text);
+        self
+    }
+
+    pub(in crate::services::task_service) fn status(
+        mut self,
+        status: BackgroundTaskStatus,
+    ) -> Self {
+        self.status = status;
+        self
+    }
+
+    pub(in crate::services::task_service) fn result(mut self, result: &S::Result) -> Result<Self> {
+        self.result_json = Some(spec::serialize_result::<S>(result)?);
+        Ok(self)
+    }
+
+    pub(in crate::services::task_service) fn without_steps(mut self) -> Self {
+        self.include_steps = false;
+        self
+    }
+
+    pub(in crate::services::task_service) fn started_at(
+        mut self,
+        started_at: chrono::DateTime<Utc>,
+    ) -> Self {
+        self.started_at = Some(started_at);
+        self.created_at = started_at;
+        self
+    }
+
+    pub(in crate::services::task_service) fn finished_at(
+        mut self,
+        finished_at: chrono::DateTime<Utc>,
+    ) -> Self {
+        self.finished_at = Some(finished_at);
+        self.next_run_at = finished_at;
+        self.expires_at_anchor = finished_at;
+        self.updated_at = finished_at;
+        self
+    }
+
+    pub(in crate::services::task_service) fn last_error(
+        mut self,
+        last_error: Option<String>,
+    ) -> Self {
+        self.last_error = last_error;
+        self
+    }
+
+    pub(in crate::services::task_service) fn failure_can_retry(
+        mut self,
+        failure_can_retry: Option<bool>,
+    ) -> Self {
+        self.failure_can_retry = failure_can_retry;
+        self
+    }
+
+    fn steps_json(&self) -> Result<Option<StoredTaskSteps>> {
+        if self.include_steps {
+            serialize_task_steps(&registry::initial_task_steps(S::KIND)).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn status_text_for_insert(&self) -> Option<String> {
+        self.status_text.as_deref().map(truncate_status_text)
+    }
+
+    fn last_error_for_insert(&self) -> Option<String> {
+        self.last_error.as_deref().map(truncate_error)
+    }
+
+    fn into_active_model(self, state: &PrimaryAppState) -> Result<background_task::ActiveModel> {
+        let payload_json = spec::serialize_payload::<S>(&self.payload)?;
+        let steps_json = self.steps_json()?;
+        let status_text = self.status_text_for_insert();
+        let last_error = self.last_error_for_insert();
+
+        Ok(background_task::ActiveModel {
+            kind: Set(S::KIND),
+            status: Set(self.status),
+            creator_user_id: Set(self.creator_user_id),
+            team_id: Set(self.team_id),
             share_id: Set(None),
-            display_name: Set(display_name),
+            display_name: Set(truncate_display_name(&self.display_name)),
             payload_json: Set(payload_json),
-            result_json: Set(None),
-            steps_json: Set(Some(steps_json)),
-            progress_current: Set(0),
-            progress_total: Set(0),
-            status_text: Set(None),
+            result_json: Set(self.result_json),
+            steps_json: Set(steps_json),
+            progress_current: Set(self.progress_current),
+            progress_total: Set(self.progress_total),
+            status_text: Set(status_text),
             attempt_count: Set(0),
-            max_attempts: Set(configured_task_max_attempts(state, kind)),
-            next_run_at: Set(now),
+            max_attempts: Set(registry::max_attempts(state, S::KIND)),
+            next_run_at: Set(self.next_run_at),
             processing_token: Set(0),
             processing_started_at: Set(None),
             last_heartbeat_at: Set(None),
             lease_expires_at: Set(None),
-            started_at: Set(None),
-            finished_at: Set(None),
-            last_error: Set(None),
-            expires_at: Set(task_expiration_from(state, now)),
-            created_at: Set(now),
-            updated_at: Set(now),
+            started_at: Set(self.started_at),
+            finished_at: Set(self.finished_at),
+            last_error: Set(last_error),
+            failure_can_retry: Set(self.failure_can_retry),
+            expires_at: Set(task_expiration_from(state, self.expires_at_anchor)),
+            created_at: Set(self.created_at),
+            updated_at: Set(self.updated_at),
             ..Default::default()
-        },
+        })
+    }
+}
+
+pub(in crate::services::task_service) async fn insert_typed_task_record<
+    C: ConnectionTrait,
+    S: BackgroundTaskSpec,
+>(
+    state: &PrimaryAppState,
+    db: &C,
+    request: TypedTaskCreate<S>,
+) -> Result<background_task::Model> {
+    background_task_repo::create(db, request.into_active_model(state)?).await
+}
+
+pub(in crate::services::task_service) async fn create_typed_task_record<S: BackgroundTaskSpec>(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    display_name: &str,
+    payload: &S::Payload,
+) -> Result<background_task::Model> {
+    let task = insert_typed_task_record(
+        state,
+        state.writer_db(),
+        TypedTaskCreate::<S>::new(display_name, payload.clone()).in_scope(scope),
     )
     .await?;
     state.wake_background_task_dispatcher();
@@ -715,23 +922,6 @@ pub(super) fn task_lease_expires_at(
     now + Duration::seconds(TASK_PROCESSING_STALE_SECS.max(1))
 }
 
-fn configured_task_max_attempts(state: &PrimaryAppState, kind: BackgroundTaskKind) -> i32 {
-    match kind {
-        BackgroundTaskKind::SystemRuntime
-        | BackgroundTaskKind::ThumbnailGenerate
-        | BackgroundTaskKind::BlobMaintenance => 1,
-        BackgroundTaskKind::MediaMetadataExtract => 3,
-        BackgroundTaskKind::ArchiveCompress
-        | BackgroundTaskKind::ArchiveExtract
-        | BackgroundTaskKind::ArchivePreviewGenerate
-        | BackgroundTaskKind::TrashPurgeAll
-        | BackgroundTaskKind::StoragePolicyTempCleanup
-        | BackgroundTaskKind::StoragePolicyMigration => {
-            operations::background_task_max_attempts(&state.runtime_config)
-        }
-    }
-}
-
 fn validate_admin_task_cleanup_status(status: Option<BackgroundTaskStatus>) -> Result<()> {
     if status.is_some_and(|value| !value.is_terminal()) {
         return Err(AsterError::validation_error(
@@ -806,12 +996,17 @@ pub(super) fn truncate_error(error: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        TASK_DISPLAY_NAME_MAX_LEN, build_task_info_with_creator, ensure_task_in_scope,
-        truncate_display_name, truncate_error, validate_admin_task_cleanup_status,
+        TASK_DISPLAY_NAME_MAX_LEN, TASK_LAST_ERROR_MAX_LEN, TASK_STATUS_TEXT_MAX_LEN,
+        TypedTaskCreate, build_task_info_with_creator, ensure_task_in_scope, truncate_display_name,
+        truncate_error, validate_admin_task_cleanup_status,
     };
     use crate::api::subcode::ApiSubcode;
     use crate::entities::background_task;
-    use crate::services::task_service::TaskPresentationCode;
+    use crate::services::task_service::spec::{self, SystemRuntimeTask};
+    use crate::services::task_service::{
+        RuntimeSystemHealthComponent, RuntimeSystemHealthResult, RuntimeSystemHealthStatus,
+        RuntimeTaskResult, TaskPresentationCode,
+    };
     use crate::services::workspace_storage_service::WorkspaceStorageScope;
     use crate::types::{
         BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult,
@@ -1018,6 +1213,69 @@ mod tests {
     }
 
     #[test]
+    fn task_info_tolerates_legacy_runtime_result_without_duration() {
+        let now = Utc::now();
+        let task = background_task::Model {
+            id: 49,
+            kind: BackgroundTaskKind::SystemRuntime,
+            status: BackgroundTaskStatus::Succeeded,
+            creator_user_id: None,
+            team_id: None,
+            share_id: None,
+            display_name: "Completed upload cleanup".to_string(),
+            payload_json: StoredTaskPayload(
+                serde_json::json!({
+                    "task_name": "completed-upload-cleanup"
+                })
+                .to_string(),
+            ),
+            result_json: Some(StoredTaskResult(
+                serde_json::json!({
+                    "summary": "legacy summary only"
+                })
+                .to_string(),
+            )),
+            steps_json: None,
+            progress_current: 1,
+            progress_total: 1,
+            status_text: Some("legacy summary only".to_string()),
+            attempt_count: 0,
+            max_attempts: 1,
+            next_run_at: now,
+            processing_token: 0,
+            processing_started_at: None,
+            last_heartbeat_at: None,
+            lease_expires_at: None,
+            started_at: Some(now),
+            finished_at: Some(now),
+            last_error: None,
+            failure_can_retry: None,
+            expires_at: now + Duration::hours(1),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let info = build_task_info_with_creator(task, None).expect("task info should build");
+
+        assert_eq!(info.status_text.as_deref(), Some("legacy summary only"));
+        assert!(info.result.is_none());
+        assert_eq!(
+            info.presentation
+                .as_ref()
+                .and_then(|presentation| presentation.title.as_ref())
+                .map(|title| title.code),
+            Some(TaskPresentationCode::RuntimeTaskCompletedUploadCleanup)
+        );
+        assert!(
+            info.presentation
+                .as_ref()
+                .and_then(|presentation| presentation.status.as_ref())
+                .is_none(),
+            "legacy text summaries should use frontend status_text fallback"
+        );
+    }
+
+    #[test]
     fn task_info_leaves_legacy_runtime_task_name_to_raw_title_fallback() {
         let now = Utc::now();
         let task = background_task::Model {
@@ -1163,27 +1421,29 @@ mod tests {
                 })
                 .to_string(),
             ),
-            result_json: Some(StoredTaskResult(
-                serde_json::json!({
-                    "duration_ms": 12,
-                    "system_health": {
-                        "status": "degraded",
-                        "components": [
-                            {
-                                "name": "database",
-                                "status": "degraded",
-                                "message": "lagging"
+            result_json: Some(
+                spec::serialize_result::<SystemRuntimeTask>(&RuntimeTaskResult::from_timestamps(
+                    now - Duration::milliseconds(12),
+                    now,
+                    None,
+                    Some(RuntimeSystemHealthResult {
+                        status: RuntimeSystemHealthStatus::Degraded,
+                        components: vec![
+                            RuntimeSystemHealthComponent {
+                                name: "database".to_string(),
+                                status: RuntimeSystemHealthStatus::Degraded,
+                                message: "lagging".to_string(),
                             },
-                            {
-                                "name": "cache",
-                                "status": "healthy",
-                                "message": ""
-                            }
-                        ]
-                    }
-                })
-                .to_string(),
-            )),
+                            RuntimeSystemHealthComponent {
+                                name: "cache".to_string(),
+                                status: RuntimeSystemHealthStatus::Healthy,
+                                message: String::new(),
+                            },
+                        ],
+                    }),
+                ))
+                .expect("runtime result should serialize"),
+            ),
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1226,6 +1486,56 @@ mod tests {
     }
 
     #[test]
+    fn decode_result_as_checks_kind_before_absent_result() {
+        let now = Utc::now();
+        let task = background_task::Model {
+            id: 50,
+            kind: BackgroundTaskKind::ThumbnailGenerate,
+            status: BackgroundTaskStatus::Succeeded,
+            creator_user_id: None,
+            team_id: None,
+            share_id: None,
+            display_name: "wrong kind".to_string(),
+            payload_json: StoredTaskPayload(
+                serde_json::json!({
+                    "blob_id": 42,
+                    "blob_hash": "hash-42",
+                    "source_file_name": "",
+                    "source_mime_type": "image/png",
+                    "processor": "images"
+                })
+                .to_string(),
+            ),
+            result_json: None,
+            steps_json: None,
+            progress_current: 1,
+            progress_total: 1,
+            status_text: None,
+            attempt_count: 0,
+            max_attempts: 1,
+            next_run_at: now,
+            processing_token: 0,
+            processing_started_at: None,
+            last_heartbeat_at: None,
+            lease_expires_at: None,
+            started_at: Some(now),
+            finished_at: Some(now),
+            last_error: None,
+            failure_can_retry: None,
+            expires_at: now + Duration::hours(1),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let error = spec::decode_result_as::<SystemRuntimeTask>(&task)
+            .expect_err("kind mismatch should be reported even without result json");
+
+        assert!(error.message().contains("task #50 kind mismatch"));
+        assert!(error.message().contains("expected system_runtime"));
+        assert!(error.message().contains("got thumbnail_generate"));
+    }
+
+    #[test]
     fn task_error_encoding_preserves_subcode_before_truncation() {
         let error = crate::errors::validation_error_with_subcode(
             ApiSubcode::ArchivePreviewRejected,
@@ -1240,6 +1550,35 @@ mod tests {
         assert_eq!(
             crate::errors::task_error_display_message(&stored),
             "archive contains unsafe path"
+        );
+    }
+
+    #[test]
+    fn typed_task_create_truncates_status_text_and_last_error() {
+        let long_status_text = "s".repeat(TASK_STATUS_TEXT_MAX_LEN + 7);
+        let long_error = "e".repeat(TASK_LAST_ERROR_MAX_LEN + 7);
+        let payload = crate::services::task_service::ThumbnailGenerateTaskPayload {
+            blob_id: 42,
+            blob_hash: "hash-42".to_string(),
+            source_file_name: "image.png".to_string(),
+            source_mime_type: "image/png".to_string(),
+            processor: crate::types::MediaProcessorKind::Images,
+        };
+        let create =
+            TypedTaskCreate::<crate::services::task_service::spec::ThumbnailGenerateTask>::new(
+                "thumbnail",
+                payload,
+            )
+            .status_text(long_status_text)
+            .last_error(Some(long_error));
+
+        assert_eq!(
+            create.status_text_for_insert().as_deref(),
+            Some("s".repeat(TASK_STATUS_TEXT_MAX_LEN).as_str())
+        );
+        assert_eq!(
+            create.last_error_for_insert().as_deref(),
+            Some("e".repeat(TASK_LAST_ERROR_MAX_LEN).as_str())
         );
     }
 
