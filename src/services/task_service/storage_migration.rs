@@ -19,6 +19,7 @@ use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 use crate::utils::hash::{new_sha256, sha256_digest_to_hex, sha256_hex};
 use crate::utils::numbers::u64_to_i64;
 
+use super::spec::{self, BackgroundTaskSpec, StoragePolicyMigrationTask};
 use super::steps::{
     TASK_STEP_FINISH, TASK_STEP_MIGRATE_BLOBS, TASK_STEP_PREPARE_SOURCES, TASK_STEP_SCAN_BLOBS,
     TASK_STEP_WAITING, initial_task_steps, parse_task_steps_json, set_task_step_active,
@@ -27,8 +28,7 @@ use super::steps::{
 use super::types::{
     StoragePolicyMigrationCapacityCheck, StoragePolicyMigrationDryRun,
     StoragePolicyMigrationDryRunWarning, StoragePolicyMigrationTaskPayload,
-    StoragePolicyMigrationTaskResult, parse_task_payload, serialize_task_payload,
-    serialize_task_result,
+    StoragePolicyMigrationTaskResult, parse_task_payload, serialize_task_result,
 };
 use super::{
     TaskLeaseGuard, configured_task_max_attempts, mark_task_progress, mark_task_succeeded,
@@ -114,7 +114,7 @@ pub(crate) async fn create_storage_policy_migration_task(
         let task = background_task_repo::create(
             txn,
             background_task::ActiveModel {
-                kind: Set(BackgroundTaskKind::StoragePolicyMigration),
+                kind: Set(StoragePolicyMigrationTask::KIND),
                 status: Set(BackgroundTaskStatus::Pending),
                 creator_user_id: Set(Some(input.creator_user_id)),
                 team_id: Set(None),
@@ -123,10 +123,12 @@ pub(crate) async fn create_storage_policy_migration_task(
                     "Migrate storage policy #{} to #{}",
                     input.source_policy_id, input.target_policy_id
                 ))),
-                payload_json: Set(serialize_task_payload(&payload)?),
+                payload_json: Set(spec::serialize_payload::<StoragePolicyMigrationTask>(
+                    &payload,
+                )?),
                 result_json: Set(None),
                 steps_json: Set(Some(serialize_task_steps(&initial_task_steps(
-                    BackgroundTaskKind::StoragePolicyMigration,
+                    StoragePolicyMigrationTask::KIND,
                 ))?)),
                 progress_current: Set(0),
                 progress_total: Set(0),
@@ -134,7 +136,7 @@ pub(crate) async fn create_storage_policy_migration_task(
                 attempt_count: Set(0),
                 max_attempts: Set(configured_task_max_attempts(
                     state,
-                    BackgroundTaskKind::StoragePolicyMigration,
+                    StoragePolicyMigrationTask::KIND,
                 )),
                 next_run_at: Set(now),
                 processing_token: Set(0),

@@ -14,8 +14,9 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     batch_service,
     task_service::{
-        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, get_task_in_scope,
-        mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
+        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
+        get_task_in_scope, mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
+        spec::ArchiveCompressTask,
         steps::{
             TASK_STEP_BUILD_ARCHIVE, TASK_STEP_PREPARE_SOURCES, TASK_STEP_STORE_RESULT,
             TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
@@ -31,7 +32,6 @@ use crate::services::{
     },
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
-use crate::types::BackgroundTaskKind;
 
 const EMIT_ARCHIVE_STORAGE_EVENT: bool = true;
 
@@ -69,14 +69,9 @@ pub(crate) async fn create_archive_compress_task_in_scope(
         target_folder_id,
     };
     let display_name = format!("Compress {}", payload.archive_name);
-    let task = create_task_record(
-        state,
-        scope,
-        BackgroundTaskKind::ArchiveCompress,
-        &display_name,
-        &payload,
-    )
-    .await?;
+    let task =
+        create_typed_task_record::<ArchiveCompressTask>(state, scope, &display_name, &payload)
+            .await?;
     get_task_in_scope(state, scope, task.id).await
 }
 

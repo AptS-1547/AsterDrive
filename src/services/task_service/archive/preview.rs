@@ -8,8 +8,9 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     archive_preview_service,
     task_service::{
-        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress,
-        mark_task_succeeded, prepare_task_temp_dir,
+        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
+        mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
+        spec::ArchivePreviewGenerateTask,
         steps::{
             TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_PERSIST_MANIFEST, TASK_STEP_SCAN_ARCHIVE,
             TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
@@ -64,14 +65,8 @@ pub(crate) async fn ensure_archive_preview_task(
         limit_signature: limit_signature.to_string(),
     };
     let scope = archive_preview_task_scope(source_file)?;
-    create_task_record(
-        state,
-        scope,
-        BackgroundTaskKind::ArchivePreviewGenerate,
-        &display_name,
-        &payload,
-    )
-    .await?;
+    create_typed_task_record::<ArchivePreviewGenerateTask>(state, scope, &display_name, &payload)
+        .await?;
     Ok(())
 }
 

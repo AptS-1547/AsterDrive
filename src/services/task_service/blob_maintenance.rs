@@ -10,11 +10,11 @@ use crate::entities::{background_task, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
-use crate::types::BackgroundTaskKind;
 
 const BLOB_MAINTENANCE_BATCH_SIZE: u64 = 1_000;
 const BLOB_MAINTENANCE_PROGRESS_INTERVAL: i64 = 1_000;
 
+use super::spec::BlobMaintenanceTask;
 use super::steps::{
     TASK_STEP_CHECK_BLOBS, TASK_STEP_CLEANUP_OBJECTS, TASK_STEP_FINISH, TASK_STEP_RECONCILE_REFS,
     TASK_STEP_SCAN_BLOBS, TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
@@ -25,7 +25,7 @@ use super::types::{
     parse_task_payload, serialize_task_result,
 };
 use super::{
-    TaskLeaseGuard, create_task_record, mark_task_progress, mark_task_succeeded, task_scope,
+    TaskLeaseGuard, create_typed_task_record, mark_task_progress, mark_task_succeeded, task_scope,
 };
 
 pub(crate) async fn create_blob_maintenance_task_for_admin(
@@ -43,12 +43,11 @@ pub(crate) async fn create_blob_maintenance_task_for_admin(
         None => None,
     };
     let payload = BlobMaintenanceTaskPayload { action, blob_ids };
-    let task = create_task_record(
+    let task = create_typed_task_record::<BlobMaintenanceTask>(
         state,
         WorkspaceStorageScope::Personal {
             user_id: creator_user_id,
         },
-        BackgroundTaskKind::BlobMaintenance,
         &blob_maintenance_display_name(action, payload.blob_ids.as_ref().map(Vec::len)),
         &payload,
     )

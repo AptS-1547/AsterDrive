@@ -15,9 +15,8 @@ use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::{
-    archive, blob_maintenance, media_metadata, retry,
-    retry::{TaskRetryClass, TaskRetryPolicy},
-    runtime,
+    archive, blob_maintenance, media_metadata,
+    retry::TaskRetryClass,
     steps::{mark_active_step_failed, parse_task_steps_json, serialize_task_steps},
     storage_migration, storage_policy_cleanup, thumbnail, trash,
 };
@@ -327,28 +326,7 @@ fn retry_delay_secs(attempt_count: i32) -> i64 {
 }
 
 pub(super) fn task_retry_class(kind: BackgroundTaskKind, error: &AsterError) -> TaskRetryClass {
-    match kind {
-        BackgroundTaskKind::ArchiveCompress => {
-            archive::ArchiveCompressRetryPolicy::retry_class(error)
-        }
-        BackgroundTaskKind::ArchiveExtract => {
-            archive::ArchiveExtractRetryPolicy::retry_class(error)
-        }
-        BackgroundTaskKind::ArchivePreviewGenerate => {
-            archive::ArchivePreviewRetryPolicy::retry_class(error)
-        }
-        BackgroundTaskKind::ThumbnailGenerate => {
-            thumbnail::ThumbnailRetryPolicy::retry_class(error)
-        }
-        BackgroundTaskKind::MediaMetadataExtract => {
-            media_metadata::MediaMetadataRetryPolicy::retry_class(error)
-        }
-        BackgroundTaskKind::TrashPurgeAll => retry::default_retry_class(error),
-        BackgroundTaskKind::StoragePolicyTempCleanup => retry::default_retry_class(error),
-        BackgroundTaskKind::StoragePolicyMigration => retry::default_retry_class(error),
-        BackgroundTaskKind::BlobMaintenance => retry::default_retry_class(error),
-        BackgroundTaskKind::SystemRuntime => runtime::RuntimeRetryPolicy::retry_class(error),
-    }
+    super::super::registry::task_retry_class(kind, error)
 }
 
 pub(super) async fn run_with_concurrency_limit<T, O, F, Fut>(

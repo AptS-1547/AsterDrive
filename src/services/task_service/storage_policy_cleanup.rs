@@ -12,11 +12,11 @@ use crate::storage::StorageErrorKind;
 use crate::storage::driver::StorageDriver;
 use crate::storage::drivers::{local::LocalDriver, s3::S3Driver};
 use crate::types::{
-    BackgroundTaskKind, BackgroundTaskStatus, DriverType, StoredStoragePolicyAllowedTypes,
-    StoredStoragePolicyOptions,
+    BackgroundTaskStatus, DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
 };
 use crate::utils::numbers::u64_to_i64;
 
+use super::spec::{self, BackgroundTaskSpec, StoragePolicyTempCleanupTask};
 use super::steps::{
     TASK_STEP_CLEANUP_OBJECTS, TASK_STEP_PREPARE_SOURCES, parse_task_steps_json,
     set_task_step_active, set_task_step_succeeded,
@@ -24,8 +24,7 @@ use super::steps::{
 use super::types::{
     StoragePolicyCleanupPolicySnapshot, StoragePolicyCleanupRemoteNodeSnapshot,
     StoragePolicyTempCleanupTarget, StoragePolicyTempCleanupTaskPayload,
-    StoragePolicyTempCleanupTaskResult, parse_task_payload, serialize_task_payload,
-    serialize_task_result,
+    StoragePolicyTempCleanupTaskResult, parse_task_payload, serialize_task_result,
 };
 use super::{
     TaskLeaseGuard, configured_task_max_attempts, initial_task_steps, mark_task_progress,
@@ -65,15 +64,13 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
             TEMP_CLEANUP_GRACE_SECS,
             "storage policy temp cleanup grace",
         )?);
-    let payload_json = serialize_task_payload(&payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(
-        BackgroundTaskKind::StoragePolicyTempCleanup,
-    ))?;
+    let payload_json = spec::serialize_payload::<StoragePolicyTempCleanupTask>(&payload)?;
+    let steps_json = serialize_task_steps(&initial_task_steps(StoragePolicyTempCleanupTask::KIND))?;
 
     background_task_repo::create(
         state.writer_db(),
         background_task::ActiveModel {
-            kind: Set(BackgroundTaskKind::StoragePolicyTempCleanup),
+            kind: Set(StoragePolicyTempCleanupTask::KIND),
             status: Set(BackgroundTaskStatus::Pending),
             creator_user_id: Set(None),
             team_id: Set(None),
@@ -91,7 +88,7 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
             attempt_count: Set(0),
             max_attempts: Set(configured_task_max_attempts(
                 state,
-                BackgroundTaskKind::StoragePolicyTempCleanup,
+                StoragePolicyTempCleanupTask::KIND,
             )),
             next_run_at: Set(cleanup_after),
             processing_token: Set(0),

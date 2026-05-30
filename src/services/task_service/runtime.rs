@@ -8,12 +8,12 @@ use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::TaskPresentationCode;
-use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
+use crate::types::BackgroundTaskStatus;
 
 use super::retry::{TaskRetryClass, TaskRetryPolicy};
+use super::spec::{self, BackgroundTaskSpec, SystemRuntimeTask};
 use super::types::{
     RuntimeSystemHealthResult, RuntimeTaskPayload, RuntimeTaskResult, serialize_task_payload,
-    serialize_task_result,
 };
 use super::{task_expiration_from, truncate_display_name, truncate_error, truncate_status_text};
 
@@ -249,11 +249,13 @@ pub async fn record_runtime_task_run(
     })?;
     let summary = outcome.summary().map(truncate_status_text);
     let last_error = outcome.error().map(truncate_error);
-    let result_json = serialize_task_result(&RuntimeTaskResult {
-        duration_ms: (finished_at - started_at).num_milliseconds().max(0),
-        summary: summary.clone(),
-        system_health: outcome.system_health(),
-    })?;
+    let result = RuntimeTaskResult::from_timestamps(
+        started_at,
+        finished_at,
+        summary.clone(),
+        outcome.system_health(),
+    );
+    let result_json = spec::serialize_result::<SystemRuntimeTask>(&result)?;
 
     if should_refresh_latest_success(task_name, outcome)
         && let Some(existing) = background_task_repo::find_latest_system_runtime_by_task_name(
@@ -287,7 +289,7 @@ pub async fn record_runtime_task_run(
     let task = background_task_repo::create(
         state.writer_db(),
         background_task::ActiveModel {
-            kind: Set(BackgroundTaskKind::SystemRuntime),
+            kind: Set(SystemRuntimeTask::KIND),
             status: Set(outcome.status()),
             creator_user_id: Set(None),
             team_id: Set(None),

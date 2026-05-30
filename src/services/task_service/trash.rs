@@ -4,8 +4,8 @@ use crate::entities::background_task;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
-use crate::types::BackgroundTaskKind;
 
+use super::spec::TrashPurgeAllTask;
 use super::steps::{
     TASK_STEP_PURGE_TRASH, TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
     set_task_step_succeeded,
@@ -15,7 +15,7 @@ use super::types::{
     serialize_task_result,
 };
 use super::{
-    TaskLeaseGuard, create_task_record, mark_task_progress, mark_task_succeeded, task_scope,
+    TaskLeaseGuard, create_typed_task_record, mark_task_progress, mark_task_succeeded, task_scope,
 };
 
 pub(crate) async fn create_trash_purge_all_task_in_scope(
@@ -25,14 +25,8 @@ pub(crate) async fn create_trash_purge_all_task_in_scope(
     workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
         .await?;
     let payload = TrashPurgeAllTaskPayload {};
-    let task = create_task_record(
-        state,
-        scope,
-        BackgroundTaskKind::TrashPurgeAll,
-        "Empty trash",
-        &payload,
-    )
-    .await?;
+    let task = create_typed_task_record::<TrashPurgeAllTask>(state, scope, "Empty trash", &payload)
+        .await?;
     super::get_task_in_scope(state, scope, task.id).await
 }
 

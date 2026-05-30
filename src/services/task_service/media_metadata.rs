@@ -14,6 +14,7 @@ use crate::types::{
 };
 
 use super::retry::{TaskRetryClass, TaskRetryPolicy};
+use super::spec::{self, BackgroundTaskSpec, MediaMetadataExtractTask};
 use super::steps::{
     TASK_STEP_EXTRACT_METADATA, TASK_STEP_INSPECT_SOURCE, TASK_STEP_PERSIST_METADATA,
     TASK_STEP_WAITING, initial_task_steps, parse_task_steps_json, serialize_task_steps,
@@ -21,7 +22,7 @@ use super::steps::{
 };
 use super::types::{
     MediaMetadataExtractTaskPayload, MediaMetadataExtractTaskResult, parse_task_payload,
-    serialize_task_payload, serialize_task_result,
+    serialize_task_result,
 };
 use super::{
     TaskLeaseGuard, configured_task_max_attempts, mark_task_progress, mark_task_succeeded,
@@ -83,14 +84,12 @@ pub(crate) async fn ensure_media_metadata_task(
         source_mime_type: source_file.mime_type.clone(),
         media_kind: kind,
     };
-    let payload_json = serialize_task_payload(&payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(
-        BackgroundTaskKind::MediaMetadataExtract,
-    ))?;
+    let payload_json = spec::serialize_payload::<MediaMetadataExtractTask>(&payload)?;
+    let steps_json = serialize_task_steps(&initial_task_steps(MediaMetadataExtractTask::KIND))?;
     background_task_repo::create(
         state.writer_db(),
         background_task::ActiveModel {
-            kind: Set(BackgroundTaskKind::MediaMetadataExtract),
+            kind: Set(MediaMetadataExtractTask::KIND),
             status: Set(BackgroundTaskStatus::Pending),
             creator_user_id: Set(None),
             team_id: Set(None),
@@ -105,7 +104,7 @@ pub(crate) async fn ensure_media_metadata_task(
             attempt_count: Set(0),
             max_attempts: Set(configured_task_max_attempts(
                 state,
-                BackgroundTaskKind::MediaMetadataExtract,
+                MediaMetadataExtractTask::KIND,
             )),
             next_run_at: Set(now),
             processing_token: Set(0),

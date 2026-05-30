@@ -9,8 +9,10 @@ mod blob_maintenance;
 mod dispatch;
 mod media_metadata;
 mod presentation;
+mod registry;
 mod retry;
 mod runtime;
+mod spec;
 mod steps;
 mod storage_migration;
 mod storage_policy_cleanup;
@@ -21,7 +23,6 @@ mod types;
 use chrono::{Duration, Utc};
 use parking_lot::Mutex;
 use sea_orm::{DatabaseConnection, Set};
-use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant};
@@ -40,7 +41,6 @@ use crate::services::{
 };
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskResult};
 use crate::utils::numbers::{i64_to_i32, i64_to_u64};
-use presentation::build_task_presentation;
 
 pub(crate) use archive::ensure_archive_preview_task;
 pub(crate) use archive::{
@@ -50,7 +50,9 @@ pub(crate) use archive::{
 pub(crate) use blob_maintenance::create_blob_maintenance_task_for_admin;
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 pub(crate) use media_metadata::ensure_media_metadata_task;
+use registry::{build_task_presentation, decode_task_payload, decode_task_result};
 pub use runtime::{RuntimeTaskRunOutcome, SystemRuntimeTaskKind, record_runtime_task_run};
+use spec::BackgroundTaskSpec;
 use steps::{initial_task_steps, parse_task_steps_json, serialize_task_steps};
 pub(crate) use storage_migration::{
     CreateStoragePolicyMigrationInput, create_storage_policy_migration_task,
@@ -72,7 +74,6 @@ pub use types::{
     TaskStepStatus, ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult,
     TrashPurgeAllTaskPayload, TrashPurgeAllTaskResult,
 };
-use types::{parse_task_payload_info, parse_task_result_info, serialize_task_payload};
 
 pub(super) const DEFAULT_TASK_RETENTION_HOURS: i64 = 24;
 pub(super) const TASK_HEARTBEAT_INTERVAL_SECS: u64 = 10;
@@ -414,11 +415,11 @@ fn build_task_info_with_creator(
         )?
     };
     let kind = task.kind;
-    let payload = parse_task_payload_info(&task)?;
-    let result = parse_task_result_info(&task)?;
+    let payload = decode_task_payload(&task)?;
+    let result = decode_task_result(&task)?;
     let can_retry = task_can_retry(&task);
     let status_text = task.status_text;
-    let presentation = build_task_presentation(&payload, result.as_ref(), task.status);
+    let presentation = build_task_presentation(kind, &payload, result.as_ref(), task.status)?;
     let steps = parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), kind)?;
 
     Ok(TaskInfo {
@@ -455,40 +456,30 @@ fn build_task_info_with_creator(
 pub(crate) fn build_task_presentation_for_model(
     task: &background_task::Model,
 ) -> Result<Option<TaskPresentation>> {
-    let payload = parse_task_payload_info(task)?;
-    let result = parse_task_result_info(task)?;
-    Ok(build_task_presentation(
-        &payload,
-        result.as_ref(),
-        task.status,
-    ))
+    let payload = decode_task_payload(task)?;
+    let result = decode_task_result(task)?;
+    build_task_presentation(task.kind, &payload, result.as_ref(), task.status)
 }
 
 fn task_can_retry(task: &background_task::Model) -> bool {
     task.status == BackgroundTaskStatus::Failed && task.failure_can_retry.unwrap_or(true)
 }
 
-pub(super) async fn create_task_record<T: Serialize>(
+pub(in crate::services::task_service) async fn create_typed_task_record<S: BackgroundTaskSpec>(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
-    kind: BackgroundTaskKind,
     display_name: &str,
-    payload: &T,
+    payload: &S::Payload,
 ) -> Result<background_task::Model> {
     let now = Utc::now();
-    let payload_json = serialize_task_payload(payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(kind))?;
+    let payload_json = spec::serialize_payload::<S>(payload)?;
+    let steps_json = serialize_task_steps(&initial_task_steps(S::KIND))?;
     let display_name = truncate_display_name(display_name);
 
-    // expires_at 代表“任务临时产物何时可以清理”，不是“任务记录何时删库”。
-    // 我们保留 background_task 行作为历史留档；真正会按这个时间被清掉的是
-    // temp/tasks/{task_id}/... 下面的中间产物。
-    // 用户可见的新后台任务都应该走这个入口创建，这样 archive / 未来的
-    // download_background 一类任务能自动唤醒 dispatcher，而不是等空闲退避 timer。
     let task = background_task_repo::create(
         state.writer_db(),
         background_task::ActiveModel {
-            kind: Set(kind),
+            kind: Set(S::KIND),
             status: Set(BackgroundTaskStatus::Pending),
             creator_user_id: Set(Some(scope.actor_user_id())),
             team_id: Set(scope.team_id()),
@@ -501,7 +492,7 @@ pub(super) async fn create_task_record<T: Serialize>(
             progress_total: Set(0),
             status_text: Set(None),
             attempt_count: Set(0),
-            max_attempts: Set(configured_task_max_attempts(state, kind)),
+            max_attempts: Set(configured_task_max_attempts(state, S::KIND)),
             next_run_at: Set(now),
             processing_token: Set(0),
             processing_started_at: Set(None),
@@ -811,7 +802,11 @@ mod tests {
     };
     use crate::api::subcode::ApiSubcode;
     use crate::entities::background_task;
-    use crate::services::task_service::TaskPresentationCode;
+    use crate::services::task_service::spec::{self, SystemRuntimeTask};
+    use crate::services::task_service::{
+        RuntimeSystemHealthComponent, RuntimeSystemHealthResult, RuntimeSystemHealthStatus,
+        RuntimeTaskResult, TaskPresentationCode,
+    };
     use crate::services::workspace_storage_service::WorkspaceStorageScope;
     use crate::types::{
         BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult,
@@ -1163,27 +1158,29 @@ mod tests {
                 })
                 .to_string(),
             ),
-            result_json: Some(StoredTaskResult(
-                serde_json::json!({
-                    "duration_ms": 12,
-                    "system_health": {
-                        "status": "degraded",
-                        "components": [
-                            {
-                                "name": "database",
-                                "status": "degraded",
-                                "message": "lagging"
+            result_json: Some(
+                spec::serialize_result::<SystemRuntimeTask>(&RuntimeTaskResult::from_timestamps(
+                    now - Duration::milliseconds(12),
+                    now,
+                    None,
+                    Some(RuntimeSystemHealthResult {
+                        status: RuntimeSystemHealthStatus::Degraded,
+                        components: vec![
+                            RuntimeSystemHealthComponent {
+                                name: "database".to_string(),
+                                status: RuntimeSystemHealthStatus::Degraded,
+                                message: "lagging".to_string(),
                             },
-                            {
-                                "name": "cache",
-                                "status": "healthy",
-                                "message": ""
-                            }
-                        ]
-                    }
-                })
-                .to_string(),
-            )),
+                            RuntimeSystemHealthComponent {
+                                name: "cache".to_string(),
+                                status: RuntimeSystemHealthStatus::Healthy,
+                                message: String::new(),
+                            },
+                        ],
+                    }),
+                ))
+                .expect("runtime result should serialize"),
+            ),
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
