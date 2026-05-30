@@ -1,4 +1,3 @@
-import type { SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
@@ -22,14 +21,14 @@ interface AuditSectionProps {
 	nextAuditPageDisabled: boolean;
 	prevAuditPageDisabled: boolean;
 	roleLabel: (role: TeamMemberRole) => string;
-	setAuditOffset: (offset: SetStateAction<number>) => void;
+	setAuditOffset: (offset: number) => void;
 }
 
 export function TeamManageAuditSection({
 	auditCurrentPage,
 	auditEntries,
 	auditLoading,
-	auditOffset: _auditOffset,
+	auditOffset,
 	auditPageSize,
 	auditTotal,
 	auditTotalPages,
@@ -39,6 +38,8 @@ export function TeamManageAuditSection({
 	setAuditOffset,
 }: AuditSectionProps) {
 	const { t } = useTranslation(["core", "settings", "admin"]);
+	const prevAuditOffset = Math.max(0, auditOffset - auditPageSize);
+	const nextAuditOffset = auditOffset + auditPageSize;
 
 	return (
 		<section className="rounded-2xl border bg-background/60 p-6">
@@ -106,11 +107,7 @@ export function TeamManageAuditSection({
 									variant="outline"
 									size="sm"
 									disabled={prevAuditPageDisabled || auditLoading}
-									onClick={() =>
-										setAuditOffset((current) =>
-											Math.max(0, current - auditPageSize),
-										)
-									}
+									onClick={() => setAuditOffset(prevAuditOffset)}
 								>
 									<Icon name="CaretLeft" className="size-4" />
 								</Button>
@@ -119,9 +116,7 @@ export function TeamManageAuditSection({
 									variant="outline"
 									size="sm"
 									disabled={nextAuditPageDisabled || auditLoading}
-									onClick={() =>
-										setAuditOffset((current) => current + auditPageSize)
-									}
+									onClick={() => setAuditOffset(nextAuditOffset)}
 								>
 									<Icon name="CaretRight" className="size-4" />
 								</Button>

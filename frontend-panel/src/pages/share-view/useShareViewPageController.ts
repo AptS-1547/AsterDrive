@@ -384,7 +384,7 @@ export function useShareViewPageController({
 			event.preventDefault();
 			if (!token) return;
 			try {
-				await shareService.verifyPassword(token, state.password);
+				await shareService.verifyPassword(token, { password: state.password });
 				toast.success(t("share:password_verified"));
 				const folderContents =
 					state.info?.share_type === "folder"

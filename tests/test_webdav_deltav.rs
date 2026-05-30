@@ -13,22 +13,30 @@ fn basic_auth_header(username: &str, password: &str) -> String {
     )
 }
 
+fn webdav_test_username(label: &str) -> String {
+    format!("webdav-{label}-{}", uuid::Uuid::new_v4().simple())
+}
+
+fn webdav_test_password(label: &str) -> String {
+    format!("TEST_PASSWORD_{label}_{}", uuid::Uuid::new_v4().simple())
+}
+
 macro_rules! create_webdav_basic_auth {
     ($app:expr, $token:expr) => {{
-        let username = "testuser-webdav";
-        let password = "webdav-pass-123";
+        let username = webdav_test_username("deltav");
+        let password = webdav_test_password("DELTAV");
         let req = test::TestRequest::post()
             .uri("/api/v1/webdav-accounts")
             .insert_header(("Cookie", common::access_cookie_header(&$token)))
             .insert_header(common::csrf_header_for(&$token))
             .set_json(serde_json::json!({
-                "username": username,
-                "password": password
+                "username": &username,
+                "password": &password
             }))
             .to_request();
         let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201, "create WebDAV account should return 201");
-        basic_auth_header(username, password)
+        basic_auth_header(&username, &password)
     }};
 }
 

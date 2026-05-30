@@ -17,7 +17,7 @@ use crate::webdav::href_for_relative;
 use crate::webdav::path_resolver::{self, ResolvedNode};
 
 /// 处理 REPORT 方法（cadaver `history` 发送 `DAV:version-tree`）
-pub async fn handle_report(
+pub(crate) async fn handle_report(
     uri: &Uri,
     body_bytes: &[u8],
     db: &DatabaseConnection,
@@ -45,7 +45,9 @@ pub async fn handle_report(
     };
 
     let node =
-        match path_resolver::resolve_path(db, auth.user_id, &dav_path, auth.root_folder_id).await {
+        match path_resolver::resolve_path_in_scope(db, auth.scope, &dav_path, auth.root_folder_id)
+            .await
+        {
             Ok(n) => n,
             Err(_) => return error_response(404, "Not Found"),
         };
@@ -134,7 +136,7 @@ pub async fn handle_report(
 }
 
 /// 处理 VERSION-CONTROL 方法（所有文件自动版本控制，直接返回 200）
-pub async fn handle_version_control(
+pub(crate) async fn handle_version_control(
     uri: &Uri,
     db: &DatabaseConnection,
     auth: &WebdavAuthResult,
@@ -148,7 +150,8 @@ pub async fn handle_version_control(
         Err(_) => return error_response(400, "Invalid path"),
     };
 
-    match path_resolver::resolve_path(db, auth.user_id, &dav_path, auth.root_folder_id).await {
+    match path_resolver::resolve_path_in_scope(db, auth.scope, &dav_path, auth.root_folder_id).await
+    {
         Ok(ResolvedNode::File(_)) => HttpResponse::Ok().body("Already under version control"),
         Ok(_) => error_response(409, "Only files support version control"),
         Err(_) => error_response(404, "Not Found"),

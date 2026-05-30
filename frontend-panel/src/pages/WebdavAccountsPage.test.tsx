@@ -374,11 +374,11 @@ describe("WebdavAccountsPage", () => {
 		fireEvent.click(screen.getByRole("button", { name: "create" }));
 
 		await waitFor(() => {
-			expect(mockState.create).toHaveBeenCalledWith(
-				"dav-user",
-				"secret",
-				undefined,
-			);
+			expect(mockState.create).toHaveBeenCalledWith({
+				password: "secret",
+				root_folder_id: null,
+				username: "dav-user",
+			});
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"admin:webdav_account_created",
@@ -394,10 +394,10 @@ describe("WebdavAccountsPage", () => {
 		);
 
 		await waitFor(() => {
-			expect(mockState.testConnection).toHaveBeenCalledWith(
-				"dav-user",
-				"generated-pass",
-			);
+			expect(mockState.testConnection).toHaveBeenCalledWith({
+				password: "generated-pass",
+				username: "dav-user",
+			});
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"admin:connection_success",

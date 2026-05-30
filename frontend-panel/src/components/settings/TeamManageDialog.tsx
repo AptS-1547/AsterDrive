@@ -1,28 +1,19 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import {
-	TeamManageAuditSection,
-	TeamManageDangerSection,
-	TeamManageMembersSection,
-	TeamManageOverviewSection,
-} from "@/components/settings/team-manage-detail/TeamManageSections";
-import { TeamManageShell } from "@/components/settings/team-manage-detail/TeamManageShell";
-import {
-	TEAM_MANAGE_AUDIT_PAGE_SIZE,
-	TEAM_MANAGE_MEMBER_PAGE_SIZE,
-} from "@/components/settings/team-manage-detail/teamManageDialogState";
+import { TeamManageDialogView } from "@/components/settings/team-manage-detail/TeamManageDialogView";
 import type { TeamManageTab } from "@/components/settings/team-manage-detail/types";
+import { useTeamManageActions } from "@/components/settings/team-manage-detail/useTeamManageActions";
 import { useTeamManageData } from "@/components/settings/team-manage-detail/useTeamManageData";
+import { useTeamManageLocalState } from "@/components/settings/team-manage-detail/useTeamManageLocalState";
 import { useTeamManageScrollRestoration } from "@/components/settings/team-manage-detail/useTeamManageScrollRestoration";
+import { buildTeamManageSections } from "@/components/settings/team-manage-detail/useTeamManageSections";
 import { useTeamManageTabs } from "@/components/settings/team-manage-detail/useTeamManageTabs";
+import { useTeamManageViewModel } from "@/components/settings/team-manage-detail/useTeamManageViewModel";
 import { handleApiError } from "@/hooks/useApiError";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog";
-import { getUserDisplayName } from "@/lib/user";
-import { teamService } from "@/services/teamService";
-import type { TeamInfo, TeamMemberRole, UserStatus } from "@/types/api";
+import { normalizeWebdavPrefix } from "@/lib/webdav";
+import { webdavAccountService } from "@/services/webdavAccountService";
+import type { TeamInfo, TeamMemberRole } from "@/types/api";
 
 export type { TeamManageTab } from "@/components/settings/team-manage-detail/types";
 
@@ -57,36 +48,47 @@ export function TeamManageDialog({
 	const { t } = useTranslation(["core", "settings"]);
 	const navigate = useNavigate();
 	const isPageLayout = layout === "page";
-	const [archiveConfirmValue, setArchiveConfirmValue] = useState("");
-	const [auditOffset, setAuditOffset] = useState(0);
-	const [memberIdentifier, setMemberIdentifier] = useState("");
-	const [memberOffset, setMemberOffset] = useState(0);
-	const [memberQuery, setMemberQuery] = useState("");
-	const [memberRole, setMemberRole] = useState<TeamMemberRole>("member");
-	const [memberRoleFilter, setMemberRoleFilter] = useState<
-		"__all__" | TeamMemberRole
-	>("__all__");
-	const [memberStatusFilter, setMemberStatusFilter] = useState<
-		"__all__" | UserStatus
-	>("__all__");
-	const [mutating, setMutating] = useState(false);
-	const [teamDescription, setTeamDescription] = useState("");
-	const [teamName, setTeamName] = useState("");
+	const activeTeamId = open ? teamId : null;
+	const localState = useTeamManageLocalState(activeTeamId);
+	const {
+		archiveConfirmValue,
+		auditOffset,
+		memberIdentifier,
+		memberOffset,
+		memberQuery,
+		memberRole,
+		memberRoleFilter,
+		memberStatusFilter,
+		setArchiveConfirmValue,
+		setAuditOffset,
+		setMemberIdentifier,
+		setMemberOffset,
+		setMemberQuery,
+		setMemberRole,
+		setMemberRoleFilter,
+		setMemberStatusFilter,
+		setTeamDraft,
+		setWebdavPrefix,
+		teamDraft,
+		webdavPrefix,
+	} = localState;
 	const roleLabel = (role: TeamMemberRole) =>
 		t(`settings:settings_team_role_${role}`);
-	const memberKeyword = memberQuery.trim();
-	const memberRoleValue =
-		memberRoleFilter === "__all__" ? undefined : memberRoleFilter;
-	const memberStatusValue =
-		memberStatusFilter === "__all__" ? undefined : memberStatusFilter;
-	const memberFilters = useMemo(
-		() => ({
-			keyword: memberKeyword || undefined,
-			role: memberRoleValue,
-			status: memberStatusValue,
-		}),
-		[memberKeyword, memberRoleValue, memberStatusValue],
-	);
+	const viewModel = useTeamManageViewModel({
+		activeTeamId,
+		auditOffset,
+		auditTotal: 0,
+		canAssignOwner: false,
+		displayTeam: null,
+		memberOffset,
+		memberQuery,
+		memberRoleFilter,
+		memberStatusFilter,
+		memberTotal: 0,
+		roleLabel,
+		t,
+		teamDraft,
+	});
 	const {
 		auditEntries,
 		auditLoading,
@@ -109,11 +111,47 @@ export function TeamManageDialog({
 		viewerRole,
 	} = useTeamManageData({
 		auditOffset,
-		memberFilters,
+		memberFilters: viewModel.memberFilters,
 		memberOffset,
 		open,
 		teamId,
 		teamSummary,
+	});
+	const {
+		auditCurrentPage,
+		auditTotalPages,
+		hasMemberFilters,
+		memberCurrentPage,
+		memberTotalPages,
+		nextAuditPageDisabled,
+		nextMemberPageDisabled,
+		prevAuditPageDisabled,
+		prevMemberPageDisabled,
+		quota,
+		roleFilterOptions,
+		roleOptions,
+		safeMemberOffset,
+		statusFilterOptions,
+		teamBaseDescription,
+		teamBaseName,
+		teamDescription,
+		teamName,
+		usagePercentage,
+		used,
+	} = useTeamManageViewModel({
+		activeTeamId,
+		auditOffset,
+		auditTotal,
+		canAssignOwner,
+		displayTeam,
+		memberOffset,
+		memberQuery,
+		memberRoleFilter,
+		memberStatusFilter,
+		memberTotal,
+		roleLabel,
+		t,
+		teamDraft,
 	});
 	const { contentRef, handleContentScroll, handleSidebarScroll, sidebarRef } =
 		useTeamManageScrollRestoration({
@@ -121,7 +159,7 @@ export function TeamManageDialog({
 			pageTab,
 			teamId,
 		});
-	const { currentTab, handleTabChange, panelAnimationClass, resetDialogTab } =
+	const { currentTab, handleTabChange, panelAnimationClass } =
 		useTeamManageTabs({
 			canArchiveTeam,
 			canManageTeam,
@@ -131,244 +169,72 @@ export function TeamManageDialog({
 			onPageTabChange,
 			pageTab,
 		});
-	const roleOptions: TeamMemberRole[] = canAssignOwner
-		? ["owner", "admin", "member"]
-		: ["admin", "member"];
-	const quota = displayTeam?.storage_quota ?? 0;
-	const used = displayTeam?.storage_used ?? 0;
-	const usagePercentage = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
-	const statusFilterOptions = [
-		{
-			label: t("settings:settings_team_member_status_filter_all"),
-			value: "__all__",
-		},
-		{ label: t("core:active"), value: "active" },
-		{ label: t("core:disabled_status"), value: "disabled" },
-	] satisfies ReadonlyArray<{
-		label: string;
-		value: "__all__" | UserStatus;
-	}>;
-	const roleFilterOptions = [
-		{
-			label: t("settings:settings_team_member_role_filter_all"),
-			value: "__all__",
-		},
-		...roleOptions.map((role) => ({
-			label: roleLabel(role),
-			value: role,
-		})),
-	] satisfies ReadonlyArray<{
-		label: string;
-		value: "__all__" | TeamMemberRole;
-	}>;
+	const setTeamName = (name: string) => {
+		setTeamDraft({
+			baseDescription: teamBaseDescription,
+			baseName: teamBaseName,
+			description: teamDescription,
+			name,
+			teamId: activeTeamId,
+		});
+	};
+	const setTeamDescription = (description: string) => {
+		setTeamDraft({
+			baseDescription: teamBaseDescription,
+			baseName: teamBaseName,
+			description,
+			name: teamName,
+			teamId: activeTeamId,
+		});
+	};
 
 	useEffect(() => {
-		setArchiveConfirmValue("");
-		setTeamName(displayTeam?.name ?? "");
-		setTeamDescription(displayTeam?.description ?? "");
-	}, [displayTeam?.description, displayTeam?.name]);
-
-	const hasMemberFilters =
-		memberKeyword.length > 0 ||
-		memberRoleFilter !== "__all__" ||
-		memberStatusFilter !== "__all__";
-	const memberTotalPages = Math.max(
-		1,
-		Math.ceil(memberTotal / TEAM_MANAGE_MEMBER_PAGE_SIZE),
-	);
-	const memberCurrentPage =
-		Math.floor(memberOffset / TEAM_MANAGE_MEMBER_PAGE_SIZE) + 1;
-	const prevMemberPageDisabled = memberOffset === 0;
-	const nextMemberPageDisabled =
-		memberOffset + TEAM_MANAGE_MEMBER_PAGE_SIZE >= memberTotal;
-	const auditTotalPages = Math.max(
-		1,
-		Math.ceil(auditTotal / TEAM_MANAGE_AUDIT_PAGE_SIZE),
-	);
-	const auditCurrentPage =
-		Math.floor(auditOffset / TEAM_MANAGE_AUDIT_PAGE_SIZE) + 1;
-	const prevAuditPageDisabled = auditOffset === 0;
-	const nextAuditPageDisabled =
-		auditOffset + TEAM_MANAGE_AUDIT_PAGE_SIZE >= auditTotal;
-
-	useEffect(() => {
-		if (memberOffset < memberTotal || memberTotal === 0) {
+		if (!open) {
 			return;
 		}
 
-		setMemberOffset(
-			Math.max(0, (memberTotalPages - 1) * TEAM_MANAGE_MEMBER_PAGE_SIZE),
-		);
-	}, [memberOffset, memberTotal, memberTotalPages]);
+		let cancelled = false;
+		void webdavAccountService
+			.settings()
+			.then((settings) => {
+				if (!cancelled) {
+					setWebdavPrefix(normalizeWebdavPrefix(settings.prefix));
+				}
+			})
+			.catch(handleApiError);
 
-	const handleUpdateTeam = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		if (!teamDetail || !canManageTeam) {
-			return;
-		}
-
-		const nextName = teamName.trim();
-		if (!nextName) {
-			return;
-		}
-
-		try {
-			setMutating(true);
-			await teamService.update(teamDetail.id, {
-				name: nextName,
-				description: teamDescription.trim() || undefined,
-			});
-			await Promise.all([
-				loadTeamDetail(teamDetail.id),
-				canManageTeam ? loadAuditEntries(teamDetail.id) : Promise.resolve(),
-				onTeamsReload(),
-			]);
-			toast.success(t("settings:settings_team_updated"));
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setMutating(false);
-		}
-	};
-
-	const handleAddMember = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		if (teamId == null || !canManageTeam) {
-			return;
-		}
-
-		const identifier = memberIdentifier.trim();
-		if (!identifier) {
-			return;
-		}
-
-		try {
-			setMutating(true);
-			await teamService.addMember(teamId, {
-				identifier,
-				role: memberRole,
-			});
-			setMemberIdentifier("");
-			setMemberRole("member");
-			setMemberOffset(0);
-			await Promise.all([
-				loadTeamDetail(teamId),
-				loadMembers(teamId, 0),
-				loadAuditEntries(teamId),
-				onTeamsReload(),
-			]);
-			toast.success(t("settings:settings_team_member_added"));
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setMutating(false);
-		}
-	};
-
-	const handleUpdateMemberRole = async (
-		memberUserId: number,
-		role: TeamMemberRole,
-	) => {
-		if (teamId == null || !canManageTeam) {
-			return;
-		}
-
-		try {
-			setMutating(true);
-			await teamService.updateMember(teamId, memberUserId, { role });
-			await Promise.all([
-				loadTeamDetail(teamId),
-				loadMembers(teamId, memberOffset),
-				loadAuditEntries(teamId),
-			]);
-			toast.success(t("settings:settings_team_member_role_updated"));
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setMutating(false);
-		}
-	};
-
-	const handleRemoveMember = async (memberUserId: number) => {
-		if (teamId == null) {
-			return;
-		}
-
-		const removingSelf = memberUserId === currentUserId;
-
-		try {
-			setMutating(true);
-			await teamService.removeMember(teamId, memberUserId);
-			await onTeamsReload();
-			if (removingSelf) {
-				onOpenChange(false);
-				toast.success(t("settings:settings_team_left"));
-			} else {
-				await Promise.all([
-					loadTeamDetail(teamId),
-					loadMembers(teamId, memberOffset),
-					loadAuditEntries(teamId),
-				]);
-				toast.success(t("settings:settings_team_member_removed"));
-			}
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setMutating(false);
-		}
-	};
-
-	const handleArchiveTeam = async () => {
-		if (teamId == null || !canArchiveTeam) {
-			return;
-		}
-
-		try {
-			setMutating(true);
-			await teamService.delete(teamId);
-			await Promise.all([onTeamsReload(), onArchivedReload()]);
-			archiveDialogProps.onOpenChange(false);
-			onOpenChange(false);
-			toast.success(t("settings:settings_team_deleted"));
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setMutating(false);
-		}
-	};
+		return () => {
+			cancelled = true;
+		};
+	}, [open, setWebdavPrefix]);
 
 	const {
-		confirmId: removeMemberId,
-		requestConfirm: requestRemoveConfirm,
-		dialogProps: removeDialogProps,
-	} = useConfirmDialog(handleRemoveMember);
-	const {
-		requestConfirm: requestArchiveConfirm,
-		dialogProps: archiveDialogProps,
-	} = useConfirmDialog<true>(handleArchiveTeam);
-
-	useEffect(() => {
-		if (!open || teamId == null) {
-			setArchiveConfirmValue("");
-			archiveDialogProps.onOpenChange(false);
-			setAuditOffset(0);
-			setMemberIdentifier("");
-			setMemberOffset(0);
-			setMemberQuery("");
-			setMemberRole("member");
-			setMemberRoleFilter("__all__");
-			setMemberStatusFilter("__all__");
-			setMutating(false);
-			setTeamDescription("");
-			setTeamName("");
-			resetDialogTab();
-			return;
-		}
-
-		setAuditOffset(0);
-		setMemberOffset(0);
-		resetDialogTab();
-	}, [archiveDialogProps.onOpenChange, open, resetDialogTab, teamId]);
+		archiveDialogProps,
+		handleAddMember,
+		handleUpdateMemberRole,
+		handleUpdateTeam,
+		mutating,
+		removeDialogProps,
+		removeMemberId,
+		requestArchiveConfirm,
+		requestRemoveConfirm,
+	} = useTeamManageActions({
+		canArchiveTeam,
+		canManageTeam,
+		currentUserId,
+		loadAuditEntries,
+		loadMembers,
+		loadTeamDetail,
+		onArchivedReload,
+		onOpenChange,
+		onTeamsReload,
+		safeMemberOffset,
+		setMemberIdentifier,
+		setMemberOffset,
+		setMemberRole,
+		teamDetail,
+		teamId,
+	});
 
 	const removeMember =
 		members.find((member) => member.user_id === removeMemberId) ?? null;
@@ -391,149 +257,117 @@ export function TeamManageDialog({
 		archiveDialogProps.onOpenChange(false);
 	};
 
-	const overviewSection = (
-		<TeamManageOverviewSection
-			canManageTeam={canManageTeam}
-			detailLoading={detailLoading}
-			mutating={mutating}
-			onDescriptionChange={setTeamDescription}
-			onSubmit={(event) => void handleUpdateTeam(event)}
-			onTeamNameChange={setTeamName}
-			team={displayTeam}
-			teamDescription={teamDescription}
-			teamName={teamName}
-		/>
-	);
-
-	const membersSection = (
-		<TeamManageMembersSection
-			canAssignOwner={canAssignOwner}
-			canManageTeam={canManageTeam}
-			currentUserId={currentUserId}
-			hasMemberFilters={hasMemberFilters}
-			managerCount={managerCount}
-			memberCurrentPage={memberCurrentPage}
-			memberIdentifier={memberIdentifier}
-			memberLoading={memberLoading}
-			memberOffset={memberOffset}
-			memberPageSize={TEAM_MANAGE_MEMBER_PAGE_SIZE}
-			memberQuery={memberQuery}
-			memberRole={memberRole}
-			memberRoleFilter={memberRoleFilter}
-			memberStatusFilter={memberStatusFilter}
-			memberTotal={memberTotal}
-			memberTotalPages={memberTotalPages}
-			members={members}
-			mutating={mutating}
-			nextMemberPageDisabled={nextMemberPageDisabled}
-			onAddMember={(event) => void handleAddMember(event)}
-			onUpdateMemberRole={handleUpdateMemberRole}
-			ownerCount={ownerCount}
-			prevMemberPageDisabled={prevMemberPageDisabled}
-			requestRemoveConfirm={requestRemoveConfirm}
-			roleFilterOptions={roleFilterOptions}
-			roleLabel={roleLabel}
-			roleOptions={roleOptions}
-			setMemberIdentifier={setMemberIdentifier}
-			setMemberOffset={setMemberOffset}
-			setMemberQuery={setMemberQuery}
-			setMemberRole={setMemberRole}
-			setMemberRoleFilter={setMemberRoleFilter}
-			setMemberStatusFilter={setMemberStatusFilter}
-			statusFilterOptions={statusFilterOptions}
-			team={displayTeam}
-			viewerRole={viewerRole}
-		/>
-	);
-
-	const auditSection = canManageTeam ? (
-		<TeamManageAuditSection
-			auditCurrentPage={auditCurrentPage}
-			auditEntries={auditEntries}
-			auditLoading={auditLoading}
-			auditOffset={auditOffset}
-			auditPageSize={TEAM_MANAGE_AUDIT_PAGE_SIZE}
-			auditTotal={auditTotal}
-			auditTotalPages={auditTotalPages}
-			nextAuditPageDisabled={nextAuditPageDisabled}
-			prevAuditPageDisabled={prevAuditPageDisabled}
-			roleLabel={roleLabel}
-			setAuditOffset={setAuditOffset}
-		/>
-	) : null;
-
-	const dangerSection = canArchiveTeam ? (
-		<TeamManageDangerSection
-			archiveConfirmValue={archiveConfirmValue}
-			managerCount={managerCount}
-			mutating={mutating}
-			ownerCount={ownerCount}
-			setArchiveConfirmValue={setArchiveConfirmValue}
-			setArchiveDialogOpen={handleArchiveDialogOpenChange}
-			team={displayTeam}
-		/>
-	) : null;
+	const {
+		auditSection,
+		dangerSection,
+		membersSection,
+		overviewSection,
+		webdavSection,
+	} = buildTeamManageSections({
+		archiveConfirmValue,
+		auditCurrentPage,
+		auditEntries,
+		auditLoading,
+		auditOffset,
+		auditTotal,
+		auditTotalPages,
+		canArchiveTeam,
+		canAssignOwner,
+		canManageTeam,
+		currentUserId,
+		detailLoading,
+		displayTeam,
+		handleArchiveDialogOpenChange,
+		handleUpdateMemberRole,
+		hasMemberFilters,
+		managerCount,
+		memberCurrentPage,
+		memberIdentifier,
+		memberLoading,
+		memberOffset: safeMemberOffset,
+		memberQuery,
+		memberRole,
+		memberRoleFilter,
+		memberStatusFilter,
+		memberTotal,
+		memberTotalPages,
+		members,
+		mutating,
+		nextAuditPageDisabled,
+		nextMemberPageDisabled,
+		onAddMember: (event) => {
+			event.preventDefault();
+			void handleAddMember(memberIdentifier, memberRole);
+		},
+		onUpdateTeam: (event) => {
+			event.preventDefault();
+			void handleUpdateTeam(teamName, teamDescription);
+		},
+		ownerCount,
+		prevAuditPageDisabled,
+		prevMemberPageDisabled,
+		requestRemoveConfirm,
+		roleFilterOptions,
+		roleLabel,
+		roleOptions,
+		setArchiveConfirmValue,
+		setAuditOffset,
+		setMemberIdentifier,
+		setMemberOffset,
+		setMemberQuery,
+		setMemberRole,
+		setMemberRoleFilter,
+		setMemberStatusFilter,
+		setTeamDescription,
+		setTeamName,
+		statusFilterOptions,
+		teamDescription,
+		teamId,
+		teamName,
+		viewerRole,
+		webdavPrefix,
+	});
 
 	return (
-		<>
-			<TeamManageShell
-				auditSection={auditSection}
-				canArchiveTeam={canArchiveTeam}
-				canManageTeam={canManageTeam}
-				contentRef={contentRef}
-				currentTab={currentTab}
-				dangerSection={dangerSection}
-				isPageLayout={isPageLayout}
-				managerCount={managerCount}
-				membersSection={membersSection}
-				onContentScroll={handleContentScroll}
-				onOpenChange={handleDialogOpenChange}
-				onOpenWorkspace={() =>
-					navigate(`/teams/${teamId}`, { viewTransition: false })
-				}
-				onPageBack={() => onOpenChange(false)}
-				onSidebarScroll={handleSidebarScroll}
-				onTabChange={handleTabChange}
-				open={open}
-				overviewSection={overviewSection}
-				ownerCount={ownerCount}
-				panelAnimationClass={panelAnimationClass}
-				quota={quota}
-				roleLabel={roleLabel}
-				sidebarRef={sidebarRef}
-				team={displayTeam}
-				usagePercentage={usagePercentage}
-				used={used}
-				viewerRole={viewerRole}
-			/>
-
-			<ConfirmDialog
-				{...removeDialogProps}
-				title={
-					removeMember?.user_id === currentUserId
-						? t("settings:settings_team_leave")
-						: t("settings:settings_team_remove_member")
-				}
-				description={
-					removeMember
-						? `${t("settings:settings_team_remove_member_desc")} ${getUserDisplayName(removeMember.user)}`
-						: t("settings:settings_team_remove_member_desc")
-				}
-				confirmLabel={
-					removeMember?.user_id === currentUserId
-						? t("settings:settings_team_leave")
-						: t("settings:settings_team_remove_member")
-				}
-				variant="destructive"
-			/>
-
-			<ConfirmDialog
-				{...archiveDialogProps}
-				title={t("settings:settings_team_archive")}
-				description={t("settings:settings_team_archive_desc")}
-				confirmLabel={t("settings:settings_team_archive")}
-				variant="destructive"
-			/>
-		</>
+		<TeamManageDialogView
+			auditSection={auditSection}
+			archiveConfirmLabel={t("settings:settings_team_archive")}
+			archiveDescription={t("settings:settings_team_archive_desc")}
+			archiveDialogProps={archiveDialogProps}
+			canArchiveTeam={canArchiveTeam}
+			canManageTeam={canManageTeam}
+			contentRef={contentRef}
+			currentTab={currentTab}
+			currentUserId={currentUserId}
+			dangerSection={dangerSection}
+			isPageLayout={isPageLayout}
+			leaveLabel={t("settings:settings_team_leave")}
+			managerCount={managerCount}
+			membersSection={membersSection}
+			onContentScroll={handleContentScroll}
+			onOpenChange={handleDialogOpenChange}
+			onOpenWorkspace={() =>
+				navigate(`/teams/${teamId}`, { viewTransition: false })
+			}
+			onPageBack={() => onOpenChange(false)}
+			onSidebarScroll={handleSidebarScroll}
+			onTabChange={handleTabChange}
+			open={open}
+			overviewSection={overviewSection}
+			ownerCount={ownerCount}
+			panelAnimationClass={panelAnimationClass}
+			quota={quota}
+			removeDescription={t("settings:settings_team_remove_member_desc")}
+			removeDialogProps={removeDialogProps}
+			removeLabel={t("settings:settings_team_remove_member")}
+			removeMember={removeMember}
+			roleLabel={roleLabel}
+			sidebarRef={sidebarRef}
+			team={displayTeam}
+			usagePercentage={usagePercentage}
+			used={used}
+			viewerRole={viewerRole}
+			webdavSection={webdavSection}
+		/>
 	);
 }

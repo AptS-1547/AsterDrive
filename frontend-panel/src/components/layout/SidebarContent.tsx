@@ -14,9 +14,11 @@ export function SidebarContent({
 	onMobileClose,
 	onMoveToFolder,
 	onSearchCategoryOpen,
+	onScrollViewport,
 	onTrashDragLeave,
 	onTrashDragOver,
 	onTrashDropEvent,
+	scrollViewportRef,
 	storageQuota,
 	storageUsed,
 	trashDragOver,
@@ -30,7 +32,12 @@ export function SidebarContent({
 				<WorkspaceSwitcher variant="sidebar" />
 			</div>
 
-			<ScrollArea data-testid="user-sidebar-scroll" className="min-h-0 flex-1">
+			<ScrollArea
+				ref={scrollViewportRef}
+				data-testid="user-sidebar-scroll"
+				className="min-h-0 flex-1"
+				viewportProps={{ onScroll: onScrollViewport }}
+			>
 				<div className="flex min-h-full flex-col">
 					<FolderTree onMoveToFolder={onMoveToFolder} />
 

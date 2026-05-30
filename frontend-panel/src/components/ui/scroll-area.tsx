@@ -3,14 +3,20 @@ import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 import { ScrollAreaContext } from "@/components/ui/scrollAreaContext";
 import { cn } from "@/lib/utils";
 
+type ScrollAreaProps = ScrollAreaPrimitive.Root.Props & {
+	ref?: React.Ref<HTMLDivElement>;
+	viewportProps?: ScrollAreaPrimitive.Viewport.Props;
+};
+
 function ScrollArea({
 	className,
 	children,
 	ref,
+	viewportProps,
 	...props
-}: ScrollAreaPrimitive.Root.Props & {
-	ref?: React.Ref<HTMLDivElement>;
-}) {
+}: ScrollAreaProps) {
+	const { className: viewportClassName, ...viewportRest } = viewportProps ?? {};
+
 	return (
 		<ScrollAreaContext.Provider value>
 			<ScrollAreaPrimitive.Root
@@ -21,7 +27,11 @@ function ScrollArea({
 				<ScrollAreaPrimitive.Viewport
 					ref={ref}
 					data-slot="scroll-area-viewport"
-					className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+					className={cn(
+						"size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
+						viewportClassName,
+					)}
+					{...viewportRest}
 				>
 					{children}
 				</ScrollAreaPrimitive.Viewport>

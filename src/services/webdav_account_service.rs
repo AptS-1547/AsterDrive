@@ -8,10 +8,15 @@ use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::api::subcode::ApiSubcode;
-use crate::db::repository::{folder_repo, webdav_account_repo};
+use crate::db::repository::webdav_account_repo;
 use crate::entities::webdav_account;
 use crate::errors::{AsterError, Result, validation_error_with_subcode};
 use crate::runtime::PrimaryAppState;
+use crate::services::{
+    profile_service,
+    user_service::{self, UserSummary},
+    workspace_storage_service::WorkspaceStorageScope,
+};
 use crate::utils::hash;
 
 fn webdav_username_exists_error() -> AsterError {
@@ -35,6 +40,7 @@ fn map_webdav_account_create_db_err(err: DbErr) -> AsterError {
 pub struct WebdavAccountCreated {
     pub id: i64,
     pub username: String,
+    pub team_id: Option<i64>,
     /// 明文密码，只返回一次
     pub password: String,
     pub root_folder_path: Option<String>,
@@ -46,6 +52,9 @@ pub struct WebdavAccountCreated {
 pub struct WebdavAccountInfo {
     pub id: i64,
     pub username: String,
+    pub user_id: i64,
+    pub user: Option<UserSummary>,
+    pub team_id: Option<i64>,
     pub root_folder_id: Option<i64>,
     /// 文件夹路径，如 "/Documents/Photos"，None 表示全部访问
     pub root_folder_path: Option<String>,
@@ -61,6 +70,7 @@ pub struct WebdavAccountInfo {
 pub struct WebdavAccount {
     pub id: i64,
     pub user_id: i64,
+    pub team_id: Option<i64>,
     pub username: String,
     pub root_folder_id: Option<i64>,
     pub is_active: bool,
@@ -75,6 +85,7 @@ impl From<webdav_account::Model> for WebdavAccount {
         Self {
             id: model.id,
             user_id: model.user_id,
+            team_id: model.team_id,
             username: model.username,
             root_folder_id: model.root_folder_id,
             is_active: model.is_active,
@@ -94,6 +105,48 @@ pub async fn create(
     password: Option<&str>,
     root_folder_id: Option<i64>,
 ) -> Result<WebdavAccountCreated> {
+    create_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        username,
+        password,
+        root_folder_id,
+    )
+    .await
+}
+
+pub async fn create_for_team(
+    state: &PrimaryAppState,
+    actor_user_id: i64,
+    team_id: i64,
+    username: &str,
+    password: Option<&str>,
+    root_folder_id: Option<i64>,
+) -> Result<WebdavAccountCreated> {
+    crate::services::workspace_storage_service::require_team_access(state, team_id, actor_user_id)
+        .await?;
+    create_in_scope(
+        state,
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id,
+        },
+        username,
+        password,
+        root_folder_id,
+    )
+    .await
+}
+
+async fn create_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    username: &str,
+    password: Option<&str>,
+    root_folder_id: Option<i64>,
+) -> Result<WebdavAccountCreated> {
+    crate::services::workspace_storage_service::require_scope_access(state, scope).await?;
+
     // 检查用户名是否已存在
     if webdav_account_repo::find_by_username(state.writer_db(), username)
         .await?
@@ -111,11 +164,9 @@ pub async fn create(
     let password_hash = hash::hash_password(&plain_password)?;
     let now = Utc::now();
 
-    // 如果指定了 root_folder_id，验证文件夹属于该用户
+    // 如果指定了 root_folder_id，验证文件夹属于账号所在工作空间。
     let root_folder_path = if let Some(fid) = root_folder_id {
-        let folder = folder_repo::find_by_id(state.writer_db(), fid).await?;
-        crate::services::folder_service::ensure_personal_folder_scope(&folder)?;
-        crate::utils::verify_optional_owner(folder.owner_user_id, user_id, "folder")?;
+        crate::services::workspace_storage_service::verify_folder_access(state, scope, fid).await?;
         crate::services::folder_service::build_folder_paths_cached(state, &[fid])
             .await?
             .remove(&fid)
@@ -123,8 +174,10 @@ pub async fn create(
         None
     };
 
+    let actor_user_id = scope.actor_user_id();
     let model = webdav_account::ActiveModel {
-        user_id: Set(user_id),
+        user_id: Set(actor_user_id),
+        team_id: Set(scope.team_id()),
         username: Set(username.to_string()),
         password_hash: Set(password_hash),
         root_folder_id: Set(root_folder_id),
@@ -143,6 +196,7 @@ pub async fn create(
     Ok(WebdavAccountCreated {
         id: created.id,
         username: created.username,
+        team_id: created.team_id,
         password: plain_password,
         root_folder_path,
     })
@@ -151,6 +205,26 @@ pub async fn create(
 /// 列出用户的所有 WebDAV 账号（带文件夹路径）
 pub async fn list(state: &PrimaryAppState, user_id: i64) -> Result<Vec<WebdavAccountInfo>> {
     let accounts = webdav_account_repo::find_by_user(state.writer_db(), user_id).await?;
+    build_account_infos(state, accounts).await
+}
+
+pub async fn list_for_team(
+    state: &PrimaryAppState,
+    actor_user_id: i64,
+    team_id: i64,
+) -> Result<Vec<WebdavAccountInfo>> {
+    let role = crate::services::workspace_storage_service::load_team_member_role(
+        state,
+        team_id,
+        actor_user_id,
+    )
+    .await?;
+    let accounts = if role.can_manage_team() {
+        webdav_account_repo::find_by_team(state.writer_db(), team_id).await?
+    } else {
+        webdav_account_repo::find_by_team_and_user(state.writer_db(), team_id, actor_user_id)
+            .await?
+    };
     build_account_infos(state, accounts).await
 }
 
@@ -170,6 +244,39 @@ pub async fn list_paginated(
     .await
 }
 
+pub async fn list_team_paginated(
+    state: &PrimaryAppState,
+    actor_user_id: i64,
+    team_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<WebdavAccountInfo>> {
+    let role = crate::services::workspace_storage_service::load_team_member_role(
+        state,
+        team_id,
+        actor_user_id,
+    )
+    .await?;
+    load_offset_page(limit, offset, 100, |limit, offset| async move {
+        let (items, total) = if role.can_manage_team() {
+            webdav_account_repo::find_by_team_paginated(state.writer_db(), team_id, limit, offset)
+                .await?
+        } else {
+            webdav_account_repo::find_by_team_and_user_paginated(
+                state.writer_db(),
+                team_id,
+                actor_user_id,
+                limit,
+                offset,
+            )
+            .await?
+        };
+        let items = build_account_infos(state, items).await?;
+        Ok((items, total))
+    })
+    .await
+}
+
 async fn build_account_infos(
     state: &PrimaryAppState,
     accounts: Vec<webdav_account::Model>,
@@ -180,13 +287,24 @@ async fn build_account_infos(
         .collect();
     let paths =
         crate::services::folder_service::build_folder_paths_cached(state, &folder_ids).await?;
+    let user_ids: Vec<i64> = accounts.iter().map(|acc| acc.user_id).collect();
+    let users = user_service::user_summaries_by_ids(
+        state,
+        &user_ids,
+        profile_service::AvatarAudience::AdminUser,
+    )
+    .await?;
 
     let mut result = Vec::with_capacity(accounts.len());
     for acc in accounts {
         let root_folder_path = acc.root_folder_id.and_then(|fid| paths.get(&fid).cloned());
+        let user = users.get(&acc.user_id).cloned();
         result.push(WebdavAccountInfo {
             id: acc.id,
             username: acc.username,
+            user_id: acc.user_id,
+            user,
+            team_id: acc.team_id,
             root_folder_id: acc.root_folder_id,
             root_folder_path,
             is_active: acc.is_active,
@@ -201,6 +319,11 @@ async fn build_account_infos(
 /// 删除 WebDAV 账号（需要验证归属）
 pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
     let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
+    if account.team_id.is_some() {
+        return Err(AsterError::auth_forbidden(
+            "team WebDAV account must be managed from the team workspace",
+        ));
+    }
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
     webdav_account_repo::delete(state.writer_db(), id).await?;
     crate::webdav::auth::invalidate_webdav_auth_for_username(state, &account.username).await;
@@ -213,6 +336,41 @@ pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()
     Ok(())
 }
 
+pub async fn delete_for_team(
+    state: &PrimaryAppState,
+    id: i64,
+    actor_user_id: i64,
+    team_id: i64,
+) -> Result<()> {
+    let role = crate::services::workspace_storage_service::load_team_member_role(
+        state,
+        team_id,
+        actor_user_id,
+    )
+    .await?;
+    let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
+    if account.team_id != Some(team_id) {
+        return Err(AsterError::record_not_found(format!(
+            "webdav_account #{id}"
+        )));
+    }
+    if account.user_id != actor_user_id && !role.can_manage_team() {
+        return Err(AsterError::auth_forbidden(
+            "team WebDAV account can only be managed by its owner or a team manager",
+        ));
+    }
+    webdav_account_repo::delete(state.writer_db(), id).await?;
+    crate::webdav::auth::invalidate_webdav_auth_for_username(state, &account.username).await;
+    tracing::debug!(
+        webdav_account_id = id,
+        team_id,
+        actor_user_id,
+        username = %account.username,
+        "deleted team WebDAV account"
+    );
+    Ok(())
+}
+
 /// 切换启用/禁用
 pub async fn toggle_active(
     state: &PrimaryAppState,
@@ -220,7 +378,47 @@ pub async fn toggle_active(
     user_id: i64,
 ) -> Result<WebdavAccount> {
     let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
+    if account.team_id.is_some() {
+        return Err(AsterError::auth_forbidden(
+            "team WebDAV account must be managed from the team workspace",
+        ));
+    }
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
+    let new_is_active = !account.is_active;
+    let username = account.username.clone();
+    let mut active: webdav_account::ActiveModel = account.into();
+    active.is_active = Set(new_is_active);
+    active.updated_at = Set(Utc::now());
+    let updated = webdav_account_repo::update(state.writer_db(), active)
+        .await
+        .map(Into::into)?;
+    crate::webdav::auth::invalidate_webdav_auth_for_username(state, &username).await;
+    Ok(updated)
+}
+
+pub async fn toggle_team_active(
+    state: &PrimaryAppState,
+    id: i64,
+    actor_user_id: i64,
+    team_id: i64,
+) -> Result<WebdavAccount> {
+    let role = crate::services::workspace_storage_service::load_team_member_role(
+        state,
+        team_id,
+        actor_user_id,
+    )
+    .await?;
+    let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
+    if account.team_id != Some(team_id) {
+        return Err(AsterError::record_not_found(format!(
+            "webdav_account #{id}"
+        )));
+    }
+    if account.user_id != actor_user_id && !role.can_manage_team() {
+        return Err(AsterError::auth_forbidden(
+            "team WebDAV account can only be managed by its owner or a team manager",
+        ));
+    }
     let new_is_active = !account.is_active;
     let username = account.username.clone();
     let mut active: webdav_account::ActiveModel = account.into();
@@ -255,6 +453,15 @@ pub async fn test_credentials(
         crate::db::repository::user_repo::find_by_id(state.writer_db(), account.user_id).await?;
     if !user.status.is_active() {
         return Err(AsterError::auth_forbidden("user account is disabled"));
+    }
+
+    if let Some(team_id) = account.team_id {
+        crate::services::workspace_storage_service::require_team_access(
+            state,
+            team_id,
+            account.user_id,
+        )
+        .await?;
     }
 
     Ok(())

@@ -30,6 +30,15 @@ async fn collect_folder_tree_models(
     .await
 }
 
+async fn collect_folder_tree_models_in_scope(
+    db: &sea_orm::DatabaseConnection,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+    include_deleted: bool,
+) -> Result<(Vec<crate::entities::file::Model>, Vec<i64>)> {
+    folder_service::collect_folder_tree_in_scope(db, scope, folder_id, include_deleted).await
+}
+
 pub async fn collect_folder_tree(
     state: &PrimaryAppState,
     user_id: i64,
@@ -49,11 +58,23 @@ pub async fn recursive_soft_delete(
     user_id: i64,
     folder_id: i64,
 ) -> Result<()> {
-    let scope = WorkspaceStorageScope::Personal { user_id };
-    tracing::debug!(user_id, folder_id, "webdav soft deleting folder tree");
+    recursive_soft_delete_in_scope(
+        state,
+        WorkspaceStorageScope::Personal { user_id },
+        folder_id,
+    )
+    .await
+}
+
+pub(crate) async fn recursive_soft_delete_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<()> {
+    tracing::debug!(?scope, folder_id, "webdav soft deleting folder tree");
     let folder = folder_repo::find_by_id(state.writer_db(), folder_id).await?;
     let (files, folder_ids) =
-        collect_folder_tree_models(state.writer_db(), user_id, folder_id, false).await?;
+        collect_folder_tree_models_in_scope(state.writer_db(), scope, folder_id, false).await?;
 
     let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
     let file_count = file_ids.len();
@@ -75,7 +96,7 @@ pub async fn recursive_soft_delete(
         ),
     );
     tracing::debug!(
-        user_id,
+        ?scope,
         folder_id,
         file_count,
         folder_count,
@@ -148,8 +169,23 @@ pub async fn copy_folder_tree(
     dest_parent_id: Option<i64>,
     dest_name: &str,
 ) -> Result<folder::Model> {
-    let scope =
-        crate::services::workspace_storage_service::WorkspaceStorageScope::Personal { user_id };
+    copy_folder_tree_in_scope(
+        state,
+        crate::services::workspace_storage_service::WorkspaceStorageScope::Personal { user_id },
+        src_folder_id,
+        dest_parent_id,
+        dest_name,
+    )
+    .await
+}
+
+pub(crate) async fn copy_folder_tree_in_scope(
+    state: &PrimaryAppState,
+    scope: WorkspaceStorageScope,
+    src_folder_id: i64,
+    dest_parent_id: Option<i64>,
+    dest_name: &str,
+) -> Result<folder::Model> {
     let (copied, storage_delta) = crate::services::folder_service::copy_folder_tree_in_scope(
         state,
         scope,

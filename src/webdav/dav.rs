@@ -81,6 +81,7 @@ pub enum FsError {
     Exists,
     InsufficientStorage,
     TooLarge,
+    BadRequest,
 }
 
 impl std::fmt::Display for FsError {
@@ -92,6 +93,7 @@ impl std::fmt::Display for FsError {
             Self::Exists => f.write_str("already exists"),
             Self::InsufficientStorage => f.write_str("insufficient storage"),
             Self::TooLarge => f.write_str("too large"),
+            Self::BadRequest => f.write_str("bad request"),
         }
     }
 }

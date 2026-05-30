@@ -63,6 +63,23 @@ async function loadRoutes() {
 	}>;
 }
 
+type TestRoute = {
+	children?: TestRoute[];
+	element?: {
+		props?: {
+			to?: string;
+		};
+	};
+	path?: string;
+};
+
+function flattenRoutes(items: TestRoute[]): TestRoute[] {
+	return items.flatMap((route) => [
+		route,
+		...flattenRoutes(route.children ?? []),
+	]);
+}
+
 describe("router", () => {
 	it("redirects unmatched routes to the home route", async () => {
 		const routes = await loadRoutes();
@@ -75,39 +92,7 @@ describe("router", () => {
 
 	it("registers admin mail settings routes without the removed verify-contact page", async () => {
 		const routes = await loadRoutes();
-		const flattenRoutes = (
-			items: Array<{
-				children?: Array<unknown>;
-				element?: {
-					props?: {
-						to?: string;
-					};
-				};
-				path?: string;
-			}>,
-		): Array<{
-			element?: {
-				props?: {
-					to?: string;
-				};
-			};
-			path?: string;
-		}> =>
-			items.flatMap((route) => [
-				route,
-				...flattenRoutes(
-					(route.children as Array<{
-						children?: Array<unknown>;
-						element?: {
-							props?: {
-								to?: string;
-							};
-						};
-						path?: string;
-					}>) ?? [],
-				),
-			]);
-		const allRoutes = flattenRoutes(routes);
+		const allRoutes = flattenRoutes(routes as TestRoute[]);
 
 		expect(
 			allRoutes.some((route) => route.path === "/admin/settings/user"),
@@ -132,5 +117,37 @@ describe("router", () => {
 			allRoutes.find((route) => route.path === "/admin/settings/:section")
 				?.element?.props?.to,
 		).toBe("/admin/settings/general");
+	});
+
+	it("keeps settings routes outside workspace routes so they preserve the active workspace", async () => {
+		const routes = (await loadRoutes()) as TestRoute[];
+		const protectedRoute = routes.find((route) =>
+			(route.children ?? []).some(
+				(child) =>
+					child.path === "/settings/webdav" || child.path === "/teams/:teamId",
+			),
+		);
+		const protectedChildren = protectedRoute?.children ?? [];
+		const personalWorkspaceRoute = protectedChildren.find(
+			(route) => route.path == null && route.children?.length,
+		);
+		const personalPaths = flattenRoutes(personalWorkspaceRoute?.children ?? [])
+			.map((route) => route.path)
+			.filter(Boolean);
+
+		expect(personalPaths).not.toContain("/settings/webdav");
+		expect(personalPaths).not.toContain("/settings/:section");
+		expect(personalPaths).not.toContain("/settings/teams/:teamId/:section");
+		expect(
+			protectedChildren.some((route) => route.path === "/settings/webdav"),
+		).toBe(true);
+		expect(
+			protectedChildren.some((route) => route.path === "/settings/:section"),
+		).toBe(true);
+		expect(
+			protectedChildren.some(
+				(route) => route.path === "/settings/teams/:teamId/:section",
+			),
+		).toBe(true);
 	});
 });

@@ -23,10 +23,19 @@ describe("audit i18n formatting", () => {
 	it("uses admin audit translations before falling back to raw keys", () => {
 		const t = createT({
 			"admin:audit_action_file_delete": "Deleted file",
+			"admin:audit_action_team_webdav_account_create":
+				"Created team WebDAV account",
+			"admin:audit_action_webdav_account_create": "Created WebDAV account",
 			"admin:audit_entity_type_resource_lock": "Resource lock",
 		});
 
 		expect(formatAuditAction(t, "file_delete")).toBe("Deleted file");
+		expect(formatAuditAction(t, "webdav_account_create")).toBe(
+			"Created WebDAV account",
+		);
+		expect(formatAuditAction(t, "team_webdav_account_create")).toBe(
+			"Created team WebDAV account",
+		);
 		expect(formatAuditEntityType(t, "resource_lock")).toBe("Resource lock");
 	});
 

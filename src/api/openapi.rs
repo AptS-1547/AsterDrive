@@ -238,6 +238,10 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::webdav_accounts::create_account,
         crate::api::routes::webdav_accounts::delete_account,
         crate::api::routes::webdav_accounts::toggle_account,
+        crate::api::routes::webdav_accounts::list_team_accounts,
+        crate::api::routes::webdav_accounts::create_team_account,
+        crate::api::routes::webdav_accounts::delete_team_account,
+        crate::api::routes::webdav_accounts::toggle_team_account,
         crate::api::routes::webdav_accounts::test_connection,
 
         // properties：实体级自定义属性的读取、写入与删除。
