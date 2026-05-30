@@ -4,26 +4,17 @@ use chrono::{DateTime, Utc};
 
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::TaskPresentationCode;
 use crate::types::{BackgroundTaskStatus, StoredTaskPayload};
 
-use super::retry::{TaskRetryClass, TaskRetryPolicy};
 use super::spec::{self, SystemRuntimeTask};
 use super::types::{RuntimeSystemHealthResult, RuntimeTaskPayload, RuntimeTaskResult};
 use super::{
     TypedTaskCreate, insert_typed_task_record, task_expiration_from, truncate_error,
     truncate_status_text,
 };
-
-pub(super) struct RuntimeRetryPolicy;
-
-impl TaskRetryPolicy for RuntimeRetryPolicy {
-    fn retry_class(_error: &AsterError) -> TaskRetryClass {
-        TaskRetryClass::Never
-    }
-}
 
 pub(crate) fn system_runtime_payload_json(
     task_name: SystemRuntimeTaskKind,
