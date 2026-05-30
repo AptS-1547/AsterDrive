@@ -5,6 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.4] - 2026-05-31
+
+### Release Highlights
+
+**AsterDrive `0.2.4` 聚焦通用 OAuth2 外部认证、团队 WebDAV 账号、后台任务规范系统和前端架构重构。** 本版本新增通用 OAuth2 外部认证 provider，支持 Logto、Keycloak 等标准 OIDC 提供商接入；WebDAV 新增团队工作空间账号支持和 Range 请求；后台任务系统引入类型安全的规范层，统一任务创建、编解码和展示逻辑；前端路由系统和多个管理页面完成组件化拆分重构。
+
+- **通用 OAuth2 外部认证** — 新增 Generic OAuth2 provider，支持 PKCE、公开客户端、多种客户端认证方式，默认 scopes 包含 openid 以兼容 Logto 等提供商
+- **团队 WebDAV 账号** — 团队工作空间支持独立 WebDAV 账号管理，含创建/删除/审计日志
+- **WebDAV 功能增强** — 支持 HTTP Range 请求，修复 Finder 持锁 PUT 误判问题，模块拆分提升可维护性
+- **后台任务规范系统** — 引入 `BackgroundTaskSpec` trait 和 `TypedTaskCreate` builder，统一任务类型声明、payload 编解码和展示逻辑
+- **前端架构重构** — 路由系统组件化拆分，团队管理/分享/WebDAV/外部认证页面提取 controller hook
+- **依赖升级** — rsa 0.10、xmltree 替代 quick-xml
+
+### Added
+
+- **通用 OAuth2 外部认证 Provider**
+  - 新增 `GenericOAuth2` provider driver（711 行），支持手动配置授权、令牌和用户信息端点
+  - 支持 PKCE 流程、公开客户端认证（无 client_secret）、ClientSecretPost 认证方式
+  - 默认 scopes 包含 `openid email profile`，兼容 Logto 等 OIDC 提供商
+  - 新增 URL 校验模块 `url.rs`，统一 HTTPS 强制和 localhost 豁免逻辑
+  - 前端新增 OAuth2 图标资源和配置表单
+  - 新增通用 OAuth2 provider 配置文档（中英文）
+  - 新增 OAuth2 集成测试（490+ 行）
+- **团队 WebDAV 账号**
+  - 新增 `GET/POST/DELETE /api/v1/teams/{team_id}/webdav-accounts` 接口
+  - 新增 `WebdavAccountTable`、`WebdavAccountRow`、`WebdavCreateAccountDialog` 等前端组件
+  - 团队 WebDAV 账号审计日志独立记录
+  - 新增 WebDAV 账号集成测试（491 行）
+- **后台任务规范系统**
+  - 新增 `BackgroundTaskSpec` trait，统一任务类型、payload/result 编解码、steps、lane、max attempts 声明
+  - 新增 `TypedTaskCreate` builder，类型安全的任务创建接口
+  - 新增 `TaskPresentation` 类型，支持结构化任务状态展示消息
+  - 新增 `src/services/task_service/spec/` 模块和 `registry.rs`（257 行）
+  - 新增 `presentation.rs`（538 行），后端直接输出展示文本
+- **WebDAV 功能增强**
+  - 支持 HTTP Range 请求（部分内容下载）
+  - WebDAV 模块拆分为 locks/props/resources/transfer/file/fs 子模块
+  - 新增 WebDAV 集成测试（785 行）
+- **前端组件**
+  - 新增 `WorkspaceOutlet`、`AdminRoute`、`LoginGuard`、`ProtectedRoute` 路由组件
+  - 新增 `MyShareCard`、`MyShareStatusBadge`、`MySharesSelectionBar` 分享组件
+  - 新增 `useAdminExternalAuthPageController`（743 行）外部认证页面控制器
+  - 工作区切换器路由切换后恢复下拉菜单展开状态
+
+### Changed
+
+- 根 crate 版本从 `0.2.3` 升级到 `0.2.4`
+- **前端路由系统重构** — 从单一路由文件拆分为多个专用路由组件
+- **团队管理页面重构** — `TeamManageDialog.tsx` 从 658 行拆分为 view/shell/actions/state 等模块
+- **我的分享页面重构** — `MySharesPage.tsx` 从 381 行拆分为多个展示组件
+- **WebDAV 账号页面重构** — 从 462 行简化为 267 行，提取公共组件
+- **外部认证页面重构** — 提取 controller hook，简化视图层
+- **模块文件结构重构** — 20+ 个单文件模块转换为目录模块（cli、types、runtime/startup 等）
+- **任务展示逻辑** — 使用后端结构化展示消息替代前端解析，增强容错性
+- 重命名 `MfaFactorMethod` 为 `MfaPersistentFactorMethod`，语义更清晰
+- 统一归档格式检测逻辑，移除基于 MIME 的宽松匹配
+- 依赖升级：rsa 0.9→0.10、xmltree 替代 quick-xml、aws-sdk-s3 1.134、nom-exif 3.6
+
+### Fixed
+
+- 修复 Finder 持锁 PUT 被误判为他人锁定的问题
+- 修复 WebDAV 账户管理页面当前用户标识显示
+- 修复 WebDAV 团队账户功能边界检查
+- 增强 OAuth2 错误响应的诊断信息
+- 修复工作区搜索键盘事件处理
+- 修复团队管理分页和导航问题
+
+### Notes
+
+- 本版本为 `0.2.4` 功能增强版本
+- 新增数据库迁移：
+  - `m20260530_000001_add_webdav_account_team_scope`
+- **Breaking Change**：API 变更
+  - 任务信息新增 `presentation` 字段（结构化展示消息）
+  - 外部认证 provider 新增 `GenericOAuth2` 类型
+  - 团队新增 WebDAV 账号管理接口
+- **Breaking Change**：依赖变更
+  - `rsa` 升级到 0.10（API 不兼容）
+  - `quick-xml` 替换为 `xmltree`
+- 强类型 API 客户端建议重新生成，以同步外部认证和团队 WebDAV 接口
+
+---
+
+**统计数据**：
+- 270 files changed, 16,436 insertions(+), 9,368 deletions(-)
+- 40 commits
+- Rust Edition 2024
+
 ## [v0.2.3] - 2026-05-29
 
 ### Release Highlights
@@ -3794,7 +3882,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.4...HEAD
+[v0.2.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.3...v0.2.4
 [v0.2.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.2...v0.2.3
 [v0.2.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.1...v0.2.2
 [v0.2.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.0-hotfix.1...v0.2.1
