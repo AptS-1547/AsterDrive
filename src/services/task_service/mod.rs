@@ -434,7 +434,7 @@ fn build_task_info_with_creator(
     };
     let kind = task.kind;
     let payload = decode_task_payload(&task)?;
-    let result = decode_task_result(&task)?;
+    let result = decode_task_result_or_none(&task);
     let can_retry = task_can_retry(&task);
     let status_text = task.status_text;
     let presentation = build_task_presentation(kind, &payload, result.as_ref(), task.status)?;
@@ -475,8 +475,22 @@ pub(crate) fn build_task_presentation_for_model(
     task: &background_task::Model,
 ) -> Result<Option<TaskPresentation>> {
     let payload = decode_task_payload(task)?;
-    let result = decode_task_result(task)?;
+    let result = decode_task_result_or_none(task);
     build_task_presentation(task.kind, &payload, result.as_ref(), task.status)
+}
+
+fn decode_task_result_or_none(task: &background_task::Model) -> Option<TaskResult> {
+    match decode_task_result(task) {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::warn!(
+                task_id = task.id,
+                error = %error,
+                "failed to decode background task result; continuing without result"
+            );
+            None
+        }
+    }
 }
 
 fn task_can_retry(task: &background_task::Model) -> bool {
@@ -488,18 +502,13 @@ pub(in crate::services::task_service) struct TypedTaskCreate<S: BackgroundTaskSp
     payload: S::Payload,
     creator_user_id: Option<i64>,
     team_id: Option<i64>,
-    share_id: Option<i64>,
     status: BackgroundTaskStatus,
     result_json: Option<StoredTaskResult>,
     include_steps: bool,
     progress_current: i64,
     progress_total: i64,
     status_text: Option<String>,
-    max_attempts: Option<i32>,
     next_run_at: chrono::DateTime<Utc>,
-    processing_started_at: Option<chrono::DateTime<Utc>>,
-    last_heartbeat_at: Option<chrono::DateTime<Utc>>,
-    lease_expires_at: Option<chrono::DateTime<Utc>>,
     started_at: Option<chrono::DateTime<Utc>>,
     finished_at: Option<chrono::DateTime<Utc>>,
     last_error: Option<String>,
@@ -530,18 +539,13 @@ impl<S: BackgroundTaskSpec> TypedTaskCreate<S> {
             payload,
             creator_user_id: None,
             team_id: None,
-            share_id: None,
             status: BackgroundTaskStatus::Pending,
             result_json: None,
             include_steps: true,
             progress_current: 0,
             progress_total: 0,
             status_text: None,
-            max_attempts: None,
             next_run_at: now,
-            processing_started_at: None,
-            last_heartbeat_at: None,
-            lease_expires_at: None,
             started_at: None,
             finished_at: None,
             last_error: None,
@@ -651,35 +655,43 @@ impl<S: BackgroundTaskSpec> TypedTaskCreate<S> {
         }
     }
 
+    fn status_text_for_insert(&self) -> Option<String> {
+        self.status_text.as_deref().map(truncate_status_text)
+    }
+
+    fn last_error_for_insert(&self) -> Option<String> {
+        self.last_error.as_deref().map(truncate_error)
+    }
+
     fn into_active_model(self, state: &PrimaryAppState) -> Result<background_task::ActiveModel> {
         let payload_json = spec::serialize_payload::<S>(&self.payload)?;
         let steps_json = self.steps_json()?;
+        let status_text = self.status_text_for_insert();
+        let last_error = self.last_error_for_insert();
 
         Ok(background_task::ActiveModel {
             kind: Set(S::KIND),
             status: Set(self.status),
             creator_user_id: Set(self.creator_user_id),
             team_id: Set(self.team_id),
-            share_id: Set(self.share_id),
+            share_id: Set(None),
             display_name: Set(truncate_display_name(&self.display_name)),
             payload_json: Set(payload_json),
             result_json: Set(self.result_json),
             steps_json: Set(steps_json),
             progress_current: Set(self.progress_current),
             progress_total: Set(self.progress_total),
-            status_text: Set(self.status_text),
+            status_text: Set(status_text),
             attempt_count: Set(0),
-            max_attempts: Set(self
-                .max_attempts
-                .unwrap_or_else(|| registry::max_attempts(state, S::KIND))),
+            max_attempts: Set(registry::max_attempts(state, S::KIND)),
             next_run_at: Set(self.next_run_at),
             processing_token: Set(0),
-            processing_started_at: Set(self.processing_started_at),
-            last_heartbeat_at: Set(self.last_heartbeat_at),
-            lease_expires_at: Set(self.lease_expires_at),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            lease_expires_at: Set(None),
             started_at: Set(self.started_at),
             finished_at: Set(self.finished_at),
-            last_error: Set(self.last_error),
+            last_error: Set(last_error),
             failure_can_retry: Set(self.failure_can_retry),
             expires_at: Set(task_expiration_from(state, self.expires_at_anchor)),
             created_at: Set(self.created_at),
@@ -984,8 +996,9 @@ pub(super) fn truncate_error(error: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        TASK_DISPLAY_NAME_MAX_LEN, build_task_info_with_creator, ensure_task_in_scope,
-        truncate_display_name, truncate_error, validate_admin_task_cleanup_status,
+        TASK_DISPLAY_NAME_MAX_LEN, TASK_LAST_ERROR_MAX_LEN, TASK_STATUS_TEXT_MAX_LEN,
+        TypedTaskCreate, build_task_info_with_creator, ensure_task_in_scope, truncate_display_name,
+        truncate_error, validate_admin_task_cleanup_status,
     };
     use crate::api::subcode::ApiSubcode;
     use crate::entities::background_task;
@@ -1200,6 +1213,69 @@ mod tests {
     }
 
     #[test]
+    fn task_info_tolerates_legacy_runtime_result_without_duration() {
+        let now = Utc::now();
+        let task = background_task::Model {
+            id: 49,
+            kind: BackgroundTaskKind::SystemRuntime,
+            status: BackgroundTaskStatus::Succeeded,
+            creator_user_id: None,
+            team_id: None,
+            share_id: None,
+            display_name: "Completed upload cleanup".to_string(),
+            payload_json: StoredTaskPayload(
+                serde_json::json!({
+                    "task_name": "completed-upload-cleanup"
+                })
+                .to_string(),
+            ),
+            result_json: Some(StoredTaskResult(
+                serde_json::json!({
+                    "summary": "legacy summary only"
+                })
+                .to_string(),
+            )),
+            steps_json: None,
+            progress_current: 1,
+            progress_total: 1,
+            status_text: Some("legacy summary only".to_string()),
+            attempt_count: 0,
+            max_attempts: 1,
+            next_run_at: now,
+            processing_token: 0,
+            processing_started_at: None,
+            last_heartbeat_at: None,
+            lease_expires_at: None,
+            started_at: Some(now),
+            finished_at: Some(now),
+            last_error: None,
+            failure_can_retry: None,
+            expires_at: now + Duration::hours(1),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let info = build_task_info_with_creator(task, None).expect("task info should build");
+
+        assert_eq!(info.status_text.as_deref(), Some("legacy summary only"));
+        assert!(info.result.is_none());
+        assert_eq!(
+            info.presentation
+                .as_ref()
+                .and_then(|presentation| presentation.title.as_ref())
+                .map(|title| title.code),
+            Some(TaskPresentationCode::RuntimeTaskCompletedUploadCleanup)
+        );
+        assert!(
+            info.presentation
+                .as_ref()
+                .and_then(|presentation| presentation.status.as_ref())
+                .is_none(),
+            "legacy text summaries should use frontend status_text fallback"
+        );
+    }
+
+    #[test]
     fn task_info_leaves_legacy_runtime_task_name_to_raw_title_fallback() {
         let now = Utc::now();
         let task = background_task::Model {
@@ -1410,6 +1486,56 @@ mod tests {
     }
 
     #[test]
+    fn decode_result_as_checks_kind_before_absent_result() {
+        let now = Utc::now();
+        let task = background_task::Model {
+            id: 50,
+            kind: BackgroundTaskKind::ThumbnailGenerate,
+            status: BackgroundTaskStatus::Succeeded,
+            creator_user_id: None,
+            team_id: None,
+            share_id: None,
+            display_name: "wrong kind".to_string(),
+            payload_json: StoredTaskPayload(
+                serde_json::json!({
+                    "blob_id": 42,
+                    "blob_hash": "hash-42",
+                    "source_file_name": "",
+                    "source_mime_type": "image/png",
+                    "processor": "images"
+                })
+                .to_string(),
+            ),
+            result_json: None,
+            steps_json: None,
+            progress_current: 1,
+            progress_total: 1,
+            status_text: None,
+            attempt_count: 0,
+            max_attempts: 1,
+            next_run_at: now,
+            processing_token: 0,
+            processing_started_at: None,
+            last_heartbeat_at: None,
+            lease_expires_at: None,
+            started_at: Some(now),
+            finished_at: Some(now),
+            last_error: None,
+            failure_can_retry: None,
+            expires_at: now + Duration::hours(1),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let error = spec::decode_result_as::<SystemRuntimeTask>(&task)
+            .expect_err("kind mismatch should be reported even without result json");
+
+        assert!(error.message().contains("task #50 kind mismatch"));
+        assert!(error.message().contains("expected system_runtime"));
+        assert!(error.message().contains("got thumbnail_generate"));
+    }
+
+    #[test]
     fn task_error_encoding_preserves_subcode_before_truncation() {
         let error = crate::errors::validation_error_with_subcode(
             ApiSubcode::ArchivePreviewRejected,
@@ -1424,6 +1550,35 @@ mod tests {
         assert_eq!(
             crate::errors::task_error_display_message(&stored),
             "archive contains unsafe path"
+        );
+    }
+
+    #[test]
+    fn typed_task_create_truncates_status_text_and_last_error() {
+        let long_status_text = "s".repeat(TASK_STATUS_TEXT_MAX_LEN + 7);
+        let long_error = "e".repeat(TASK_LAST_ERROR_MAX_LEN + 7);
+        let payload = crate::services::task_service::ThumbnailGenerateTaskPayload {
+            blob_id: 42,
+            blob_hash: "hash-42".to_string(),
+            source_file_name: "image.png".to_string(),
+            source_mime_type: "image/png".to_string(),
+            processor: crate::types::MediaProcessorKind::Images,
+        };
+        let create =
+            TypedTaskCreate::<crate::services::task_service::spec::ThumbnailGenerateTask>::new(
+                "thumbnail",
+                payload,
+            )
+            .status_text(long_status_text)
+            .last_error(Some(long_error));
+
+        assert_eq!(
+            create.status_text_for_insert().as_deref(),
+            Some("s".repeat(TASK_STATUS_TEXT_MAX_LEN).as_str())
+        );
+        assert_eq!(
+            create.last_error_for_insert().as_deref(),
+            Some("e".repeat(TASK_LAST_ERROR_MAX_LEN).as_str())
         );
     }
 

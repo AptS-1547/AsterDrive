@@ -1550,8 +1550,8 @@ async fn test_record_runtime_task_run_persists_system_runtime_event() {
     aster_drive::services::config_service::set(&state, "background_task_max_attempts", "5", 1)
         .await
         .expect("background task max attempts config should update");
-    let started_at = Utc::now() - Duration::seconds(2);
-    let finished_at = Utc::now();
+    let started_at = utc_now_at_db_precision() - Duration::seconds(2);
+    let finished_at = utc_now_at_db_precision();
 
     let recorded = task_service::record_runtime_task_run(
         &state,

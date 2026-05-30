@@ -140,6 +140,45 @@ mod tests {
         }
     }
 
+    #[test]
+    fn task_lane_mapping_is_bidirectionally_consistent() {
+        let kinds = [
+            BackgroundTaskKind::ArchiveCompress,
+            BackgroundTaskKind::ArchiveExtract,
+            BackgroundTaskKind::ArchivePreviewGenerate,
+            BackgroundTaskKind::ThumbnailGenerate,
+            BackgroundTaskKind::MediaMetadataExtract,
+            BackgroundTaskKind::TrashPurgeAll,
+            BackgroundTaskKind::StoragePolicyTempCleanup,
+            BackgroundTaskKind::StoragePolicyMigration,
+            BackgroundTaskKind::BlobMaintenance,
+            BackgroundTaskKind::SystemRuntime,
+        ];
+
+        for kind in kinds {
+            let lane = task_lane(kind);
+            assert!(
+                task_lane_kinds(lane).contains(&kind),
+                "lane {lane:?} does not list task kind {kind:?}"
+            );
+        }
+
+        for lane in [
+            TaskLane::Archive,
+            TaskLane::Thumbnail,
+            TaskLane::StorageMigration,
+            TaskLane::Fallback,
+        ] {
+            for &kind in task_lane_kinds(lane) {
+                assert_eq!(
+                    task_lane(kind),
+                    lane,
+                    "task kind {kind:?} resolves to a different lane than {lane:?}"
+                );
+            }
+        }
+    }
+
     fn task_model(
         kind: BackgroundTaskKind,
         payload_json: serde_json::Value,

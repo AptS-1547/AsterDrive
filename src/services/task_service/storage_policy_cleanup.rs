@@ -60,7 +60,7 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
             TEMP_CLEANUP_GRACE_SECS,
             "storage policy temp cleanup grace",
         )?);
-    insert_typed_task_record(
+    let task = insert_typed_task_record(
         state,
         state.writer_db(),
         TypedTaskCreate::<StoragePolicyTempCleanupTask>::new(
@@ -73,8 +73,10 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
         .next_run_at(cleanup_after)
         .status_text("Waiting for presigned URLs to expire".to_string()),
     )
-    .await
-    .map(Some)
+    .await?;
+
+    state.wake_background_task_dispatcher();
+    Ok(Some(task))
 }
 
 pub(super) async fn process_storage_policy_temp_cleanup_task(

@@ -115,10 +115,6 @@ pub(super) fn decode_payload_as<S: BackgroundTaskSpec>(
 pub(super) fn decode_result_as<S: BackgroundTaskSpec>(
     task: &background_task::Model,
 ) -> Result<Option<S::Result>> {
-    let Some(raw) = task.result_json.as_ref() else {
-        return Ok(None);
-    };
-
     if task.kind != S::KIND {
         return Err(AsterError::internal_error(format!(
             "task #{} kind mismatch: expected {}, got {}",
@@ -127,6 +123,10 @@ pub(super) fn decode_result_as<S: BackgroundTaskSpec>(
             task.kind.to_value()
         )));
     }
+
+    let Some(raw) = task.result_json.as_ref() else {
+        return Ok(None);
+    };
 
     serde_json::from_str(raw.as_ref())
         .map(Some)
