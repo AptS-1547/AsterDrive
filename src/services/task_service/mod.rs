@@ -51,9 +51,10 @@ pub(crate) use blob_maintenance::create_blob_maintenance_task_for_admin;
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 pub(crate) use media_metadata::ensure_media_metadata_task;
 use registry::{build_task_presentation, decode_task_payload, decode_task_result};
+pub(crate) use runtime::find_latest_system_runtime_by_task_name;
 pub use runtime::{RuntimeTaskRunOutcome, SystemRuntimeTaskKind, record_runtime_task_run};
 use spec::BackgroundTaskSpec;
-use steps::{initial_task_steps, parse_task_steps_json, serialize_task_steps};
+use steps::{parse_task_steps_json, serialize_task_steps};
 pub(crate) use storage_migration::{
     CreateStoragePolicyMigrationInput, create_storage_policy_migration_task,
     dry_run_storage_policy_migration, resume_storage_policy_migration_for_admin,
@@ -301,8 +302,8 @@ async fn retry_task_record(state: &PrimaryAppState, task: &background_task::Mode
     cleanup_task_temp_dir_for_task(state, task.id).await?;
     // 手动重试会复用同一条任务记录，而不是新建“子任务”。
     // 这样前端和审计侧只需要跟踪一个稳定 task_id。
-    let steps_json = serialize_task_steps(&initial_task_steps(task.kind))?;
-    let max_attempts = configured_task_max_attempts(state, task.kind);
+    let steps_json = serialize_task_steps(&registry::initial_task_steps(task.kind))?;
+    let max_attempts = registry::max_attempts(state, task.kind);
 
     let now = Utc::now();
     if !background_task_repo::reset_for_manual_retry(
@@ -473,7 +474,7 @@ pub(in crate::services::task_service) async fn create_typed_task_record<S: Backg
 ) -> Result<background_task::Model> {
     let now = Utc::now();
     let payload_json = spec::serialize_payload::<S>(payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(S::KIND))?;
+    let steps_json = serialize_task_steps(&registry::initial_task_steps(S::KIND))?;
     let display_name = truncate_display_name(display_name);
 
     let task = background_task_repo::create(
@@ -492,7 +493,7 @@ pub(in crate::services::task_service) async fn create_typed_task_record<S: Backg
             progress_total: Set(0),
             status_text: Set(None),
             attempt_count: Set(0),
-            max_attempts: Set(configured_task_max_attempts(state, S::KIND)),
+            max_attempts: Set(registry::max_attempts(state, S::KIND)),
             next_run_at: Set(now),
             processing_token: Set(0),
             processing_started_at: Set(None),
@@ -704,23 +705,6 @@ pub(super) fn task_lease_expires_at(
     now: chrono::DateTime<chrono::Utc>,
 ) -> chrono::DateTime<chrono::Utc> {
     now + Duration::seconds(TASK_PROCESSING_STALE_SECS.max(1))
-}
-
-fn configured_task_max_attempts(state: &PrimaryAppState, kind: BackgroundTaskKind) -> i32 {
-    match kind {
-        BackgroundTaskKind::SystemRuntime
-        | BackgroundTaskKind::ThumbnailGenerate
-        | BackgroundTaskKind::BlobMaintenance => 1,
-        BackgroundTaskKind::MediaMetadataExtract => 3,
-        BackgroundTaskKind::ArchiveCompress
-        | BackgroundTaskKind::ArchiveExtract
-        | BackgroundTaskKind::ArchivePreviewGenerate
-        | BackgroundTaskKind::TrashPurgeAll
-        | BackgroundTaskKind::StoragePolicyTempCleanup
-        | BackgroundTaskKind::StoragePolicyMigration => {
-            operations::background_task_max_attempts(&state.runtime_config)
-        }
-    }
 }
 
 fn validate_admin_task_cleanup_status(status: Option<BackgroundTaskStatus>) -> Result<()> {

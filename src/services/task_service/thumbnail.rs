@@ -12,19 +12,16 @@ use crate::storage::StorageErrorKind;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::retry::{TaskRetryClass, TaskRetryPolicy};
-use super::spec::{self, BackgroundTaskSpec, ThumbnailGenerateTask};
+use super::spec::{self, BackgroundTaskSpec, ThumbnailGenerateTask, decode_payload_as};
 use super::steps::{
     TASK_STEP_INSPECT_SOURCE, TASK_STEP_PERSIST_THUMBNAIL, TASK_STEP_RENDER_THUMBNAIL,
-    TASK_STEP_WAITING, initial_task_steps, parse_task_steps_json, serialize_task_steps,
-    set_task_step_active, set_task_step_succeeded,
+    TASK_STEP_WAITING, parse_task_steps_json, serialize_task_steps, set_task_step_active,
+    set_task_step_succeeded,
 };
-use super::types::{
-    ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult, parse_task_payload,
-    serialize_task_result,
-};
+use super::types::{ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult};
 use super::{
-    TaskLeaseGuard, configured_task_max_attempts, mark_task_progress, mark_task_succeeded,
-    task_expiration_from, truncate_display_name,
+    TaskLeaseGuard, mark_task_progress, mark_task_succeeded, task_expiration_from,
+    truncate_display_name,
 };
 
 pub(super) struct ThumbnailRetryPolicy;
@@ -99,7 +96,9 @@ pub(crate) async fn ensure_thumbnail_task(
         processor,
     };
     let payload_json = spec::serialize_payload::<ThumbnailGenerateTask>(&payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(ThumbnailGenerateTask::KIND))?;
+    let steps_json = serialize_task_steps(
+        &crate::services::task_service::registry::initial_task_steps(ThumbnailGenerateTask::KIND),
+    )?;
     background_task_repo::create(
         state.writer_db(),
         background_task::ActiveModel {
@@ -116,7 +115,7 @@ pub(crate) async fn ensure_thumbnail_task(
             progress_total: Set(4),
             status_text: Set(None),
             attempt_count: Set(0),
-            max_attempts: Set(configured_task_max_attempts(
+            max_attempts: Set(crate::services::task_service::registry::max_attempts(
                 state,
                 ThumbnailGenerateTask::KIND,
             )),
@@ -146,7 +145,7 @@ pub(super) async fn process_thumbnail_generate_task(
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
-    let payload: ThumbnailGenerateTaskPayload = parse_task_payload(task)?;
+    let payload = decode_payload_as::<ThumbnailGenerateTask>(task)?;
     tracing::debug!(
         task_id = task.id,
         blob_id = payload.blob_id,
@@ -253,14 +252,15 @@ pub(super) async fn process_thumbnail_generate_task(
         )?;
     }
 
-    let result_json = serialize_task_result(&ThumbnailGenerateTaskResult {
-        blob_id: blob.id,
-        thumbnail_path: stored.thumbnail_path.clone(),
-        thumbnail_processor: stored.thumbnail_processor.clone(),
-        thumbnail_version: stored.thumbnail_version.clone(),
-        processor: payload.processor,
-        reused_existing_thumbnail: stored.reused_existing_thumbnail,
-    })?;
+    let result_json =
+        spec::serialize_result::<ThumbnailGenerateTask>(&ThumbnailGenerateTaskResult {
+            blob_id: blob.id,
+            thumbnail_path: stored.thumbnail_path.clone(),
+            thumbnail_processor: stored.thumbnail_processor.clone(),
+            thumbnail_version: stored.thumbnail_version.clone(),
+            processor: payload.processor,
+            reused_existing_thumbnail: stored.reused_existing_thumbnail,
+        })?;
     let status_text = if stored.reused_existing_thumbnail {
         "Thumbnail already available"
     } else {

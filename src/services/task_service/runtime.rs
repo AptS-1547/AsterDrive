@@ -8,13 +8,11 @@ use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::TaskPresentationCode;
-use crate::types::BackgroundTaskStatus;
+use crate::types::{BackgroundTaskStatus, StoredTaskPayload};
 
 use super::retry::{TaskRetryClass, TaskRetryPolicy};
 use super::spec::{self, BackgroundTaskSpec, SystemRuntimeTask};
-use super::types::{
-    RuntimeSystemHealthResult, RuntimeTaskPayload, RuntimeTaskResult, serialize_task_payload,
-};
+use super::types::{RuntimeSystemHealthResult, RuntimeTaskPayload, RuntimeTaskResult};
 use super::{task_expiration_from, truncate_display_name, truncate_error, truncate_status_text};
 
 pub(super) struct RuntimeRetryPolicy;
@@ -23,6 +21,23 @@ impl TaskRetryPolicy for RuntimeRetryPolicy {
     fn retry_class(_error: &AsterError) -> TaskRetryClass {
         TaskRetryClass::Never
     }
+}
+
+pub(crate) fn system_runtime_payload_json(
+    task_name: SystemRuntimeTaskKind,
+) -> Result<StoredTaskPayload> {
+    spec::serialize_payload::<SystemRuntimeTask>(&RuntimeTaskPayload {
+        task_name: task_name.into(),
+    })
+}
+
+pub(crate) async fn find_latest_system_runtime_by_task_name(
+    state: &PrimaryAppState,
+    task_name: SystemRuntimeTaskKind,
+) -> Result<Option<background_task::Model>> {
+    let payload_json = system_runtime_payload_json(task_name)?;
+    background_task_repo::find_latest_system_runtime_by_payload(state.reader_db(), &payload_json)
+        .await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -244,7 +259,7 @@ pub async fn record_runtime_task_run(
         return Ok(None);
     }
 
-    let payload_json = serialize_task_payload(&RuntimeTaskPayload {
+    let payload_json = spec::serialize_payload::<SystemRuntimeTask>(&RuntimeTaskPayload {
         task_name: task_name.into(),
     })?;
     let summary = outcome.summary().map(truncate_status_text);
@@ -258,9 +273,9 @@ pub async fn record_runtime_task_run(
     let result_json = spec::serialize_result::<SystemRuntimeTask>(&result)?;
 
     if should_refresh_latest_success(task_name, outcome)
-        && let Some(existing) = background_task_repo::find_latest_system_runtime_by_task_name(
+        && let Some(existing) = background_task_repo::find_latest_system_runtime_by_payload(
             state.writer_db(),
-            task_name.as_str(),
+            &payload_json,
         )
         .await?
         && existing.status == BackgroundTaskStatus::Succeeded

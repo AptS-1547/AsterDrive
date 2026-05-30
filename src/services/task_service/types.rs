@@ -1,17 +1,14 @@
 //! 后台任务服务子模块：`types`。
 
-use sea_orm::ActiveEnum;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::entities::background_task;
-use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::user_service;
 use crate::types::{
     ArchiveFilenameEncoding, BackgroundTaskKind, BackgroundTaskStatus, DriverType,
-    RemoteNodeTransportMode, StoredTaskPayload, StoredTaskResult,
+    RemoteNodeTransportMode,
 };
 
 use super::runtime::SystemRuntimeTaskKind;
@@ -600,29 +597,4 @@ pub struct TaskInfo {
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-pub(super) fn parse_task_payload<T>(task: &background_task::Model) -> Result<T>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    serde_json::from_str(task.payload_json.as_ref()).map_err(|error| {
-        AsterError::internal_error(format!(
-            "parse payload for task #{} ({}): {error}",
-            task.id,
-            task.kind.to_value()
-        ))
-    })
-}
-
-pub(super) fn serialize_task_payload<T: Serialize>(payload: &T) -> Result<StoredTaskPayload> {
-    serde_json::to_string(payload)
-        .map(StoredTaskPayload)
-        .map_aster_err_ctx("serialize task payload", AsterError::internal_error)
-}
-
-pub(super) fn serialize_task_result<T: Serialize>(result: &T) -> Result<StoredTaskResult> {
-    serde_json::to_string(result)
-        .map(StoredTaskResult)
-        .map_aster_err_ctx("serialize task result", AsterError::internal_error)
 }

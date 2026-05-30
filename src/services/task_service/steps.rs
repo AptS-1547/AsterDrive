@@ -30,177 +30,9 @@ pub(super) const TASK_STEP_RECONCILE_REFS: &str = "reconcile_refs";
 pub(super) const TASK_STEP_FINISH: &str = "finish";
 
 #[derive(Debug, Clone, Copy)]
-struct TaskStepSpec {
-    key: &'static str,
-    title: &'static str,
-}
-
-fn task_step_specs(kind: BackgroundTaskKind) -> &'static [TaskStepSpec] {
-    match kind {
-        BackgroundTaskKind::ArchiveCompress => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_PREPARE_SOURCES,
-                title: "Prepare sources",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_BUILD_ARCHIVE,
-                title: "Build archive",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_STORE_RESULT,
-                title: "Save archive",
-            },
-        ],
-        BackgroundTaskKind::ArchiveExtract => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_DOWNLOAD_SOURCE,
-                title: "Download source archive",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_EXTRACT_ARCHIVE,
-                title: "Extract archive",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_IMPORT_RESULT,
-                title: "Import extracted files",
-            },
-        ],
-        BackgroundTaskKind::ArchivePreviewGenerate => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_DOWNLOAD_SOURCE,
-                title: "Download source archive",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_SCAN_ARCHIVE,
-                title: "Scan archive manifest",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_PERSIST_MANIFEST,
-                title: "Persist manifest",
-            },
-        ],
-        BackgroundTaskKind::ThumbnailGenerate => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_INSPECT_SOURCE,
-                title: "Inspect source blob",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_RENDER_THUMBNAIL,
-                title: "Render thumbnail",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_PERSIST_THUMBNAIL,
-                title: "Persist thumbnail",
-            },
-        ],
-        BackgroundTaskKind::MediaMetadataExtract => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_INSPECT_SOURCE,
-                title: "Inspect source blob",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_EXTRACT_METADATA,
-                title: "Extract metadata",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_PERSIST_METADATA,
-                title: "Persist metadata",
-            },
-        ],
-        BackgroundTaskKind::TrashPurgeAll => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_PURGE_TRASH,
-                title: "Purge trash",
-            },
-        ],
-        BackgroundTaskKind::StoragePolicyTempCleanup => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_PREPARE_SOURCES,
-                title: "Prepare storage driver",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_CLEANUP_OBJECTS,
-                title: "Clean temporary objects",
-            },
-        ],
-        BackgroundTaskKind::StoragePolicyMigration => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_PREPARE_SOURCES,
-                title: "Prepare storage policies",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_SCAN_BLOBS,
-                title: "Scan source blobs",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_MIGRATE_BLOBS,
-                title: "Migrate blobs",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_FINISH,
-                title: "Finish migration",
-            },
-        ],
-        BackgroundTaskKind::BlobMaintenance => &[
-            TaskStepSpec {
-                key: TASK_STEP_WAITING,
-                title: "Waiting",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_SCAN_BLOBS,
-                title: "Load blob records",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_CHECK_BLOBS,
-                title: "Check storage objects",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_RECONCILE_REFS,
-                title: "Reconcile references",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_CLEANUP_OBJECTS,
-                title: "Clean orphan blobs",
-            },
-            TaskStepSpec {
-                key: TASK_STEP_FINISH,
-                title: "Finish maintenance",
-            },
-        ],
-        BackgroundTaskKind::SystemRuntime => &[],
-    }
+pub(super) struct TaskStepSpec {
+    pub(super) key: &'static str,
+    pub(super) title: &'static str,
 }
 
 fn new_task_step(spec: TaskStepSpec, status: TaskStepStatus, detail: Option<&str>) -> TaskStepInfo {
@@ -217,9 +49,9 @@ fn new_task_step(spec: TaskStepSpec, status: TaskStepStatus, detail: Option<&str
     }
 }
 
-pub(super) fn initial_task_steps(kind: BackgroundTaskKind) -> Vec<TaskStepInfo> {
-    let mut steps = Vec::with_capacity(task_step_specs(kind).len());
-    for (index, spec) in task_step_specs(kind).iter().enumerate() {
+pub(super) fn initial_task_steps_from_specs(specs: &[TaskStepSpec]) -> Vec<TaskStepInfo> {
+    let mut steps = Vec::with_capacity(specs.len());
+    for (index, spec) in specs.iter().enumerate() {
         steps.push(new_task_step(
             *spec,
             if index == 0 {

@@ -14,7 +14,7 @@ use crate::services::workspace_storage_service::WorkspaceStorageScope;
 const BLOB_MAINTENANCE_BATCH_SIZE: u64 = 1_000;
 const BLOB_MAINTENANCE_PROGRESS_INTERVAL: i64 = 1_000;
 
-use super::spec::BlobMaintenanceTask;
+use super::spec::{self, BlobMaintenanceTask, decode_payload_as};
 use super::steps::{
     TASK_STEP_CHECK_BLOBS, TASK_STEP_CLEANUP_OBJECTS, TASK_STEP_FINISH, TASK_STEP_RECONCILE_REFS,
     TASK_STEP_SCAN_BLOBS, TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
@@ -22,7 +22,6 @@ use super::steps::{
 };
 use super::types::{
     BlobMaintenanceAction, BlobMaintenanceTaskPayload, BlobMaintenanceTaskResult, TaskInfo,
-    parse_task_payload, serialize_task_result,
 };
 use super::{
     TaskLeaseGuard, create_typed_task_record, mark_task_progress, mark_task_succeeded, task_scope,
@@ -68,7 +67,7 @@ pub(super) async fn process_blob_maintenance_task(
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
     let _scope = task_scope(task)?;
-    let payload: BlobMaintenanceTaskPayload = parse_task_payload(task)?;
+    let payload = decode_payload_as::<BlobMaintenanceTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
 
@@ -181,7 +180,7 @@ pub(super) async fn process_blob_maintenance_task(
         Some("Blob maintenance finished"),
         Some((total, total)),
     )?;
-    let result_json = serialize_task_result(&result)?;
+    let result_json = spec::serialize_result::<BlobMaintenanceTask>(&result)?;
     mark_task_succeeded(
         state,
         &lease_guard,

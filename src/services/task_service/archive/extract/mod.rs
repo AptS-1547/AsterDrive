@@ -21,7 +21,7 @@ use crate::services::{
         create_typed_task_record, get_task_in_scope, is_task_lease_lost,
         is_task_lease_renewal_timed_out, mark_task_progress, mark_task_succeeded,
         prepare_task_temp_dir,
-        spec::ArchiveExtractTask,
+        spec::{self, ArchiveExtractTask, decode_payload_as},
         steps::{
             TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_IMPORT_RESULT, TASK_STEP_WAITING,
             parse_task_steps_json, set_task_step_active, set_task_step_succeeded,
@@ -29,7 +29,6 @@ use crate::services::{
         task_scope,
         types::{
             ArchiveExtractTaskPayload, ArchiveExtractTaskResult, CreateArchiveExtractTaskParams,
-            parse_task_payload, serialize_task_result,
         },
     },
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -81,7 +80,7 @@ pub(super) async fn process_archive_extract_task(
 ) -> Result<()> {
     let result = async {
         let scope = task_scope(task)?;
-        let payload: ArchiveExtractTaskPayload = parse_task_payload(task)?;
+        let payload = decode_payload_as::<ArchiveExtractTask>(task)?;
         let mut steps =
             parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
         set_task_step_succeeded(
@@ -245,7 +244,7 @@ pub(super) async fn process_archive_extract_task(
             extracted_file_count: staged.file_count,
             extracted_folder_count: staged.directory_count,
         };
-        let result_json = serialize_task_result(&result)?;
+        let result_json = spec::serialize_result::<ArchiveExtractTask>(&result)?;
         let progress_total = staged.total_progress;
         mark_task_succeeded(
             state,

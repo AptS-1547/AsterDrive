@@ -14,19 +14,16 @@ use crate::types::{
 };
 
 use super::retry::{TaskRetryClass, TaskRetryPolicy};
-use super::spec::{self, BackgroundTaskSpec, MediaMetadataExtractTask};
+use super::spec::{self, BackgroundTaskSpec, MediaMetadataExtractTask, decode_payload_as};
 use super::steps::{
     TASK_STEP_EXTRACT_METADATA, TASK_STEP_INSPECT_SOURCE, TASK_STEP_PERSIST_METADATA,
-    TASK_STEP_WAITING, initial_task_steps, parse_task_steps_json, serialize_task_steps,
-    set_task_step_active, set_task_step_succeeded,
+    TASK_STEP_WAITING, parse_task_steps_json, serialize_task_steps, set_task_step_active,
+    set_task_step_succeeded,
 };
-use super::types::{
-    MediaMetadataExtractTaskPayload, MediaMetadataExtractTaskResult, parse_task_payload,
-    serialize_task_result,
-};
+use super::types::{MediaMetadataExtractTaskPayload, MediaMetadataExtractTaskResult};
 use super::{
-    TaskLeaseGuard, configured_task_max_attempts, mark_task_progress, mark_task_succeeded,
-    task_expiration_from, truncate_display_name,
+    TaskLeaseGuard, mark_task_progress, mark_task_succeeded, task_expiration_from,
+    truncate_display_name,
 };
 
 pub(super) struct MediaMetadataRetryPolicy;
@@ -85,7 +82,11 @@ pub(crate) async fn ensure_media_metadata_task(
         media_kind: kind,
     };
     let payload_json = spec::serialize_payload::<MediaMetadataExtractTask>(&payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(MediaMetadataExtractTask::KIND))?;
+    let steps_json = serialize_task_steps(
+        &crate::services::task_service::registry::initial_task_steps(
+            MediaMetadataExtractTask::KIND,
+        ),
+    )?;
     background_task_repo::create(
         state.writer_db(),
         background_task::ActiveModel {
@@ -102,7 +103,7 @@ pub(crate) async fn ensure_media_metadata_task(
             progress_total: Set(4),
             status_text: Set(None),
             attempt_count: Set(0),
-            max_attempts: Set(configured_task_max_attempts(
+            max_attempts: Set(crate::services::task_service::registry::max_attempts(
                 state,
                 MediaMetadataExtractTask::KIND,
             )),
@@ -131,7 +132,7 @@ pub(super) async fn process_media_metadata_extract_task(
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
-    let payload: MediaMetadataExtractTaskPayload = parse_task_payload(task)?;
+    let payload = decode_payload_as::<MediaMetadataExtractTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
     set_task_step_succeeded(
@@ -238,12 +239,13 @@ pub(super) async fn process_media_metadata_extract_task(
         Some((4, 4)),
     )?;
 
-    let result_json = serialize_task_result(&MediaMetadataExtractTaskResult {
-        blob_id: blob.id,
-        media_kind: record.kind,
-        status: record.status,
-        parser: record.parser.clone(),
-    })?;
+    let result_json =
+        spec::serialize_result::<MediaMetadataExtractTask>(&MediaMetadataExtractTaskResult {
+            blob_id: blob.id,
+            media_kind: record.kind,
+            status: record.status,
+            parser: record.parser.clone(),
+        })?;
     mark_task_succeeded(
         state,
         &lease_guard,

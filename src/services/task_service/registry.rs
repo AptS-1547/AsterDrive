@@ -2,16 +2,19 @@
 
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
+use crate::runtime::PrimaryAppState;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 use super::retry::TaskRetryClass;
 use super::spec::{
     ArchiveCompressTask, ArchiveExtractTask, ArchivePreviewGenerateTask, BlobMaintenanceTask,
     ErasedBackgroundTaskSpec, MediaMetadataExtractTask, StoragePolicyMigrationTask,
-    StoragePolicyTempCleanupTask, SystemRuntimeTask, TaskSpecAdapter, ThumbnailGenerateTask,
-    TrashPurgeAllTask,
+    StoragePolicyTempCleanupTask, SystemRuntimeTask, TaskProcessFuture, TaskSpecAdapter,
+    ThumbnailGenerateTask, TrashPurgeAllTask,
 };
-use super::types::{TaskPayload, TaskPresentation, TaskResult};
+use super::steps::initial_task_steps_from_specs;
+use super::types::{TaskPayload, TaskPresentation, TaskResult, TaskStepInfo};
+use super::{TaskLeaseGuard, dispatch::TaskLane};
 
 static ARCHIVE_COMPRESS: TaskSpecAdapter<ArchiveCompressTask> = TaskSpecAdapter::new();
 static ARCHIVE_EXTRACT: TaskSpecAdapter<ArchiveExtractTask> = TaskSpecAdapter::new();
@@ -61,6 +64,49 @@ pub(super) fn build_task_presentation(
 
 pub(super) fn task_retry_class(kind: BackgroundTaskKind, error: &AsterError) -> TaskRetryClass {
     spec_for_kind(kind).retry_class(error)
+}
+
+pub(super) fn process_task<'a>(
+    state: &'a PrimaryAppState,
+    task: &'a background_task::Model,
+    lease_guard: TaskLeaseGuard,
+) -> TaskProcessFuture<'a> {
+    spec_for_kind(task.kind).process(state, task, lease_guard)
+}
+
+pub(super) fn initial_task_steps(kind: BackgroundTaskKind) -> Vec<TaskStepInfo> {
+    initial_task_steps_from_specs(spec_for_kind(kind).step_specs())
+}
+
+pub(super) fn max_attempts(state: &PrimaryAppState, kind: BackgroundTaskKind) -> i32 {
+    spec_for_kind(kind).max_attempts(state)
+}
+
+pub(in crate::services::task_service) fn task_lane(kind: BackgroundTaskKind) -> TaskLane {
+    spec_for_kind(kind).lane()
+}
+
+pub(in crate::services::task_service) fn task_lane_kinds(
+    lane: TaskLane,
+) -> &'static [BackgroundTaskKind] {
+    match lane {
+        TaskLane::Archive => &[
+            BackgroundTaskKind::ArchiveCompress,
+            BackgroundTaskKind::ArchiveExtract,
+            BackgroundTaskKind::ArchivePreviewGenerate,
+        ],
+        TaskLane::Thumbnail => &[
+            BackgroundTaskKind::ThumbnailGenerate,
+            BackgroundTaskKind::MediaMetadataExtract,
+        ],
+        TaskLane::StorageMigration => &[BackgroundTaskKind::StoragePolicyMigration],
+        TaskLane::Fallback => &[
+            BackgroundTaskKind::SystemRuntime,
+            BackgroundTaskKind::StoragePolicyTempCleanup,
+            BackgroundTaskKind::TrashPurgeAll,
+            BackgroundTaskKind::BlobMaintenance,
+        ],
+    }
 }
 
 #[cfg(test)]

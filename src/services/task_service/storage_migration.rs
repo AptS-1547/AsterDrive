@@ -19,20 +19,19 @@ use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 use crate::utils::hash::{new_sha256, sha256_digest_to_hex, sha256_hex};
 use crate::utils::numbers::u64_to_i64;
 
-use super::spec::{self, BackgroundTaskSpec, StoragePolicyMigrationTask};
+use super::spec::{self, BackgroundTaskSpec, StoragePolicyMigrationTask, decode_payload_as};
 use super::steps::{
     TASK_STEP_FINISH, TASK_STEP_MIGRATE_BLOBS, TASK_STEP_PREPARE_SOURCES, TASK_STEP_SCAN_BLOBS,
-    TASK_STEP_WAITING, initial_task_steps, parse_task_steps_json, set_task_step_active,
-    set_task_step_succeeded,
+    TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active, set_task_step_succeeded,
 };
 use super::types::{
     StoragePolicyMigrationCapacityCheck, StoragePolicyMigrationDryRun,
     StoragePolicyMigrationDryRunWarning, StoragePolicyMigrationTaskPayload,
-    StoragePolicyMigrationTaskResult, parse_task_payload, serialize_task_result,
+    StoragePolicyMigrationTaskResult,
 };
 use super::{
-    TaskLeaseGuard, configured_task_max_attempts, mark_task_progress, mark_task_succeeded,
-    serialize_task_steps, task_expiration_from, task_scope, truncate_display_name,
+    TaskLeaseGuard, mark_task_progress, mark_task_succeeded, serialize_task_steps,
+    task_expiration_from, task_scope, truncate_display_name,
 };
 
 const MIGRATION_BATCH_SIZE: u64 = 100;
@@ -127,14 +126,16 @@ pub(crate) async fn create_storage_policy_migration_task(
                     &payload,
                 )?),
                 result_json: Set(None),
-                steps_json: Set(Some(serialize_task_steps(&initial_task_steps(
-                    StoragePolicyMigrationTask::KIND,
-                ))?)),
+                steps_json: Set(Some(serialize_task_steps(
+                    &crate::services::task_service::registry::initial_task_steps(
+                        StoragePolicyMigrationTask::KIND,
+                    ),
+                )?)),
                 progress_current: Set(0),
                 progress_total: Set(0),
                 status_text: Set(None),
                 attempt_count: Set(0),
-                max_attempts: Set(configured_task_max_attempts(
+                max_attempts: Set(crate::services::task_service::registry::max_attempts(
                     state,
                     StoragePolicyMigrationTask::KIND,
                 )),
@@ -371,7 +372,7 @@ pub(super) async fn process_storage_policy_migration_task(
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
-    let payload: StoragePolicyMigrationTaskPayload = parse_task_payload(task)?;
+    let payload = decode_payload_as::<StoragePolicyMigrationTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
     set_task_step_succeeded(
@@ -538,7 +539,7 @@ pub(super) async fn process_storage_policy_migration_task(
         migrated_bytes: checkpoint.migrated_bytes,
         renamed_opaque_blobs: checkpoint.renamed_opaque_blobs,
     };
-    let result_json = serialize_task_result(&result)?;
+    let result_json = spec::serialize_result::<StoragePolicyMigrationTask>(&result)?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_FINISH,

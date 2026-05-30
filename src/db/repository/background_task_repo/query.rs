@@ -10,7 +10,6 @@ use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::background_task::{self, Entity as BackgroundTask};
 use crate::errors::{AsterError, Result};
-use crate::services::task_service::{RuntimeTaskName, RuntimeTaskPayload};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload};
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<background_task::Model> {
@@ -163,21 +162,13 @@ pub async fn list_recent<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
-pub async fn find_latest_system_runtime_by_task_name<C: ConnectionTrait>(
+pub async fn find_latest_system_runtime_by_payload<C: ConnectionTrait>(
     db: &C,
-    task_name: &str,
+    payload_json: &StoredTaskPayload,
 ) -> Result<Option<background_task::Model>> {
-    let payload_json = serde_json::to_string(&RuntimeTaskPayload {
-        task_name: RuntimeTaskName::from(task_name.to_string()),
-    })
-    .map(StoredTaskPayload)
-    .map_err(|error| {
-        AsterError::internal_error(format!("serialize runtime task payload: {error}"))
-    })?;
-
     BackgroundTask::find()
         .filter(background_task::Column::Kind.eq(BackgroundTaskKind::SystemRuntime))
-        .filter(background_task::Column::PayloadJson.eq(payload_json))
+        .filter(background_task::Column::PayloadJson.eq(payload_json.clone()))
         .order_by_desc(background_task::Column::UpdatedAt)
         .one(db)
         .await

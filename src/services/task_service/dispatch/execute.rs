@@ -15,10 +15,9 @@ use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::{
-    archive, blob_maintenance, media_metadata,
+    registry,
     retry::TaskRetryClass,
     steps::{mark_active_step_failed, parse_task_steps_json, serialize_task_steps},
-    storage_migration, storage_policy_cleanup, thumbnail, trash,
 };
 use crate::types::BackgroundTaskKind;
 
@@ -73,7 +72,7 @@ async fn process_claimed_task(
     //
     // 注意这里只能取消 async 外壳。真正耗时的压缩/解压是在 spawn_blocking 里，
     // 所以业务代码内部也必须周期性检查 lease guard，才能把旧 worker 真正停下来。
-    let process_future = process_task(state, &task, lease_guard.clone());
+    let process_future = registry::process_task(state, &task, lease_guard.clone());
     tokio::pin!(process_future);
 
     let task_result = loop {
@@ -272,49 +271,6 @@ async fn build_failed_task_steps_json(
     }
     mark_active_step_failed(&mut steps, Some(error_message));
     serialize_task_steps(&steps).ok().map(Into::into)
-}
-async fn process_task(
-    state: &PrimaryAppState,
-    task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
-) -> Result<()> {
-    match task.kind {
-        BackgroundTaskKind::ArchiveCompress => {
-            archive::process_archive_compress_task(state, task, lease_guard).await
-        }
-        BackgroundTaskKind::ArchiveExtract => {
-            archive::process_archive_extract_task(state, task, lease_guard).await
-        }
-        BackgroundTaskKind::ArchivePreviewGenerate => {
-            archive::process_archive_preview_task(state, task, lease_guard).await
-        }
-        BackgroundTaskKind::ThumbnailGenerate => {
-            thumbnail::process_thumbnail_generate_task(state, task, lease_guard).await
-        }
-        BackgroundTaskKind::MediaMetadataExtract => {
-            media_metadata::process_media_metadata_extract_task(state, task, lease_guard).await
-        }
-        BackgroundTaskKind::TrashPurgeAll => {
-            trash::process_trash_purge_all_task(state, task, lease_guard).await
-        }
-        BackgroundTaskKind::StoragePolicyTempCleanup => {
-            storage_policy_cleanup::process_storage_policy_temp_cleanup_task(
-                state,
-                task,
-                lease_guard,
-            )
-            .await
-        }
-        BackgroundTaskKind::StoragePolicyMigration => {
-            storage_migration::process_storage_policy_migration_task(state, task, lease_guard).await
-        }
-        BackgroundTaskKind::BlobMaintenance => {
-            blob_maintenance::process_blob_maintenance_task(state, task, lease_guard).await
-        }
-        BackgroundTaskKind::SystemRuntime => Err(crate::errors::AsterError::internal_error(
-            format!("system runtime task #{} should not be dispatched", task.id),
-        )),
-    }
 }
 fn retry_delay_secs(attempt_count: i32) -> i64 {
     match attempt_count {

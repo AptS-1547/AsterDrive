@@ -16,7 +16,7 @@ use crate::types::{
 };
 use crate::utils::numbers::u64_to_i64;
 
-use super::spec::{self, BackgroundTaskSpec, StoragePolicyTempCleanupTask};
+use super::spec::{self, BackgroundTaskSpec, StoragePolicyTempCleanupTask, decode_payload_as};
 use super::steps::{
     TASK_STEP_CLEANUP_OBJECTS, TASK_STEP_PREPARE_SOURCES, parse_task_steps_json,
     set_task_step_active, set_task_step_succeeded,
@@ -24,11 +24,11 @@ use super::steps::{
 use super::types::{
     StoragePolicyCleanupPolicySnapshot, StoragePolicyCleanupRemoteNodeSnapshot,
     StoragePolicyTempCleanupTarget, StoragePolicyTempCleanupTaskPayload,
-    StoragePolicyTempCleanupTaskResult, parse_task_payload, serialize_task_result,
+    StoragePolicyTempCleanupTaskResult,
 };
 use super::{
-    TaskLeaseGuard, configured_task_max_attempts, initial_task_steps, mark_task_progress,
-    mark_task_succeeded, serialize_task_steps, task_expiration_from, truncate_display_name,
+    TaskLeaseGuard, mark_task_progress, mark_task_succeeded, serialize_task_steps,
+    task_expiration_from, truncate_display_name,
 };
 
 const TEMP_CLEANUP_GRACE_SECS: u64 = HOUR_SECS + 60;
@@ -65,7 +65,11 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
             "storage policy temp cleanup grace",
         )?);
     let payload_json = spec::serialize_payload::<StoragePolicyTempCleanupTask>(&payload)?;
-    let steps_json = serialize_task_steps(&initial_task_steps(StoragePolicyTempCleanupTask::KIND))?;
+    let steps_json = serialize_task_steps(
+        &crate::services::task_service::registry::initial_task_steps(
+            StoragePolicyTempCleanupTask::KIND,
+        ),
+    )?;
 
     background_task_repo::create(
         state.writer_db(),
@@ -86,7 +90,7 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
             progress_total: Set(0),
             status_text: Set(Some("Waiting for presigned URLs to expire".to_string())),
             attempt_count: Set(0),
-            max_attempts: Set(configured_task_max_attempts(
+            max_attempts: Set(crate::services::task_service::registry::max_attempts(
                 state,
                 StoragePolicyTempCleanupTask::KIND,
             )),
@@ -114,7 +118,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
     task: &background_task::Model,
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
-    let payload: StoragePolicyTempCleanupTaskPayload = parse_task_payload(task)?;
+    let payload = decode_payload_as::<StoragePolicyTempCleanupTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
     let total_targets = cleanup_target_count(&payload)?;
@@ -238,11 +242,13 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         Some("Temporary upload cleanup finished"),
         Some((total_targets, total_targets)),
     )?;
-    let result = serialize_task_result(&StoragePolicyTempCleanupTaskResult {
-        deleted_objects: stats.deleted_objects,
-        missing_objects: stats.missing_objects,
-        failed_objects: stats.failed_objects,
-    })?;
+    let result = spec::serialize_result::<StoragePolicyTempCleanupTask>(
+        &StoragePolicyTempCleanupTaskResult {
+            deleted_objects: stats.deleted_objects,
+            missing_objects: stats.missing_objects,
+            failed_objects: stats.failed_objects,
+        },
+    )?;
     mark_task_succeeded(
         state,
         &lease_guard,

@@ -17,6 +17,7 @@ use crate::runtime::PrimaryAppState;
 
 use claim::claim_due_for_lane;
 use execute::run_claimed_tasks;
+pub(in crate::services::task_service) use lane::TaskLane;
 use lane::{TASK_LANES, TaskLaneConfig, task_lane_configs};
 
 use super::{

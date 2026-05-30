@@ -16,7 +16,7 @@ use crate::services::{
     task_service::{
         TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
         get_task_in_scope, mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
-        spec::ArchiveCompressTask,
+        spec::{self, ArchiveCompressTask, decode_payload_as},
         steps::{
             TASK_STEP_BUILD_ARCHIVE, TASK_STEP_PREPARE_SOURCES, TASK_STEP_STORE_RESULT,
             TASK_STEP_WAITING, parse_task_steps_json, set_task_step_active,
@@ -25,8 +25,7 @@ use crate::services::{
         task_scope,
         types::{
             ArchiveCompressTaskPayload, ArchiveCompressTaskResult, CreateArchiveCompressTaskParams,
-            CreateArchiveTaskParams, TaskInfo, TaskStepInfo, parse_task_payload,
-            serialize_task_result,
+            CreateArchiveTaskParams, TaskInfo, TaskStepInfo,
         },
         update_task_progress_db,
     },
@@ -81,7 +80,7 @@ pub(super) async fn process_archive_compress_task(
     lease_guard: TaskLeaseGuard,
 ) -> Result<()> {
     let scope = task_scope(task)?;
-    let payload: ArchiveCompressTaskPayload = parse_task_payload(task)?;
+    let payload = decode_payload_as::<ArchiveCompressTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
     set_task_step_succeeded(
@@ -269,7 +268,7 @@ pub(super) async fn process_archive_compress_task(
         target_path: build_file_display_path(state.writer_db(), stored.folder_id, &stored.name)
             .await?,
     };
-    let result_json = serialize_task_result(&result)?;
+    let result_json = spec::serialize_result::<ArchiveCompressTask>(&result)?;
     mark_task_succeeded(
         state,
         &lease_guard,
