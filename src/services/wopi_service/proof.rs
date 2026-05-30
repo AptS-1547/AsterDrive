@@ -6,11 +6,11 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Duration, Utc};
 use rsa::{
-    BigUint, RsaPublicKey,
+    BoxedUint, RsaPublicKey,
     pkcs1v15::{Signature, VerifyingKey},
     signature::Verifier,
 };
-use sha2_10::Sha256;
+use sha2::Sha256;
 
 use crate::errors::{AsterError, Result};
 
@@ -103,8 +103,8 @@ fn parse_wopi_rsa_key(modulus: &str, exponent: &str) -> Result<RsaPublicKey> {
     })?;
 
     RsaPublicKey::new(
-        BigUint::from_bytes_be(&modulus),
-        BigUint::from_bytes_be(&exponent),
+        BoxedUint::from_be_slice_vartime(&modulus),
+        BoxedUint::from_be_slice_vartime(&exponent),
     )
     .map_err(|error| AsterError::validation_error(format!("invalid WOPI proof-key: {error}")))
 }
@@ -180,11 +180,10 @@ mod tests {
     use rsa::{
         RsaPrivateKey,
         pkcs1v15::SigningKey,
-        rand_core::OsRng,
         signature::{SignatureEncoding, Signer},
         traits::PublicKeyParts,
     };
-    use sha2_10::Sha256;
+    use sha2::Sha256;
 
     use super::{
         WopiProofKeySet, build_expected_proof, dotnet_ticks, parse_wopi_proof_key_set,
@@ -192,14 +191,14 @@ mod tests {
     };
 
     fn build_test_keys() -> (RsaPrivateKey, RsaPrivateKey, WopiProofKeySet) {
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
         let current = RsaPrivateKey::new(&mut rng, 2048).unwrap();
         let old = RsaPrivateKey::new(&mut rng, 2048).unwrap();
         let proof_keys = parse_wopi_proof_key_set(
-            &STANDARD.encode(current.to_public_key().n().to_bytes_be()),
-            &STANDARD.encode(current.to_public_key().e().to_bytes_be()),
-            Some(&STANDARD.encode(old.to_public_key().n().to_bytes_be())),
-            Some(&STANDARD.encode(old.to_public_key().e().to_bytes_be())),
+            &STANDARD.encode(current.to_public_key().n().to_be_bytes_trimmed_vartime()),
+            &STANDARD.encode(current.to_public_key().e().to_be_bytes_trimmed_vartime()),
+            Some(&STANDARD.encode(old.to_public_key().n().to_be_bytes_trimmed_vartime())),
+            Some(&STANDARD.encode(old.to_public_key().e().to_be_bytes_trimmed_vartime())),
         )
         .unwrap();
 
@@ -369,11 +368,11 @@ mod tests {
 
     #[test]
     fn parse_wopi_proof_key_set_requires_old_pairs() {
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
         let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
         let err = parse_wopi_proof_key_set(
-            &STANDARD.encode(key.to_public_key().n().to_bytes_be()),
-            &STANDARD.encode(key.to_public_key().e().to_bytes_be()),
+            &STANDARD.encode(key.to_public_key().n().to_be_bytes_trimmed_vartime()),
+            &STANDARD.encode(key.to_public_key().e().to_be_bytes_trimmed_vartime()),
             Some("AQAB"),
             None,
         )

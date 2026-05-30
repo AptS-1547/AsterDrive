@@ -9,8 +9,7 @@ use jsonwebtoken::{
     },
 };
 use rsa::{
-    RsaPrivateKey, RsaPublicKey, pkcs1::EncodeRsaPrivateKey, rand_core::OsRng,
-    traits::PublicKeyParts,
+    RsaPrivateKey, RsaPublicKey, pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts,
 };
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
@@ -56,7 +55,7 @@ struct TokenRequest {
 
 impl MockOidcProvider {
     fn new() -> Self {
-        let mut rng = OsRng;
+        let mut rng = rand::rng();
         let key = RsaPrivateKey::new(&mut rng, 2048).expect("RSA key should generate");
         Self {
             issuer: String::new(),
@@ -144,8 +143,8 @@ impl MockOidcProvider {
                 ..Default::default()
             },
             algorithm: AlgorithmParameters::RSA(RSAKeyParameters {
-                n: base64_url(public.n().to_bytes_be()),
-                e: base64_url(public.e().to_bytes_be()),
+                n: base64_url(public.n().to_be_bytes_trimmed_vartime()),
+                e: base64_url(public.e().to_be_bytes_trimmed_vartime()),
                 ..Default::default()
             }),
         }
@@ -209,7 +208,7 @@ impl MockOidcProvider {
     }
 }
 
-fn base64_url(bytes: Vec<u8>) -> String {
+fn base64_url(bytes: impl AsRef<[u8]>) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
