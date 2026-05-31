@@ -226,8 +226,8 @@ function summaryParts(
 
 function TaskSummaryChip({ icon, value }: { icon: IconName; value: string }) {
 	return (
-		<span className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/70 bg-background/55 px-2.5 py-1 font-medium text-foreground">
-			<Icon name={icon} className="size-4 shrink-0 text-muted-foreground" />
+		<span className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/70 bg-background/55 px-2 py-0.5 text-xs font-medium text-foreground">
+			<Icon name={icon} className="size-3.5 shrink-0 text-muted-foreground" />
 			<span className="truncate">{value}</span>
 		</span>
 	);
@@ -262,10 +262,10 @@ export function TaskCard({
 
 	return (
 		<Card className="gap-0 p-0">
-			<div className="flex min-h-16 flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:px-5">
+			<div className="flex min-h-14 flex-col gap-2 px-3 py-2.5 md:flex-row md:items-center md:justify-between md:px-4">
 				<button
 					type="button"
-					className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
+					className="flex min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/45"
 					aria-controls={hasExpandableDetails ? detailsSectionId : undefined}
 					aria-expanded={hasExpandableDetails ? detailsExpanded : undefined}
 					onClick={() => {
@@ -274,10 +274,10 @@ export function TaskCard({
 						}
 					}}
 				>
-					<span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/25 text-muted-foreground">
-						<Icon name={taskIcon(task)} className="size-4" />
+					<span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/25 text-muted-foreground">
+						<Icon name={taskIcon(task)} className="size-3.5" />
 					</span>
-					<span className="flex min-w-0 flex-wrap items-center gap-2 text-sm md:text-base">
+					<span className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm md:text-[0.95rem]">
 						{parts.map((part) =>
 							part.kind === "chip" ? (
 								<TaskSummaryChip
@@ -294,8 +294,8 @@ export function TaskCard({
 					</span>
 				</button>
 
-				<div className="flex shrink-0 items-center justify-between gap-2 md:justify-end">
-					<div className="flex items-center gap-2">
+				<div className="flex shrink-0 items-center justify-between gap-1.5 md:justify-end">
+					<div className="flex items-center gap-1.5">
 						<Badge variant={statusBadgeVariant(task.status)}>
 							{formatTaskStatus(t, task.status)}
 						</Badge>
@@ -306,7 +306,7 @@ export function TaskCard({
 					{hasExpandableDetails ? (
 						<Button
 							variant="ghost"
-							size="icon-sm"
+							size="icon-xs"
 							aria-controls={detailsSectionId}
 							aria-expanded={detailsExpanded}
 							aria-label={
@@ -323,7 +323,7 @@ export function TaskCard({
 						>
 							<Icon
 								name={detailsExpanded ? "CaretUp" : "CaretDown"}
-								className="size-4"
+								className="size-3.5"
 							/>
 						</Button>
 					) : null}
@@ -331,15 +331,15 @@ export function TaskCard({
 			</div>
 
 			<AnimatedTaskDetails open={detailsExpanded} className="border-t">
-				<div id={detailsSectionId} className="space-y-5 px-4 py-4 md:px-5">
+				<div id={detailsSectionId} className="space-y-4 px-3 py-3 md:px-4">
 					{task.last_error ? (
-						<div className="flex gap-3 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm text-destructive">
-							<Icon name="CircleAlert" className="mt-0.5 size-4 shrink-0" />
+						<div className="flex gap-2.5 rounded-lg border border-destructive/20 bg-destructive/8 px-2.5 py-2 text-sm text-destructive">
+							<Icon name="CircleAlert" className="mt-0.5 size-3.5 shrink-0" />
 							<div>{task.last_error}</div>
 						</div>
 					) : null}
 
-					<div className="space-y-3">
+					<div className="space-y-2.5">
 						<h3 className="text-sm font-semibold">
 							{t("tasks:task_progress_title")}
 						</h3>
@@ -354,14 +354,14 @@ export function TaskCard({
 						</p>
 					) : null}
 
-					<div className="space-y-3 border-t pt-4">
+					<div className="space-y-2.5 border-t pt-3">
 						<h3 className="text-sm font-semibold">
 							{t("tasks:task_details_title")}
 						</h3>
 						<TaskDetailsContent task={task} />
 					</div>
 
-					<div className="flex flex-wrap items-center gap-2 border-t pt-4">
+					<div className="flex flex-wrap items-center gap-2 border-t pt-3">
 						<span className="text-xs text-muted-foreground">
 							{t("tasks:task_id_label", { id: task.id })}
 						</span>
@@ -375,25 +375,25 @@ export function TaskCard({
 						{task.status === "succeeded" && parsedResult ? (
 							<Button
 								variant="outline"
-								size="sm"
+								size="xs"
 								onClick={() =>
 									onOpenTargetFolder(parsedResult.target_folder_id ?? null)
 								}
 							>
-								<Icon name="FolderOpen" className="mr-1 size-4" />
+								<Icon name="FolderOpen" className="mr-1 size-3.5" />
 								{t("tasks:open_target_folder")}
 							</Button>
 						) : null}
 						{task.can_retry ? (
 							<Button
 								variant="outline"
-								size="sm"
+								size="xs"
 								onClick={() => onRetry(task.id)}
 								disabled={retrying}
 							>
 								<Icon
 									name={retrying ? "Spinner" : "ArrowCounterClockwise"}
-									className={`mr-1 size-4 ${retrying ? "animate-spin" : ""}`}
+									className={`mr-1 size-3.5 ${retrying ? "animate-spin" : ""}`}
 								/>
 								{t("tasks:retry_task")}
 							</Button>

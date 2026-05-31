@@ -1,12 +1,13 @@
 use chrono::{Duration, Utc};
 use sea_orm::ActiveValue::Set;
 
+use crate::api::subcode::ApiSubcode;
 use crate::config::{auth_runtime::RuntimeAuthPolicy, branding};
 use crate::db::repository::{
     external_auth_email_verification_flow_repo, external_auth_provider_repo, user_repo,
 };
 use crate::entities::{external_auth_email_verification_flow, external_auth_provider};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::{mail_outbox_service, mail_service, mail_template::MailTemplatePayload};
 use crate::utils::numbers::u64_to_i64;
@@ -127,7 +128,8 @@ pub async fn start_email_verification(
         None => {
             let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
             if !auth_policy.allow_user_registration {
-                return Err(AsterError::auth_forbidden(
+                return Err(auth_forbidden_with_subcode(
+                    ApiSubcode::AuthRegistrationDisabled,
                     "new user registration is disabled",
                 ));
             }

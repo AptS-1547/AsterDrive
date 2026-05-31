@@ -1,12 +1,13 @@
 use base64::Engine as _;
 use chrono::Utc;
 
+use crate::api::subcode::ApiSubcode;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::db::repository::{external_auth_identity_repo, user_repo};
 use crate::entities::{
     external_auth_email_verification_flow, external_auth_identity, external_auth_provider, user,
 };
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
 use crate::external_auth::ExternalAuthProfile;
 use crate::runtime::PrimaryAppState;
 use crate::services::auth_service;
@@ -237,7 +238,8 @@ async fn create_external_auth_user_and_identity(
 ) -> Result<ResolvedExternalAuthUser> {
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     if !auth_policy.allow_user_registration {
-        return Err(AsterError::auth_forbidden(
+        return Err(auth_forbidden_with_subcode(
+            ApiSubcode::AuthRegistrationDisabled,
             "new user registration is disabled",
         ));
     }
@@ -327,7 +329,8 @@ async fn create_external_auth_user_and_identity_in_connection<C: sea_orm::Connec
 ) -> Result<user::Model> {
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     if !auth_policy.allow_user_registration {
-        return Err(AsterError::auth_forbidden(
+        return Err(auth_forbidden_with_subcode(
+            ApiSubcode::AuthRegistrationDisabled,
             "new user registration is disabled",
         ));
     }

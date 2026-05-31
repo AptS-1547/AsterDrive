@@ -171,7 +171,7 @@ export default function TasksPage() {
 		<AppLayout>
 			<div className="flex min-h-0 flex-1 flex-col overflow-auto">
 				<div
-					className={`mx-auto flex w-full max-w-6xl flex-col gap-5 py-4 md:py-6 ${PAGE_SECTION_PADDING_CLASS}`}
+					className={`mx-auto flex w-full max-w-4xl flex-col gap-4 py-3 md:py-5 ${PAGE_SECTION_PADDING_CLASS}`}
 				>
 					<div className="flex flex-wrap items-center gap-3">
 						<h1 className="text-2xl font-semibold tracking-tight">
@@ -198,9 +198,9 @@ export default function TasksPage() {
 					</div>
 
 					{loading ? (
-						<div className="space-y-3">
+						<div className="space-y-2.5">
 							{["task-s1", "task-s2", "task-s3"].map((key) => (
-								<Card key={key} className="h-48 animate-pulse bg-muted/20" />
+								<Card key={key} className="h-40 animate-pulse bg-muted/20" />
 							))}
 						</div>
 					) : tasks.length === 0 ? (
@@ -214,7 +214,7 @@ export default function TasksPage() {
 							</div>
 						</Card>
 					) : (
-						<div className="space-y-3">
+						<div className="space-y-2.5">
 							{tasks.map((task) => (
 								<TaskCard
 									key={task.id}

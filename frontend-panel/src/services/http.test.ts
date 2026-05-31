@@ -267,6 +267,31 @@ describe("http api helpers", () => {
 		);
 	});
 
+	it("preserves auth registration disabled structured codes on ApiError", async () => {
+		mockState.client.get.mockResolvedValue({
+			data: {
+				code: ErrorCode.Forbidden,
+				msg: "new user registration is disabled",
+				error: {
+					code: ApiErrorCode.AuthRegistrationDisabled,
+					internal_code: "E013",
+				},
+			},
+		});
+
+		const { api } = await loadHttpModule();
+
+		await expect(api.get("/auth/register")).rejects.toEqual(
+			expect.objectContaining({
+				code: ErrorCode.Forbidden,
+				message: "new user registration is disabled",
+				apiCode: ApiErrorCode.AuthRegistrationDisabled,
+				internalCode: "E013",
+				subcode: undefined,
+			}),
+		);
+	});
+
 	it("drops unknown backend subcodes before constructing ApiError", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {

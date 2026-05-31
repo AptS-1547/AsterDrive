@@ -1480,6 +1480,8 @@ async fn test_register_is_blocked_when_public_registration_is_disabled() {
     assert_eq!(resp.status(), 403);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["msg"], "new user registration is disabled");
+    assert_eq!(body["error"]["code"], "auth.registration_disabled");
+    assert_eq!(body["error"]["internal_code"], "E013");
 }
 
 #[actix_web::test]

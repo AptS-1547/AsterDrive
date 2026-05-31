@@ -25,9 +25,11 @@ export function TaskStepsPreview({ task }: { task: TaskInfo }) {
 	}
 
 	return (
-		<div className="space-y-2.5 rounded-lg border bg-muted/15 p-3">
+		<div className="space-y-2 rounded-lg border bg-muted/15 p-2.5">
 			<div className="flex flex-wrap items-start justify-between gap-2">
-				<div className="text-sm font-medium">{t("tasks:steps_label")}</div>
+				<div className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+					{t("tasks:steps_label")}
+				</div>
 				{activeStep && activeStep.progress_total > 0 ? (
 					<div className="text-right text-xs text-muted-foreground">
 						<div>{t("tasks:step_progress_label")}</div>
@@ -43,23 +45,23 @@ export function TaskStepsPreview({ task }: { task: TaskInfo }) {
 			</div>
 			<div className="overflow-x-auto pb-0.5">
 				<div className="w-full">
-					<div className="mx-auto flex w-fit min-w-max items-start px-0.5 py-1.5">
+					<div className="mx-auto flex w-fit min-w-max items-start px-0.5 py-1">
 						{task.steps.map((step, index) => (
 							<div key={`${task.id}-${step.key}`} className="contents">
-								<div className="w-32 shrink-0 md:w-36 lg:w-40">
+								<div className="w-28 shrink-0 md:w-32 lg:w-36">
 									<div className="flex flex-col items-center text-center">
-										<div className="relative flex size-10 items-center justify-center md:h-11 md:w-11">
+										<div className="relative flex size-9 items-center justify-center md:h-10 md:w-10">
 											{step.status === "active" ? (
 												<span className="absolute inset-0 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
 											) : null}
 											<span
-												className={`relative flex size-8 items-center justify-center rounded-full border text-xs font-semibold transition-colors md:h-9 md:w-9 md:text-sm ${stepCircleClass(step.status)}`}
+												className={`relative flex size-7 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors md:h-8 md:w-8 md:text-xs ${stepCircleClass(step.status)}`}
 											>
 												{stepCircleLabel(index, step.status)}
 											</span>
 										</div>
-										<div className="mt-2 space-y-0.5 md:mt-2.5">
-											<p className="text-xs font-semibold leading-snug md:text-sm">
+										<div className="mt-1.5 space-y-0.5 md:mt-2">
+											<p className="text-[11px] font-semibold leading-snug md:text-xs">
 												{index + 1}. {formatTaskStepTitle(t, task.kind, step)}
 											</p>
 											<p
@@ -71,7 +73,7 @@ export function TaskStepsPreview({ task }: { task: TaskInfo }) {
 									</div>
 								</div>
 								{index < task.steps.length - 1 ? (
-									<div className="flex size-10 shrink-0 items-center px-1 md:h-11 md:w-12 md:px-1.5">
+									<div className="flex size-8 shrink-0 items-center px-0.5 md:h-10 md:w-10 md:px-1">
 										<div
 											className={`h-1 w-full rounded-full ${stepConnectorClass(step.status)}`}
 										/>
@@ -99,35 +101,35 @@ export function TaskDetailsContent({ task }: { task: TaskInfo }) {
 
 	return (
 		<div className="space-y-2.5">
-			<div className="rounded-lg border bg-background/70 p-3">
-				<div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(16rem,0.65fr)] lg:items-start">
+			<div className="rounded-lg border bg-background/70 p-2.5">
+				<div className="grid gap-2.5 lg:grid-cols-[minmax(0,1.4fr)_minmax(14rem,0.6fr)] lg:items-start">
 					<div className="space-y-2">
-						<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+						<div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
 							{t("tasks:timeline_label")}
 						</div>
-						<div className="flex flex-wrap gap-2">
+						<div className="flex flex-wrap gap-1.5">
 							{taskTimeline.map((entry) => (
 								<div
 									key={`${task.id}-${entry.label}`}
-									className="min-w-[11rem] flex-1 rounded-md bg-muted/25 px-2.5 py-2"
+									className="min-w-[9.5rem] flex-1 rounded-md bg-muted/25 px-2 py-1.5"
 								>
-									<div className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+									<div className="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
 										{entry.label}
 									</div>
-									<div className="mt-1 text-sm font-medium tabular-nums text-foreground">
+									<div className="mt-0.5 text-sm font-medium tabular-nums text-foreground">
 										{entry.value}
 									</div>
 								</div>
 							))}
 						</div>
 					</div>
-					<div className="space-y-2 rounded-lg bg-muted/20 px-3 py-2.5">
-						<div className="flex items-end justify-between gap-3">
+					<div className="space-y-2 rounded-lg bg-muted/20 px-2.5 py-2">
+						<div className="flex items-end justify-between gap-2">
 							<div className="space-y-1">
-								<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+								<div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
 									{t("tasks:progress_label")}
 								</div>
-								<div className="text-3xl font-semibold tracking-tight tabular-nums">
+								<div className="text-2xl font-semibold tracking-tight tabular-nums">
 									{progressValue}%
 								</div>
 							</div>
@@ -149,27 +151,27 @@ export function TaskDetailsContent({ task }: { task: TaskInfo }) {
 			</div>
 
 			{task.last_error ? (
-				<div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+				<div className="rounded-lg border border-destructive/20 bg-destructive/5 px-2.5 py-2 text-sm text-destructive">
 					<span className="font-medium">{t("tasks:error_label")}:</span>{" "}
 					{task.last_error}
 				</div>
 			) : null}
 
 			{task.status === "succeeded" && parsedResult ? (
-				<div className="rounded-lg border bg-muted/20 p-3 text-sm">
+				<div className="rounded-lg border bg-muted/20 p-2.5 text-sm">
 					<div className="min-w-0">
-						<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+						<div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
 							{t("tasks:result_path_label")}
 						</div>
-						<div className="mt-1 truncate text-foreground">
+						<div className="mt-0.5 truncate text-foreground">
 							{parsedResult.target_path}
 						</div>
 					</div>
 				</div>
 			) : null}
 			{task.status === "succeeded" && parsedStorageMigrationResult ? (
-				<div className="rounded-lg border bg-muted/20 p-3 text-sm">
-					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+				<div className="rounded-lg border bg-muted/20 p-2.5 text-sm">
+					<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
 						{[
 							{
 								label: t("tasks:storage_migration_migrated_blobs"),
@@ -193,10 +195,10 @@ export function TaskDetailsContent({ task }: { task: TaskInfo }) {
 							},
 						].map((item) => (
 							<div key={item.label} className="min-w-0">
-								<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+								<div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
 									{item.label}
 								</div>
-								<div className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+								<div className="mt-0.5 text-base font-semibold tabular-nums text-foreground">
 									{item.value}
 								</div>
 							</div>

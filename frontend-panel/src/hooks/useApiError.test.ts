@@ -6,17 +6,25 @@ const mockState = vi.hoisted(() => {
 		code: number;
 		apiCode?: string;
 		subcode?: string;
+		internalCode?: string;
+		retryable?: boolean;
 
 		constructor(
 			code: number,
 			message: string,
-			subcode?: string,
-			apiCode?: string,
+			details: {
+				apiCode?: string;
+				internalCode?: string;
+				subcode?: string;
+				retryable?: boolean;
+			} = {},
 		) {
 			super(message);
 			this.code = code;
-			this.apiCode = apiCode;
-			this.subcode = subcode;
+			this.apiCode = details.apiCode;
+			this.internalCode = details.internalCode;
+			this.subcode = details.subcode;
+			this.retryable = details.retryable;
 		}
 	}
 
@@ -135,7 +143,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.StorageDriverError,
 				"Storage Driver Error",
-				ApiSubcode.StorageTransient,
+				{ subcode: ApiSubcode.StorageTransient },
 			),
 		);
 
@@ -154,8 +162,10 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.FileUploadFailed,
 				"Upload Failed",
-				ApiSubcode.UploadTempFileWriteFailed,
-				ApiErrorCode.UploadHashTempReadFailed,
+				{
+					apiCode: ApiErrorCode.UploadHashTempReadFailed,
+					subcode: ApiSubcode.UploadTempFileWriteFailed,
+				},
 			),
 		);
 
@@ -167,6 +177,25 @@ describe("handleApiError", () => {
 		);
 	});
 
+	it("uses structured API error codes for disabled registration", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+
+		handleApiError(
+			new mockState.ApiError(
+				ErrorCode.Forbidden,
+				"new user registration is disabled",
+				{ apiCode: ApiErrorCode.AuthRegistrationDisabled },
+			),
+		);
+
+		expect(mockState.translate).toHaveBeenCalledWith(
+			"errors:auth_registration_disabled",
+		);
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"translated:errors:auth_registration_disabled",
+		);
+	});
+
 	it("falls back to legacy subcodes when structured API error translation is missing", async () => {
 		mockState.exists.mockReturnValue(false);
 		const { handleApiError } = await import("@/hooks/useApiError");
@@ -175,8 +204,10 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.FileUploadFailed,
 				"Upload Failed",
-				ApiSubcode.UploadTempFileWriteFailed,
-				ApiErrorCode.UploadHashTempReadFailed,
+				{
+					apiCode: ApiErrorCode.UploadHashTempReadFailed,
+					subcode: ApiSubcode.UploadTempFileWriteFailed,
+				},
 			),
 		);
 
@@ -198,7 +229,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.PreconditionFailed,
 				"managed ingress required",
-				ApiSubcode.ManagedIngressRequired,
+				{ subcode: ApiSubcode.ManagedIngressRequired },
 			),
 		);
 
@@ -217,21 +248,21 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.Forbidden,
 				"untrusted request origin",
-				ApiSubcode.AuthRequestOriginUntrusted,
+				{ subcode: ApiSubcode.AuthRequestOriginUntrusted },
 			),
 		);
 		handleApiError(
 			new mockState.ApiError(
 				ErrorCode.Forbidden,
 				"invalid CSRF token",
-				ApiSubcode.AuthCsrfTokenInvalid,
+				{ subcode: ApiSubcode.AuthCsrfTokenInvalid },
 			),
 		);
 		handleApiError(
 			new mockState.ApiError(
 				ErrorCode.Forbidden,
 				"new user registration is disabled",
-				ApiSubcode.AuthRegistrationDisabled,
+				{ subcode: ApiSubcode.AuthRegistrationDisabled },
 			),
 		);
 
@@ -265,21 +296,21 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.Forbidden,
 				"team owner role is required",
-				ApiSubcode.TeamOwnerRequired,
+				{ subcode: ApiSubcode.TeamOwnerRequired },
 			),
 		);
 		handleApiError(
 			new mockState.ApiError(
 				ErrorCode.Forbidden,
 				"resource outside workspace scope",
-				ApiSubcode.WorkspaceScopeDenied,
+				{ subcode: ApiSubcode.WorkspaceScopeDenied },
 			),
 		);
 		handleApiError(
 			new mockState.ApiError(
 				ErrorCode.Forbidden,
 				"team owner or admin role is required",
-				ApiSubcode.TeamAdminOrOwnerRequired,
+				{ subcode: ApiSubcode.TeamAdminOrOwnerRequired },
 			),
 		);
 
@@ -313,7 +344,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.BadRequest,
 				"invalid Origin header",
-				ApiSubcode.ValidationRequestOriginInvalid,
+				{ subcode: ApiSubcode.ValidationRequestOriginInvalid },
 			),
 		);
 
@@ -332,7 +363,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.FileUploadFailed,
 				"Upload Failed",
-				ApiSubcode.UploadTempFileWriteFailed,
+				{ subcode: ApiSubcode.UploadTempFileWriteFailed },
 			),
 		);
 
@@ -351,7 +382,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.Conflict,
 				"email already exists",
-				ApiSubcode.AuthEmailExists,
+				{ subcode: ApiSubcode.AuthEmailExists },
 			),
 		);
 
@@ -370,7 +401,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.Forbidden,
 				"remote denied this operation",
-				"remote.dynamic",
+				{ subcode: "remote.dynamic" },
 			),
 		);
 
@@ -387,7 +418,7 @@ describe("handleApiError", () => {
 			new mockState.ApiError(
 				ErrorCode.DatabaseError,
 				"remote enrollment is required",
-				ApiSubcode.RemoteNodeEnrollmentRequired,
+				{ subcode: ApiSubcode.RemoteNodeEnrollmentRequired },
 			),
 		);
 

@@ -86,6 +86,10 @@ describe("i18n", () => {
 		expect(i18n.t("settings:settings_passkeys_section")).toBe("Passkey");
 		expect(i18n.t("admin:overview_total_users")).toBe("总用户数");
 		expect(i18n.t("admin:preview_apps_provider_archive")).toBe("压缩包");
+		expect(i18n.exists("errors:auth_registration_disabled")).toBe(true);
+		expect(i18n.t("errors:auth_registration_disabled")).toBe(
+			"当前系统已关闭公开注册",
+		);
 	});
 
 	it("keeps unsplit locale files loadable", async () => {
