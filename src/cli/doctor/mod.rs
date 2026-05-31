@@ -969,6 +969,7 @@ fn non_empty_or_placeholder(value: &str) -> &str {
 mod tests {
     use super::{DoctorStatus, doctor_public_site_url_check};
     use crate::config::RuntimeConfig;
+    use crate::config::definitions::CONFIG_CATEGORY_SITE;
     use crate::config::site_url::PUBLIC_SITE_URL_KEY;
     use crate::entities::system_config;
     use crate::types::{SystemConfigSource, SystemConfigValueType};
@@ -984,7 +985,7 @@ mod tests {
             is_sensitive: false,
             source: SystemConfigSource::System,
             namespace: String::new(),
-            category: "test".to_string(),
+            category: CONFIG_CATEGORY_SITE.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,

@@ -9,6 +9,51 @@
 
 use crate::types::SystemConfigValueType;
 
+// ── Category keys ───────────────────────────────────────────────────────────
+pub const CONFIG_CATEGORY_SITE: &str = "site";
+pub const CONFIG_CATEGORY_SITE_PREVIEW: &str = "site.preview";
+pub const CONFIG_CATEGORY_USER_REGISTRATION: &str = "user.registration_and_login";
+pub const CONFIG_CATEGORY_USER_AVATAR: &str = "user.avatar";
+pub const CONFIG_CATEGORY_AUTH: &str = "auth";
+pub const CONFIG_CATEGORY_MAIL_CONFIG: &str = "mail.config";
+pub const CONFIG_CATEGORY_MAIL_TEMPLATE: &str = "mail.template";
+pub const CONFIG_CATEGORY_NETWORK: &str = "network";
+pub const CONFIG_CATEGORY_RUNTIME_MAIL: &str = "runtime.mail";
+pub const CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK: &str = "runtime.background_task";
+pub const CONFIG_CATEGORY_RUNTIME_MAINTENANCE: &str = "runtime.maintenance";
+pub const CONFIG_CATEGORY_RUNTIME_LIMITS: &str = "runtime.limits";
+pub const CONFIG_CATEGORY_RUNTIME_SHARE_STREAM: &str = "runtime.share_stream";
+pub const CONFIG_CATEGORY_STORAGE: &str = "storage";
+pub const CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT: &str = "file_processing.archive_extract";
+pub const CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW: &str = "file_processing.archive_preview";
+pub const CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD: &str = "file_processing.archive_build";
+pub const CONFIG_CATEGORY_FILE_PROCESSING_MEDIA: &str = "file_processing.media";
+pub const CONFIG_CATEGORY_WEBDAV: &str = "webdav";
+pub const CONFIG_CATEGORY_AUDIT: &str = "audit";
+
+pub const SYSTEM_CONFIG_ALLOWED_CATEGORIES: &[&str] = &[
+    CONFIG_CATEGORY_SITE,
+    CONFIG_CATEGORY_SITE_PREVIEW,
+    CONFIG_CATEGORY_USER_REGISTRATION,
+    CONFIG_CATEGORY_USER_AVATAR,
+    CONFIG_CATEGORY_AUTH,
+    CONFIG_CATEGORY_MAIL_CONFIG,
+    CONFIG_CATEGORY_MAIL_TEMPLATE,
+    CONFIG_CATEGORY_NETWORK,
+    CONFIG_CATEGORY_RUNTIME_MAIL,
+    CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
+    CONFIG_CATEGORY_RUNTIME_MAINTENANCE,
+    CONFIG_CATEGORY_RUNTIME_LIMITS,
+    CONFIG_CATEGORY_RUNTIME_SHARE_STREAM,
+    CONFIG_CATEGORY_STORAGE,
+    CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
+    CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
+    CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
+    CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
+    CONFIG_CATEGORY_WEBDAV,
+    CONFIG_CATEGORY_AUDIT,
+];
+
 // ── Auth keys ────────────────────────────────────────────────────────────────
 pub const AUTH_COOKIE_SECURE_KEY: &str = "auth_cookie_secure";
 pub const AUTH_ACCESS_TOKEN_TTL_SECS_KEY: &str = "auth_access_token_ttl_secs";
@@ -210,7 +255,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Whether auth and share verification cookies require HTTPS",
     },
     ConfigDef {
@@ -221,7 +266,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "900".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Access token lifetime in seconds",
     },
     ConfigDef {
@@ -232,7 +277,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "604800".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Refresh token lifetime in seconds",
     },
     ConfigDef {
@@ -243,7 +288,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "86400".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Registration activation link lifetime in seconds",
     },
     ConfigDef {
@@ -254,7 +299,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "86400".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Contact change confirmation link lifetime in seconds",
     },
     ConfigDef {
@@ -265,7 +310,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "3600".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Password reset link lifetime in seconds",
     },
     ConfigDef {
@@ -276,7 +321,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "60".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Minimum cooldown between verification email resends in seconds",
     },
     ConfigDef {
@@ -287,7 +332,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "false".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Allow verified-email users to complete MFA with a one-time email code when mail is configured",
     },
     ConfigDef {
@@ -298,7 +343,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "false".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Allow users with TOTP MFA to use email code MFA as a fallback method",
     },
     ConfigDef {
@@ -309,7 +354,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "600".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Maximum email MFA login code lifetime in seconds; actual lifetime is capped by the remaining MFA challenge time",
     },
     ConfigDef {
@@ -320,7 +365,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "60".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Minimum cooldown between email MFA login code sends in seconds",
     },
     ConfigDef {
@@ -331,7 +376,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "60".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "auth",
+        category: CONFIG_CATEGORY_AUTH,
         description: "Minimum cooldown between password reset email requests for the same user in seconds",
     },
     // ── WebDAV ──────────────────────────────────────────────
@@ -343,7 +388,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "webdav",
+        category: CONFIG_CATEGORY_WEBDAV,
         description: "Enable or disable WebDAV access",
     },
     ConfigDef {
@@ -354,7 +399,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "webdav",
+        category: CONFIG_CATEGORY_WEBDAV,
         description: "Block WebDAV clients from creating common operating-system metadata files and folders",
     },
     ConfigDef {
@@ -365,7 +410,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: default_webdav_system_file_patterns,
         requires_restart: false,
         is_sensitive: false,
-        category: "webdav",
+        category: CONFIG_CATEGORY_WEBDAV,
         description: "WebDAV basename patterns blocked when system-file protection is enabled",
     },
     // ── Network ─────────────────────────────────────────────
@@ -377,7 +422,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "false".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "network",
+        category: CONFIG_CATEGORY_NETWORK,
         description: "Enable CORS handling for cross-origin browser requests. When disabled, the server skips all CORS headers and enforcement",
     },
     ConfigDef {
@@ -388,7 +433,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || String::new(),
         requires_restart: false,
         is_sensitive: false,
-        category: "network",
+        category: CONFIG_CATEGORY_NETWORK,
         description: "Comma-separated CORS origin whitelist. Empty = skip CORS headers and let the browser block cross-origin access, '*' = allow any origin",
     },
     ConfigDef {
@@ -399,7 +444,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "false".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "network",
+        category: CONFIG_CATEGORY_NETWORK,
         description: "Whether CORS responses include Access-Control-Allow-Credentials",
     },
     ConfigDef {
@@ -410,7 +455,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "3600".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "network",
+        category: CONFIG_CATEGORY_NETWORK,
         description: "CORS preflight cache duration in seconds",
     },
     // ── Operations ──────────────────────────────────────────
@@ -424,7 +469,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_MAIL,
         description: "Seconds between mail outbox dispatch polls",
     },
     ConfigDef {
@@ -437,7 +482,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Seconds between background task dispatch polls",
     },
     ConfigDef {
@@ -451,7 +496,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum seconds between background task dispatch polls after idle backoff",
     },
     ConfigDef {
@@ -464,7 +509,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations.background_task",
+        category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Reserved fallback concurrency cap; currently unused until future task kinds are assigned to the fallback lane",
     },
     ConfigDef {
@@ -477,7 +522,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations.background_task",
+        category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum number of archive background tasks the server may execute at the same time",
     },
     ConfigDef {
@@ -490,7 +535,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations.background_task",
+        category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum number of thumbnail background tasks the server may execute at the same time",
     },
     ConfigDef {
@@ -504,7 +549,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations.background_task",
+        category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum number of storage policy migration tasks the server may execute at the same time",
     },
     ConfigDef {
@@ -515,7 +560,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Maximum number of attempts for workspace background tasks before they permanently fail",
     },
     ConfigDef {
@@ -528,7 +573,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: true,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_LIMITS,
         description: "Maximum buffered shared download rollback jobs before overflow aggregation is used",
     },
     ConfigDef {
@@ -539,7 +584,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_SHARE_STREAM_SESSION_TTL_SECS.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage",
+        category: CONFIG_CATEGORY_RUNTIME_SHARE_STREAM,
         description: "Lifetime in seconds for shared file stream sessions",
     },
     ConfigDef {
@@ -552,7 +597,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_MAINTENANCE,
         description: "Seconds between periodic maintenance cleanup runs",
     },
     ConfigDef {
@@ -563,7 +608,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_BLOB_RECONCILE_INTERVAL_SECS.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_MAINTENANCE,
         description: "Seconds between full blob reconciliation runs",
     },
     ConfigDef {
@@ -576,7 +621,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_MAINTENANCE,
         description: "Seconds between periodic system health checks for database, cache, and remote nodes",
     },
     ConfigDef {
@@ -587,7 +632,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_LIMITS,
         description: "Maximum page size accepted by team member listing endpoints",
     },
     ConfigDef {
@@ -598,7 +643,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_TASK_LIST_MAX_LIMIT.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "operations",
+        category: CONFIG_CATEGORY_RUNTIME_LIMITS,
         description: "Maximum page size accepted by background task listing endpoints",
     },
     // ── Storage ─────────────────────────────────────────────
@@ -610,7 +655,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "10".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage",
+        category: CONFIG_CATEGORY_STORAGE,
         description: "Maximum number of historical versions kept per file",
     },
     ConfigDef {
@@ -621,7 +666,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "7".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage",
+        category: CONFIG_CATEGORY_STORAGE,
         description: "Days before soft-deleted items are permanently purged",
     },
     ConfigDef {
@@ -632,7 +677,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "7".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage",
+        category: CONFIG_CATEGORY_STORAGE,
         description: "Days before archived teams are permanently deleted",
     },
     ConfigDef {
@@ -643,7 +688,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "24".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage",
+        category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK,
         description: "Hours before temporary background task artifacts expire; task records remain as history",
     },
     ConfigDef {
@@ -654,7 +699,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "0".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage",
+        category: CONFIG_CATEGORY_STORAGE,
         description: "Default storage quota for new users and teams in bytes (0 = unlimited)",
     },
     ConfigDef {
@@ -667,7 +712,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum source archive file bytes accepted for online archive extraction",
     },
     ConfigDef {
@@ -680,7 +725,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum total temporary bytes allowed for archive extract staging, including the downloaded source archive and extracted files",
     },
     ConfigDef {
@@ -693,7 +738,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum total uncompressed file bytes accepted inside a ZIP archive before import",
     },
     ConfigDef {
@@ -704,7 +749,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_ARCHIVE_EXTRACT_MAX_ENTRIES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum number of central-directory entries accepted in a ZIP archive",
     },
     ConfigDef {
@@ -715,7 +760,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_ARCHIVE_EXTRACT_MAX_FILES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum number of file entries accepted in a ZIP archive",
     },
     ConfigDef {
@@ -728,7 +773,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum number of directory paths accepted in a ZIP archive",
     },
     ConfigDef {
@@ -739,7 +784,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_ARCHIVE_EXTRACT_MAX_DEPTH.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum normalized path depth accepted for ZIP archive entries",
     },
     ConfigDef {
@@ -752,7 +797,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum UTF-8 byte length accepted for a normalized ZIP archive entry path",
     },
     ConfigDef {
@@ -765,7 +810,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum total uncompressed-to-compressed byte ratio accepted for a ZIP archive",
     },
     ConfigDef {
@@ -779,7 +824,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum per-file uncompressed-to-compressed byte ratio accepted for ZIP archive entries",
     },
     ConfigDef {
@@ -792,7 +837,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_extract",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_EXTRACT,
         description: "Maximum wall-clock seconds allowed for one online archive extraction task",
     },
     ConfigDef {
@@ -803,7 +848,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "false".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_preview",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
         description: "Master switch for read-only archive preview",
     },
     ConfigDef {
@@ -814,7 +859,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "false".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_preview",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
         description: "Allow signed-in users to preview archive manifests for personal and team files",
     },
     ConfigDef {
@@ -825,7 +870,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "false".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_preview",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
         description: "Allow public share pages to preview archive manifests after share access checks",
     },
     ConfigDef {
@@ -838,7 +883,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_preview",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
         description: "Maximum source archive bytes accepted for read-only archive preview",
     },
     ConfigDef {
@@ -849,7 +894,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_ARCHIVE_PREVIEW_MAX_ENTRIES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_preview",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
         description: "Maximum number of archive entries accepted for archive preview",
     },
     ConfigDef {
@@ -862,7 +907,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_preview",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
         description: "Maximum serialized archive preview manifest bytes returned to clients",
     },
     ConfigDef {
@@ -875,7 +920,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_preview",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW,
         description: "Maximum wall-clock seconds allowed for one archive preview scan",
     },
     ConfigDef {
@@ -886,7 +931,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_ARCHIVE_BUILD_MAX_ENTRIES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_build",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
         description: "Maximum expanded file and directory entries accepted for archive compression or download",
     },
     ConfigDef {
@@ -899,7 +944,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_build",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
         description: "Maximum total source bytes accepted for archive compression or download",
     },
     ConfigDef {
@@ -910,7 +955,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_ARCHIVE_BUILD_MAX_TEMP_BYTES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.archive_build",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_BUILD,
         description: "Maximum estimated or actual ZIP output bytes accepted for archive compression or download",
     },
     ConfigDef {
@@ -921,7 +966,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.media_processing",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Maximum original file size eligible for thumbnail generation in bytes",
     },
     ConfigDef {
@@ -932,7 +977,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_MEDIA_METADATA_ENABLED.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.media_processing",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Enable backend blob-level media metadata extraction and cache",
     },
     ConfigDef {
@@ -945,7 +990,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.media_processing",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Maximum original file size eligible for backend media metadata extraction in bytes",
     },
     ConfigDef {
@@ -956,7 +1001,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: crate::config::media_processing::default_media_processing_registry_json,
         requires_restart: false,
         is_sensitive: false,
-        category: "storage.media_processing",
+        category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA,
         description: "Unified media processing registry for thumbnail and metadata processors",
     },
     // ── User ───────────────────────────────────────────────
@@ -968,7 +1013,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "user.registration_and_login",
+        category: CONFIG_CATEGORY_USER_REGISTRATION,
         description: "Whether new users can self-register from the public auth flow",
     },
     ConfigDef {
@@ -979,7 +1024,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "user.registration_and_login",
+        category: CONFIG_CATEGORY_USER_REGISTRATION,
         description: "Whether newly registered users must activate their account by email before signing in",
     },
     ConfigDef {
@@ -990,7 +1035,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::avatar::DEFAULT_AVATAR_DIR.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "user.avatar",
+        category: CONFIG_CATEGORY_USER_AVATAR,
         description: "Local directory used for uploaded avatar files (relative paths resolve under ./data)",
     },
     ConfigDef {
@@ -1001,7 +1046,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "user.avatar",
+        category: CONFIG_CATEGORY_USER_AVATAR,
         description: "Maximum avatar upload size in bytes before the request is rejected",
     },
     ConfigDef {
@@ -1012,7 +1057,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "https://www.gravatar.com/avatar".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "user.avatar",
+        category: CONFIG_CATEGORY_USER_AVATAR,
         description: "Gravatar avatar base URL (change to proxy/mirror if needed)",
     },
     // ── Audit ─────────────────────────────────────────────
@@ -1024,7 +1069,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "audit",
+        category: CONFIG_CATEGORY_AUDIT,
         description: "Enable or disable audit logging",
     },
     ConfigDef {
@@ -1035,7 +1080,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "90".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "audit",
+        category: CONFIG_CATEGORY_AUDIT,
         description: "Days before audit log entries are permanently deleted",
     },
     // ── Mail ──────────────────────────────────────────────
@@ -1047,7 +1092,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: String::new,
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.config",
+        category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "SMTP server hostname used for transactional email delivery",
     },
     ConfigDef {
@@ -1058,7 +1103,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "587".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.config",
+        category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "SMTP server port used for transactional email delivery",
     },
     ConfigDef {
@@ -1069,7 +1114,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: String::new,
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.config",
+        category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "SMTP username for authenticated mail delivery",
     },
     ConfigDef {
@@ -1080,7 +1125,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: String::new,
         requires_restart: false,
         is_sensitive: true,
-        category: "mail.config",
+        category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "SMTP password for authenticated mail delivery",
     },
     ConfigDef {
@@ -1091,7 +1136,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: String::new,
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.config",
+        category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "From address used for account activation and contact verification email",
     },
     ConfigDef {
@@ -1102,7 +1147,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "AsterDrive".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.config",
+        category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "Display name used for account activation and contact verification email",
     },
     ConfigDef {
@@ -1113,7 +1158,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.config",
+        category: CONFIG_CATEGORY_MAIL_CONFIG,
         description: "Whether SMTP uses encryption. Port 465 uses implicit SSL/TLS; other ports use STARTTLS when enabled",
     },
     ConfigDef {
@@ -1129,7 +1174,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for registration activation emails",
     },
     ConfigDef {
@@ -1145,7 +1190,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for registration activation emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
@@ -1161,7 +1206,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for email change confirmation emails",
     },
     ConfigDef {
@@ -1177,7 +1222,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for email change confirmation emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
@@ -1193,7 +1238,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for password reset emails",
     },
     ConfigDef {
@@ -1209,7 +1254,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for password reset emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
@@ -1225,7 +1270,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for password reset confirmation emails",
     },
     ConfigDef {
@@ -1241,7 +1286,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for password reset confirmation emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
@@ -1257,7 +1302,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for previous-address email change notices",
     },
     ConfigDef {
@@ -1273,7 +1318,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for previous-address email change notices. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
@@ -1289,7 +1334,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for external auth email verification emails",
     },
     ConfigDef {
@@ -1305,7 +1350,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for external auth email verification emails. Prefer a complete HTML document for best client compatibility",
     },
     ConfigDef {
@@ -1321,7 +1366,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "Subject template for login email code messages",
     },
     ConfigDef {
@@ -1337,7 +1382,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         },
         requires_restart: false,
         is_sensitive: false,
-        category: "mail.template",
+        category: CONFIG_CATEGORY_MAIL_TEMPLATE,
         description: "HTML template for login email code messages. Prefer a complete HTML document for best client compatibility",
     },
     // ── General ─────────────────────────────────────────────
@@ -1349,7 +1394,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: empty_string_array_default,
         requires_restart: false,
         is_sensitive: false,
-        category: "general",
+        category: CONFIG_CATEGORY_SITE,
         description: "Trusted public HTTP(S) frontend origins as a JSON string array. They are used to generate share, preview, WebDAV, WOPI, and callback URLs, and they also extend exact-match trusted frontend origins for cookie-authenticated same-site CSRF checks. This is separate from CORS and mainly affects same-site subdomain deployments; do not add domains you do not control. The first origin is the fallback",
     },
     ConfigDef {
@@ -1360,7 +1405,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "AsterDrive".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "general",
+        category: CONFIG_CATEGORY_SITE,
         description: "Public browser title used by anonymous and authenticated pages",
     },
     ConfigDef {
@@ -1371,7 +1416,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "Self-hosted cloud storage".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "general",
+        category: CONFIG_CATEGORY_SITE,
         description: "Public HTML description metadata exposed to anonymous pages",
     },
     ConfigDef {
@@ -1382,7 +1427,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "/favicon.svg".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "general",
+        category: CONFIG_CATEGORY_SITE,
         description: "Public favicon URL applied at runtime for anonymous and authenticated pages",
     },
     ConfigDef {
@@ -1393,7 +1438,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "/static/asterdrive/asterdrive-dark.svg".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "general",
+        category: CONFIG_CATEGORY_SITE,
         description: "Public site logo URL used on light surfaces such as headers and forms",
     },
     ConfigDef {
@@ -1404,7 +1449,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "/static/asterdrive/asterdrive-light.svg".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "general",
+        category: CONFIG_CATEGORY_SITE,
         description: "Public site logo URL used on dark surfaces such as the login hero panel",
     },
     ConfigDef {
@@ -1415,7 +1460,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::wopi::DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "general.preview",
+        category: CONFIG_CATEGORY_SITE_PREVIEW,
         description: "Lifetime of WOPI access tokens in seconds",
     },
     ConfigDef {
@@ -1426,7 +1471,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::wopi::DEFAULT_WOPI_LOCK_TTL_SECS.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "general.preview",
+        category: CONFIG_CATEGORY_SITE_PREVIEW,
         description: "Lifetime of active WOPI locks in seconds before they expire automatically",
     },
     ConfigDef {
@@ -1437,7 +1482,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::wopi::DEFAULT_WOPI_DISCOVERY_CACHE_TTL_SECS.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "general.preview",
+        category: CONFIG_CATEGORY_SITE_PREVIEW,
         description: "How long fetched WOPI discovery metadata stays cached in seconds",
     },
     ConfigDef {
@@ -1448,7 +1493,111 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: crate::services::preview_app_service::default_public_preview_apps_json,
         requires_restart: false,
         is_sensitive: false,
-        category: "general.preview",
+        category: CONFIG_CATEGORY_SITE_PREVIEW,
         description: "Public preview app registry used by the web frontend, including extension bindings",
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use serde_json::Value;
+
+    use super::{ALL_CONFIGS, SYSTEM_CONFIG_ALLOWED_CATEGORIES};
+
+    #[test]
+    fn all_config_categories_are_registered() {
+        let allowed_categories = SYSTEM_CONFIG_ALLOWED_CATEGORIES
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let duplicate_allowed_categories = duplicate_values(SYSTEM_CONFIG_ALLOWED_CATEGORIES);
+        let unknown_categories = ALL_CONFIGS
+            .iter()
+            .map(|def| def.category)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter(|category| !allowed_categories.contains(category))
+            .collect::<Vec<_>>();
+
+        assert!(
+            duplicate_allowed_categories.is_empty(),
+            "duplicate system_config allowed categories: {duplicate_allowed_categories:?}"
+        );
+        assert!(
+            unknown_categories.is_empty(),
+            "unknown system_config categories: {unknown_categories:?}"
+        );
+    }
+
+    #[test]
+    fn second_level_config_categories_have_frontend_i18n_text() {
+        let zh_admin_common = parse_admin_common_locale(
+            "zh",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/frontend-panel/src/i18n/locales/zh/admin/settings-common.json"
+            )),
+        );
+        let en_admin_common = parse_admin_common_locale(
+            "en",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/frontend-panel/src/i18n/locales/en/admin/settings-common.json"
+            )),
+        );
+        let second_level_categories = ALL_CONFIGS
+            .iter()
+            .filter_map(|def| subcategory_i18n_key(def.category))
+            .collect::<BTreeSet<_>>();
+
+        let missing_keys = second_level_categories
+            .iter()
+            .flat_map(|base_key| [base_key.clone(), format!("{base_key}_desc")])
+            .flat_map(|key| {
+                let mut missing = Vec::new();
+                if !zh_admin_common.contains(&key) {
+                    missing.push(format!("zh:{key}"));
+                }
+                if !en_admin_common.contains(&key) {
+                    missing.push(format!("en:{key}"));
+                }
+                missing
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            missing_keys.is_empty(),
+            "missing frontend i18n for second-level system_config categories: {missing_keys:?}"
+        );
+    }
+
+    fn duplicate_values(values: &[&'static str]) -> Vec<&'static str> {
+        let mut seen = BTreeSet::new();
+        values
+            .iter()
+            .copied()
+            .filter(|value| !seen.insert(*value))
+            .collect()
+    }
+
+    fn subcategory_i18n_key(category: &str) -> Option<String> {
+        let (root, subcategory) = category.split_once('.')?;
+        Some(format!(
+            "settings_subcategory_{root}_{}",
+            subcategory.replace('.', "_")
+        ))
+    }
+
+    fn parse_admin_common_locale(lang: &str, json: &str) -> BTreeSet<String> {
+        let value = serde_json::from_str::<Value>(json)
+            .unwrap_or_else(|err| panic!("{lang} settings-common.json must be valid JSON: {err}"));
+        value
+            .as_object()
+            .unwrap_or_else(|| panic!("{lang} settings-common.json must be a JSON object"))
+            .keys()
+            .cloned()
+            .collect()
+    }
+}

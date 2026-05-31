@@ -317,6 +317,7 @@ mod tests {
         normalize_email_code_login_bool_config_value, normalize_token_ttl_config_value,
     };
     use crate::config::RuntimeConfig;
+    use crate::config::definitions::CONFIG_CATEGORY_AUTH;
     use crate::entities::system_config;
     use chrono::Utc;
 
@@ -330,7 +331,7 @@ mod tests {
             is_sensitive: false,
             source: crate::types::SystemConfigSource::System,
             namespace: String::new(),
-            category: "auth".to_string(),
+            category: CONFIG_CATEGORY_AUTH.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,

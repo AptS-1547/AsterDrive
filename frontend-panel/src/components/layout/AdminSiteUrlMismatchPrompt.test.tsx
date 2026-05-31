@@ -298,10 +298,9 @@ describe("AdminSiteUrlMismatchPrompt", () => {
 		render(<AdminSiteUrlMismatchPrompt />);
 
 		await waitFor(() => {
-			expect(mockState.navigate).toHaveBeenCalledWith(
-				"/admin/settings/general",
-				{ replace: true },
-			);
+			expect(mockState.navigate).toHaveBeenCalledWith("/admin/settings/site", {
+				replace: true,
+			});
 		});
 		expect(
 			screen.queryByText("translated:site_url_mismatch_title"),

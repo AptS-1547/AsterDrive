@@ -14,7 +14,7 @@ import { adminConfigService } from "@/services/adminService";
 import { useBrandingStore } from "@/stores/brandingStore";
 
 const PUBLIC_SITE_URL_KEY = "public_site_url";
-const ADMIN_SITE_SETTINGS_PATH = "/admin/settings/general";
+const ADMIN_SITE_SETTINGS_PATH = "/admin/settings/site";
 
 function syncPublicSiteUrlRuntime(value: string[] | null | undefined) {
 	const siteUrl = setPublicSiteUrls(value);

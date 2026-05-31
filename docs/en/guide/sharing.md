@@ -43,7 +43,7 @@ When audio or video plays on a share page, AsterDrive first creates a short-live
 Default behavior:
 
 - Streaming sessions are valid for `3` hours by default
-- Administrators can adjust this at `Admin -> System Settings -> Runtime and Scheduling -> Share streaming session TTL`
+- Administrators can adjust this at `Admin -> System Settings -> Runtime -> Share streaming session TTL`
 - The allowed range is `5` minutes to `24` hours
 - A download limit counts once per streaming session; segmented player Range requests do not repeatedly increase it
 
@@ -65,7 +65,7 @@ If filenames inside the ZIP look garbled, switch `Filename encoding` in the prev
 
 If the share has a password, visitors must pass password verification before seeing the archive listing. When accessing an archive through a folder share, the system also verifies that the archive really belongs to the shared scope.
 
-Administrators do not enable share-side archive preview by default because it exposes metadata such as internal filenames and directory structure. Enable it from `Admin -> System Settings -> Storage and Retention -> Archive Preview` only when you need this capability.
+Administrators do not enable share-side archive preview by default because it exposes metadata such as internal filenames and directory structure. Enable it from `Admin -> System Settings -> File Processing -> Archive Preview` only when you need this capability.
 
 ## File Shares vs Folder Shares
 

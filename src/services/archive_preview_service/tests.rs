@@ -10,6 +10,7 @@ use super::cache::{fit_raw_manifest_to_cache_limit, serialize_cached_raw_manifes
 use super::model::{ArchiveRawEntry, ArchiveRawManifest};
 use super::scan::build_manifest_from_raw;
 use super::*;
+use crate::config::definitions::CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW;
 use crate::entities::system_config;
 use crate::services::archive_service::test_utils::create_single_file_zip_with_raw_name;
 use crate::storage::BlobMetadata;
@@ -186,7 +187,7 @@ fn apply_runtime_config_value(
         is_sensitive: false,
         source: SystemConfigSource::System,
         namespace: String::new(),
-        category: "test".to_string(),
+        category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW.to_string(),
         description: "test".to_string(),
         updated_at: Utc::now(),
         updated_by: Some(1),

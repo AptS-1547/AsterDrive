@@ -1318,9 +1318,13 @@ mod tests {
                 .map_err(|_| tokio_tungstenite::tungstenite::Error::ConnectionClosed)
         }));
         let (mut write, mut written_rx) = channel_sink();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .expect("test client should build without proxy");
 
         execute_stream_tunnel_request(
-            &reqwest::Client::new(),
+            &client,
             &format!("http://127.0.0.1:{port}"),
             request_start_frame(
                 request_id,

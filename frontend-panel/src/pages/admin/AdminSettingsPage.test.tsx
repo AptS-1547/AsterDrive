@@ -92,8 +92,8 @@ const translationMap: Record<string, string> = {
 	settings_section_expand: "settings_section_expand",
 	settings_subcategory_mail_config: "settings_subcategory_mail_config",
 	settings_subcategory_mail_template: "settings_subcategory_mail_template",
-	settings_subcategory_storage_media_processing: "Media Processing",
-	settings_subcategory_storage_media_processing_desc:
+	settings_subcategory_file_processing_media: "Media Processing",
+	settings_subcategory_file_processing_media_desc:
 		"Configure media metadata, available thumbnail processors, and safety limits.",
 	settings_item_media_metadata_enabled_label: "Enable media metadata",
 	settings_item_media_metadata_enabled_desc:
@@ -135,11 +135,12 @@ const translationMap: Record<string, string> = {
 	media_processing_editor_use_metadata_image: "Image Metadata",
 	media_processing_editor_use_metadata_audio: "Audio Metadata",
 	media_processing_editor_use_metadata_video: "Video Metadata",
-	settings_subcategory_storage_archive_extract: "Archive Extraction",
-	settings_subcategory_storage_archive_extract_desc:
+	settings_subcategory_file_processing_archive_extract: "Archive Extraction",
+	settings_subcategory_file_processing_archive_extract_desc:
 		"Archive extraction limits.",
-	settings_subcategory_storage_archive_preview: "Archive Preview",
-	settings_subcategory_storage_archive_preview_desc: "Archive preview limits.",
+	settings_subcategory_file_processing_archive_preview: "Archive Preview",
+	settings_subcategory_file_processing_archive_preview_desc:
+		"Archive preview limits.",
 	settings_save_hint:
 		"更改会先暂存为草稿，确认无误后再统一保存，⌘/Ctrl + S 保存。",
 	settings_template_variable_reset_url_desc:
@@ -600,10 +601,9 @@ function getMockConfigCategory(key: string) {
 	if (key.startsWith("custom")) return "custom";
 	if (key.startsWith("mail_template_")) return "mail.template";
 	if (key.startsWith("mail_")) return "mail.config";
-	if (key === "media_processing_registry_json")
-		return "storage.media_processing";
-	if (key.startsWith("media_metadata_")) return "storage.media_processing";
-	if (key.startsWith("thumbnail_")) return "storage.media_processing";
+	if (key === "media_processing_registry_json") return "file_processing.media";
+	if (key.startsWith("media_metadata_")) return "file_processing.media";
+	if (key.startsWith("thumbnail_")) return "file_processing.media";
 	return "storage";
 }
 
@@ -940,7 +940,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					key: "branding_title",
 					value: "AsterDrive",
 					value_type: "string",
@@ -955,7 +955,7 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				key: "branding_title",
 				value_type: "string",
 			}),
@@ -966,7 +966,7 @@ describe("AdminSettingsPage", () => {
 			}),
 		]);
 
-		const { container } = render(<AdminSettingsPage section="general" />);
+		const { container } = render(<AdminSettingsPage section="site" />);
 
 		await screen.findByDisplayValue("AsterDrive");
 
@@ -974,7 +974,7 @@ describe("AdminSettingsPage", () => {
 			container.querySelectorAll("button[data-value]"),
 		).map((button) => button.getAttribute("data-value"));
 
-		expect(categoryButtons.slice(0, 2)).toEqual(["general", "auth"]);
+		expect(categoryButtons.slice(0, 2)).toEqual(["site", "auth"]);
 	});
 
 	it("edits non-boolean values inline and saves them with the shared save button", async () => {
@@ -1516,7 +1516,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "storage",
+					category: "user.avatar",
 					key: "avatar_max_upload_size_bytes",
 					value: String(1024 * 1024),
 					value_type: "number",
@@ -1525,13 +1525,13 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "storage",
+				category: "user.avatar",
 				key: "avatar_max_upload_size_bytes",
 				value_type: "number",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="storage" />);
+		render(<AdminSettingsPage section="user" />);
 
 		fireEvent.change(await screen.findByDisplayValue("1"), {
 			target: { value: String(Number.MAX_SAFE_INTEGER) },
@@ -1546,7 +1546,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "storage",
+					category: "user.avatar",
 					key: "avatar_max_upload_size_bytes",
 					value: String(1024 * 1024),
 					value_type: "number",
@@ -1555,13 +1555,13 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "storage",
+				category: "user.avatar",
 				key: "avatar_max_upload_size_bytes",
 				value_type: "number",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="storage" />);
+		render(<AdminSettingsPage section="user" />);
 
 		expect(await screen.findByDisplayValue("1")).toBeInTheDocument();
 
@@ -2044,7 +2044,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					description: "favicon desc",
 					key: "branding_favicon_url",
 					value: "/branding/favicon.svg",
@@ -2054,14 +2054,14 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				description: "favicon desc",
 				key: "branding_favicon_url",
 				value_type: "string",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		expect(
 			await screen.findByDisplayValue("/branding/favicon.svg"),
@@ -2082,7 +2082,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					description: "wordmark desc",
 					key: "branding_wordmark_dark_url",
 					value: "/branding/wordmark-dark.svg",
@@ -2092,14 +2092,14 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				description: "wordmark desc",
 				key: "branding_wordmark_dark_url",
 				value_type: "string",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		expect(
 			await screen.findByDisplayValue("/branding/wordmark-dark.svg"),
@@ -2122,7 +2122,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					key: "branding_wordmark_light_url",
 					value: "/branding/wordmark-light.svg",
 					value_type: "string",
@@ -2131,13 +2131,13 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				key: "branding_wordmark_light_url",
 				value_type: "string",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		const preview = await screen.findByLabelText(
 			"/branding/wordmark-light.svg",
@@ -2150,7 +2150,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general.preview",
+					category: "site.preview",
 					key: "frontend_preview_apps_json",
 					value: JSON.stringify(
 						{
@@ -2178,13 +2178,13 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general.preview",
+				category: "site.preview",
 				key: "frontend_preview_apps_json",
 				value_type: "multiline",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: /settings_section_expand/i }),
@@ -2202,17 +2202,17 @@ describe("AdminSettingsPage", () => {
 		expect(mockState.codeEditorProps).toBeNull();
 	});
 
-	it("renders media metadata configs in the media processing storage subcategory", async () => {
+	it("renders media metadata configs in the media processing category", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "storage.media_processing",
+					category: "file_processing.media",
 					key: "media_metadata_enabled",
 					value: "true",
 					value_type: "boolean",
 				}),
 				createConfig({
-					category: "storage.media_processing",
+					category: "file_processing.media",
 					key: "media_metadata_max_source_bytes",
 					value: "1073741824",
 					value_type: "number",
@@ -2221,21 +2221,21 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "storage.media_processing",
+				category: "file_processing.media",
 				description_i18n_key: "settings_item_media_metadata_enabled_desc",
 				key: "media_metadata_enabled",
 				label_i18n_key: "settings_item_media_metadata_enabled_label",
 				value_type: "boolean",
 			}),
 			createSchemaItem({
-				category: "storage.media_processing",
+				category: "file_processing.media",
 				key: "media_metadata_max_source_bytes",
 				label_i18n_key: "settings_item_media_metadata_max_source_bytes_label",
 				value_type: "number",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="storage" />);
+		render(<AdminSettingsPage section="file_processing" />);
 
 		expect(await screen.findByText("Media Processing")).toBeInTheDocument();
 		expect(
@@ -2261,7 +2261,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "storage.media_processing",
+					category: "file_processing.media",
 					key: "media_processing_registry_json",
 					value: JSON.stringify(
 						{
@@ -2292,14 +2292,14 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "storage.media_processing",
+				category: "file_processing.media",
 				key: "media_processing_registry_json",
 				label_i18n_key: "settings_item_media_processing_registry_json_label",
 				value_type: "multiline",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="storage" />);
+		render(<AdminSettingsPage section="file_processing" />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: /settings_section_expand/i }),
@@ -2319,7 +2319,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "storage.media_processing",
+					category: "file_processing.media",
 					key: "media_processing_registry_json",
 					value: JSON.stringify(
 						{
@@ -2350,7 +2350,7 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "storage.media_processing",
+				category: "file_processing.media",
 				key: "media_processing_registry_json",
 				label_i18n_key: "settings_item_media_processing_registry_json_label",
 				value_type: "multiline",
@@ -2361,7 +2361,7 @@ describe("AdminSettingsPage", () => {
 				"vips_cli command '/usr/local/bin/vips-custom' is available: vips-8.16.0",
 		});
 
-		render(<AdminSettingsPage section="storage" />);
+		render(<AdminSettingsPage section="file_processing" />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: /settings_section_expand/i }),
@@ -2394,7 +2394,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "storage.media_processing",
+					category: "file_processing.media",
 					key: "media_processing_registry_json",
 					value: JSON.stringify(
 						{
@@ -2425,7 +2425,7 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "storage.media_processing",
+				category: "file_processing.media",
 				key: "media_processing_registry_json",
 				label_i18n_key: "settings_item_media_processing_registry_json_label",
 				value_type: "multiline",
@@ -2435,7 +2435,7 @@ describe("AdminSettingsPage", () => {
 			message: "ffprobe command '/opt/bin/ffprobe-custom' is available",
 		});
 
-		render(<AdminSettingsPage section="storage" />);
+		render(<AdminSettingsPage section="file_processing" />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: /settings_section_expand/i }),
@@ -2469,17 +2469,17 @@ describe("AdminSettingsPage", () => {
 		);
 	});
 
-	it("defaults archive storage subcategory sections to collapsed", async () => {
+	it("defaults archive file processing subcategory sections to collapsed", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "storage.archive_extract",
+					category: "file_processing.archive_extract",
 					key: "archive_extract_max_entries",
 					value: "10000",
 					value_type: "number",
 				}),
 				createConfig({
-					category: "storage.archive_preview",
+					category: "file_processing.archive_preview",
 					key: "archive_preview_max_entries",
 					value: "2000",
 					value_type: "number",
@@ -2488,18 +2488,18 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "storage.archive_extract",
+				category: "file_processing.archive_extract",
 				key: "archive_extract_max_entries",
 				value_type: "number",
 			}),
 			createSchemaItem({
-				category: "storage.archive_preview",
+				category: "file_processing.archive_preview",
 				key: "archive_preview_max_entries",
 				value_type: "number",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="storage" />);
+		render(<AdminSettingsPage section="file_processing" />);
 
 		const extractTitle = await screen.findByText("Archive Extraction");
 		const previewTitle = await screen.findByText("Archive Preview");
@@ -2593,7 +2593,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general.preview",
+					category: "site.preview",
 					key: "frontend_preview_apps_json",
 					value: initialPreviewValue,
 					value_type: "multiline",
@@ -2602,13 +2602,13 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general.preview",
+				category: "site.preview",
 				key: "frontend_preview_apps_json",
 				value_type: "multiline",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: /settings_section_expand/i }),
@@ -2657,7 +2657,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					key: "branding_favicon_url",
 					value: "/branding/favicon.svg",
 					value_type: "string",
@@ -2666,13 +2666,13 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				key: "branding_favicon_url",
 				value_type: "string",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		const input = await screen.findByDisplayValue("/branding/favicon.svg");
 		expect(screen.getByLabelText("/branding/favicon.svg")).toBeInTheDocument();
@@ -2698,7 +2698,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					key: "public_site_url",
 					value: ["https://drive.example.com"],
 					value_type: "string_array",
@@ -2707,14 +2707,14 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				key: "public_site_url",
 				label_i18n_key: "settings_item_public_site_url_label",
 				value_type: "string_array",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		const firstOrigin = await screen.findByLabelText(
 			"public_site_url_origin_label 1",
@@ -2756,7 +2756,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					key: "public_site_url",
 					value: ["http://localhost:3000", "http://localhost:5173"],
 					value_type: "string_array",
@@ -2765,7 +2765,7 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				key: "public_site_url",
 				label_i18n_key: "settings_item_public_site_url_label",
 				value_type: "string_array",
@@ -2779,7 +2779,7 @@ describe("AdminSettingsPage", () => {
 			},
 		});
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		await screen.findByLabelText("public_site_url_origin_label 1");
 		fireEvent.click(
@@ -2807,7 +2807,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					key: "public_site_url",
 					value: [window.location.origin],
 					value_type: "string_array",
@@ -2816,14 +2816,14 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				key: "public_site_url",
 				label_i18n_key: "settings_item_public_site_url_label",
 				value_type: "string_array",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		await screen.findByLabelText("public_site_url_origin_label 1");
 
@@ -2885,7 +2885,7 @@ describe("AdminSettingsPage", () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
-					category: "general",
+					category: "site",
 					key: "public_site_url",
 					value: ["https://drive.example.com"],
 					value_type: "string_array",
@@ -2894,13 +2894,13 @@ describe("AdminSettingsPage", () => {
 		});
 		mockState.schema.mockResolvedValueOnce([
 			createSchemaItem({
-				category: "general",
+				category: "site",
 				key: "public_site_url",
 				value_type: "string_array",
 			}),
 		]);
 
-		render(<AdminSettingsPage section="general" />);
+		render(<AdminSettingsPage section="site" />);
 
 		await screen.findByLabelText("public_site_url_origin_label 1");
 		fireEvent.click(

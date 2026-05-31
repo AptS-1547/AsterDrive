@@ -126,7 +126,7 @@ The built-in Microsoft / Google previewers usually follow this approach. They fi
 AsterDrive includes archive preview, but it is disabled by default. Administrators need to confirm both:
 
 ```text
-Admin -> System Settings -> Storage and Retention -> Archive Preview
+Admin -> System Settings -> File Processing -> Archive Preview
 Admin -> System Settings -> Site Configuration -> Preview Apps
 ```
 
@@ -181,7 +181,7 @@ For logged-in users, audio and video previews read files according to the curren
 This session is valid for `3` hours by default. Administrators can adjust it here:
 
 ```text
-Admin -> System Settings -> Runtime and Scheduling -> Share streaming session TTL
+Admin -> System Settings -> Runtime -> Share streaming session TTL
 ```
 
 It is not the expiration time of the share link itself. The share link's password, expiration time, and maximum download count are still checked normally. The streaming session is only a temporary Range URL for the browser player.

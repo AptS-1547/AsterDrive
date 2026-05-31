@@ -1,4 +1,5 @@
 use crate::config::RuntimeConfig;
+use crate::config::definitions::CONFIG_CATEGORY_FILE_PROCESSING_MEDIA;
 use crate::config::operations::{
     DEFAULT_MEDIA_METADATA_MAX_SOURCE_BYTES, MEDIA_METADATA_ENABLED_KEY,
     MEDIA_METADATA_MAX_SOURCE_BYTES_KEY,
@@ -37,7 +38,7 @@ fn config_model(key: &str, value: &str) -> system_config::Model {
         is_sensitive: false,
         source: SystemConfigSource::System,
         namespace: String::new(),
-        category: "test".to_string(),
+        category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA.to_string(),
         description: "test".to_string(),
         updated_at: Utc::now(),
         updated_by: None,

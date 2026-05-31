@@ -100,6 +100,7 @@ fn parse_bool(value: &str) -> Option<bool> {
 mod tests {
     use super::RuntimeConfig;
     use crate::config::DatabaseConfig;
+    use crate::config::definitions::CONFIG_CATEGORY_SITE;
     use crate::db;
     use crate::db::repository::config_repo;
     use crate::entities::system_config;
@@ -135,7 +136,7 @@ mod tests {
             is_sensitive: false,
             source: SystemConfigSource::System,
             namespace: String::new(),
-            category: "test".to_string(),
+            category: CONFIG_CATEGORY_SITE.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,

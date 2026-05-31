@@ -36,13 +36,14 @@ import { useBrandingStore } from "@/stores/brandingStore";
 import { useThemeStore } from "@/stores/themeStore";
 
 const CATEGORY_ORDER = [
-	"general",
+	"site",
 	"user",
 	"auth",
 	"mail",
 	"network",
-	"operations",
+	"runtime",
 	"storage",
+	"file_processing",
 	"webdav",
 	"audit",
 	"custom",
@@ -75,17 +76,19 @@ function getCategoryIcon(category: string): IconName {
 			return "Shield";
 		case "network":
 			return "Globe";
-		case "operations":
-			return "Clock";
+		case "runtime":
+			return "Gauge";
 		case "mail":
 			return "EnvelopeSimple";
 		case "storage":
 			return "HardDrive";
+		case "file_processing":
+			return "Cpu";
 		case "webdav":
 			return "FolderOpen";
 		case "audit":
 			return "Scroll";
-		case "general":
+		case "site":
 			return "Gear";
 		case "custom":
 			return "BracketsCurly";
@@ -105,12 +108,14 @@ function getAdminSettingsSectionTitle(
 			return t("settings_category_auth");
 		case "network":
 			return t("settings_category_network");
-		case "operations":
-			return t("settings_category_operations");
+		case "runtime":
+			return t("settings_category_runtime");
 		case "mail":
 			return t("settings_category_mail");
 		case "storage":
 			return t("settings_category_storage");
+		case "file_processing":
+			return t("settings_category_file_processing");
 		case "webdav":
 			return t("settings_category_webdav");
 		case "audit":
@@ -120,7 +125,7 @@ function getAdminSettingsSectionTitle(
 		case "other":
 			return t("settings_category_other");
 		default:
-			return t("settings_category_general");
+			return t("settings_category_site");
 	}
 }
 
@@ -246,18 +251,20 @@ export default function AdminSettingsPage({
 					return t("settings_category_auth");
 				case "network":
 					return t("settings_category_network");
-				case "operations":
-					return t("settings_category_operations");
+				case "runtime":
+					return t("settings_category_runtime");
 				case "mail":
 					return t("settings_category_mail");
 				case "storage":
 					return t("settings_category_storage");
+				case "file_processing":
+					return t("settings_category_file_processing");
 				case "webdav":
 					return t("settings_category_webdav");
 				case "audit":
 					return t("settings_category_audit");
-				case "general":
-					return t("settings_category_general");
+				case "site":
+					return t("settings_category_site");
 				case "custom":
 					return t("settings_category_custom");
 				case "other":
@@ -278,18 +285,20 @@ export default function AdminSettingsPage({
 					return t("settings_category_auth_desc");
 				case "network":
 					return t("settings_category_network_desc");
-				case "operations":
-					return t("settings_category_operations_desc");
+				case "runtime":
+					return t("settings_category_runtime_desc");
 				case "mail":
 					return t("settings_category_mail_desc");
 				case "storage":
 					return t("settings_category_storage_desc");
+				case "file_processing":
+					return t("settings_category_file_processing_desc");
 				case "webdav":
 					return t("settings_category_webdav_desc");
 				case "audit":
 					return t("settings_category_audit_desc");
-				case "general":
-					return t("settings_category_general_desc");
+				case "site":
+					return t("settings_category_site_desc");
 				case "custom":
 					return t("custom_config_intro");
 				case "other":

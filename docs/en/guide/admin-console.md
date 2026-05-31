@@ -307,8 +307,9 @@ The current page shows these groups:
 - Authentication and Cookie
 - Mail Delivery
 - Network Access
-- Runtime and Scheduling
+- Runtime
 - Storage and Retention
+- File Processing
 - WebDAV
 - Audit Logs
 - Custom Configuration

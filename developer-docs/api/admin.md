@@ -600,6 +600,22 @@
 
 前端管理后台就是靠它动态渲染设置页，而不是写死每个配置项。
 
+### 配置分区
+
+`category` 来自 `src/config/definitions.rs` 的允许列表，管理后台按一级分区展示，二级分区折叠成分组。当前系统分区如下：
+
+- `site` / `site.preview`：站点公开入口、品牌和预览应用
+- `user.registration_and_login` / `user.avatar`：注册登录和头像
+- `auth`：认证 Cookie 和 token TTL
+- `mail.config` / `mail.template`：发信配置和邮件模板
+- `network`：CORS 等网络访问规则
+- `runtime.mail` / `runtime.background_task` / `runtime.maintenance` / `runtime.limits` / `runtime.share_stream`：运行时派发、维护和限制
+- `storage`：版本、回收站、团队归档和默认配额等存储保留策略
+- `file_processing.archive_extract` / `file_processing.archive_preview` / `file_processing.archive_build` / `file_processing.media`：压缩包和媒体处理
+- `webdav` / `audit`：WebDAV 和审计日志
+
+旧的前端设置路径 `/admin/settings/general` 和 `/admin/settings/operations` 只保留为跳转兼容，不应再作为 `system_config.category` 写入。新增系统配置时必须使用已登记分区；如果确实需要新增分区，要同时补允许列表、前端路由 / 图标以及 zh/en 标题和描述文案。分类完整性测试会拦住未登记分区和缺少二级分区文案的配置。
+
 ### 读取模板变量
 
 `GET /admin/config/template-variables` 会返回按类别分组的模板变量清单，当前主要给管理后台在邮件、品牌文案等支持模板占位符的配置项旁边做提示，不必把变量表硬编码在前端里。

@@ -174,7 +174,7 @@ mod tests {
             is_sensitive: false,
             source: crate::types::SystemConfigSource::System,
             namespace: String::new(),
-            category: "general".to_string(),
+            category: crate::config::definitions::CONFIG_CATEGORY_SITE.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,

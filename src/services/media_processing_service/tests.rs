@@ -1,3 +1,4 @@
+use crate::config::definitions::CONFIG_CATEGORY_FILE_PROCESSING_MEDIA;
 use crate::config::media_processing::command_is_available;
 use crate::config::{RuntimeConfig, media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY};
 use crate::entities::system_config;
@@ -21,7 +22,7 @@ fn config_model(key: &str, value: &str) -> system_config::Model {
         is_sensitive: false,
         source: SystemConfigSource::System,
         namespace: String::new(),
-        category: "test".to_string(),
+        category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA.to_string(),
         description: "test".to_string(),
         updated_at: Utc::now(),
         updated_by: None,

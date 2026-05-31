@@ -909,6 +909,7 @@ fn system_health_check_interval(state: &PrimaryAppState) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::definitions::CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK;
     use crate::config::operations::{
         BACKGROUND_TASK_DISPATCH_IDLE_MAX_INTERVAL_SECS_KEY,
         BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
@@ -984,7 +985,7 @@ mod tests {
                 is_sensitive: false,
                 source: crate::types::SystemConfigSource::System,
                 namespace: String::new(),
-                category: "test".to_string(),
+                category: CONFIG_CATEGORY_RUNTIME_BACKGROUND_TASK.to_string(),
                 description: "test".to_string(),
                 updated_at: Utc::now(),
                 updated_by: None,

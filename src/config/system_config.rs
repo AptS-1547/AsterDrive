@@ -343,7 +343,10 @@ mod tests {
             SystemConfigSource::System,
         ));
         assert_eq!(config.value_type, SystemConfigValueType::StringArray);
-        assert_eq!(config.category, "general");
+        assert_eq!(
+            config.category,
+            crate::config::definitions::CONFIG_CATEGORY_SITE
+        );
         assert!(
             config
                 .description

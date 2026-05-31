@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 import type { SystemConfig } from "@/types/api";
 
 const DEFAULT_COLLAPSED_SUBCATEGORY_GROUP_KEYS = new Set([
-	"storage:archive_extract",
-	"storage:archive_preview",
+	"file_processing:archive_extract",
+	"file_processing:archive_preview",
 ]);
 
 function AdminSettingsMailTemplateGroup({

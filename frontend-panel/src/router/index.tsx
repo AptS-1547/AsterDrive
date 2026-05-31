@@ -138,7 +138,11 @@ export const router = createBrowserRouter([
 			{ path: "/admin/locks", element: <AdminLocksPage /> },
 			{
 				path: "/admin/settings",
-				element: <Navigate to="/admin/settings/general" replace />,
+				element: <Navigate to="/admin/settings/site" replace />,
+			},
+			{
+				path: "/admin/settings/site",
+				element: <AdminSettingsPage section="site" />,
 			},
 			{
 				path: "/admin/settings/auth",
@@ -157,8 +161,20 @@ export const router = createBrowserRouter([
 				element: <AdminSettingsPage section="network" />,
 			},
 			{
+				path: "/admin/settings/runtime",
+				element: <AdminSettingsPage section="runtime" />,
+			},
+			{
 				path: "/admin/settings/storage",
 				element: <AdminSettingsPage section="storage" />,
+			},
+			{
+				path: "/admin/settings/file-processing",
+				element: <AdminSettingsPage section="file_processing" />,
+			},
+			{
+				path: "/admin/settings/file_processing",
+				element: <Navigate to="/admin/settings/file-processing" replace />,
 			},
 			{
 				path: "/admin/settings/webdav",
@@ -170,11 +186,11 @@ export const router = createBrowserRouter([
 			},
 			{
 				path: "/admin/settings/general",
-				element: <AdminSettingsPage section="general" />,
+				element: <Navigate to="/admin/settings/site" replace />,
 			},
 			{
 				path: "/admin/settings/operations",
-				element: <AdminSettingsPage section="operations" />,
+				element: <Navigate to="/admin/settings/runtime" replace />,
 			},
 			{
 				path: "/admin/settings/custom",
@@ -186,7 +202,7 @@ export const router = createBrowserRouter([
 			},
 			{
 				path: "/admin/settings/:section",
-				element: <Navigate to="/admin/settings/general" replace />,
+				element: <Navigate to="/admin/settings/site" replace />,
 			},
 			{ path: "/admin/audit", element: <AdminAuditPage /> },
 			{ path: "/admin/about", element: <AdminAboutPage /> },

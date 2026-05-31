@@ -295,6 +295,7 @@ mod tests {
     use chrono::Utc;
 
     use crate::config::RuntimeConfig;
+    use crate::config::definitions::CONFIG_CATEGORY_NETWORK;
     use crate::entities::system_config;
 
     use super::{
@@ -316,7 +317,7 @@ mod tests {
             is_sensitive: false,
             source: crate::types::SystemConfigSource::System,
             namespace: String::new(),
-            category: "test".to_string(),
+            category: CONFIG_CATEGORY_NETWORK.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,

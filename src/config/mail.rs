@@ -290,6 +290,7 @@ mod tests {
         template_html, template_subject,
     };
     use crate::config::RuntimeConfig;
+    use crate::config::definitions::CONFIG_CATEGORY_MAIL_CONFIG;
     use crate::entities::system_config;
     use crate::types::MailTemplateCode;
     use chrono::Utc;
@@ -304,7 +305,7 @@ mod tests {
             is_sensitive: false,
             source: crate::types::SystemConfigSource::System,
             namespace: String::new(),
-            category: "mail".to_string(),
+            category: CONFIG_CATEGORY_MAIL_CONFIG.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,
