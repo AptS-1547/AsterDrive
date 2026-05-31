@@ -494,6 +494,7 @@
 - `auth_email_code_login_ttl_secs`
 - `auth_email_code_login_resend_cooldown_secs`
 - `audit_log_enabled`
+- `audit_log_recorded_actions`
 - `audit_log_retention_days`
 - `public_site_url`
 - `auth_cookie_secure`
@@ -704,6 +705,16 @@
 其中 `after` 和 `before` 使用 RFC3339 时间字符串。
 
 返回结果包含分页信息与日志项，日志项里会带时间、用户、动作、实体、名称、IP 等字段。
+
+日志项同时包含 `presentation` 字段，给前端做结构化展示：
+
+- `presentation.summary`：操作摘要，`code` 通常对应 `AuditAction::as_str()`，`params` 携带展示参数
+- `presentation.target`：目标对象摘要，优先描述实际展示对象；服务启动/关闭这类系统事件会使用 `server`
+- `presentation.detail`：按动作类型补充的结构化详情；旧记录或无法解析的详情会安全降级为空
+
+审计记录范围由运行时配置 `audit_log_recorded_actions` 控制，值是审计 action 字符串数组。空数组表示审计日志开关开启但不写入任何 action；非法值会在配置写入时被拒绝，运行时读取异常时会回退为记录全部 action。
+
+主节点启动和关闭会分别写入 `server_start`、`server_shutdown`，归在 `system` action 分组。当前 follower 的审计和运行日志补全仍是后续工作。
 
 ## 锁管理
 

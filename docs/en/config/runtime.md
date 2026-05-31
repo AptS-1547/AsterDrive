@@ -24,7 +24,7 @@ Admin -> System Settings
 | Background tasks, thumbnails, archive preview, or trash retention behaves abnormally | Runtime / File Processing / Storage and Retention | Then check [operations CLI](/en/deployment/ops-cli) |
 | Audio/video playback links on share pages expire too quickly or too slowly | Runtime | Then check [sharing and public access](/en/guide/sharing) |
 | WebDAV global switch, system-file blocking, or connection behavior is abnormal | WebDAV | Then check [WebDAV](/en/config/webdav) |
-| You need to see who changed what | Audit Logs | Then check [admin console](/en/guide/admin-console#audit-logs) |
+| You need to see who changed what, or want to narrow the audit scope | Audit Logs | Then check [admin console](/en/guide/admin-console#audit-logs) |
 
 ## Places Administrators Change Most Often
 
@@ -49,7 +49,7 @@ Admin -> System Settings
 | Disable WebDAV, or adjust blocking for system files such as `.DS_Store` and `Thumbs.db` | `WebDAV` |
 | Tune mail dispatch, background task dispatch, concurrency, retry, and periodic cleanup frequency | `Runtime` |
 | Tune the temporary audio/video streaming session TTL on share pages | `Runtime -> Share Streaming Playback Session TTL` |
-| Enable or disable audit logs | `Audit Logs` |
+| Enable or disable audit logs, or adjust the recorded scope | `Audit Logs` |
 
 ## Current Groups
 
@@ -62,7 +62,7 @@ Admin -> System Settings
 - **Storage and Retention** - Trash, version history, default quotas
 - **File Processing** - Online extraction, archive building, archive preview, thumbnails, media metadata, and media processors
 - **WebDAV** - Global switch and common system-file blocking
-- **Audit Logs** - Switch and retention time
+- **Audit Logs** - Switch, recorded scope, and retention time
 - **Custom Configuration**, **Other** - Advanced scenarios only
 
 ## Site Configuration
@@ -341,13 +341,16 @@ If you only want to change the WebDAV path prefix or the hard WebDAV upload size
 
 ## Audit Logs
 
-This group decides whether admin and key operations leave records.
+This group decides whether admin and key operations leave records, and also lets you narrow the recorded action scope.
 
 - **`Enable Audit Logs`**
+- **`Recorded Audit Actions`**
 - **`Audit Log Retention`**
 
 ::: warning Do not disable casually
 If you want to later investigate "who deleted files, who created shares, who changed team members", keep it enabled.
+
+The primary node's service startup and shutdown are also recorded as audit events, as `server_start` and `server_shutdown`.
 :::
 
 ## When Changes Take Effect
@@ -364,7 +367,8 @@ If you want to later investigate "who deleted files, who created shares, who cha
 | Cookie security, token TTLs | Applied to later login, refresh, and share password verification |
 | Avatar directory, avatar size limit | Applied to avatar uploads after the change |
 | Default quota | Only affects objects created later |
-| Trash, team archive, task artifact, audit log retention | Background cleanup tasks work with the new rules |
+| Audit log switch and recorded scope | Later audit writes follow the new scope |
+| Audit log retention window | Background cleanup tasks work with the new rules |
 | Version history limit | Applied when new versions are produced later |
 | Online extraction staging limit | Applied to online extraction tasks created later |
 | Online extraction source, uncompressed size, entry count, path depth, compression ratio, and duration limits | Applied to online extraction tasks created later |

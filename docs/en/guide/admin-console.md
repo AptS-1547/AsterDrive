@@ -367,7 +367,9 @@ Common uses:
 - Diagnose share, lock, and team-management issues
 - Check whether administrator operations happened as expected
 
-Whether audit logs are recorded, and how long they are retained, are controlled by system settings.
+The primary node's service startup and shutdown are also written as audit events, which makes it easier to trace when the instance came up or exited.
+
+Whether audit logs are recorded, which actions are recorded, and how long they are retained are controlled by system settings.
 
 ## About
 
