@@ -25,6 +25,7 @@
 	"offline_download_dialog_hint": "服务端会下载文件并导入当前文件夹。",
 	"offline_download_url_label": "来源 URL",
 	"offline_download_url_placeholder": "https://example.com/file.zip",
+	"offline_download_url_invalid": "请输入有效的 HTTP 或 HTTPS 地址。",
 	"offline_download_filename_label": "文件名",
 	"offline_download_filename_placeholder": "使用来源文件名",
 	"offline_download_sha256_label": "预期 SHA-256",

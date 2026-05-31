@@ -25,6 +25,7 @@
 	"offline_download_dialog_hint": "The server downloads the file and imports it into the current folder.",
 	"offline_download_url_label": "Source URL",
 	"offline_download_url_placeholder": "https://example.com/file.zip",
+	"offline_download_url_invalid": "Enter a valid HTTP or HTTPS URL.",
 	"offline_download_filename_label": "Filename",
 	"offline_download_filename_placeholder": "Use source filename",
 	"offline_download_sha256_label": "Expected SHA-256",

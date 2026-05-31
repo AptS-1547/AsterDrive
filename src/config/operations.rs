@@ -52,9 +52,15 @@ pub const DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 pub const DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 pub const DEFAULT_MEDIA_METADATA_ENABLED: bool = true;
 pub const DEFAULT_MEDIA_METADATA_MAX_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
+/// Default offline download limits are sized for slow-but-usable links.
+/// With the default 1 GiB cap and 600s request timeout, sustained throughput
+/// must stay above roughly 1.7 MiB/s to finish in time. The default 5 MiB/s
+/// speed cap leaves room above that target; operators who lower the cap or run
+/// on slower networks should raise `offline_download_request_timeout_secs`.
 pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES: u64 = 1024 * 1024 * 1024;
-pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC: u64 = 0;
+pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC: u64 = 5;
 pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY: usize = 1;
+/// See the note above `DEFAULT_OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES`.
 pub const DEFAULT_OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS: u64 = 600;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -918,6 +924,7 @@ mod tests {
     #[test]
     fn offline_download_speed_reader_converts_mb_per_sec_to_bytes_per_sec() {
         let runtime_config = RuntimeConfig::new();
+        assert_eq!(DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC, 5);
         assert_eq!(
             offline_download_max_bytes_per_sec(&runtime_config),
             if DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC == 0 {

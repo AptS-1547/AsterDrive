@@ -721,7 +721,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
-        description: "Maximum file size allowed for offline HTTP/HTTPS downloads in bytes",
+        description: "Maximum file size allowed for offline HTTP/HTTPS downloads in bytes. Tune this together with offline_download_request_timeout_secs; the 1 GiB / 600s defaults require roughly 1.7 MiB/s sustained throughput.",
     },
     ConfigDef {
         key: OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
@@ -734,7 +734,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
-        description: "Maximum offline HTTP/HTTPS download speed in MB/s (0 = unlimited)",
+        description: "Maximum offline HTTP/HTTPS download speed in MB/s (0 = unlimited). If set below the throughput needed by offline_download_max_file_size_bytes and offline_download_request_timeout_secs, large downloads will time out.",
     },
     ConfigDef {
         key: OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY,
@@ -760,7 +760,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         requires_restart: false,
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
-        description: "Timeout in seconds for offline download HTTP requests",
+        description: "Timeout in seconds for offline download HTTP requests. Tune this with offline_download_max_file_size_bytes and offline_download_max_mb_per_sec; the 1 GiB / 600s defaults require roughly 1.7 MiB/s sustained throughput.",
     },
     ConfigDef {
         key: ARCHIVE_EXTRACT_MAX_SOURCE_BYTES_KEY,

@@ -500,7 +500,7 @@ export function parseTaskResult(task: TaskInfo) {
 }
 
 export function parseStoragePolicyMigrationResult(task: TaskInfo) {
-	if (!task.result || task.result.kind !== "storage_policy_migration") {
+	if (task.result?.kind !== "storage_policy_migration") {
 		return null;
 	}
 

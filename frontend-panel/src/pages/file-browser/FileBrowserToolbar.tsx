@@ -1,4 +1,4 @@
-import { type DragEvent, Fragment, useEffect, useRef, useState } from "react";
+import { type DragEvent, Fragment, useEffect, useReducer, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { SortMenu } from "@/components/common/SortMenu";
 import { ToolbarBar } from "@/components/common/ToolbarBar";
@@ -30,6 +30,10 @@ type SelectionToolbarPhase = "hidden" | "entering" | "visible" | "exiting";
 const SELECTION_TOOLBAR_ENTER_MS = 160;
 const SELECTION_TOOLBAR_EXIT_DELAY_MS = 40;
 const SELECTION_TOOLBAR_EXIT_MS = 120;
+
+function scheduleSelectionToolbarTimer(callback: () => void, delay: number) {
+	return setTimeout(callback, delay);
+}
 
 type VisibleBreadcrumbEntry =
 	| {
@@ -81,8 +85,57 @@ interface FileBrowserToolbarProps {
 function useSelectionToolbarMotion(
 	selectionToolbar: FileBrowserSelectionToolbarState | null,
 ) {
-	const [phase, setPhase] = useState<SelectionToolbarPhase>(() =>
-		selectionToolbar ? "entering" : "hidden",
+	const [state, dispatch] = useReducer(
+		(
+			current: {
+				hasSelection: boolean;
+				phase: SelectionToolbarPhase;
+			},
+			action:
+				| {
+						type: "set";
+						hasSelection: boolean;
+				  }
+				| {
+						type: "enter";
+				  }
+				| {
+						type: "visible";
+				  }
+				| {
+						type: "exiting";
+				  }
+				| {
+						type: "hide";
+				  },
+		): {
+			hasSelection: boolean;
+			phase: SelectionToolbarPhase;
+		} => {
+			switch (action.type) {
+				case "set":
+					return {
+						hasSelection: action.hasSelection,
+						phase: action.hasSelection
+							? "entering"
+							: current.hasSelection
+								? "visible"
+								: "hidden",
+					};
+				case "enter":
+					return { ...current, phase: "entering" };
+				case "visible":
+					return { ...current, phase: "visible" };
+				case "exiting":
+					return { ...current, phase: "exiting" };
+				case "hide":
+					return { hasSelection: false, phase: "hidden" };
+			}
+		},
+		{
+			hasSelection: selectionToolbar !== null,
+			phase: selectionToolbar ? "entering" : "hidden",
+		},
 	);
 	const retainedSelectionToolbarRef =
 		useRef<FileBrowserSelectionToolbarState | null>(selectionToolbar);
@@ -90,7 +143,7 @@ function useSelectionToolbarMotion(
 	const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const restoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const hasSelection = selectionToolbar !== null;
-	const hasSelectionRef = useRef(hasSelection);
+	const hasSelectionRef = useRef(state.hasSelection);
 	hasSelectionRef.current = hasSelection;
 
 	if (selectionToolbar) {
@@ -116,32 +169,32 @@ function useSelectionToolbarMotion(
 		clearTimers();
 
 		if (hasSelection) {
-			setPhase("entering");
-			enterTimerRef.current = setTimeout(() => {
-				setPhase("visible");
+			dispatch({ type: "set", hasSelection: true });
+			enterTimerRef.current = scheduleSelectionToolbarTimer(() => {
+				dispatch({ type: "visible" });
 				enterTimerRef.current = null;
 			}, SELECTION_TOOLBAR_ENTER_MS);
 		} else if (retainedSelectionToolbarRef.current) {
-			setPhase("visible");
-			exitTimerRef.current = setTimeout(() => {
+			dispatch({ type: "set", hasSelection: false });
+			exitTimerRef.current = scheduleSelectionToolbarTimer(() => {
 				if (hasSelectionRef.current) {
 					exitTimerRef.current = null;
 					return;
 				}
-				setPhase("exiting");
+				dispatch({ type: "exiting" });
 				exitTimerRef.current = null;
-				restoreTimerRef.current = setTimeout(() => {
+				restoreTimerRef.current = scheduleSelectionToolbarTimer(() => {
 					if (hasSelectionRef.current) {
 						restoreTimerRef.current = null;
 						return;
 					}
 					retainedSelectionToolbarRef.current = null;
-					setPhase("hidden");
+					dispatch({ type: "hide" });
 					restoreTimerRef.current = null;
 				}, SELECTION_TOOLBAR_EXIT_MS);
 			}, SELECTION_TOOLBAR_EXIT_DELAY_MS);
 		} else {
-			setPhase("hidden");
+			dispatch({ type: "set", hasSelection: false });
 		}
 
 		return () => {
@@ -163,11 +216,11 @@ function useSelectionToolbarMotion(
 	const renderedSelectionToolbar =
 		selectionToolbar ?? retainedSelectionToolbarRef.current;
 	const renderedPhase: SelectionToolbarPhase = selectionToolbar
-		? phase === "hidden" || phase === "exiting"
+		? state.phase === "hidden" || state.phase === "exiting"
 			? "entering"
-			: phase
+			: state.phase
 		: renderedSelectionToolbar
-			? phase === "exiting"
+			? state.phase === "exiting"
 				? "exiting"
 				: "visible"
 			: "hidden";
@@ -185,6 +238,176 @@ function selectionToolbarMotionClass(phase: SelectionToolbarPhase) {
 		phase === "visible" && "opacity-100",
 		phase === "exiting" &&
 			"pointer-events-none animate-out fade-out duration-[120ms] ease-in",
+	);
+}
+
+function FileBrowserSelectionToolbar({
+	renderedSelectionToolbar,
+	selectionToolbarContentClass,
+	selectionToolbarHiddenProps,
+}: {
+	renderedSelectionToolbar: FileBrowserSelectionToolbarState;
+	selectionToolbarContentClass: string;
+	selectionToolbarHiddenProps: {
+		"aria-hidden": boolean;
+		inert: true | undefined;
+	};
+}) {
+	const { t } = useTranslation(["files", "tasks"]);
+	const selectDisplayedLabel = renderedSelectionToolbar.allDisplayedSelected
+		? t("selection_clear")
+		: t("selection_select_all_visible");
+	const selectionDownloadLabel =
+		renderedSelectionToolbar.downloadAction?.kind === "file"
+			? t("download")
+			: t("tasks:archive_download_action");
+
+	return (
+		<ToolbarBar
+			left={
+				<div
+					data-testid="file-browser-selection-toolbar"
+					{...selectionToolbarHiddenProps}
+					className={cn(
+						"flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2",
+						selectionToolbarContentClass,
+					)}
+				>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-sm"
+						className="size-7 shrink-0 sm:h-8 sm:w-8"
+						onClick={renderedSelectionToolbar.onClearSelection}
+						aria-label={t("selection_clear")}
+						title={t("selection_clear")}
+					>
+						<Icon name="X" className="size-4" />
+					</Button>
+					<div className="flex min-w-0 flex-1 items-center gap-2">
+						<span className="truncate text-sm font-semibold text-foreground">
+							{t("core:selected_count", {
+								count: renderedSelectionToolbar.count,
+							})}
+						</span>
+						<button
+							type="button"
+							className="hidden rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/55 hover:text-foreground disabled:pointer-events-none disabled:opacity-45 sm:inline-flex"
+							onClick={renderedSelectionToolbar.onToggleDisplayedSelection}
+							disabled={!renderedSelectionToolbar.hasDisplayedItems}
+						>
+							{selectDisplayedLabel}
+						</button>
+					</div>
+				</div>
+			}
+			right={
+				<div
+					{...selectionToolbarHiddenProps}
+					className={cn(
+						"flex items-center gap-1 sm:gap-2",
+						selectionToolbarContentClass,
+					)}
+				>
+					{renderedSelectionToolbar.downloadAction ? (
+						<Button
+							type="button"
+							size="sm"
+							variant="outline"
+							className="hidden md:inline-flex"
+							onClick={renderedSelectionToolbar.downloadAction.onClick}
+						>
+							<Icon name="Download" className="size-3.5" />
+							<span>{selectionDownloadLabel}</span>
+						</Button>
+					) : null}
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						onClick={renderedSelectionToolbar.onMove}
+						aria-label={t("move")}
+						title={t("move")}
+					>
+						<Icon name="ArrowsOutCardinal" className="size-3.5" />
+						<span className="hidden min-[420px]:inline">{t("move")}</span>
+					</Button>
+					<Button
+						type="button"
+						size="sm"
+						variant="outline"
+						className="hidden sm:inline-flex"
+						onClick={renderedSelectionToolbar.onCopy}
+					>
+						<Icon name="Copy" className="size-3.5" />
+						<span>{t("copy")}</span>
+					</Button>
+					<DropdownMenu>
+						<DropdownMenuTrigger
+							render={
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon-sm"
+									aria-label={t("selection_more_actions")}
+									title={t("selection_more_actions")}
+								>
+									<Icon name="DotsThree" className="size-4" />
+								</Button>
+							}
+						/>
+						<DropdownMenuContent align="end" className="w-auto min-w-44">
+							<DropdownMenuItem
+								className="sm:hidden"
+								disabled={!renderedSelectionToolbar.hasDisplayedItems}
+								onClick={renderedSelectionToolbar.onToggleDisplayedSelection}
+							>
+								<Icon name="Check" className="size-4 text-muted-foreground" />
+								{selectDisplayedLabel}
+							</DropdownMenuItem>
+							{renderedSelectionToolbar.downloadAction ? (
+								<DropdownMenuItem
+									className="md:hidden"
+									onClick={renderedSelectionToolbar.downloadAction.onClick}
+								>
+									<Icon
+										name="Download"
+										className="size-4 text-muted-foreground"
+									/>
+									{selectionDownloadLabel}
+								</DropdownMenuItem>
+							) : null}
+							<DropdownMenuItem
+								className="sm:hidden"
+								onClick={renderedSelectionToolbar.onCopy}
+							>
+								<Icon name="Copy" className="size-4 text-muted-foreground" />
+								{t("copy")}
+							</DropdownMenuItem>
+							{renderedSelectionToolbar.onArchiveCompress ? (
+								<DropdownMenuItem
+									onClick={renderedSelectionToolbar.onArchiveCompress}
+								>
+									<Icon
+										name="FileZip"
+										className="size-4 text-muted-foreground"
+									/>
+									{t("tasks:archive_compress_action")}
+								</DropdownMenuItem>
+							) : null}
+							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								variant="destructive"
+								onClick={renderedSelectionToolbar.onDelete}
+							>
+								<Icon name="Trash" className="size-4" />
+								{t("core:delete")}
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</div>
+			}
+		/>
 	);
 }
 
@@ -234,20 +457,13 @@ export function FileBrowserToolbar({
 					item,
 					sourceIndex: index,
 				}));
-	const selectDisplayedLabel = renderedSelectionToolbar?.allDisplayedSelected
-		? t("selection_clear")
-		: t("selection_select_all_visible");
-	const selectionDownloadLabel =
-		renderedSelectionToolbar?.downloadAction?.kind === "file"
-			? t("download")
-			: t("tasks:archive_download_action");
 	const selectionToolbarContentClass = selectionToolbarMotionClass(
 		selectionToolbarPhase,
 	);
 	const isSelectionToolbarExiting = selectionToolbarPhase === "exiting";
 	const selectionToolbarHiddenProps = {
 		"aria-hidden": isSelectionToolbarExiting,
-		inert: isSelectionToolbarExiting ? true : undefined,
+		inert: isSelectionToolbarExiting ? (true as const) : undefined,
 	};
 	const defaultLeft = (
 		<>
@@ -409,150 +625,10 @@ export function FileBrowserToolbar({
 	}
 
 	return (
-		<ToolbarBar
-			left={
-				<div
-					data-testid="file-browser-selection-toolbar"
-					{...selectionToolbarHiddenProps}
-					className={cn(
-						"flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2",
-						selectionToolbarContentClass,
-					)}
-				>
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-sm"
-						className="size-7 shrink-0 sm:h-8 sm:w-8"
-						onClick={renderedSelectionToolbar.onClearSelection}
-						aria-label={t("selection_clear")}
-						title={t("selection_clear")}
-					>
-						<Icon name="X" className="size-4" />
-					</Button>
-					<div className="flex min-w-0 flex-1 items-center gap-2">
-						<span className="truncate text-sm font-semibold text-foreground">
-							{t("core:selected_count", {
-								count: renderedSelectionToolbar.count,
-							})}
-						</span>
-						<button
-							type="button"
-							className="hidden rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent/55 hover:text-foreground disabled:pointer-events-none disabled:opacity-45 sm:inline-flex"
-							onClick={renderedSelectionToolbar.onToggleDisplayedSelection}
-							disabled={!renderedSelectionToolbar.hasDisplayedItems}
-						>
-							{selectDisplayedLabel}
-						</button>
-					</div>
-				</div>
-			}
-			right={
-				<div
-					{...selectionToolbarHiddenProps}
-					className={cn(
-						"flex items-center gap-1 sm:gap-2",
-						selectionToolbarContentClass,
-					)}
-				>
-					{renderedSelectionToolbar.downloadAction ? (
-						<Button
-							type="button"
-							size="sm"
-							variant="outline"
-							className="hidden md:inline-flex"
-							onClick={renderedSelectionToolbar.downloadAction.onClick}
-						>
-							<Icon name="Download" className="size-3.5" />
-							<span>{selectionDownloadLabel}</span>
-						</Button>
-					) : null}
-					<Button
-						type="button"
-						size="sm"
-						variant="outline"
-						onClick={renderedSelectionToolbar.onMove}
-						aria-label={t("move")}
-						title={t("move")}
-					>
-						<Icon name="ArrowsOutCardinal" className="size-3.5" />
-						<span className="hidden min-[420px]:inline">{t("move")}</span>
-					</Button>
-					<Button
-						type="button"
-						size="sm"
-						variant="outline"
-						className="hidden sm:inline-flex"
-						onClick={renderedSelectionToolbar.onCopy}
-					>
-						<Icon name="Copy" className="size-3.5" />
-						<span>{t("copy")}</span>
-					</Button>
-					<DropdownMenu>
-						<DropdownMenuTrigger
-							render={
-								<Button
-									type="button"
-									variant="ghost"
-									size="icon-sm"
-									aria-label={t("selection_more_actions")}
-									title={t("selection_more_actions")}
-								>
-									<Icon name="DotsThree" className="size-4" />
-								</Button>
-							}
-						/>
-						<DropdownMenuContent align="end" className="w-auto min-w-44">
-							<DropdownMenuItem
-								className="sm:hidden"
-								disabled={!renderedSelectionToolbar.hasDisplayedItems}
-								onClick={renderedSelectionToolbar.onToggleDisplayedSelection}
-							>
-								<Icon name="Check" className="size-4 text-muted-foreground" />
-								{selectDisplayedLabel}
-							</DropdownMenuItem>
-							{renderedSelectionToolbar.downloadAction ? (
-								<DropdownMenuItem
-									className="md:hidden"
-									onClick={renderedSelectionToolbar.downloadAction.onClick}
-								>
-									<Icon
-										name="Download"
-										className="size-4 text-muted-foreground"
-									/>
-									{selectionDownloadLabel}
-								</DropdownMenuItem>
-							) : null}
-							<DropdownMenuItem
-								className="sm:hidden"
-								onClick={renderedSelectionToolbar.onCopy}
-							>
-								<Icon name="Copy" className="size-4 text-muted-foreground" />
-								{t("copy")}
-							</DropdownMenuItem>
-							{renderedSelectionToolbar.onArchiveCompress ? (
-								<DropdownMenuItem
-									onClick={renderedSelectionToolbar.onArchiveCompress}
-								>
-									<Icon
-										name="FileZip"
-										className="size-4 text-muted-foreground"
-									/>
-									{t("tasks:archive_compress_action")}
-								</DropdownMenuItem>
-							) : null}
-							<DropdownMenuSeparator />
-							<DropdownMenuItem
-								variant="destructive"
-								onClick={renderedSelectionToolbar.onDelete}
-							>
-								<Icon name="Trash" className="size-4" />
-								{t("core:delete")}
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</div>
-			}
+		<FileBrowserSelectionToolbar
+			renderedSelectionToolbar={renderedSelectionToolbar}
+			selectionToolbarContentClass={selectionToolbarContentClass}
+			selectionToolbarHiddenProps={selectionToolbarHiddenProps}
 		/>
 	);
 }

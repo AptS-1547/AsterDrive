@@ -500,15 +500,33 @@ pub struct BlobMaintenanceTaskResult {
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+/// Parameters for creating an offline download task.
 pub struct CreateOfflineDownloadTaskParams {
+    /// Source URL validated by `parse_and_validate_source_url`; only `http://`
+    /// and `https://` URLs with a host are accepted. Local or executable
+    /// schemes such as `file://`, `javascript:`, and `data:` are rejected.
+    /// Credentials and query parameters may be present in the submitted URL,
+    /// but display paths are derived through `redact_url_for_display`.
     pub url: String,
+    /// Optional target filename. Empty values are ignored; non-empty values
+    /// must pass `normalize_validate_name`, so path separators and unsafe
+    /// Windows device names are rejected.
     pub filename: Option<String>,
+    /// Optional destination folder. `None` imports into the workspace root.
     pub target_folder_id: Option<i64>,
+    /// Optional expected SHA-256 checksum. Values are trimmed, lowercased, and
+    /// must be a 64-character hexadecimal string without a `0x` prefix, for
+    /// example `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`.
     pub expected_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+/// Presentation-safe offline download payload used by task list views.
+///
+/// `OfflineDownloadTaskPayloadInfo` is derived from `OfflineDownloadTaskPayload`;
+/// when `source_display_url` is absent, callers use `redact_url_for_display`
+/// with `unwrap_or_else` fallback behavior so legacy payloads do not panic.
 pub struct OfflineDownloadTaskPayloadInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
@@ -521,27 +539,44 @@ pub struct OfflineDownloadTaskPayloadInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+/// Stored payload for an offline download task.
 pub struct OfflineDownloadTaskPayload {
+    /// Original source URL. It is validated by `parse_and_validate_source_url`
+    /// before task creation and must be an HTTP/HTTPS URL with a host.
     pub url: String,
+    /// Optional normalized target filename.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filename: Option<String>,
+    /// Optional destination folder ID; absent means workspace root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_folder_id: Option<i64>,
+    /// Optional normalized checksum. It is trimmed, lowercased, and validated as
+    /// a 64-character hex string; validation errors use
+    /// "expected_sha256 must be a 64-character hex string", and comparisons use
+    /// this normalized string.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_sha256: Option<String>,
+    /// Redacted display URL. When `None`, `OfflineDownloadTaskPayloadInfo` and
+    /// `OfflineDownloadTaskResult` derive a safe value from `url` with
+    /// `redact_url_for_display` and fallback text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_display_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+/// Result payload for offline downloads.
 pub struct OfflineDownloadTaskResult {
     pub file_id: i64,
     pub file_name: String,
     pub folder_id: Option<i64>,
     pub file_path: String,
+    /// Redacted display URL derived from the payload or source URL. This value
+    /// is always safe to render in task detail views.
     pub source_display_url: String,
+    /// Final imported content length in bytes.
     pub content_length: i64,
+    /// Final SHA-256 digest in lowercase hexadecimal.
     pub sha256: String,
 }
 

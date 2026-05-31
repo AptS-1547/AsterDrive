@@ -358,14 +358,14 @@ export function useFilePreviewDialogModel({
 		[language, translateFileLabel],
 	);
 	const activeWopiSessionFactory = useCallback(() => {
-		if (!activeOption || activeOption.mode !== "wopi" || !wopiSessionFactory) {
+		if (activeOption?.mode !== "wopi" || !wopiSessionFactory) {
 			return Promise.reject(new Error("wopi session factory unavailable"));
 		}
 
 		return wopiSessionFactory(activeOption.key);
 	}, [activeOption, wopiSessionFactory]);
 	const activeWopiSessionResource = useMemo(() => {
-		if (!activeOption || activeOption.mode !== "wopi" || !wopiSessionFactory) {
+		if (activeOption?.mode !== "wopi" || !wopiSessionFactory) {
 			return null;
 		}
 

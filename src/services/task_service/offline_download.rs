@@ -2,11 +2,13 @@
 
 use std::collections::BTreeSet;
 use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
 use std::time::{Duration as StdDuration, Instant};
 
 use async_trait::async_trait;
 use futures::StreamExt;
+use governor::{Quota, RateLimiter};
 use reqwest::header::{CONTENT_DISPOSITION, CONTENT_LENGTH};
 use sha2::Digest;
 use tokio::io::AsyncWriteExt;
@@ -34,7 +36,7 @@ use crate::services::{
     },
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
-use crate::utils::numbers::{u64_to_i64, usize_to_i64};
+use crate::utils::numbers::{u64_to_i64, usize_to_i64, usize_to_u32};
 
 const OFFLINE_DOWNLOAD_TEMP_FILE_NAME: &str = "source";
 const PROGRESS_UPDATE_INTERVAL: StdDuration = StdDuration::from_millis(800);
@@ -179,7 +181,6 @@ pub(super) async fn process_offline_download_task(
         &steps,
     )
     .await?;
-    verify_expected_sha256(payload.expected_sha256.as_deref(), &downloaded.sha256)?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_VERIFY_SOURCE,
@@ -380,8 +381,7 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
         let mut last_progress = Instant::now()
             .checked_sub(PROGRESS_UPDATE_INTERVAL)
             .unwrap_or_else(Instant::now);
-        let speed_limit = request.max_bytes_per_sec;
-        let download_started_at = Instant::now();
+        let rate_limiter = OfflineDownloadRateLimiter::new(request.max_bytes_per_sec);
 
         while let Some(chunk) = stream.next().await {
             lease_guard.ensure_active()?;
@@ -397,9 +397,8 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
                 AsterError::storage_driver_error,
             )?;
             hasher.update(&chunk);
-            if let Some(limit) = speed_limit {
-                throttle_offline_download(download_started_at, written, limit).await?;
-            }
+            OfflineDownloadRateLimiter::throttle(rate_limiter.as_ref(), chunk.len(), lease_guard)
+                .await?;
 
             if last_progress.elapsed() >= PROGRESS_UPDATE_INTERVAL {
                 let status_text = format!("Downloaded {written} bytes");
@@ -559,6 +558,7 @@ async fn resolve_source_host(url: &Url) -> Result<ResolvedSourceHost> {
 fn validate_public_download_ip(ip: IpAddr) -> Result<()> {
     let blocked = match ip {
         IpAddr::V4(ip) => {
+            let octets = ip.octets();
             ip.is_unspecified()
                 || ip.is_loopback()
                 || ip.is_private()
@@ -566,9 +566,11 @@ fn validate_public_download_ip(ip: IpAddr) -> Result<()> {
                 || ip.is_multicast()
                 || ip.is_broadcast()
                 || ip.is_documentation()
-                || ip.octets()[0] == 0
-                || ip.octets()[0] >= 240
-                || ip.octets() == [169, 254, 169, 254]
+                || octets[0] == 0
+                || octets[0] >= 240
+                || octets == [169, 254, 169, 254]
+                || (octets[0] == 100 && (octets[1] & 0xc0 == 0x40))
+                || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19))
         }
         IpAddr::V6(ip) => {
             if let Some(mapped) = ip.to_ipv4_mapped() {
@@ -590,41 +592,62 @@ fn validate_public_download_ip(ip: IpAddr) -> Result<()> {
     Ok(())
 }
 
-async fn throttle_offline_download(
-    started_at: Instant,
-    written: i64,
-    max_bytes_per_sec: u64,
-) -> Result<()> {
-    if max_bytes_per_sec == 0 || written <= 0 {
-        return Ok(());
+struct OfflineDownloadRateLimiter {
+    limiter: governor::DefaultDirectRateLimiter,
+    max_batch_bytes: u32,
+}
+
+impl OfflineDownloadRateLimiter {
+    fn new(max_bytes_per_sec: Option<u64>) -> Option<Self> {
+        let max_bytes_per_sec = max_bytes_per_sec?;
+        let max_batch_bytes = u32::try_from(max_bytes_per_sec).unwrap_or(u32::MAX);
+        let max_batch_bytes = NonZeroU32::new(max_batch_bytes)?;
+        Some(Self {
+            limiter: RateLimiter::direct(Quota::per_second(max_batch_bytes)),
+            max_batch_bytes: max_batch_bytes.get(),
+        })
     }
 
-    let written = crate::utils::numbers::i64_to_u64(written, "offline download written bytes")?;
-    let expected_nanos =
-        u128::from(written).saturating_mul(1_000_000_000) / u128::from(max_bytes_per_sec);
-    let elapsed_nanos = started_at.elapsed().as_nanos();
-    if expected_nanos <= elapsed_nanos {
-        return Ok(());
+    async fn throttle(
+        limiter: Option<&Self>,
+        chunk_len: usize,
+        lease_guard: &TaskLeaseGuard,
+    ) -> Result<()> {
+        let Some(limiter) = limiter else {
+            return Ok(());
+        };
+        let mut remaining = usize_to_u32(chunk_len, "offline download throttle chunk size")?;
+        while remaining > 0 {
+            lease_guard.ensure_active()?;
+            let batch = remaining.min(limiter.max_batch_bytes);
+            let batch = NonZeroU32::new(batch).ok_or_else(|| {
+                AsterError::internal_error("offline download throttle batch cannot be zero")
+            })?;
+            limiter
+                .limiter
+                .until_n_ready(batch)
+                .await
+                .map_aster_err_ctx(
+                    "reserve offline download throttle capacity",
+                    AsterError::internal_error,
+                )?;
+            remaining -= batch.get();
+        }
+        Ok(())
     }
-
-    let sleep_nanos = expected_nanos - elapsed_nanos;
-    let sleep_nanos =
-        crate::utils::numbers::u128_to_u64(sleep_nanos, "offline download throttle sleep")?;
-    tokio::time::sleep(StdDuration::from_nanos(sleep_nanos)).await;
-    Ok(())
 }
 
 fn declared_content_length(headers: &reqwest::header::HeaderMap) -> Result<Option<i64>> {
     let Some(value) = headers.get(CONTENT_LENGTH) else {
         return Ok(None);
     };
-    let raw = value
-        .to_str()
-        .map_aster_err_ctx("read content-length header", AsterError::validation_error)?;
-    let parsed = raw
-        .parse::<u64>()
-        .map_aster_err_ctx("parse content-length header", AsterError::validation_error)?;
-    u64_to_i64(parsed, "offline download content length").map(Some)
+    let Ok(raw) = value.to_str() else {
+        return Ok(None);
+    };
+    let Ok(parsed) = raw.parse::<u64>() else {
+        return Ok(None);
+    };
+    Ok(u64_to_i64(parsed, "offline download content length").ok())
 }
 
 fn response_filename(headers: &reqwest::header::HeaderMap) -> Option<String> {
@@ -635,18 +658,39 @@ fn response_filename(headers: &reqwest::header::HeaderMap) -> Option<String> {
 }
 
 fn filename_from_content_disposition(raw: &str) -> Option<String> {
+    let mut fallback = None;
     for part in raw.split(';').skip(1) {
         let (name, value) = part.trim().split_once('=')?;
-        if name.trim().eq_ignore_ascii_case("filename") {
+        let name = name.trim();
+        if name.eq_ignore_ascii_case("filename*") {
+            if let Some(decoded) = decode_rfc5987_filename(value.trim())
+                && let Ok(name) = crate::utils::normalize_validate_name(&decoded)
+            {
+                return Some(name);
+            }
+        } else if name.eq_ignore_ascii_case("filename") {
             let value = value.trim().trim_matches('"');
             if !value.is_empty()
                 && let Ok(name) = crate::utils::normalize_validate_name(value)
             {
-                return Some(name);
+                fallback = Some(name);
             }
         }
     }
-    None
+    fallback
+}
+
+fn decode_rfc5987_filename(raw: &str) -> Option<String> {
+    let raw = raw.trim().trim_matches('"');
+    let mut parts = raw.splitn(3, '\'');
+    let charset = parts.next()?.trim();
+    let _language = parts.next()?;
+    let encoded = parts.next()?;
+    let decoded_bytes = percent_encoding::percent_decode_str(encoded).collect::<Vec<u8>>();
+    match charset.to_ascii_lowercase().as_str() {
+        "utf-8" | "us-ascii" => String::from_utf8(decoded_bytes).ok(),
+        _ => None,
+    }
 }
 
 fn resolve_offline_download_filename(
@@ -712,7 +756,7 @@ fn transient_storage_error(message: impl Into<String>) -> AsterError {
     AsterError::storage_driver_error(format!("transient: {}", message.into()))
 }
 
-fn redact_url_for_display(url: &Url) -> String {
+pub(super) fn redact_url_for_display(url: &Url) -> String {
     let mut redacted = url.clone();
     let _ = redacted.set_username("");
     let _ = redacted.set_password(None);
@@ -783,8 +827,12 @@ mod tests {
     fn validate_public_download_ip_rejects_sensitive_ipv4_ranges() {
         for ip in [
             Ipv4Addr::new(0, 0, 0, 0),
+            Ipv4Addr::new(100, 64, 0, 1),
+            Ipv4Addr::new(100, 127, 255, 254),
             Ipv4Addr::new(10, 0, 0, 1),
             Ipv4Addr::new(127, 0, 0, 1),
+            Ipv4Addr::new(198, 18, 0, 1),
+            Ipv4Addr::new(198, 19, 255, 254),
             Ipv4Addr::new(169, 254, 1, 1),
             Ipv4Addr::new(169, 254, 169, 254),
             Ipv4Addr::new(172, 16, 0, 1),
@@ -826,6 +874,39 @@ mod tests {
                 "2606:2800:220:1:248:1893:25c8:1946".parse().unwrap()
             ))
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn offline_download_rate_limiter_uses_one_second_batch_cap() {
+        assert!(OfflineDownloadRateLimiter::new(None).is_none());
+        assert!(OfflineDownloadRateLimiter::new(Some(0)).is_none());
+
+        let limiter = OfflineDownloadRateLimiter::new(Some(5)).unwrap();
+        assert_eq!(limiter.max_batch_bytes, 5);
+
+        let large = OfflineDownloadRateLimiter::new(Some(u64::MAX)).unwrap();
+        assert_eq!(large.max_batch_bytes, u32::MAX);
+    }
+
+    #[test]
+    fn declared_content_length_ignores_invalid_values() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            CONTENT_LENGTH,
+            reqwest::header::HeaderValue::from_static("not-a-number"),
+        );
+
+        assert_eq!(declared_content_length(&headers).unwrap(), None);
+    }
+
+    #[test]
+    fn filename_from_content_disposition_prefers_rfc5987_filename_star() {
+        let raw = "attachment; filename=\"fallback.txt\"; filename*=UTF-8''from%20star.txt";
+
+        assert_eq!(
+            filename_from_content_disposition(raw).as_deref(),
+            Some("from star.txt")
         );
     }
 

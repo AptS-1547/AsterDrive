@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,19 +30,28 @@ export function OfflineDownloadDialog({
 	targetFolderId,
 	targetFolderName,
 }: OfflineDownloadDialogProps) {
+	return (
+		<OfflineDownloadDialogSession
+			key={open ? "open" : "closed"}
+			open={open}
+			onOpenChange={onOpenChange}
+			targetFolderId={targetFolderId}
+			targetFolderName={targetFolderName}
+		/>
+	);
+}
+
+function OfflineDownloadDialogSession({
+	open,
+	onOpenChange,
+	targetFolderId,
+	targetFolderName,
+}: OfflineDownloadDialogProps) {
 	const { t } = useTranslation(["core", "tasks"]);
 	const [url, setUrl] = useState("");
 	const [filename, setFilename] = useState("");
 	const [expectedSha256, setExpectedSha256] = useState("");
 	const [submitting, setSubmitting] = useState(false);
-
-	useEffect(() => {
-		if (!open) return;
-		setUrl("");
-		setFilename("");
-		setExpectedSha256("");
-		setSubmitting(false);
-	}, [open]);
 
 	const targetName = targetFolderName?.trim() || t("tasks:summary_root_folder");
 
@@ -50,6 +59,16 @@ export function OfflineDownloadDialog({
 		event.preventDefault();
 		const trimmedUrl = url.trim();
 		if (!trimmedUrl) return;
+		try {
+			const parsedUrl = new URL(trimmedUrl);
+			if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+				toast.error(t("tasks:offline_download_url_invalid"));
+				return;
+			}
+		} catch {
+			toast.error(t("tasks:offline_download_url_invalid"));
+			return;
+		}
 
 		setSubmitting(true);
 		try {

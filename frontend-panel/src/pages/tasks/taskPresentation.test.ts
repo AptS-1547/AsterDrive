@@ -1048,5 +1048,25 @@ describe("taskPresentation storage policy migration", () => {
 				}),
 			),
 		).toBeNull();
+		expect(
+			parseTaskResult(
+				createTask({
+					kind: "offline_download",
+					result: {
+						content_length: 512,
+						file_id: 70,
+						file_name: "file.bin",
+						file_path: "/Incoming/file.bin",
+						folder_id: 9,
+						kind: "offline_download",
+						sha256: "abc123",
+						source_display_url: "https://example.com/file.bin",
+					},
+				}),
+			),
+		).toEqual({
+			target_folder_id: 9,
+			target_path: "/Incoming/file.bin",
+		});
 	});
 });

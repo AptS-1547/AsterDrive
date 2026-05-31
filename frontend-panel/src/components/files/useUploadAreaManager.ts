@@ -260,7 +260,7 @@ export function useUploadAreaManager({
 			const sessions = loadSessions(workspace);
 			setTasks((prev) => {
 				const task = prev.find((item) => item.id === taskId);
-				if (!task || task.status !== "pending_file") return prev;
+				if (task?.status !== "pending_file") return prev;
 
 				const session = sessions.find(
 					(entry) => entry.uploadId === task.uploadId,

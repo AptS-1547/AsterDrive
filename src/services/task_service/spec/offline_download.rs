@@ -44,19 +44,10 @@ fn offline_download_payload_info(
         expected_sha256: payload.expected_sha256,
         source_display_url: payload.source_display_url.unwrap_or_else(|| {
             Url::parse(&payload.url)
-                .map(|url| redact_url_for_display(&url))
+                .map(|url| offline_download_task::redact_url_for_display(&url))
                 .unwrap_or_else(|_| "external link".to_string())
         }),
     }
-}
-
-fn redact_url_for_display(url: &Url) -> String {
-    let mut redacted = url.clone();
-    let _ = redacted.set_username("");
-    let _ = redacted.set_password(None);
-    redacted.set_query(None);
-    redacted.set_fragment(None);
-    redacted.to_string()
 }
 
 define_task_spec!(

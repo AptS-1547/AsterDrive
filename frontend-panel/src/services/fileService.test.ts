@@ -67,6 +67,12 @@ describe("fileService", () => {
 		fileService.createEmptyFile("draft.md", 7);
 		fileService.copyFile(8, null);
 		fileService.createArchiveExtractTask(8, 7, "bundle");
+		fileService.createOfflineDownloadTask({
+			expected_sha256: "abc123",
+			filename: "example.bin",
+			target_folder_id: 12,
+			url: "https://example.com/example.bin",
+		});
 		fileService.copyFolder(7, 3);
 		fileService.listVersions(8);
 		fileService.restoreVersion(8, 2);
@@ -122,12 +128,22 @@ describe("fileService", () => {
 			target_folder_id: 7,
 			output_folder_name: "bundle",
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(8, "/folders/7/copy", {
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			8,
+			"/tasks/offline-download",
+			{
+				expected_sha256: "abc123",
+				filename: "example.bin",
+				target_folder_id: 12,
+				url: "https://example.com/example.bin",
+			},
+		);
+		expect(mockState.post).toHaveBeenNthCalledWith(9, "/folders/7/copy", {
 			parent_id: 3,
 		});
 		expect(mockState.get).toHaveBeenNthCalledWith(8, "/files/8/versions");
 		expect(mockState.post).toHaveBeenNthCalledWith(
-			9,
+			10,
 			"/files/8/versions/2/restore",
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/files/8/versions/2");
@@ -157,6 +173,12 @@ describe("fileService", () => {
 		teamFileService.getDirectLinkToken(8);
 		teamFileService.getArchivePreview(8);
 		teamFileService.createArchiveExtractTask(8);
+		teamFileService.createOfflineDownloadTask({
+			expected_sha256: null,
+			filename: null,
+			target_folder_id: null,
+			url: "https://example.com/team.bin",
+		});
 		teamFileService.listVersions(8);
 
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/folders", {
@@ -169,6 +191,15 @@ describe("fileService", () => {
 			undefined,
 		);
 		expect(mockState.post).toHaveBeenCalledWith("/teams/9/files/8/extract", {});
+		expect(mockState.post).toHaveBeenCalledWith(
+			"/teams/9/tasks/offline-download",
+			{
+				expected_sha256: null,
+				filename: null,
+				target_folder_id: null,
+				url: "https://example.com/team.bin",
+			},
+		);
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8/versions");
 		expect(teamFileService.downloadPath(8)).toBe("/teams/9/files/8/download");
 		expect(teamFileService.downloadUrl(8)).toBe(
