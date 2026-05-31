@@ -128,7 +128,7 @@ function t(key: string) {
 
 function createConfig(overrides: Partial<SystemConfig> = {}): SystemConfig {
 	return {
-		category: "general",
+		category: "site",
 		description: "",
 		id: 1,
 		is_sensitive: false,
@@ -235,25 +235,25 @@ function createBaseConfigs() {
 			value: "ocean",
 		}),
 		createConfig({
-			category: "general.preview",
+			category: "site.preview",
 			key: PREVIEW_APPS_CONFIG_KEY,
 			value: createValidPreviewAppsConfig(),
 			value_type: "multiline",
 		}),
 		createConfig({
-			category: "storage.media_processing",
+			category: "file_processing.media",
 			key: MEDIA_PROCESSING_CONFIG_KEY,
 			value: createValidMediaProcessingConfig(),
 			value_type: "multiline",
 		}),
 		createConfig({
-			category: "storage.media_processing",
+			category: "file_processing.media",
 			key: "media_metadata_enabled",
 			value: "true",
 			value_type: "boolean",
 		}),
 		createConfig({
-			category: "storage.media_processing",
+			category: "file_processing.media",
 			key: "media_metadata_max_source_bytes",
 			value: "1073741824",
 			value_type: "number",
@@ -282,10 +282,10 @@ function createCorsConfigs(overrides?: {
 
 function getConfigCategory(key: string) {
 	if (key.startsWith("custom")) return "custom";
-	if (key === PREVIEW_APPS_CONFIG_KEY) return "general.preview";
-	if (key === MEDIA_PROCESSING_CONFIG_KEY) return "storage.media_processing";
-	if (key.startsWith("media_metadata_")) return "storage.media_processing";
-	return "general";
+	if (key === PREVIEW_APPS_CONFIG_KEY) return "site.preview";
+	if (key === MEDIA_PROCESSING_CONFIG_KEY) return "file_processing.media";
+	if (key.startsWith("media_metadata_")) return "file_processing.media";
+	return "site";
 }
 
 function getMockConfigSource(key: string): SystemConfigSource {

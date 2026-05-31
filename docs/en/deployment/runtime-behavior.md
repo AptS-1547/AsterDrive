@@ -31,12 +31,13 @@ The built-in system settings written on first startup cover these categories:
 - Authentication and Cookies
 - Mail Delivery
 - Network Access
-- Runtime and Scheduling
+- Runtime
 - Storage and Retention
+- File Processing
 - WebDAV
 - Audit Logs
 
-`Storage and Retention` also includes switches and limits for read-only archive preview, disabled by default. `Runtime and Scheduling` includes background task lane concurrency, idle backoff, and share-page audio/video stream playback session lifetime.
+`File Processing` includes switches and limits for read-only archive preview, disabled by default. `Runtime` includes background task lane concurrency, idle backoff, and share-page audio/video stream playback session lifetime.
 
 Default background task frequencies:
 

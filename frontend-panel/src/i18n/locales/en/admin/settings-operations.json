@@ -9,6 +9,8 @@
 	"settings_item_background_task_archive_max_concurrency_desc": "The maximum number of archive compression and extraction tasks the server may execute at the same time. Higher values improve archive throughput but increase CPU, memory, and I/O pressure.",
 	"settings_item_background_task_thumbnail_max_concurrency_label": "Thumbnail task concurrency cap",
 	"settings_item_background_task_thumbnail_max_concurrency_desc": "The maximum number of thumbnail generation tasks the server may execute at the same time. This lane is separate from archive work so archive backlogs do not block thumbnails.",
+	"settings_item_background_task_storage_migration_max_concurrency_label": "Storage migration task concurrency cap",
+	"settings_item_background_task_storage_migration_max_concurrency_desc": "The maximum number of storage policy migration tasks the server may execute at the same time. Keep this conservative to avoid saturating source storage, target storage, and the database with large object-copy batches.",
 	"settings_item_background_task_max_attempts_label": "Background task max attempts",
 	"settings_item_background_task_max_attempts_desc": "How many times regular workspace background tasks may be attempted before they become permanently failed. New tasks use this value, and manual retries reset failed tasks to the current setting; system periodic runtime events always stay fixed at 1.",
 	"settings_item_share_download_rollback_queue_capacity_label": "Share download rollback queue capacity",

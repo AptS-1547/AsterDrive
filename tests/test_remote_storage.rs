@@ -6181,7 +6181,7 @@ async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_path_
         provider_state.writer_db(),
         master_binding_service::UpsertMasterBindingInput {
             name: "consumer-access".to_string(),
-            master_url: "http://localhost:3000/admin/settings/general".to_string(),
+            master_url: "http://localhost:3000/admin/settings/site".to_string(),
             access_key: consumer_node_model.access_key.clone(),
             secret_key: consumer_node_model.secret_key.clone(),
             is_enabled: true,
@@ -6705,7 +6705,7 @@ async fn test_remote_presigned_upload_browser_cors_keeps_headers_on_signature_mi
 async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_default_https_port() {
     let fixture = setup_browser_presigned_cors_fixture(
         "provider-browser-default-port-space",
-        " HTTPS://LOCALHOST:443/admin/settings/general ",
+        " HTTPS://LOCALHOST:443/admin/settings/site ",
     )
     .await;
     let follower_app = test::init_service(

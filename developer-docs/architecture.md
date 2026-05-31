@@ -369,6 +369,20 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
 - `media_processing_registry_json`
 - `wopi_*`
 
+`system_config.category` 只使用 `src/config/definitions.rs` 里登记的分区常量。当前分区口径是：
+
+- `site` / `site.preview`：站点公开入口、品牌和预览应用
+- `user.registration_and_login` / `user.avatar`：注册登录和头像
+- `auth`：认证 Cookie 和 token TTL
+- `mail.config` / `mail.template`：发信配置和邮件模板
+- `network`：CORS 等网络访问规则
+- `runtime.mail` / `runtime.background_task` / `runtime.maintenance` / `runtime.limits` / `runtime.share_stream`：运行时派发、维护和限制
+- `storage`：版本、回收站、团队归档和默认配额等存储保留策略
+- `file_processing.archive_extract` / `file_processing.archive_preview` / `file_processing.archive_build` / `file_processing.media`：压缩包和媒体处理
+- `webdav` / `audit`：WebDAV 和审计日志
+
+新增分区时必须同步更新允许列表和前端 zh/en i18n。`ALL_CONFIGS` 的单元测试会拒绝未登记分区，也会检查二级分区是否有前端标题和描述文案。
+
 `public_site_url` 是一个历史上保持单数 key 的列表配置。配置类型是 `string_array`，管理 API 暴露为字符串数组，数据库值保存为规范化后的 JSON 数组字符串。生成绝对 URL 时，有请求上下文的路径会优先用当前请求 scheme/Host 在列表里做精确匹配；没有请求上下文或未命中时使用第一项作为回退。这个配置也参与 Cookie 认证写操作的 same-site CSRF 来源判断，但不参与 CORS 放行。
 
 ## 改动应该落在哪一层

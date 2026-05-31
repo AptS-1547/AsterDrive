@@ -158,7 +158,8 @@ mod tests {
     };
     use crate::config::RuntimeConfig;
     use crate::config::definitions::{
-        WEBDAV_BLOCK_SYSTEM_FILE_PATTERNS_KEY, WEBDAV_BLOCK_SYSTEM_FILES_ENABLED_KEY,
+        CONFIG_CATEGORY_WEBDAV, WEBDAV_BLOCK_SYSTEM_FILE_PATTERNS_KEY,
+        WEBDAV_BLOCK_SYSTEM_FILES_ENABLED_KEY,
     };
     use crate::entities::system_config;
     use crate::types::{SystemConfigSource, SystemConfigValueType};
@@ -178,7 +179,7 @@ mod tests {
             is_sensitive: false,
             source: SystemConfigSource::System,
             namespace: String::new(),
-            category: "webdav".to_string(),
+            category: CONFIG_CATEGORY_WEBDAV.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,

@@ -310,7 +310,7 @@ async fn test_admin_scope_allows_admin_users() {
         task_limit["label_i18n_key"],
         "settings_item_task_list_max_limit_label"
     );
-    assert_eq!(task_limit["category"], "operations");
+    assert_eq!(task_limit["category"], "runtime.limits");
 
     let archive_preview_enabled = body["data"]
         .as_array()
@@ -324,7 +324,7 @@ async fn test_admin_scope_allows_admin_users() {
     );
     assert_eq!(
         archive_preview_enabled["category"],
-        "storage.archive_preview"
+        "file_processing.archive_preview"
     );
 }
 
@@ -3222,15 +3222,19 @@ async fn test_admin_config() {
     let body: Value = test::read_body_json(resp).await;
     assert!(body["data"].as_array().unwrap().iter().any(|item| {
         item["key"] == "background_task_max_concurrency"
-            && item["category"] == "operations.background_task"
+            && item["category"] == "runtime.background_task"
     }));
     assert!(body["data"].as_array().unwrap().iter().any(|item| {
         item["key"] == "background_task_archive_max_concurrency"
-            && item["category"] == "operations.background_task"
+            && item["category"] == "runtime.background_task"
     }));
     assert!(body["data"].as_array().unwrap().iter().any(|item| {
         item["key"] == "background_task_thumbnail_max_concurrency"
-            && item["category"] == "operations.background_task"
+            && item["category"] == "runtime.background_task"
+    }));
+    assert!(body["data"].as_array().unwrap().iter().any(|item| {
+        item["key"] == "background_task_storage_migration_max_concurrency"
+            && item["category"] == "runtime.background_task"
     }));
 
     // 删除配置

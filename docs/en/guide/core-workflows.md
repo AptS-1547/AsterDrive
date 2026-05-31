@@ -143,7 +143,7 @@ If a file keeps showing as locked, the common order is:
 If images, videos, or special formats never get thumbnails, administrators should check in this order:
 
 1. Whether `Admin -> Tasks` has failed thumbnail tasks
-2. Whether the corresponding processor is enabled in `Admin -> System Settings -> Storage and Retention -> Media Processing`
+2. Whether the corresponding processor is enabled in `Admin -> System Settings -> File Processing -> Media Processing`
 3. Whether the target extension is bound to the correct processor
 4. If `vips_cli` or `ffmpeg_cli` is used, whether the test command passes
 5. Whether the source file exceeds the thumbnail source file size limit

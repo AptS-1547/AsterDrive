@@ -15,6 +15,10 @@ function areCategoryListsEqual(left: string[], right: string[]) {
 	);
 }
 
+function getCategoryRouteSegment(category: string) {
+	return category.replaceAll("_", "-");
+}
+
 interface UseAdminSettingsNavigationProps {
 	categoryIndex: Record<string, number>;
 	categorySummaries: CategorySummary[];
@@ -139,7 +143,9 @@ export function useAdminSettingsNavigation({
 		}
 
 		if (section !== resolvedSection) {
-			navigate(`/admin/settings/${resolvedSection}`, { replace: true });
+			navigate(`/admin/settings/${getCategoryRouteSegment(resolvedSection)}`, {
+				replace: true,
+			});
 		}
 	}, [
 		hasAnyConfig,
@@ -280,7 +286,9 @@ export function useAdminSettingsNavigation({
 					: "backward",
 			);
 			setActiveTab(value);
-			navigate(`/admin/settings/${value}`, { viewTransition: false });
+			navigate(`/admin/settings/${getCategoryRouteSegment(value)}`, {
+				viewTransition: false,
+			});
 		},
 		[activeTab, categoryIndex, navigate, tabCategories],
 	);

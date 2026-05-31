@@ -60,6 +60,7 @@ mod tests {
         normalize_avatar_dir_config_value, resolve_local_avatar_root_dir,
     };
     use crate::config::RuntimeConfig;
+    use crate::config::definitions::CONFIG_CATEGORY_USER_AVATAR;
     use crate::entities::system_config;
     use chrono::Utc;
 
@@ -73,7 +74,7 @@ mod tests {
             is_sensitive: false,
             source: crate::types::SystemConfigSource::System,
             namespace: String::new(),
-            category: "user".to_string(),
+            category: CONFIG_CATEGORY_USER_AVATAR.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,

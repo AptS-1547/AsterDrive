@@ -304,11 +304,12 @@ The current page shows these groups:
 
 - Site Configuration
 - User Management
-- Authentication and Cookie
+- Authentication and Cookies
 - Mail Delivery
 - Network Access
-- Runtime and Scheduling
+- Runtime
 - Storage and Retention
+- File Processing
 - WebDAV
 - Audit Logs
 - Custom Configuration

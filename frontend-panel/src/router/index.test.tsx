@@ -112,11 +112,19 @@ describe("router", () => {
 		expect(
 			allRoutes.find((route) => route.path === "/admin/settings")?.element
 				?.props?.to,
-		).toBe("/admin/settings/general");
+		).toBe("/admin/settings/site");
 		expect(
 			allRoutes.find((route) => route.path === "/admin/settings/:section")
 				?.element?.props?.to,
-		).toBe("/admin/settings/general");
+		).toBe("/admin/settings/site");
+		expect(
+			allRoutes.find((route) => route.path === "/admin/settings/general")
+				?.element?.props?.to,
+		).toBe("/admin/settings/site");
+		expect(
+			allRoutes.find((route) => route.path === "/admin/settings/operations")
+				?.element?.props?.to,
+		).toBe("/admin/settings/runtime");
 	});
 
 	it("keeps settings routes outside workspace routes so they preserve the active workspace", async () => {

@@ -9,6 +9,8 @@
 	"settings_item_background_task_archive_max_concurrency_desc": "系统同时最多允许执行多少个压缩和解压后台任务。数值越大，归档吞吐会更高，但 CPU、内存和 I/O 压力也会一起上来。",
 	"settings_item_background_task_thumbnail_max_concurrency_label": "缩略图任务并发上限",
 	"settings_item_background_task_thumbnail_max_concurrency_desc": "系统同时最多允许执行多少个缩略图生成任务。这个通道和压缩解压任务分开，避免 archive 堆积时阻塞 thumbnail。",
+	"settings_item_background_task_storage_migration_max_concurrency_label": "存储策略迁移任务并发上限",
+	"settings_item_background_task_storage_migration_max_concurrency_desc": "系统同时最多允许执行多少个存储策略迁移任务。建议保持较低，避免大批量对象复制同时压满源存储、目标存储和数据库。",
 	"settings_item_background_task_max_attempts_label": "后台任务最大尝试次数",
 	"settings_item_background_task_max_attempts_desc": "普通工作区后台任务在被判定为最终失败前，最多允许尝试多少次。这个值会写入新建任务，也会在手动重试失败任务时按当前配置重置；系统周期任务事件始终固定为 1。",
 	"settings_item_share_download_rollback_queue_capacity_label": "分享下载回滚队列容量上限",

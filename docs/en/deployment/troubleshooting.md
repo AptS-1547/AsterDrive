@@ -102,7 +102,7 @@ Separate by preview type:
 - Office files: depends on the preview method you use.
   - If using an external previewer, first check whether binding is correct under `Admin -> System Settings -> Site Configuration -> Preview Applications`.
   - If using WOPI (Collabora / OnlyOffice), confirm the WOPI service can reverse-access AsterDrive's public site origin.
-- Archive previews: first check the global switch and user/share-side switches under `Admin -> System Settings -> Storage and Retention -> Archive Preview`, then check whether `Archive Preview Generation` failed under `Admin -> Tasks`.
+- Archive previews: first check the global switch and user/share-side switches under `Admin -> System Settings -> File Processing -> Archive Preview`, then check whether `Archive Preview Generation` failed under `Admin -> Tasks`.
 
 WOPI integration details are in [File Editing](/en/guide/editing).
 
@@ -134,7 +134,7 @@ Sharing page audio and video use short-lived stream playback sessions, valid for
 If playback fails after a user plays music or video for a long time:
 
 - Refreshing the sharing page creates a new playback session.
-- Administrators can adjust it under `Admin -> System Settings -> Runtime and Scheduling -> Share Stream Playback Session Lifetime`.
+- Administrators can adjust it under `Admin -> System Settings -> Runtime -> Share Stream Playback Session Lifetime`.
 - Configurable range is `5` minutes to `24` hours.
 
 If it fails immediately after opening, first confirm the sharing link itself has not expired, has not reached the download limit, and the password verification Cookie is still valid.

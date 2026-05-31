@@ -124,8 +124,9 @@ One-time bootstrap inputs such as enrollment tokens can be removed after success
 - Authentication and Cookies
 - Mail Delivery
 - Network Access
-- Runtime and Scheduling
+- Runtime
 - Storage and Retention
+- File Processing
 - WebDAV
 - Audit Logs
 - Custom Configuration
@@ -137,8 +138,8 @@ One-time bootstrap inputs such as enrollment tokens can be removed after success
 - Before enabling external authentication, set `Public Site URL` correctly, then copy the redirect URI from `Admin -> External Authentication`; see [External Authentication](/en/config/external-auth) for details
 - Disable the HTTPS requirement for cookies only in plain-HTTP test environments
 - When capacity is tight, shorten retention for trash, historical versions, and task artifacts
-- If thumbnails do not behave as expected, check `Storage and Retention -> Media Processing`
-- If you need archive manifest preview, check `Storage and Retention -> Archive Preview`
+- If thumbnails do not behave as expected, check `File Processing -> Media Processing`
+- If you need archive manifest preview, check `File Processing -> Archive Preview`
 - If you need online preview such as OnlyOffice, adjust `Site Configuration -> Preview Apps`
 - When connecting follower nodes, after enrollment succeeds, create the default ingress target in the follower node details
 :::

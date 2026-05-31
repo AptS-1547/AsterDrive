@@ -21,8 +21,8 @@ Admin -> System Settings
 | Passkey, MFA, external login, or external identity binding is unexpected | Site Configuration / Admin -> External Authentication / Authentication and Cookies | Then check [login and sessions](/en/config/auth) |
 | Mail cannot be received, or links are wrong | Mail Delivery | Then check [mail](/en/config/mail) |
 | Browser blocks cross-origin API calls | Network Access | First confirm it is not a `Public Site URL` issue |
-| Background tasks, thumbnails, archive preview, or trash retention behaves abnormally | Runtime and Scheduling / Storage and Retention | Then check [operations CLI](/en/deployment/ops-cli) |
-| Audio/video playback links on share pages expire too quickly or too slowly | Runtime and Scheduling | Then check [sharing and public access](/en/guide/sharing) |
+| Background tasks, thumbnails, archive preview, or trash retention behaves abnormally | Runtime / File Processing / Storage and Retention | Then check [operations CLI](/en/deployment/ops-cli) |
+| Audio/video playback links on share pages expire too quickly or too slowly | Runtime | Then check [sharing and public access](/en/guide/sharing) |
 | WebDAV global switch, system-file blocking, or connection behavior is abnormal | WebDAV | Then check [WebDAV](/en/config/webdav) |
 | You need to see who changed what | Audit Logs | Then check [admin console](/en/guide/admin-console#audit-logs) |
 
@@ -33,7 +33,7 @@ Admin -> System Settings
 | Make share links, mail links, WebDAV addresses, and online previews point to the correct domain | `Site Configuration -> Public Site URL` |
 | Change the title, logo, or favicon shown on login and share pages | `Site Configuration` |
 | Add external preview or WOPI opening methods for Office files | `Site Configuration -> Preview Apps` |
-| Enable or limit read-only archive preview | `Storage and Retention -> Archive Preview` |
+| Enable or limit read-only archive preview | `File Processing -> Archive Preview` |
 | Connect OIDC / Generic OAuth2 / SSO login providers | `Admin -> External Authentication` |
 | Disable public registration | `User Management -> Allow Public User Registration` |
 | Change the default quota for new users, then recheck actual team quotas after creating teams | `Storage and Retention -> New User Default Storage Quota` |
@@ -44,11 +44,11 @@ Admin -> System Settings
 | Tune the login email code mail template | `Mail Delivery -> Login Email Code` |
 | Configure SMTP, send test mail, or edit transactional mail templates | `Mail Delivery` |
 | Tune retention for trash, version history, team archives, and task artifacts | `Storage and Retention` |
-| Tune the online extraction staging size limit | `Storage and Retention -> Online Extraction Staging Size Limit` |
-| Tune thumbnail size limits and vips / ffmpeg / ffprobe processors | `Storage and Retention -> Media Processing` |
+| Tune the online extraction staging size limit | `File Processing -> Online Extraction Staging Size Limit` |
+| Tune thumbnail size limits and vips / ffmpeg / ffprobe processors | `File Processing -> Media Processing` |
 | Disable WebDAV, or adjust blocking for system files such as `.DS_Store` and `Thumbs.db` | `WebDAV` |
-| Tune mail dispatch, background task dispatch, concurrency, retry, and periodic cleanup frequency | `Runtime and Scheduling` |
-| Tune the temporary audio/video streaming session TTL on share pages | `Runtime and Scheduling -> Share Streaming Playback Session TTL` |
+| Tune mail dispatch, background task dispatch, concurrency, retry, and periodic cleanup frequency | `Runtime` |
+| Tune the temporary audio/video streaming session TTL on share pages | `Runtime -> Share Streaming Playback Session TTL` |
 | Enable or disable audit logs | `Audit Logs` |
 
 ## Current Groups
@@ -58,8 +58,9 @@ Admin -> System Settings
 - **Authentication and Cookies** - Cookie security rules, token TTLs, activation/email-change/reset link TTLs, email-code MFA
 - **Mail Delivery** - SMTP, sender, test mail, registration activation/email-change/password reset/external login email verification/login email code mail templates
 - **Network Access** - Browser cross-site access rules (CORS)
-- **Runtime and Scheduling** - Mail queue, background tasks, task-lane concurrency, share streaming playback sessions, periodic cleanup, low-level consistency checks, follower node health checks, list limits
-- **Storage and Retention** - Trash, version history, default quotas, task artifacts, online extraction staging, archive preview, media processing
+- **Runtime** - Mail queue, background tasks, task-lane concurrency, share streaming playback sessions, periodic cleanup, low-level consistency checks, follower node health checks, list limits
+- **Storage and Retention** - Trash, version history, default quotas
+- **File Processing** - Online extraction, archive building, archive preview, thumbnails, media metadata, and media processors
 - **WebDAV** - Global switch and common system-file blocking
 - **Audit Logs** - Switch and retention time
 - **Custom Configuration**, **Other** - Advanced scenarios only
@@ -169,7 +170,7 @@ Most deployments where "frontend pages and APIs are on the same site" do not nee
 When connecting an external WOPI service, the most common issue is not here. It is usually that the Office service cannot call back to the WOPI URL generated from `Public Site URL`. Add an origin here only when the browser console clearly reports a CORS error for the AsterDrive API.
 :::
 
-## Runtime and Scheduling
+## Runtime
 
 Administrators decide the pace of background work here. Default behavior:
 
@@ -210,8 +211,22 @@ This group decides "how long data is kept" and "how much space new objects get b
 | Historical versions per file | `10` |
 | Trash retention | `7` days |
 | Team archive retention | `7` days |
-| Task retention | `24` hours |
 | New user default storage quota | `0` (unlimited) |
+
+::: warning Default quotas affect only new objects
+
+- The UI label for this item is `New User Default Storage Quota`
+- After creating a team, recheck the actual team quota under `Admin -> Teams`
+- This setting **only affects objects created later**. Existing accounts or teams are not automatically rewritten.
+
+:::
+
+## File Processing
+
+This group controls features that read, scan, transform, or temporarily unpack file contents. Default rules:
+
+| Item | Default |
+| --- | --- |
 | Online extraction source archive size limit | `512 MiB` |
 | Online extraction staging size limit | `2 GiB` |
 | Online extraction uncompressed size limit | `1 GiB` |
@@ -230,14 +245,6 @@ This group decides "how long data is kept" and "how much space new objects get b
 | Thumbnail source file size limit | `64 MiB` |
 | Media metadata extraction | Enabled |
 | Media metadata source file size limit | `256 MiB` |
-
-::: warning Default quotas affect only new objects
-
-- The UI label for this item is `New User Default Storage Quota`
-- After creating a team, recheck the actual team quota under `Admin -> Teams`
-- This setting **only affects objects created later**. Existing accounts or teams are not automatically rewritten.
-
-:::
 
 ### Archive Preview
 
@@ -271,7 +278,7 @@ Before raising these limits, confirm that the disk backing `server.temp_dir`, CP
 ### Media Processing
 
 Media processing is responsible for thumbnail generation, not online preview itself.  
-It now has a structured editor under `Storage and Retention -> Media Processing`, so you do not need to edit JSON manually.
+It now has a structured editor under `File Processing -> Media Processing`, so you do not need to edit JSON manually.
 
 You can do these things there:
 

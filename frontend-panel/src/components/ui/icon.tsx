@@ -22,6 +22,7 @@ import {
 	PiClockCounterClockwise,
 	PiCloud,
 	PiCopy,
+	PiCpu,
 	PiDotsThree,
 	PiDownloadSimple,
 	PiEnvelopeSimple,
@@ -39,6 +40,7 @@ import {
 	PiFolder,
 	PiFolderOpen,
 	PiFolderPlus,
+	PiGauge,
 	PiGear,
 	PiGlobe,
 	PiGridFour,
@@ -115,6 +117,7 @@ export type IconName =
 	| "Clock"
 	| "Cloud"
 	| "Copy"
+	| "Cpu"
 	| "Docker"
 	| "DotsThree"
 	| "Download"
@@ -133,6 +136,7 @@ export type IconName =
 	| "Folder"
 	| "FolderOpen"
 	| "FolderPlus"
+	| "Gauge"
 	| "Gear"
 	| "Globe"
 	| "Grid"
@@ -208,6 +212,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Clock: PiClockCounterClockwise,
 	Cloud: PiCloud,
 	Copy: PiCopy,
+	Cpu: PiCpu,
 	Docker: FaDocker,
 	DotsThree: PiDotsThree,
 	Download: PiDownloadSimple,
@@ -226,6 +231,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Folder: PiFolder,
 	FolderOpen: PiFolderOpen,
 	FolderPlus: PiFolderPlus,
+	Gauge: PiGauge,
 	Gear: PiGear,
 	Globe: PiGlobe,
 	Grid: PiGridFour,

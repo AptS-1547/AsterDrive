@@ -153,7 +153,7 @@ Focus on confirming:
 - If registration, password recovery, or email change will be enabled, test mail delivery
 - If you will connect WOPI services such as OnlyOffice, `Public site URL` and `Site Configuration -> Preview Apps` are configured, and the external service can call back to AsterDrive's `/api/v1/wopi/...`
 - If online compression, online extraction, or other background tasks will be used, `Admin -> Tasks` has no recent continuous failures
-- If image / video thumbnails will be used, the processors in `Storage and Retention -> Media Processing` fit the current server environment
+- If image / video thumbnails will be used, the processors in `File Processing -> Media Processing` fit the current server environment
 - Trash retention days, version count, and team archive retention days match expectations
 - Whether WebDAV should stay enabled
 - Whether files should continue landing locally, or move to S3 / MinIO / follower nodes; if using follower nodes, whether the follower already has a default ingress target

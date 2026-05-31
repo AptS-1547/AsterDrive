@@ -641,7 +641,7 @@ fn template_variable_group(
     variables: &[PlaceholderSpec],
 ) -> TemplateVariableGroup {
     TemplateVariableGroup {
-        category: "mail.template".to_string(),
+        category: crate::config::definitions::CONFIG_CATEGORY_MAIL_TEMPLATE.to_string(),
         template_code: template_code.as_str().to_string(),
         label_i18n_key: format!("settings_mail_template_group_{}", template_code.as_str()),
         variables: variables
@@ -835,6 +835,7 @@ struct ParsedTag {
 mod tests {
     use super::{MailTemplateCode, MailTemplatePayload, list_template_variable_groups, render};
     use crate::config::RuntimeConfig;
+    use crate::config::definitions::CONFIG_CATEGORY_MAIL_TEMPLATE;
     use crate::entities::system_config;
     use chrono::Utc;
 
@@ -848,7 +849,7 @@ mod tests {
             is_sensitive: false,
             source: crate::types::SystemConfigSource::System,
             namespace: String::new(),
-            category: "mail".to_string(),
+            category: CONFIG_CATEGORY_MAIL_TEMPLATE.to_string(),
             description: "test".to_string(),
             updated_at: Utc::now(),
             updated_by: None,
