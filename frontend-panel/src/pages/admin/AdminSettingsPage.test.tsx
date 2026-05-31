@@ -2958,6 +2958,50 @@ describe("AdminSettingsPage", () => {
 		});
 	});
 
+	it("searches enum set options with missing groups without crashing", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "audit",
+					key: "audit_log_recorded_actions",
+					value: ["user_login"],
+					value_type: "string_enum_set",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "audit",
+				key: "audit_log_recorded_actions",
+				label_i18n_key: "settings_item_audit_log_recorded_actions_label",
+				value_type: "string_enum_set",
+				options: [
+					{
+						group: "",
+						label_i18n_key: "audit_action_user_login",
+						value: "user_login",
+					},
+					{
+						label_i18n_key: "audit_action_file_download",
+						value: "file_download",
+					},
+				] as ConfigSchemaItem["options"],
+			}),
+		]);
+
+		render(<AdminSettingsPage section="audit" />);
+
+		expect(await screen.findByText("User logged in")).toBeInTheDocument();
+		expect(screen.getByText("Downloaded file")).toBeInTheDocument();
+
+		fireEvent.change(screen.getByPlaceholderText("Search actions..."), {
+			target: { value: "other" },
+		});
+
+		expect(screen.getByText("User logged in")).toBeInTheDocument();
+		expect(screen.getByText("Downloaded file")).toBeInTheDocument();
+	});
+
 	it("clears the public site URL draft when the only origin row is removed", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [

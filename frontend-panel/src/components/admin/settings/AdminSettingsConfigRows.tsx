@@ -93,6 +93,10 @@ function formatEnumOptionLabel(
 	);
 }
 
+function getEnumOptionGroup(option: ConfigSchemaOption) {
+	return option.group || "other";
+}
+
 function FieldMeta({ config }: { config: SystemConfig }) {
 	const {
 		getDraftValue,
@@ -350,12 +354,14 @@ function StringEnumSetConfigControl({
 				({ label, option }) =>
 					label.toLocaleLowerCase().includes(normalizedQuery) ||
 					option.value.toLocaleLowerCase().includes(normalizedQuery) ||
-					option.group.toLocaleLowerCase().includes(normalizedQuery),
+					getEnumOptionGroup(option)
+						.toLocaleLowerCase()
+						.includes(normalizedQuery),
 			)
 		: optionLabels;
 	const groupedOptions = filteredOptions.reduce(
 		(groups, item) => {
-			const group = item.option.group || "other";
+			const group = getEnumOptionGroup(item.option);
 			if (!groups[group]) {
 				groups[group] = [];
 			}

@@ -4,6 +4,8 @@ use crate::errors::{AsterError, Result};
 use crate::types::AuditAction;
 
 pub const DEFAULT_AUDIT_LOG_ENABLED: bool = true;
+// Ceiling division: AuditAction::COUNT is the number of action bits, and
+// u64::BITS is each word's capacity, yielding the required u64 word count.
 pub const AUDIT_ACTION_MASK_WORDS: usize =
     (AuditAction::COUNT + u64::BITS as usize - 1) / u64::BITS as usize;
 
@@ -49,7 +51,21 @@ pub fn default_recorded_actions_value() -> String {
         .iter()
         .map(|action| action.as_str())
         .collect();
-    serde_json::to_string(&values).unwrap_or_else(|_| "[]".to_string())
+    serde_json::to_string(&values).unwrap_or_else(|error| {
+        tracing::error!(
+            error = %error,
+            "failed to serialize default audit_log_recorded_actions config; using full audit action fallback"
+        );
+        full_recorded_actions_json_fallback()
+    })
+}
+
+fn full_recorded_actions_json_fallback() -> String {
+    let values: Vec<&'static str> = AuditAction::ALL
+        .iter()
+        .map(|action| action.as_str())
+        .collect();
+    serde_json::json!(values).to_string()
 }
 
 pub fn normalize_recorded_actions_config_value(value: &str) -> Result<String> {
@@ -172,6 +188,18 @@ mod tests {
         let actions = parse_recorded_actions_config_value(&default_recorded_actions_value())
             .expect("default audit action scope should parse");
         assert_eq!(actions, AuditAction::ALL);
+    }
+
+    #[test]
+    fn full_recorded_actions_json_fallback_matches_serialized_all_actions() {
+        let values: Vec<&'static str> = AuditAction::ALL
+            .iter()
+            .map(|action| action.as_str())
+            .collect();
+        assert_eq!(
+            full_recorded_actions_json_fallback(),
+            serde_json::to_string(&values).expect("all audit actions should serialize")
+        );
     }
 
     #[test]

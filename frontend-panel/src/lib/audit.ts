@@ -151,7 +151,9 @@ type AuditPresentationEntry = Pick<
 function presentationParams(
 	message: AuditPresentationMessage | undefined | null,
 ) {
-	return message?.params && typeof message.params === "object"
+	return message?.params &&
+		typeof message.params === "object" &&
+		!Array.isArray(message.params)
 		? (message.params as Record<string, unknown>)
 		: {};
 }

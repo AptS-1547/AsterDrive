@@ -164,7 +164,6 @@
 	"audit_entity_type_stream_ticket": "流式下载票据",
 	"audit_entity_type_auth_session": "登录会话",
 	"audit_entity_type_trash": "回收站",
-	"audit_entity_type_lock": "资源锁",
 	"audit_presentation_config_value_updated": "配置值改为 {{value}}",
 	"audit_presentation_config_action_executed": "配置动作：{{action}}",
 	"audit_presentation_team_member_added": "添加 {{member_username}}，角色 {{role}}",

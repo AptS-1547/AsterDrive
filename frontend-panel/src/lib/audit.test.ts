@@ -143,4 +143,23 @@ describe("audit i18n formatting", () => {
 		expect(formatAuditTargetType(t, entry)).toBe("File");
 		expect(formatAuditDetail(t, entry)).toBeUndefined();
 	});
+
+	it("ignores array params in presentation messages", () => {
+		const t = createT({
+			"admin:audit_presentation_config_value_updated": "Value {{0}}",
+		});
+		const entry = {
+			action: "file_delete",
+			entity_name: null,
+			entity_type: "file",
+			presentation: {
+				detail: {
+					code: "config_value_updated",
+					params: ["unexpected"],
+				},
+			},
+		} as AuditLogEntry;
+
+		expect(formatAuditDetail(t, entry)).toBe("Value {{0}}");
+	});
 });

@@ -164,7 +164,6 @@
 	"audit_entity_type_stream_ticket": "Stream ticket",
 	"audit_entity_type_auth_session": "Auth session",
 	"audit_entity_type_trash": "Trash",
-	"audit_entity_type_lock": "Resource lock",
 	"audit_presentation_config_value_updated": "Value changed to {{value}}",
 	"audit_presentation_config_action_executed": "Config action: {{action}}",
 	"audit_presentation_team_member_added": "Added {{member_username}} as {{role}}",
