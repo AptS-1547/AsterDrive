@@ -202,6 +202,11 @@ fn detail_message(
             copy_param(details, &mut params, "target_folder_id");
             Some(message("archive_selection_created", params))
         }
+        AuditAction::OfflineDownload => {
+            copy_param(details, &mut params, "source");
+            copy_param(details, &mut params, "target_folder_id");
+            Some(message("offline_download_created", params))
+        }
         _ => None,
     }
 }

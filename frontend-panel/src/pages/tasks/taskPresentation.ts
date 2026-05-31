@@ -336,6 +336,8 @@ export function formatTaskKind(t: TaskTranslate, kind: BackgroundTaskKind) {
 			return t("tasks:kind_storage_policy_migration");
 		case "blob_maintenance":
 			return t("tasks:kind_blob_maintenance");
+		case "offline_download":
+			return t("tasks:kind_offline_download");
 		case "system_runtime":
 			return t("tasks:kind_system_runtime");
 		default:
@@ -487,13 +489,18 @@ export function parseTaskResult(task: TaskInfo) {
 				target_folder_id: task.result.target_folder_id,
 				target_path: task.result.target_path,
 			};
+		case "offline_download":
+			return {
+				target_folder_id: task.result.folder_id ?? null,
+				target_path: task.result.file_path,
+			};
 		default:
 			return null;
 	}
 }
 
 export function parseStoragePolicyMigrationResult(task: TaskInfo) {
-	if (!task.result || task.result.kind !== "storage_policy_migration") {
+	if (task.result?.kind !== "storage_policy_migration") {
 		return null;
 	}
 

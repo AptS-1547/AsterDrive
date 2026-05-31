@@ -42,5 +42,10 @@
 	"step_blob_maintenance_check_blobs": "检查存储对象",
 	"step_blob_maintenance_reconcile_refs": "核对引用计数",
 	"step_blob_maintenance_cleanup_objects": "清理孤儿 Blob",
-	"step_blob_maintenance_finish": "维护完成"
+	"step_blob_maintenance_finish": "维护完成",
+	"step_offline_download_waiting": "等待执行",
+	"step_offline_download_validate_source": "校验来源",
+	"step_offline_download_download_source": "下载来源文件",
+	"step_offline_download_verify_source": "校验文件",
+	"step_offline_download_store_result": "导入工作区"
 }

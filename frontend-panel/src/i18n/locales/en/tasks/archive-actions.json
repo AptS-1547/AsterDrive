@@ -19,5 +19,17 @@
 	"archive_filename_encoding_shift_jis": "Shift_JIS",
 	"archive_filename_encoding_big5": "Big5",
 	"archive_filename_encoding_euc_kr": "EUC-KR",
-	"archive_filename_encoding_windows_1252": "Windows-1252"
+	"archive_filename_encoding_windows_1252": "Windows-1252",
+	"offline_download_action": "Import from link",
+	"offline_download_dialog_title": "Import from link",
+	"offline_download_dialog_hint": "The server downloads the file and imports it into the current folder.",
+	"offline_download_url_label": "Source URL",
+	"offline_download_url_placeholder": "https://example.com/file.zip",
+	"offline_download_url_invalid": "Enter a valid HTTP or HTTPS URL.",
+	"offline_download_filename_label": "Filename",
+	"offline_download_filename_placeholder": "Use source filename",
+	"offline_download_sha256_label": "Expected SHA-256",
+	"offline_download_sha256_placeholder": "Optional 64-character checksum",
+	"offline_download_target_folder_label": "Target folder",
+	"offline_download_submit": "Create download task"
 }

@@ -73,7 +73,7 @@ export async function runQueuedUploadTask(
 	}: UploadTaskActionsContext,
 ) {
 	const task = tasksRef.current.find((item) => item.id === taskId);
-	if (!task || task.status !== "queued" || !task.file) return;
+	if (task?.status !== "queued" || !task.file) return;
 
 	const file = task.file;
 	patchTask(taskId, {

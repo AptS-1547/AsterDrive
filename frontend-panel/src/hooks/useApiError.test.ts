@@ -159,14 +159,10 @@ describe("handleApiError", () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
 		handleApiError(
-			new mockState.ApiError(
-				ErrorCode.FileUploadFailed,
-				"Upload Failed",
-				{
-					apiCode: ApiErrorCode.UploadHashTempReadFailed,
-					subcode: ApiSubcode.UploadTempFileWriteFailed,
-				},
-			),
+			new mockState.ApiError(ErrorCode.FileUploadFailed, "Upload Failed", {
+				apiCode: ApiErrorCode.UploadHashTempReadFailed,
+				subcode: ApiSubcode.UploadTempFileWriteFailed,
+			}),
 		);
 
 		expect(mockState.translate).toHaveBeenCalledWith(
@@ -201,14 +197,10 @@ describe("handleApiError", () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
 		handleApiError(
-			new mockState.ApiError(
-				ErrorCode.FileUploadFailed,
-				"Upload Failed",
-				{
-					apiCode: ApiErrorCode.UploadHashTempReadFailed,
-					subcode: ApiSubcode.UploadTempFileWriteFailed,
-				},
-			),
+			new mockState.ApiError(ErrorCode.FileUploadFailed, "Upload Failed", {
+				apiCode: ApiErrorCode.UploadHashTempReadFailed,
+				subcode: ApiSubcode.UploadTempFileWriteFailed,
+			}),
 		);
 
 		expect(mockState.exists).toHaveBeenCalledWith(
@@ -245,18 +237,14 @@ describe("handleApiError", () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
 		handleApiError(
-			new mockState.ApiError(
-				ErrorCode.Forbidden,
-				"untrusted request origin",
-				{ subcode: ApiSubcode.AuthRequestOriginUntrusted },
-			),
+			new mockState.ApiError(ErrorCode.Forbidden, "untrusted request origin", {
+				subcode: ApiSubcode.AuthRequestOriginUntrusted,
+			}),
 		);
 		handleApiError(
-			new mockState.ApiError(
-				ErrorCode.Forbidden,
-				"invalid CSRF token",
-				{ subcode: ApiSubcode.AuthCsrfTokenInvalid },
-			),
+			new mockState.ApiError(ErrorCode.Forbidden, "invalid CSRF token", {
+				subcode: ApiSubcode.AuthCsrfTokenInvalid,
+			}),
 		);
 		handleApiError(
 			new mockState.ApiError(
@@ -341,11 +329,9 @@ describe("handleApiError", () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
 		handleApiError(
-			new mockState.ApiError(
-				ErrorCode.BadRequest,
-				"invalid Origin header",
-				{ subcode: ApiSubcode.ValidationRequestOriginInvalid },
-			),
+			new mockState.ApiError(ErrorCode.BadRequest, "invalid Origin header", {
+				subcode: ApiSubcode.ValidationRequestOriginInvalid,
+			}),
 		);
 
 		expect(mockState.translate).toHaveBeenCalledWith(
@@ -360,11 +346,9 @@ describe("handleApiError", () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
 		handleApiError(
-			new mockState.ApiError(
-				ErrorCode.FileUploadFailed,
-				"Upload Failed",
-				{ subcode: ApiSubcode.UploadTempFileWriteFailed },
-			),
+			new mockState.ApiError(ErrorCode.FileUploadFailed, "Upload Failed", {
+				subcode: ApiSubcode.UploadTempFileWriteFailed,
+			}),
 		);
 
 		expect(mockState.translate).toHaveBeenCalledWith(
@@ -379,11 +363,9 @@ describe("handleApiError", () => {
 		const { handleApiError } = await import("@/hooks/useApiError");
 
 		handleApiError(
-			new mockState.ApiError(
-				ErrorCode.Conflict,
-				"email already exists",
-				{ subcode: ApiSubcode.AuthEmailExists },
-			),
+			new mockState.ApiError(ErrorCode.Conflict, "email already exists", {
+				subcode: ApiSubcode.AuthEmailExists,
+			}),
 		);
 
 		expect(mockState.translate).toHaveBeenCalledWith(

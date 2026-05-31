@@ -456,7 +456,7 @@
 
 `GET /admin/tasks` 现在能看到两类记录：
 
-- 用户后台任务，例如归档、缩略图、媒体元数据、回收站清空
+- 用户后台任务，例如归档、缩略图、媒体元数据、链接导入、回收站清空
 - 系统运行时留痕任务，例如 `mail-outbox-dispatch`、`background-task-dispatch`、`upload-cleanup`、`completed-upload-cleanup`、`blob-reconcile`、`system-health-check`、`trash-cleanup`、`team-archive-cleanup`、`lock-cleanup`、`auth-session-cleanup`、`external-auth-flow-cleanup`、`mfa-flow-cleanup`、`audit-cleanup`、`task-cleanup`、`wopi-session-cleanup`
 
 系统运行时任务有几个特殊点：
@@ -518,6 +518,10 @@
 - `background_task_storage_migration_max_concurrency`
 - `share_download_rollback_queue_capacity`
 - `share_stream_session_ttl_secs`
+- `offline_download_max_file_size_bytes`
+- `offline_download_max_mb_per_sec`
+- `offline_download_max_concurrency`
+- `offline_download_request_timeout_secs`
 - `archive_extract_max_source_bytes`
 - `archive_extract_max_uncompressed_bytes`
 - `archive_extract_max_entries`
@@ -551,6 +555,8 @@
 `media_processing_registry_json` 是统一媒体处理注册表，用来管理内置 `images`、内置 `lofty`、VIPS CLI、FFmpeg CLI、FFprobe CLI 的启用状态、能力用途、后缀绑定和命令路径。缩略图与媒体元数据都走这条注册表；`media_metadata_enabled` 只保留为媒体元数据总开关，单类媒体是否启用由对应处理器控制。
 
 `POST /admin/config/media_processing_registry_json/action` 支持 `test_vips_cli`、`test_ffmpeg_cli` 和 `test_ffprobe_cli`，会用当前草稿注册表或已保存注册表里的命令执行探测，适用于二进制文件改名、不在 PATH 下，或安装在自定义路径的环境。
+
+链接导入由 `offline_download_*` 四个键控制：最大文件大小、单任务速度上限、任务并发数和单次请求超时。速度键 `offline_download_max_mb_per_sec` 的单位是 MB/s，值为 `0` 表示不限速；后端下载过程会流式写入临时文件，再校验 SHA-256 并导入工作空间。
 
 邮箱验证码 MFA 由 `auth_email_code_login_*` 四个键控制。启用 `auth_email_code_login_enabled` 前，SMTP host、发件人地址必须完整，SMTP 用户名和密码也必须成对配置；如果后续邮件关键配置被改到不可投递状态，服务端会自动把 `auth_email_code_login_enabled` 写回 `false`。邮件正文和主题使用 `mail_template_login_email_code_subject` / `mail_template_login_email_code_html`。
 
@@ -612,7 +618,7 @@
 - `network`：CORS 等网络访问规则
 - `runtime.mail` / `runtime.background_task` / `runtime.maintenance` / `runtime.limits` / `runtime.share_stream`：运行时派发、维护和限制
 - `storage`：版本、回收站、团队归档和默认配额等存储保留策略
-- `file_processing.archive_extract` / `file_processing.archive_preview` / `file_processing.archive_build` / `file_processing.media`：压缩包和媒体处理
+- `file_processing.archive_extract` / `file_processing.archive_preview` / `file_processing.archive_build` / `file_processing.offline_download` / `file_processing.media`：压缩包、链接导入和媒体处理
 - `webdav` / `audit`：WebDAV 和审计日志
 
 旧的前端设置路径 `/admin/settings/general` 和 `/admin/settings/operations` 只保留为跳转兼容，不应再作为 `system_config.category` 写入。新增系统配置时必须使用已登记分区；如果确实需要新增分区，要同时补允许列表、前端路由 / 图标以及 zh/en 标题和描述文案。分类完整性测试会拦住未登记分区和缺少二级分区文案的配置。

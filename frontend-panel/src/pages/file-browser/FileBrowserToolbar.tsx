@@ -1,4 +1,4 @@
-import { type DragEvent, Fragment, useEffect, useRef, useState } from "react";
+import { type DragEvent, Fragment, useEffect, useReducer, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { SortMenu } from "@/components/common/SortMenu";
 import { ToolbarBar } from "@/components/common/ToolbarBar";
@@ -30,6 +30,10 @@ type SelectionToolbarPhase = "hidden" | "entering" | "visible" | "exiting";
 const SELECTION_TOOLBAR_ENTER_MS = 160;
 const SELECTION_TOOLBAR_EXIT_DELAY_MS = 40;
 const SELECTION_TOOLBAR_EXIT_MS = 120;
+
+function scheduleSelectionToolbarTimer(callback: () => void, delay: number) {
+	return setTimeout(callback, delay);
+}
 
 type VisibleBreadcrumbEntry =
 	| {
@@ -71,6 +75,7 @@ interface FileBrowserToolbarProps {
 		targetFolderId: number | null,
 	) => Promise<void>;
 	onNavigateToFolder: (folderId: number | null, folderName: string) => void;
+	onOfflineDownload: () => void;
 	onRefresh: () => void | Promise<void>;
 	onSetSortBy: (value: SortBy) => void;
 	onSetSortOrder: (value: SortOrder) => void;
@@ -80,8 +85,57 @@ interface FileBrowserToolbarProps {
 function useSelectionToolbarMotion(
 	selectionToolbar: FileBrowserSelectionToolbarState | null,
 ) {
-	const [phase, setPhase] = useState<SelectionToolbarPhase>(() =>
-		selectionToolbar ? "entering" : "hidden",
+	const [state, dispatch] = useReducer(
+		(
+			current: {
+				hasSelection: boolean;
+				phase: SelectionToolbarPhase;
+			},
+			action:
+				| {
+						type: "set";
+						hasSelection: boolean;
+				  }
+				| {
+						type: "enter";
+				  }
+				| {
+						type: "visible";
+				  }
+				| {
+						type: "exiting";
+				  }
+				| {
+						type: "hide";
+				  },
+		): {
+			hasSelection: boolean;
+			phase: SelectionToolbarPhase;
+		} => {
+			switch (action.type) {
+				case "set":
+					return {
+						hasSelection: action.hasSelection,
+						phase: action.hasSelection
+							? "entering"
+							: current.hasSelection
+								? "visible"
+								: "hidden",
+					};
+				case "enter":
+					return { ...current, phase: "entering" };
+				case "visible":
+					return { ...current, phase: "visible" };
+				case "exiting":
+					return { ...current, phase: "exiting" };
+				case "hide":
+					return { hasSelection: false, phase: "hidden" };
+			}
+		},
+		{
+			hasSelection: selectionToolbar !== null,
+			phase: selectionToolbar ? "entering" : "hidden",
+		},
 	);
 	const retainedSelectionToolbarRef =
 		useRef<FileBrowserSelectionToolbarState | null>(selectionToolbar);
@@ -89,7 +143,7 @@ function useSelectionToolbarMotion(
 	const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const restoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const hasSelection = selectionToolbar !== null;
-	const hasSelectionRef = useRef(hasSelection);
+	const hasSelectionRef = useRef(state.hasSelection);
 	hasSelectionRef.current = hasSelection;
 
 	if (selectionToolbar) {
@@ -115,32 +169,32 @@ function useSelectionToolbarMotion(
 		clearTimers();
 
 		if (hasSelection) {
-			setPhase("entering");
-			enterTimerRef.current = setTimeout(() => {
-				setPhase("visible");
+			dispatch({ type: "set", hasSelection: true });
+			enterTimerRef.current = scheduleSelectionToolbarTimer(() => {
+				dispatch({ type: "visible" });
 				enterTimerRef.current = null;
 			}, SELECTION_TOOLBAR_ENTER_MS);
 		} else if (retainedSelectionToolbarRef.current) {
-			setPhase("visible");
-			exitTimerRef.current = setTimeout(() => {
+			dispatch({ type: "set", hasSelection: false });
+			exitTimerRef.current = scheduleSelectionToolbarTimer(() => {
 				if (hasSelectionRef.current) {
 					exitTimerRef.current = null;
 					return;
 				}
-				setPhase("exiting");
+				dispatch({ type: "exiting" });
 				exitTimerRef.current = null;
-				restoreTimerRef.current = setTimeout(() => {
+				restoreTimerRef.current = scheduleSelectionToolbarTimer(() => {
 					if (hasSelectionRef.current) {
 						restoreTimerRef.current = null;
 						return;
 					}
 					retainedSelectionToolbarRef.current = null;
-					setPhase("hidden");
+					dispatch({ type: "hide" });
 					restoreTimerRef.current = null;
 				}, SELECTION_TOOLBAR_EXIT_MS);
 			}, SELECTION_TOOLBAR_EXIT_DELAY_MS);
 		} else {
-			setPhase("hidden");
+			dispatch({ type: "set", hasSelection: false });
 		}
 
 		return () => {
@@ -162,11 +216,11 @@ function useSelectionToolbarMotion(
 	const renderedSelectionToolbar =
 		selectionToolbar ?? retainedSelectionToolbarRef.current;
 	const renderedPhase: SelectionToolbarPhase = selectionToolbar
-		? phase === "hidden" || phase === "exiting"
+		? state.phase === "hidden" || state.phase === "exiting"
 			? "entering"
-			: phase
+			: state.phase
 		: renderedSelectionToolbar
-			? phase === "exiting"
+			? state.phase === "exiting"
 				? "exiting"
 				: "visible"
 			: "hidden";
@@ -187,203 +241,26 @@ function selectionToolbarMotionClass(phase: SelectionToolbarPhase) {
 	);
 }
 
-export function FileBrowserToolbar({
-	breadcrumb,
-	dragOverBreadcrumbIndex,
-	isCompactBreadcrumb,
-	isRootFolder,
-	isSearching,
-	searchQuery,
-	selectionToolbar,
-	sortBy,
-	sortOrder,
-	viewMode,
-	onBreadcrumbDragLeave,
-	onBreadcrumbDragOver,
-	onBreadcrumbDrop,
-	onNavigateToFolder,
-	onRefresh,
-	onSetSortBy,
-	onSetSortOrder,
-	onSetViewMode,
-}: FileBrowserToolbarProps) {
+function FileBrowserSelectionToolbar({
+	renderedSelectionToolbar,
+	selectionToolbarContentClass,
+	selectionToolbarHiddenProps,
+}: {
+	renderedSelectionToolbar: FileBrowserSelectionToolbarState;
+	selectionToolbarContentClass: string;
+	selectionToolbarHiddenProps: {
+		"aria-hidden": boolean;
+		inert: true | undefined;
+	};
+}) {
 	const { t } = useTranslation(["files", "tasks"]);
-	const {
-		phase: selectionToolbarPhase,
-		selectionToolbar: renderedSelectionToolbar,
-	} = useSelectionToolbarMotion(selectionToolbar);
-	const visibleBreadcrumb: VisibleBreadcrumbEntry[] =
-		isCompactBreadcrumb && breadcrumb.length > 2
-			? [
-					{ type: "item", item: breadcrumb[0], sourceIndex: 0 },
-					{
-						type: "ellipsis",
-						key: "ellipsis",
-						items: breadcrumb.slice(1, -1),
-					},
-					{
-						type: "item",
-						item: breadcrumb[breadcrumb.length - 1],
-						sourceIndex: breadcrumb.length - 1,
-					},
-				]
-			: breadcrumb.map((item, index) => ({
-					type: "item" as const,
-					item,
-					sourceIndex: index,
-				}));
-	const selectDisplayedLabel = renderedSelectionToolbar?.allDisplayedSelected
+	const selectDisplayedLabel = renderedSelectionToolbar.allDisplayedSelected
 		? t("selection_clear")
 		: t("selection_select_all_visible");
 	const selectionDownloadLabel =
-		renderedSelectionToolbar?.downloadAction?.kind === "file"
+		renderedSelectionToolbar.downloadAction?.kind === "file"
 			? t("download")
 			: t("tasks:archive_download_action");
-	const selectionToolbarContentClass = selectionToolbarMotionClass(
-		selectionToolbarPhase,
-	);
-	const isSelectionToolbarExiting = selectionToolbarPhase === "exiting";
-	const selectionToolbarHiddenProps = {
-		"aria-hidden": isSelectionToolbarExiting,
-		inert: isSelectionToolbarExiting ? true : undefined,
-	};
-	const defaultLeft = (
-		<>
-			<span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent/55 text-accent-foreground sm:h-8 sm:w-8">
-				<Icon name={isRootFolder ? "House" : "FolderOpen"} className="size-4" />
-			</span>
-			<div className="min-w-0 flex-1">
-				{isSearching ? (
-					<span className="block truncate text-xs text-muted-foreground sm:text-sm">
-						{t("core:search")}: &quot;{searchQuery}&quot;
-					</span>
-				) : (
-					<Breadcrumb className="min-w-0">
-						<BreadcrumbList className="min-w-0 gap-1.5 text-xs sm:gap-2 sm:text-sm">
-							{visibleBreadcrumb.map((entry, index) => (
-								<Fragment
-									key={
-										entry.type === "ellipsis"
-											? entry.key
-											: `${entry.item.id ?? "root"}-${entry.sourceIndex}`
-									}
-								>
-									{index > 0 && (
-										<BreadcrumbSeparator className="mx-0.5 text-muted-foreground/45" />
-									)}
-									{entry.type === "ellipsis" ? (
-										<BreadcrumbItem className="shrink-0">
-											<DropdownMenu>
-												<DropdownMenuTrigger
-													render={
-														<button
-															type="button"
-															className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground sm:h-7 sm:w-7"
-															aria-label={t("core:more")}
-														>
-															<BreadcrumbEllipsis />
-														</button>
-													}
-												/>
-												<DropdownMenuContent
-													align="start"
-													className="w-auto min-w-40"
-												>
-													{entry.items.map((hiddenItem) => (
-														<DropdownMenuItem
-															key={hiddenItem.id ?? "root"}
-															onClick={() =>
-																onNavigateToFolder(
-																	hiddenItem.id,
-																	hiddenItem.name,
-																)
-															}
-														>
-															<Icon
-																name="FolderOpen"
-																className="size-4 text-muted-foreground"
-															/>
-															<span className="truncate">
-																{hiddenItem.name}
-															</span>
-														</DropdownMenuItem>
-													))}
-												</DropdownMenuContent>
-											</DropdownMenu>
-										</BreadcrumbItem>
-									) : (
-										<BreadcrumbItem
-											className={
-												entry.sourceIndex === breadcrumb.length - 1
-													? "min-w-0 flex-1"
-													: "shrink-0"
-											}
-										>
-											{entry.sourceIndex < breadcrumb.length - 1 ? (
-												<BreadcrumbLink
-													className={[
-														"cursor-pointer rounded-md px-1 py-0.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/45 hover:text-foreground sm:px-1.5 sm:text-sm",
-														dragOverBreadcrumbIndex === entry.sourceIndex &&
-															"ring-2 ring-primary bg-accent/30 text-foreground",
-													]
-														.filter(Boolean)
-														.join(" ")}
-													onDragOver={(event) =>
-														onBreadcrumbDragOver(event, entry.sourceIndex)
-													}
-													onDragLeave={onBreadcrumbDragLeave}
-													onDrop={(event) => {
-														void onBreadcrumbDrop(
-															event,
-															entry.sourceIndex,
-															entry.item.id,
-														);
-													}}
-													onClick={() =>
-														onNavigateToFolder(entry.item.id, entry.item.name)
-													}
-												>
-													{entry.item.name}
-												</BreadcrumbLink>
-											) : (
-												<BreadcrumbPage className="text-sm font-semibold text-foreground sm:text-[0.95rem]">
-													{entry.item.name}
-												</BreadcrumbPage>
-											)}
-										</BreadcrumbItem>
-									)}
-								</Fragment>
-							))}
-						</BreadcrumbList>
-					</Breadcrumb>
-				)}
-			</div>
-			<button
-				type="button"
-				className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/55 hover:text-accent-foreground sm:h-8 sm:w-8"
-				onClick={() => void onRefresh()}
-				aria-label={t("core:refresh")}
-				title={t("core:refresh")}
-			>
-				<Icon name="ArrowsClockwise" className="size-4" />
-			</button>
-		</>
-	);
-	const defaultRight = (
-		<>
-			<SortMenu
-				sortBy={sortBy}
-				sortOrder={sortOrder}
-				onSortBy={onSetSortBy}
-				onSortOrder={onSetSortOrder}
-			/>
-			<ViewToggle value={viewMode} onChange={onSetViewMode} />
-		</>
-	);
-
-	if (!renderedSelectionToolbar) {
-		return <ToolbarBar left={defaultLeft} right={defaultRight} />;
-	}
 
 	return (
 		<ToolbarBar
@@ -530,6 +407,228 @@ export function FileBrowserToolbar({
 					</DropdownMenu>
 				</div>
 			}
+		/>
+	);
+}
+
+export function FileBrowserToolbar({
+	breadcrumb,
+	dragOverBreadcrumbIndex,
+	isCompactBreadcrumb,
+	isRootFolder,
+	isSearching,
+	searchQuery,
+	selectionToolbar,
+	sortBy,
+	sortOrder,
+	viewMode,
+	onBreadcrumbDragLeave,
+	onBreadcrumbDragOver,
+	onBreadcrumbDrop,
+	onNavigateToFolder,
+	onOfflineDownload,
+	onRefresh,
+	onSetSortBy,
+	onSetSortOrder,
+	onSetViewMode,
+}: FileBrowserToolbarProps) {
+	const { t } = useTranslation(["files", "tasks"]);
+	const {
+		phase: selectionToolbarPhase,
+		selectionToolbar: renderedSelectionToolbar,
+	} = useSelectionToolbarMotion(selectionToolbar);
+	const visibleBreadcrumb: VisibleBreadcrumbEntry[] =
+		isCompactBreadcrumb && breadcrumb.length > 2
+			? [
+					{ type: "item", item: breadcrumb[0], sourceIndex: 0 },
+					{
+						type: "ellipsis",
+						key: "ellipsis",
+						items: breadcrumb.slice(1, -1),
+					},
+					{
+						type: "item",
+						item: breadcrumb[breadcrumb.length - 1],
+						sourceIndex: breadcrumb.length - 1,
+					},
+				]
+			: breadcrumb.map((item, index) => ({
+					type: "item" as const,
+					item,
+					sourceIndex: index,
+				}));
+	const selectionToolbarContentClass = selectionToolbarMotionClass(
+		selectionToolbarPhase,
+	);
+	const isSelectionToolbarExiting = selectionToolbarPhase === "exiting";
+	const selectionToolbarHiddenProps = {
+		"aria-hidden": isSelectionToolbarExiting,
+		inert: isSelectionToolbarExiting ? (true as const) : undefined,
+	};
+	const defaultLeft = (
+		<>
+			<span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent/55 text-accent-foreground sm:h-8 sm:w-8">
+				<Icon name={isRootFolder ? "House" : "FolderOpen"} className="size-4" />
+			</span>
+			<div className="min-w-0 flex-1">
+				{isSearching ? (
+					<span className="block truncate text-xs text-muted-foreground sm:text-sm">
+						{t("core:search")}: &quot;{searchQuery}&quot;
+					</span>
+				) : (
+					<Breadcrumb className="min-w-0">
+						<BreadcrumbList className="min-w-0 gap-1.5 text-xs sm:gap-2 sm:text-sm">
+							{visibleBreadcrumb.map((entry, index) => (
+								<Fragment
+									key={
+										entry.type === "ellipsis"
+											? entry.key
+											: `${entry.item.id ?? "root"}-${entry.sourceIndex}`
+									}
+								>
+									{index > 0 && (
+										<BreadcrumbSeparator className="mx-0.5 text-muted-foreground/45" />
+									)}
+									{entry.type === "ellipsis" ? (
+										<BreadcrumbItem className="shrink-0">
+											<DropdownMenu>
+												<DropdownMenuTrigger
+													render={
+														<button
+															type="button"
+															className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground sm:h-7 sm:w-7"
+															aria-label={t("core:more")}
+														>
+															<BreadcrumbEllipsis />
+														</button>
+													}
+												/>
+												<DropdownMenuContent
+													align="start"
+													className="w-auto min-w-40"
+												>
+													{entry.items.map((hiddenItem) => (
+														<DropdownMenuItem
+															key={hiddenItem.id ?? "root"}
+															onClick={() =>
+																onNavigateToFolder(
+																	hiddenItem.id,
+																	hiddenItem.name,
+																)
+															}
+														>
+															<Icon
+																name="FolderOpen"
+																className="size-4 text-muted-foreground"
+															/>
+															<span className="truncate">
+																{hiddenItem.name}
+															</span>
+														</DropdownMenuItem>
+													))}
+												</DropdownMenuContent>
+											</DropdownMenu>
+										</BreadcrumbItem>
+									) : (
+										<BreadcrumbItem
+											className={
+												entry.sourceIndex === breadcrumb.length - 1
+													? "min-w-0 flex-1"
+													: "shrink-0"
+											}
+										>
+											{entry.sourceIndex < breadcrumb.length - 1 ? (
+												<BreadcrumbLink
+													className={[
+														"cursor-pointer rounded-md px-1 py-0.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/45 hover:text-foreground sm:px-1.5 sm:text-sm",
+														dragOverBreadcrumbIndex === entry.sourceIndex &&
+															"ring-2 ring-primary bg-accent/30 text-foreground",
+													]
+														.filter(Boolean)
+														.join(" ")}
+													onDragOver={(event) =>
+														onBreadcrumbDragOver(event, entry.sourceIndex)
+													}
+													onDragLeave={onBreadcrumbDragLeave}
+													onDrop={(event) => {
+														void onBreadcrumbDrop(
+															event,
+															entry.sourceIndex,
+															entry.item.id,
+														);
+													}}
+													onClick={() =>
+														onNavigateToFolder(entry.item.id, entry.item.name)
+													}
+												>
+													{entry.item.name}
+												</BreadcrumbLink>
+											) : (
+												<BreadcrumbPage className="text-sm font-semibold text-foreground sm:text-[0.95rem]">
+													{entry.item.name}
+												</BreadcrumbPage>
+											)}
+										</BreadcrumbItem>
+									)}
+								</Fragment>
+							))}
+						</BreadcrumbList>
+					</Breadcrumb>
+				)}
+			</div>
+			<button
+				type="button"
+				className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/55 hover:text-accent-foreground sm:h-8 sm:w-8"
+				onClick={() => void onRefresh()}
+				aria-label={t("core:refresh")}
+				title={t("core:refresh")}
+			>
+				<Icon name="ArrowsClockwise" className="size-4" />
+			</button>
+		</>
+	);
+	const defaultRight = (
+		<>
+			<Button
+				type="button"
+				size="sm"
+				variant="outline"
+				className="hidden sm:inline-flex"
+				onClick={onOfflineDownload}
+			>
+				<Icon name="LinkSimple" className="size-3.5" />
+				<span>{t("tasks:offline_download_action")}</span>
+			</Button>
+			<Button
+				type="button"
+				size="icon-sm"
+				variant="ghost"
+				className="sm:hidden"
+				onClick={onOfflineDownload}
+				aria-label={t("tasks:offline_download_action")}
+				title={t("tasks:offline_download_action")}
+			>
+				<Icon name="LinkSimple" className="size-4" />
+			</Button>
+			<SortMenu
+				sortBy={sortBy}
+				sortOrder={sortOrder}
+				onSortBy={onSetSortBy}
+				onSortOrder={onSetSortOrder}
+			/>
+			<ViewToggle value={viewMode} onChange={onSetViewMode} />
+		</>
+	);
+
+	if (!renderedSelectionToolbar) {
+		return <ToolbarBar left={defaultLeft} right={defaultRight} />;
+	}
+
+	return (
+		<FileBrowserSelectionToolbar
+			renderedSelectionToolbar={renderedSelectionToolbar}
+			selectionToolbarContentClass={selectionToolbarContentClass}
+			selectionToolbarHiddenProps={selectionToolbarHiddenProps}
 		/>
 	);
 }

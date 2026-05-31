@@ -55,6 +55,7 @@ interface FileBrowserWorkspaceProps {
 	onDownload: (fileId: number, fileName: string) => void;
 	onInfoPanelOpenChange: (open: boolean) => void;
 	onOpenInfoFolder: (folder: FolderInfo | FolderListItem) => void;
+	onOfflineDownload: () => void;
 	onPreview: (file: FileInfo | FileListItem) => void;
 	onRefresh: () => void | Promise<void>;
 	onRename: (type: "file" | "folder", id: number, name: string) => void;
@@ -99,6 +100,7 @@ export function FileBrowserWorkspace({
 	onDownload,
 	onInfoPanelOpenChange,
 	onOpenInfoFolder,
+	onOfflineDownload,
 	onPreview,
 	onRefresh,
 	onRename,
@@ -204,6 +206,10 @@ export function FileBrowserWorkspace({
 						<ContextMenuItem onClick={onCreateFile}>
 							<Icon name="FilePlus" className="mr-2 size-4" />
 							{t("new_file")}
+						</ContextMenuItem>
+						<ContextMenuItem onClick={onOfflineDownload}>
+							<Icon name="LinkSimple" className="mr-2 size-4" />
+							{t("tasks:offline_download_action")}
 						</ContextMenuItem>
 						<ContextMenuSeparator />
 						<ContextMenuItem onClick={() => void onRefresh()}>

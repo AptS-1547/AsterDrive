@@ -98,6 +98,7 @@
 	"audit_action_archive_compress": "Created archive compression task",
 	"audit_action_archive_extract": "Created archive extraction task",
 	"audit_action_archive_download": "Downloaded archive",
+	"audit_action_offline_download": "Created link import task",
 	"audit_action_trash_purge_all": "Emptied trash",
 	"audit_action_remote_enrollment_redeem": "Redeemed remote enrollment",
 	"audit_action_remote_enrollment_ack": "Acknowledged remote enrollment",

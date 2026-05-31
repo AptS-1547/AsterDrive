@@ -53,7 +53,7 @@ To manage a group of content, switch to the corresponding workspace first.
 - Top search box: search files and folders in the current workspace
 - `Trash`: handle deleted content in the current workspace
 - `My Shares`: view links already sent from the current workspace
-- `Task Center`: view background tasks such as online compression, online extraction, and package downloads
+- `Task Center`: view background tasks such as online compression, online extraction, package downloads, and link import
 - `WebDAV`: appears only in personal space and is used to create desktop client accounts
 - `Settings` in the top-right user menu: adjust profile, interface, security, and team-related settings
 
@@ -65,6 +65,7 @@ The file list, context menu, and top action area handle most daily work:
 - Create blank text files
 - Upload files
 - Upload folders
+- Import files from HTTP/HTTPS links
 - Download files
 - Rename, copy, move, and delete files and folders
 - View details
@@ -150,6 +151,7 @@ In the current UI, the most common actions that enter `Task Center` include:
 - Package downloading a folder
 - Online compression after selecting a batch of files or folders
 - Online extraction of an archive
+- Import files from links
 - Generating a listing the first time an archive preview opens
 - Emptying the whole trash
 
@@ -165,6 +167,33 @@ In `Task Center`, you can:
 
 Task Center also follows the current workspace.  
 Tasks started in a team space must be viewed in that team's `Task Center`.
+
+## Import Files From Links
+
+If you already have an HTTP/HTTPS download URL instead of a local file, you can use `Import from link` on the files page. AsterDrive asks the server to download that URL and import the result into the target folder in the current workspace.
+
+Typical cases:
+
+- The server can reach the source site more reliably than your browser
+- You want to save a public download URL directly into AsterDrive
+- You want to import into a team space without downloading locally first
+
+When creating the task, you can fill in:
+
+- Source URL: must be `http://` or `https://`
+- Filename: optional; if omitted, the server prefers the response header or the URL path
+- Target folder: defaults to the current folder
+- Expected SHA-256: optional; if set, the task verifies the final file hash and fails on mismatch
+
+Link import creates a background task. It does not block the page. Check progress in the current workspace's `Task Center`; tasks created in a team space only appear in that team's task center.
+
+Administrators can limit the maximum file size, per-task download speed, number of concurrent link-import tasks, and request timeout. When a limit is exceeded, the task fails and the task details show the reason.
+
+The UI shows the speed limit in MB/s because it is easier for most users to understand than Mbps. The backend setting still uses bytes-per-second internally.
+
+::: tip Not every link is allowed
+To prevent the server from being used to reach internal or metadata addresses, link import only supports HTTP/HTTPS and rejects hosts that resolve to loopback, private, link-local, multicast, documentation, or cloud metadata ranges. The current implementation does not follow HTTP redirects. If the source site returns a redirect, use the final direct download URL instead.
+:::
 
 ## Trash
 

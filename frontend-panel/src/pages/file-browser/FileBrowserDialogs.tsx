@@ -6,6 +6,7 @@ import {
 	BatchTargetFolderDialog,
 	CreateFileDialog,
 	CreateFolderDialog,
+	OfflineDownloadDialog,
 	RenameDialog,
 	ShareDialog,
 	VersionHistoryDialog,
@@ -30,7 +31,9 @@ interface FileBrowserDialogsProps {
 	createFileOpen: boolean;
 	createFolderOpen: boolean;
 	currentFolderId: number | null;
+	currentFolderName?: string | null;
 	moveTarget: FileBrowserMoveTarget | null;
+	offlineDownloadOpen: boolean;
 	previewState: FileBrowserPreviewState | null;
 	renameTarget: FileBrowserRenameTarget | null;
 	shareTarget: FileBrowserShareTarget | null;
@@ -46,6 +49,7 @@ interface FileBrowserDialogsProps {
 	onCreateFolderOpenChange: (open: boolean) => void;
 	onMoveClose: () => void;
 	onMoveConfirm: (targetFolderId: number | null) => Promise<void>;
+	onOfflineDownloadOpenChange: (open: boolean) => void;
 	onPreviewClose: () => void;
 	onPreviewFileUpdated: () => void | Promise<void>;
 	onRenameClose: () => void;
@@ -61,7 +65,9 @@ export function FileBrowserDialogs({
 	createFileOpen,
 	createFolderOpen,
 	currentFolderId,
+	currentFolderName,
 	moveTarget,
+	offlineDownloadOpen,
 	previewState,
 	renameTarget,
 	shareTarget,
@@ -74,6 +80,7 @@ export function FileBrowserDialogs({
 	onCreateFolderOpenChange,
 	onMoveClose,
 	onMoveConfirm,
+	onOfflineDownloadOpenChange,
 	onPreviewClose,
 	onPreviewFileUpdated,
 	onRenameClose,
@@ -109,6 +116,15 @@ export function FileBrowserDialogs({
 					mode={archiveTaskTarget?.mode ?? "compress"}
 					initialName={archiveTaskTarget?.initialName ?? ""}
 					onSubmit={onArchiveTaskSubmit}
+				/>
+			</Suspense>
+
+			<Suspense fallback={null}>
+				<OfflineDownloadDialog
+					open={offlineDownloadOpen}
+					onOpenChange={onOfflineDownloadOpenChange}
+					targetFolderId={currentFolderId}
+					targetFolderName={currentFolderName}
 				/>
 			</Suspense>
 

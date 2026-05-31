@@ -407,8 +407,9 @@ describe("AdminAuditPage", () => {
 			});
 		});
 		await waitFor(() => {
-			expect(screen.getAllByText("---")).toHaveLength(2);
+			expect(screen.getByText("---")).toBeInTheDocument();
 		});
+		expect(screen.queryByText("report.pdf")).toBeNull();
 
 		fireEvent.change(screen.getByPlaceholderText("audit_filter_action"), {
 			target: { value: "file_delete" },

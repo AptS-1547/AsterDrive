@@ -2617,6 +2617,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/offline-download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_offline_download_task"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/{id}": {
         parameters: {
             query?: never;
@@ -3395,6 +3411,22 @@ export interface paths {
         get: operations["list_team_tasks"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/tasks/offline-download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_team_offline_download_task"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4379,7 +4411,7 @@ export interface components {
          * @description 审计日志动作
          * @enum {string}
          */
-        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_reset_user_mfa" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "admin_create_policy" | "admin_update_policy" | "admin_delete_policy" | "admin_delete_config" | "admin_delete_share" | "admin_force_unlock" | "admin_cleanup_expired_locks" | "admin_cleanup_tasks" | "admin_create_blob_maintenance_task" | "admin_create_remote_node" | "admin_update_remote_node" | "admin_delete_remote_node" | "admin_test_remote_node" | "admin_create_remote_node_enrollment_token" | "admin_create_remote_ingress_profile" | "admin_update_remote_ingress_profile" | "admin_delete_remote_ingress_profile" | "admin_create_external_auth_provider" | "admin_update_external_auth_provider" | "admin_delete_external_auth_provider" | "admin_test_external_auth_provider" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_create" | "file_delete" | "file_download" | "file_direct_link_create" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "file_preview_link_create" | "file_wopi_open" | "file_upload_cancel" | "file_restore" | "file_purge" | "file_lock" | "file_unlock" | "file_version_restore" | "file_version_delete" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "folder_restore" | "folder_purge" | "folder_lock" | "folder_unlock" | "property_set" | "property_delete" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "server_start" | "server_shutdown" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "task_retry" | "archive_compress" | "archive_extract" | "archive_download" | "trash_purge_all" | "remote_enrollment_redeem" | "remote_enrollment_ack" | "user_revoke_other_sessions" | "user_revoke_session" | "user_update_preferences" | "user_update_profile" | "user_upload_avatar" | "user_set_avatar_source" | "user_update_wopi_info" | "webdav_account_create" | "webdav_account_delete" | "webdav_account_toggle" | "team_webdav_account_create" | "team_webdav_account_delete" | "team_webdav_account_toggle" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_mfa_enable" | "user_mfa_disable" | "user_mfa_recovery_codes_regenerate" | "user_mfa_email_code_send" | "user_mfa_challenge_success" | "user_mfa_challenge_failed" | "user_passkey_delete" | "user_passkey_login" | "user_passkey_register" | "user_passkey_rename" | "user_external_auth_login" | "user_external_auth_link" | "user_external_auth_unlink" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
+        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_reset_user_mfa" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "admin_create_policy" | "admin_update_policy" | "admin_delete_policy" | "admin_delete_config" | "admin_delete_share" | "admin_force_unlock" | "admin_cleanup_expired_locks" | "admin_cleanup_tasks" | "admin_create_blob_maintenance_task" | "admin_create_remote_node" | "admin_update_remote_node" | "admin_delete_remote_node" | "admin_test_remote_node" | "admin_create_remote_node_enrollment_token" | "admin_create_remote_ingress_profile" | "admin_update_remote_ingress_profile" | "admin_delete_remote_ingress_profile" | "admin_create_external_auth_provider" | "admin_update_external_auth_provider" | "admin_delete_external_auth_provider" | "admin_test_external_auth_provider" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_create" | "file_delete" | "file_download" | "file_direct_link_create" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "file_preview_link_create" | "file_wopi_open" | "file_upload_cancel" | "file_restore" | "file_purge" | "file_lock" | "file_unlock" | "file_version_restore" | "file_version_delete" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "folder_restore" | "folder_purge" | "folder_lock" | "folder_unlock" | "property_set" | "property_delete" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "server_start" | "server_shutdown" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "task_retry" | "archive_compress" | "archive_extract" | "archive_download" | "offline_download" | "trash_purge_all" | "remote_enrollment_redeem" | "remote_enrollment_ack" | "user_revoke_other_sessions" | "user_revoke_session" | "user_update_preferences" | "user_update_profile" | "user_upload_avatar" | "user_set_avatar_source" | "user_update_wopi_info" | "webdav_account_create" | "webdav_account_delete" | "webdav_account_toggle" | "team_webdav_account_create" | "team_webdav_account_delete" | "team_webdav_account_toggle" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_mfa_enable" | "user_mfa_disable" | "user_mfa_recovery_codes_regenerate" | "user_mfa_email_code_send" | "user_mfa_challenge_success" | "user_mfa_challenge_failed" | "user_passkey_delete" | "user_passkey_login" | "user_passkey_register" | "user_passkey_rename" | "user_external_auth_login" | "user_external_auth_link" | "user_external_auth_unlink" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
         /**
          * @description 审计日志实体类型
          * @enum {string}
@@ -4451,7 +4483,7 @@ export interface components {
          * @description 后台任务类型
          * @enum {string}
          */
-        BackgroundTaskKind: "archive_extract" | "archive_compress" | "archive_preview_generate" | "thumbnail_generate" | "media_metadata_extract" | "trash_purge_all" | "storage_policy_temp_cleanup" | "storage_policy_migration" | "blob_maintenance" | "system_runtime";
+        BackgroundTaskKind: "archive_extract" | "archive_compress" | "archive_preview_generate" | "thumbnail_generate" | "media_metadata_extract" | "trash_purge_all" | "storage_policy_temp_cleanup" | "storage_policy_migration" | "blob_maintenance" | "offline_download" | "system_runtime";
         /**
          * @description 后台任务状态
          * @enum {string}
@@ -4634,6 +4666,13 @@ export interface components {
             name: string;
             /** Format: int64 */
             parent_id?: number | null;
+        };
+        CreateOfflineDownloadTaskParams: {
+            expected_sha256?: string | null;
+            filename?: string | null;
+            /** Format: int64 */
+            target_folder_id?: number | null;
+            url: string;
         };
         /** @description Create a storage policy group. */
         CreatePolicyGroupReq: {
@@ -5332,6 +5371,25 @@ export interface components {
             updated_at: string;
             /** Format: int64 */
             view_count: number;
+        };
+        OfflineDownloadTaskPayloadInfo: {
+            expected_sha256?: string | null;
+            filename?: string | null;
+            source_display_url: string;
+            /** Format: int64 */
+            target_folder_id?: number | null;
+        };
+        OfflineDownloadTaskResult: {
+            /** Format: int64 */
+            content_length: number;
+            /** Format: int64 */
+            file_id: number;
+            file_name: string;
+            file_path: string;
+            /** Format: int64 */
+            folder_id?: number | null;
+            sha256: string;
+            source_display_url: string;
         };
         OffsetPage_AdminExternalAuthProviderInfo: {
             items: {
@@ -6645,6 +6703,9 @@ export interface components {
         }) | (components["schemas"]["BlobMaintenanceTaskPayload"] & {
             /** @enum {string} */
             kind: "blob_maintenance";
+        }) | (components["schemas"]["OfflineDownloadTaskPayloadInfo"] & {
+            /** @enum {string} */
+            kind: "offline_download";
         }) | (components["schemas"]["RuntimeTaskPayload"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -6654,7 +6715,7 @@ export interface components {
             title?: null | components["schemas"]["TaskPresentationMessage"];
         };
         /** @enum {string} */
-        TaskPresentationCode: "blob_maintenance_integrity_check_name" | "blob_maintenance_orphan_cleanup_name" | "blob_maintenance_ref_count_reconcile_name" | "runtime_system_health_issue_detail" | "runtime_task_audit_cleanup" | "runtime_task_auth_session_cleanup" | "runtime_task_background_task_dispatch" | "runtime_task_blob_reconcile" | "runtime_task_completed_upload_cleanup" | "runtime_task_external_auth_flow_cleanup" | "runtime_task_lock_cleanup" | "runtime_task_mail_outbox_dispatch" | "runtime_task_mfa_flow_cleanup" | "runtime_task_remote_node_health_test" | "runtime_task_system_health_check" | "runtime_task_task_cleanup" | "runtime_task_team_archive_cleanup" | "runtime_task_trash_cleanup" | "runtime_task_upload_cleanup" | "runtime_task_wopi_session_cleanup" | "status_text_archive_extracted" | "status_text_archive_preview_ready" | "status_text_archive_ready" | "status_text_blob_maintenance_finished" | "status_text_media_metadata_failed" | "status_text_media_metadata_ready" | "status_text_media_metadata_unsupported" | "status_text_storage_migration_completed" | "status_text_system_healthy" | "status_text_temporary_upload_cleanup_finished" | "status_text_thumbnail_already_available" | "status_text_thumbnail_ready" | "status_text_trash_purged" | "status_text_waiting_presigned_url_expiry" | "task_name_archive_compress" | "task_name_archive_extract" | "task_name_archive_preview_generate" | "task_name_archive_preview_generate_file_id" | "task_name_media_metadata_extract_blob" | "task_name_media_metadata_extract_source" | "task_name_storage_policy_migration" | "task_name_storage_policy_temp_cleanup" | "task_name_storage_policy_temp_cleanup_policy_id" | "task_name_thumbnail_generate" | "task_name_thumbnail_generate_blob_with_processor" | "task_name_trash_purge_all";
+        TaskPresentationCode: "blob_maintenance_integrity_check_name" | "blob_maintenance_orphan_cleanup_name" | "blob_maintenance_ref_count_reconcile_name" | "runtime_system_health_issue_detail" | "runtime_task_audit_cleanup" | "runtime_task_auth_session_cleanup" | "runtime_task_background_task_dispatch" | "runtime_task_blob_reconcile" | "runtime_task_completed_upload_cleanup" | "runtime_task_external_auth_flow_cleanup" | "runtime_task_lock_cleanup" | "runtime_task_mail_outbox_dispatch" | "runtime_task_mfa_flow_cleanup" | "runtime_task_remote_node_health_test" | "runtime_task_system_health_check" | "runtime_task_task_cleanup" | "runtime_task_team_archive_cleanup" | "runtime_task_trash_cleanup" | "runtime_task_upload_cleanup" | "runtime_task_wopi_session_cleanup" | "status_text_archive_extracted" | "status_text_archive_preview_ready" | "status_text_archive_ready" | "status_text_blob_maintenance_finished" | "status_text_media_metadata_failed" | "status_text_media_metadata_ready" | "status_text_media_metadata_unsupported" | "status_text_offline_download_imported" | "status_text_offline_download_downloaded" | "status_text_offline_download_verified" | "status_text_storage_migration_completed" | "status_text_system_healthy" | "status_text_temporary_upload_cleanup_finished" | "status_text_thumbnail_already_available" | "status_text_thumbnail_ready" | "status_text_trash_purged" | "status_text_waiting_presigned_url_expiry" | "task_name_archive_compress" | "task_name_archive_extract" | "task_name_archive_preview_generate" | "task_name_archive_preview_generate_file_id" | "task_name_media_metadata_extract_blob" | "task_name_media_metadata_extract_source" | "task_name_offline_download_source" | "task_name_offline_download_target_folder" | "task_name_offline_download_url" | "task_name_storage_policy_migration" | "task_name_storage_policy_temp_cleanup" | "task_name_storage_policy_temp_cleanup_policy_id" | "task_name_thumbnail_generate" | "task_name_thumbnail_generate_blob_with_processor" | "task_name_trash_purge_all";
         TaskPresentationMessage: {
             code: components["schemas"]["TaskPresentationCode"];
             params?: {
@@ -6688,6 +6749,9 @@ export interface components {
         }) | (components["schemas"]["BlobMaintenanceTaskResult"] & {
             /** @enum {string} */
             kind: "blob_maintenance";
+        }) | (components["schemas"]["OfflineDownloadTaskResult"] & {
+            /** @enum {string} */
+            kind: "offline_download";
         }) | (components["schemas"]["RuntimeTaskResult"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -18071,6 +18135,83 @@ export interface operations {
             };
         };
     };
+    create_offline_download_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOfflineDownloadTaskParams"];
+            };
+        };
+        responses: {
+            /** @description Offline download task created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            creator?: null | components["schemas"]["UserSummary"];
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            lease_expires_at?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload: components["schemas"]["TaskPayload"];
+                            presentation?: null | components["schemas"]["TaskPresentation"];
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result?: null | components["schemas"]["TaskResult"];
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid offline download request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     get_task: {
         parameters: {
             query?: never;
@@ -22191,6 +22332,93 @@ export interface operations {
                         msg: string;
                     };
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_team_offline_download_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOfflineDownloadTaskParams"];
+            };
+        };
+        responses: {
+            /** @description Team offline download task created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            creator?: null | components["schemas"]["UserSummary"];
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            lease_expires_at?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload: components["schemas"]["TaskPayload"];
+                            presentation?: null | components["schemas"]["TaskPresentation"];
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result?: null | components["schemas"]["TaskResult"];
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid offline download request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

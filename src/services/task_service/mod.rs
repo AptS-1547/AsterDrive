@@ -25,6 +25,7 @@ mod archive;
 mod blob_maintenance;
 mod dispatch;
 mod media_metadata;
+mod offline_download;
 mod presentation;
 mod registry;
 mod retry;
@@ -67,6 +68,7 @@ pub(crate) use archive::{
 pub(crate) use blob_maintenance::create_blob_maintenance_task_for_admin;
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 pub(crate) use media_metadata::ensure_media_metadata_task;
+pub(crate) use offline_download::create_offline_download_task_in_scope;
 use registry::{build_task_presentation, decode_task_payload, decode_task_result};
 pub(crate) use runtime::find_latest_system_runtime_by_task_name;
 pub use runtime::{RuntimeTaskRunOutcome, SystemRuntimeTaskKind, record_runtime_task_run};
@@ -84,9 +86,11 @@ pub use types::{
     ArchiveExtractTaskResult, ArchivePreviewTaskPayload, ArchivePreviewTaskResult,
     BlobMaintenanceAction, BlobMaintenanceTaskPayload, BlobMaintenanceTaskResult,
     CreateArchiveCompressTaskParams, CreateArchiveExtractTaskParams, CreateArchiveTaskParams,
-    MediaMetadataExtractTaskPayload, MediaMetadataExtractTaskResult, RuntimeSystemHealthComponent,
-    RuntimeSystemHealthResult, RuntimeSystemHealthStatus, RuntimeTaskName, RuntimeTaskPayload,
-    RuntimeTaskResult, StoragePolicyMigrationCapacityCheck, StoragePolicyMigrationDryRun,
+    CreateOfflineDownloadTaskParams, MediaMetadataExtractTaskPayload,
+    MediaMetadataExtractTaskResult, OfflineDownloadTaskPayload, OfflineDownloadTaskPayloadInfo,
+    OfflineDownloadTaskResult, RuntimeSystemHealthComponent, RuntimeSystemHealthResult,
+    RuntimeSystemHealthStatus, RuntimeTaskName, RuntimeTaskPayload, RuntimeTaskResult,
+    StoragePolicyMigrationCapacityCheck, StoragePolicyMigrationDryRun,
     StoragePolicyMigrationTaskPayload, StoragePolicyMigrationTaskResult, TaskInfo, TaskPayload,
     TaskPresentation, TaskPresentationCode, TaskPresentationMessage, TaskResult, TaskStepInfo,
     TaskStepStatus, ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult,

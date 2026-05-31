@@ -143,6 +143,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::tasks::list_tasks,
         crate::api::routes::tasks::get_task,
         crate::api::routes::tasks::retry_task,
+        crate::api::routes::tasks::create_offline_download,
 
         // trash：个人回收站内容浏览、恢复和清空操作。
         crate::api::routes::trash::list_trash,
@@ -174,6 +175,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::tasks::team_list_tasks,
         crate::api::routes::tasks::team_get_task,
         crate::api::routes::tasks::team_retry_task,
+        crate::api::routes::tasks::team_create_offline_download,
 
         // batch：团队空间内的批量删除、移动、复制与归档下载。
         crate::api::routes::batch::team_batch_delete,

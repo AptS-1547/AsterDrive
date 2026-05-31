@@ -15,9 +15,9 @@ use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 use super::retry::TaskRetryClass;
 use super::spec::{
     ArchiveCompressTask, ArchiveExtractTask, ArchivePreviewGenerateTask, BlobMaintenanceTask,
-    ErasedBackgroundTaskSpec, MediaMetadataExtractTask, StoragePolicyMigrationTask,
-    StoragePolicyTempCleanupTask, SystemRuntimeTask, TaskProcessFuture, TaskSpecAdapter,
-    ThumbnailGenerateTask, TrashPurgeAllTask,
+    ErasedBackgroundTaskSpec, MediaMetadataExtractTask, OfflineDownloadTask,
+    StoragePolicyMigrationTask, StoragePolicyTempCleanupTask, SystemRuntimeTask, TaskProcessFuture,
+    TaskSpecAdapter, ThumbnailGenerateTask, TrashPurgeAllTask,
 };
 use super::steps::initial_task_steps_from_specs;
 use super::types::{TaskPayload, TaskPresentation, TaskResult, TaskStepInfo};
@@ -35,6 +35,7 @@ static STORAGE_POLICY_TEMP_CLEANUP: TaskSpecAdapter<StoragePolicyTempCleanupTask
 static STORAGE_POLICY_MIGRATION: TaskSpecAdapter<StoragePolicyMigrationTask> =
     TaskSpecAdapter::new();
 static BLOB_MAINTENANCE: TaskSpecAdapter<BlobMaintenanceTask> = TaskSpecAdapter::new();
+static OFFLINE_DOWNLOAD: TaskSpecAdapter<OfflineDownloadTask> = TaskSpecAdapter::new();
 static SYSTEM_RUNTIME: TaskSpecAdapter<SystemRuntimeTask> = TaskSpecAdapter::new();
 
 pub(super) fn spec_for_kind(kind: BackgroundTaskKind) -> &'static dyn ErasedBackgroundTaskSpec {
@@ -48,6 +49,7 @@ pub(super) fn spec_for_kind(kind: BackgroundTaskKind) -> &'static dyn ErasedBack
         BackgroundTaskKind::StoragePolicyTempCleanup => &STORAGE_POLICY_TEMP_CLEANUP,
         BackgroundTaskKind::StoragePolicyMigration => &STORAGE_POLICY_MIGRATION,
         BackgroundTaskKind::BlobMaintenance => &BLOB_MAINTENANCE,
+        BackgroundTaskKind::OfflineDownload => &OFFLINE_DOWNLOAD,
         BackgroundTaskKind::SystemRuntime => &SYSTEM_RUNTIME,
     }
 }
@@ -106,6 +108,7 @@ pub(in crate::services::task_service) fn task_lane_kinds(
             BackgroundTaskKind::ThumbnailGenerate,
             BackgroundTaskKind::MediaMetadataExtract,
         ],
+        TaskLane::OfflineDownload => &[BackgroundTaskKind::OfflineDownload],
         TaskLane::StorageMigration => &[BackgroundTaskKind::StoragePolicyMigration],
         TaskLane::Fallback => &[
             BackgroundTaskKind::SystemRuntime,
@@ -134,6 +137,7 @@ mod tests {
             BackgroundTaskKind::StoragePolicyTempCleanup,
             BackgroundTaskKind::StoragePolicyMigration,
             BackgroundTaskKind::BlobMaintenance,
+            BackgroundTaskKind::OfflineDownload,
             BackgroundTaskKind::SystemRuntime,
         ] {
             let _ = spec_for_kind(kind);
@@ -152,6 +156,7 @@ mod tests {
             BackgroundTaskKind::StoragePolicyTempCleanup,
             BackgroundTaskKind::StoragePolicyMigration,
             BackgroundTaskKind::BlobMaintenance,
+            BackgroundTaskKind::OfflineDownload,
             BackgroundTaskKind::SystemRuntime,
         ];
 
@@ -166,6 +171,7 @@ mod tests {
         for lane in [
             TaskLane::Archive,
             TaskLane::Thumbnail,
+            TaskLane::OfflineDownload,
             TaskLane::StorageMigration,
             TaskLane::Fallback,
         ] {

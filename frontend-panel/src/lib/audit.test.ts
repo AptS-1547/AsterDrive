@@ -31,6 +31,7 @@ describe("audit i18n formatting", () => {
 	it("uses admin audit translations before falling back to raw keys", () => {
 		const t = createT({
 			"admin:audit_action_file_delete": "Deleted file",
+			"admin:audit_action_offline_download": "Created link import task",
 			"admin:audit_action_team_webdav_account_create":
 				"Created team WebDAV account",
 			"admin:audit_action_webdav_account_create": "Created WebDAV account",
@@ -38,6 +39,9 @@ describe("audit i18n formatting", () => {
 		});
 
 		expect(formatAuditAction(t, "file_delete")).toBe("Deleted file");
+		expect(formatAuditAction(t, "offline_download")).toBe(
+			"Created link import task",
+		);
 		expect(formatAuditAction(t, "webdav_account_create")).toBe(
 			"Created WebDAV account",
 		);

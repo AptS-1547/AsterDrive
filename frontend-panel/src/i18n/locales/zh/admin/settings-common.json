@@ -105,6 +105,8 @@
 	"settings_subcategory_file_processing_archive_preview_desc": "控制只读压缩包 manifest 预览是否开放，并限制源文件大小、条目数量、响应体积和扫描耗时。",
 	"settings_subcategory_file_processing_archive_build": "压缩包构建",
 	"settings_subcategory_file_processing_archive_build_desc": "限制批量压缩和归档下载展开后的条目数量、源文件总量和 ZIP 输出体积，避免一次选择拖垮后台任务或临时盘。",
+	"settings_subcategory_file_processing_offline_download": "链接导入",
+	"settings_subcategory_file_processing_offline_download_desc": "限制服务端 HTTP/HTTPS 下载，避免导入到用户或团队工作区前消耗过多资源。",
 	"settings_subcategory_file_processing_media": "媒体处理",
 	"settings_subcategory_file_processing_media_desc": "集中配置媒体元数据解析、缩略图处理器和安全限制。",
 	"settings_type_boolean": "布尔",

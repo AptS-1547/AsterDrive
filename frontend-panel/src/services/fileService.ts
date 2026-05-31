@@ -6,6 +6,7 @@ import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
 	ArchiveFilenameEncoding,
 	ArchivePreviewManifest,
+	CreateOfflineDownloadTaskParams,
 	DirectLinkTokenInfo,
 	ErrorCode,
 	FileInfo,
@@ -184,6 +185,12 @@ export function createFileService(workspace: Workspace) {
 						? {}
 						: { filename_encoding: filenameEncoding }),
 				},
+			),
+
+		createOfflineDownloadTask: (params: CreateOfflineDownloadTaskParams) =>
+			api.post<TaskInfo>(
+				buildWorkspacePath(workspace, "/tasks/offline-download"),
+				params,
 			),
 
 		copyFolder: (id: number, parentId?: number | null) =>

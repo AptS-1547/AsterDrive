@@ -336,6 +336,12 @@ export type StoragePolicyMigrationTaskPayload =
 	components["schemas"]["StoragePolicyMigrationTaskPayload"];
 export type StoragePolicyMigrationTaskResult =
 	components["schemas"]["StoragePolicyMigrationTaskResult"];
+export type CreateOfflineDownloadTaskParams =
+	components["schemas"]["CreateOfflineDownloadTaskParams"];
+export type OfflineDownloadTaskPayloadInfo =
+	components["schemas"]["OfflineDownloadTaskPayloadInfo"];
+export type OfflineDownloadTaskResult =
+	components["schemas"]["OfflineDownloadTaskResult"];
 export type S3DownloadStrategy = components["schemas"]["S3DownloadStrategy"];
 export type StoragePolicyGroupItem =
 	components["schemas"]["StoragePolicyGroupItemInfo"];

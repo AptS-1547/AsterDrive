@@ -147,7 +147,8 @@ where
         | operations::MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY
         | operations::BLOB_RECONCILE_INTERVAL_SECS_KEY
         | operations::REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY
-        | operations::ARCHIVE_EXTRACT_MAX_DURATION_SECS_KEY => {
+        | operations::ARCHIVE_EXTRACT_MAX_DURATION_SECS_KEY
+        | operations::OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY => {
             operations::normalize_interval_config_value(key, value)
         }
         operations::SHARE_STREAM_SESSION_TTL_SECS_KEY => {
@@ -156,7 +157,8 @@ where
         operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY
         | operations::BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY
         | operations::BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY
-        | operations::BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY => {
+        | operations::BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY
+        | operations::OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY => {
             operations::normalize_concurrency_config_value(key, value)
         }
         operations::SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY => {
@@ -186,8 +188,12 @@ where
         | operations::ARCHIVE_BUILD_MAX_ENTRIES_KEY
         | operations::ARCHIVE_BUILD_MAX_TOTAL_SOURCE_BYTES_KEY
         | operations::ARCHIVE_BUILD_MAX_TEMP_BYTES_KEY
+        | operations::OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY
         | operations::THUMBNAIL_MAX_SOURCE_BYTES_KEY => {
             operations::normalize_bytes_config_value(key, value)
+        }
+        operations::OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY => {
+            operations::normalize_non_negative_u64_config_value(key, value)
         }
         media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY => {
             media_processing::normalize_media_processing_registry_config_value(value)

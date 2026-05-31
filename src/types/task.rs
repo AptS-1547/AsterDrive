@@ -115,6 +115,8 @@ pub enum BackgroundTaskKind {
     StoragePolicyMigration,
     #[sea_orm(string_value = "blob_maintenance")]
     BlobMaintenance,
+    #[sea_orm(string_value = "offline_download")]
+    OfflineDownload,
     #[sea_orm(string_value = "system_runtime")]
     SystemRuntime,
 }
@@ -131,6 +133,7 @@ impl BackgroundTaskKind {
             Self::StoragePolicyTempCleanup => "storage_policy_temp_cleanup",
             Self::StoragePolicyMigration => "storage_policy_migration",
             Self::BlobMaintenance => "blob_maintenance",
+            Self::OfflineDownload => "offline_download",
             Self::SystemRuntime => "system_runtime",
         }
     }
@@ -237,6 +240,7 @@ mod tests {
                 "storage_policy_migration",
             ),
             (BackgroundTaskKind::BlobMaintenance, "blob_maintenance"),
+            (BackgroundTaskKind::OfflineDownload, "offline_download"),
             (BackgroundTaskKind::SystemRuntime, "system_runtime"),
         ];
 

@@ -2702,6 +2702,10 @@ async fn test_admin_tasks_cleanup_uses_explicit_finished_before() {
             BackgroundTaskKind::BlobMaintenance => StoredTaskPayload(
                 r#"{"action":"integrity_check","blob_ids":[1]}"#.to_string(),
             ),
+            BackgroundTaskKind::OfflineDownload => StoredTaskPayload(
+                r#"{"url":"https://example.com/archive.zip","filename":"archive.zip","target_folder_id":null,"expected_sha256":null,"source_display_url":"https://example.com/archive.zip"}"#
+                    .to_string(),
+            ),
             BackgroundTaskKind::TrashPurgeAll => {
                 StoredTaskPayload(r#"{}"#.to_string())
             }

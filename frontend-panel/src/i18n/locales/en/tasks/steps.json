@@ -42,5 +42,10 @@
 	"step_blob_maintenance_check_blobs": "Check storage objects",
 	"step_blob_maintenance_reconcile_refs": "Reconcile ref counts",
 	"step_blob_maintenance_cleanup_objects": "Clean orphan blobs",
-	"step_blob_maintenance_finish": "Finish maintenance"
+	"step_blob_maintenance_finish": "Finish maintenance",
+	"step_offline_download_waiting": "Waiting",
+	"step_offline_download_validate_source": "Validate source",
+	"step_offline_download_download_source": "Download source file",
+	"step_offline_download_verify_source": "Verify file",
+	"step_offline_download_store_result": "Import file"
 }

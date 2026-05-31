@@ -22,6 +22,7 @@ Admin -> System Settings
 | Mail cannot be received, or links are wrong | Mail Delivery | Then check [mail](/en/config/mail) |
 | Browser blocks cross-origin API calls | Network Access | First confirm it is not a `Public Site URL` issue |
 | Background tasks, thumbnails, archive preview, or trash retention behaves abnormally | Runtime / File Processing / Storage and Retention | Then check [operations CLI](/en/deployment/ops-cli) |
+| Link import file size, speed, concurrency, or timeout is unsuitable | Runtime / File Processing | Then check [operations CLI](/en/deployment/ops-cli) |
 | Audio/video playback links on share pages expire too quickly or too slowly | Runtime | Then check [sharing and public access](/en/guide/sharing) |
 | WebDAV global switch, system-file blocking, or connection behavior is abnormal | WebDAV | Then check [WebDAV](/en/config/webdav) |
 | You need to see who changed what, or want to narrow the audit scope | Audit Logs | Then check [admin console](/en/guide/admin-console#audit-logs) |
@@ -46,6 +47,7 @@ Admin -> System Settings
 | Tune retention for trash, version history, team archives, and task artifacts | `Storage and Retention` |
 | Tune the online extraction staging size limit | `File Processing -> Online Extraction Staging Size Limit` |
 | Tune thumbnail size limits and vips / ffmpeg / ffprobe processors | `File Processing -> Media Processing` |
+| Tune HTTP/HTTPS link import file size, speed, concurrency, and timeout | `File Processing -> Link Import` |
 | Disable WebDAV, or adjust blocking for system files such as `.DS_Store` and `Thumbs.db` | `WebDAV` |
 | Tune mail dispatch, background task dispatch, concurrency, retry, and periodic cleanup frequency | `Runtime` |
 | Tune the temporary audio/video streaming session TTL on share pages | `Runtime -> Share Streaming Playback Session TTL` |
@@ -60,7 +62,7 @@ Admin -> System Settings
 - **Network Access** - Browser cross-site access rules (CORS)
 - **Runtime** - Mail queue, background tasks, task-lane concurrency, share streaming playback sessions, periodic cleanup, low-level consistency checks, follower node health checks, list limits
 - **Storage and Retention** - Trash, version history, default quotas
-- **File Processing** - Online extraction, archive building, archive preview, thumbnails, media metadata, and media processors
+- **File Processing** - Online extraction, archive building, archive preview, link import, thumbnails, media metadata, and media processors
 - **WebDAV** - Global switch and common system-file blocking
 - **Audit Logs** - Switch, recorded scope, and retention time
 - **Custom Configuration**, **Other** - Advanced scenarios only
@@ -275,6 +277,26 @@ If users often process large archives or large folders, check these settings sep
 
 Before raising these limits, confirm that the disk backing `server.temp_dir`, CPU, and archive-task concurrency can handle the extra load. Otherwise the usual result is not "larger files work", but "tasks queue longer or the temp disk fills faster".
 
+### Link Import
+
+Link import creates a dedicated background-task lane that lets the server download a file from an HTTP/HTTPS source and import it into the current workspace.
+
+This group now has four key limits:
+
+- **Link import file size limit**: the maximum source file size the server is allowed to download
+- **Link import download speed limit**: the maximum average speed per task, shown in MB/s in the UI; `0` means unlimited
+- **Link import concurrency limit**: how many link-import tasks may run at the same time
+- **Link import request timeout**: how long a single external HTTP/HTTPS request may run
+
+Default values are chosen to be usable while avoiding unlimited outbound bandwidth by default:
+
+- File size limit: `1 GiB`
+- Download speed limit: `5` MB/s; set `0` for unlimited
+- Concurrency limit: `1`
+- Request timeout: `600` seconds
+
+Link import supports only HTTP/HTTPS, does not follow redirects, and rejects hosts that resolve to loopback, private, link-local, multicast, documentation, or metadata ranges. This prevents the server from being used as an internal-network probe. The download itself is streamed into a temporary file and does not buffer the whole file in memory; SHA-256 verification and workspace import happen only after the download completes.
+
 ### Media Processing
 
 Media processing is responsible for thumbnail generation, not online preview itself.  
@@ -373,6 +395,7 @@ The primary node's service startup and shutdown are also recorded as audit event
 | Online extraction staging limit | Applied to online extraction tasks created later |
 | Online extraction source, uncompressed size, entry count, path depth, compression ratio, and duration limits | Applied to online extraction tasks created later |
 | Archive build entry, total source size, and output size limits | Applied to online compression and archive download tasks created later |
+| Link import file size, speed, concurrency, and request timeout | Applied to link-import tasks created later |
 | Archive preview switches and limits | Applied to later requests and new `archive_preview_generate` tasks |
 | Thumbnail source file size limit | Applied to files entering thumbnail tasks later |
 | Media processor switches, commands, extension bindings | Applied to files entering thumbnail tasks later |

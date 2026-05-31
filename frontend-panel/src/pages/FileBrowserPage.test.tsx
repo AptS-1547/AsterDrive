@@ -512,6 +512,17 @@ vi.mock("@/components/files/FileInfoDialog", () => ({
 	}) => (open ? <div>{`info:${file?.name ?? folder?.name ?? ""}`}</div> : null),
 }));
 
+vi.mock("@/components/files/OfflineDownloadDialog", () => ({
+	OfflineDownloadDialog: ({
+		open,
+		targetFolderName,
+	}: {
+		open: boolean;
+		targetFolderName?: string | null;
+	}) =>
+		open ? <div>{`offline-download:${targetFolderName ?? ""}`}</div> : null,
+}));
+
 vi.mock("@/components/files/FilePreview", () => ({
 	FilePreview: ({
 		file,
@@ -1273,6 +1284,19 @@ describe("FileBrowserPage", () => {
 		render(<FileBrowserPage />);
 
 		expect(screen.getAllByTestId("context-menu-separator")).toHaveLength(2);
+	});
+
+	it("opens the offline download dialog from the toolbar action", async () => {
+		render(<FileBrowserPage />);
+
+		const offlineDownloadButtons = screen.getAllByRole("button", {
+			name: /tasks:offline_download_action/,
+		});
+		fireEvent.click(offlineDownloadButtons[0]);
+
+		expect(
+			await screen.findByText("offline-download:Projects"),
+		).toBeInTheDocument();
 	});
 
 	it("copies files and folders through the batch target dialog and refreshes after success", async () => {

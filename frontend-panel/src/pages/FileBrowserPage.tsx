@@ -15,7 +15,10 @@ import { workspaceKey } from "@/lib/workspace";
 import { FileBrowserDialogs } from "@/pages/file-browser/FileBrowserDialogs";
 import { FileBrowserToolbar } from "@/pages/file-browser/FileBrowserToolbar";
 import { FileBrowserWorkspace } from "@/pages/file-browser/FileBrowserWorkspace";
-import { FILE_BROWSER_LAZY_PRELOADERS } from "@/pages/file-browser/fileBrowserLazy";
+import {
+	FILE_BROWSER_LAZY_PRELOADERS,
+	OfflineDownloadDialog as OfflineDownloadDialogPreloader,
+} from "@/pages/file-browser/fileBrowserLazy";
 import { useFileBrowserArchiveActions } from "@/pages/file-browser/useFileBrowserArchiveActions";
 import { useFileBrowserBatchActions } from "@/pages/file-browser/useFileBrowserBatchActions";
 import { useFileBrowserContextValue } from "@/pages/file-browser/useFileBrowserContextValue";
@@ -92,6 +95,7 @@ export default function FileBrowserPage() {
 
 	const uploadAreaRef = useRef<UploadAreaHandle | null>(null);
 	const [uploadReady, setUploadReady] = useState(false);
+	const [offlineDownloadOpen, setOfflineDownloadOpen] = useState(false);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 	const [scrollViewport, setScrollViewport] = useState<HTMLDivElement | null>(
 		null,
@@ -283,6 +287,10 @@ export default function FileBrowserPage() {
 	const handleScrollViewportRef = useCallback((node: HTMLDivElement | null) => {
 		setScrollViewport(node);
 	}, []);
+	const openOfflineDownloadDialog = useCallback(() => {
+		void OfflineDownloadDialogPreloader.preload();
+		setOfflineDownloadOpen(true);
+	}, []);
 	const pageCore = (
 		<>
 			<FileBrowserToolbar
@@ -300,6 +308,7 @@ export default function FileBrowserPage() {
 				onBreadcrumbDragOver={handleBreadcrumbDragOver}
 				onBreadcrumbDrop={handleBreadcrumbDrop}
 				onNavigateToFolder={handleNavigateToFolder}
+				onOfflineDownload={openOfflineDownloadDialog}
 				onRefresh={refresh}
 				onSetSortBy={setSortBy}
 				onSetSortOrder={setSortOrder}
@@ -331,6 +340,7 @@ export default function FileBrowserPage() {
 				onOpenInfoFolder={(targetFolder) =>
 					handleNavigateToFolder(targetFolder.id, targetFolder.name)
 				}
+				onOfflineDownload={openOfflineDownloadDialog}
 				onPreview={(targetFile) => openPreview(targetFile, "auto")}
 				onRefresh={refresh}
 				onRename={openRenameDialog}
@@ -361,7 +371,9 @@ export default function FileBrowserPage() {
 				createFileOpen={createFileOpen}
 				createFolderOpen={createFolderOpen}
 				currentFolderId={folderId}
+				currentFolderName={currentFolderName}
 				moveTarget={moveTarget}
+				offlineDownloadOpen={offlineDownloadOpen}
 				previewState={previewState}
 				renameTarget={renameTarget}
 				shareTarget={shareTarget}
@@ -374,6 +386,7 @@ export default function FileBrowserPage() {
 				onCreateFolderOpenChange={setCreateFolderOpen}
 				onMoveClose={() => setMoveTarget(null)}
 				onMoveConfirm={handleMoveConfirm}
+				onOfflineDownloadOpenChange={setOfflineDownloadOpen}
 				onPreviewClose={() => setPreviewState(null)}
 				onPreviewFileUpdated={refresh}
 				onRenameClose={() => setRenameTarget(null)}

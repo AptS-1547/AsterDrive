@@ -11,6 +11,7 @@
 | `GET` | `/tasks` | 分页列出当前用户个人空间任务 |
 | `GET` | `/tasks/{id}` | 读取单个个人空间任务 |
 | `POST` | `/tasks/{id}/retry` | 重试失败的个人空间任务 |
+| `POST` | `/tasks/offline-download` | 创建个人空间链接导入任务 |
 
 ## 团队空间
 
@@ -19,6 +20,7 @@
 | `GET` | `/teams/{team_id}/tasks` | 分页列出指定团队任务 |
 | `GET` | `/teams/{team_id}/tasks/{id}` | 读取单个团队任务 |
 | `POST` | `/teams/{team_id}/tasks/{id}/retry` | 重试失败的团队任务 |
+| `POST` | `/teams/{team_id}/tasks/offline-download` | 创建团队空间链接导入任务 |
 
 ## 谁会创建这些任务
 
@@ -40,6 +42,8 @@
 - `GET /teams/{team_id}/files/{id}/media-metadata`
 - `GET /s/{token}/media-metadata`
 - `GET /s/{token}/files/{file_id}/media-metadata`
+- `POST /tasks/offline-download`
+- `POST /teams/{team_id}/tasks/offline-download`
 - `DELETE /trash`
 - `DELETE /teams/{team_id}/trash`
 - `POST /admin/storage-migrations`
@@ -52,6 +56,7 @@
 - `storage_policy_migration`
 - `storage_policy_temp_cleanup`
 - `blob_maintenance`
+- `offline_download`
 - `system_runtime`
 
 缩略图和媒体元数据任务虽然常由用户访问接口触发，但仍按 blob 级缓存任务处理，通常没有创建者，API 返回的 `creator` 为 `null`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
@@ -73,6 +78,19 @@
 `renamed_opaque_blobs` 表示执行阶段遇到目标策略已有相同 opaque key 的源 blob 数量。Opaque key 不代表内容哈希，不能跨策略合并；这类 blob 会复制到目标策略的新 `migration-...` key，并在 checkpoint / result 中累计。
 
 `storage_policy_temp_cleanup` 只在管理员用 `DELETE /admin/policies/{id}?force=true` 强制删除存储策略，且仍有临时对象或 multipart upload 需要延后清理时创建。它会先等待预签名 URL 的安全窗口过期，再按删除前保存的策略快照清理对象。
+
+`offline_download` 是“从链接导入”任务。创建请求体是 `CreateOfflineDownloadTaskParams`：
+
+```json
+{
+  "url": "https://example.com/file.zip",
+  "filename": "file.zip",
+  "target_folder_id": 12,
+  "expected_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+```
+
+其中 `filename`、`target_folder_id` 和 `expected_sha256` 都可省略。服务端会把源地址脱敏后写入 `payload.source_display_url`，任务完成后 `result` 会包含导入后的 `file_id`、`file_name`、`folder_id`、`file_path`、`source_display_url`、`content_length` 和实际 `sha256`。
 
 ## 分页
 
@@ -128,7 +146,7 @@
 
 ## 当前任务类型
 
-当前代码里的 `BackgroundTaskKind` 有十种：
+当前代码里的 `BackgroundTaskKind` 有十一种：
 
 - `archive_extract`
 - `archive_compress`
@@ -139,6 +157,7 @@
 - `storage_policy_temp_cleanup`
 - `storage_policy_migration`
 - `blob_maintenance`
+- `offline_download`
 - `system_runtime`
 
 当前 `BackgroundTaskStatus` 有六种：
@@ -160,6 +179,7 @@
 - `storage_policy_temp_cleanup`：强制删除存储策略后，兜底清理遗留的临时对象和 multipart upload
 - `storage_policy_migration`：管理员发起的跨策略 blob 迁移任务，支持 checkpoint 恢复
 - `blob_maintenance`：管理员发起的 blob 维护任务，支持完整性检查、引用计数修复和孤儿 blob 清理
+- `offline_download`：从 HTTP/HTTPS 链接下载文件并导入到工作空间；任务过程是流式下载到临时文件，再做 SHA-256 校验和入库，不会把整文件先塞进内存
 
 ## `POST /tasks/{id}/retry`
 
@@ -179,6 +199,7 @@
 - `/batch/archive-compress` 和 `/files/{id}/extract` 才会真正创建这里能看到的后台任务
 - `/files/{id}/archive-preview` 和公开分享归档预览接口第一次命中未生成缓存时，会创建 `archive_preview_generate`；接口本身返回 `202`，前端应稍后重试原接口，而不是轮询任务详情作为唯一入口
 - `DELETE /trash` 和团队对应接口不会同步清空回收站，而是创建 `trash_purge_all` 任务并返回 `TaskInfo`
+- `/tasks/offline-download` 和团队对应接口会创建 `offline_download` 任务并立即返回 `TaskInfo`；前端应在任务中心展示进度，不要等待请求同步完成下载
 - `/admin/storage-migrations/dry-run` 只做预检查，不创建任务；`POST /admin/storage-migrations` 才会创建 `storage_policy_migration`
 - `POST /admin/file-blobs/maintenance` 会创建 `blob_maintenance`，`integrity_check` 不写入 blob，`ref_count_reconcile` 只修正引用计数，`orphan_cleanup` 会先重新核算引用再清理仍然无引用的 blob
 

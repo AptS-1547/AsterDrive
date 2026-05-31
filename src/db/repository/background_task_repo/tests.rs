@@ -45,6 +45,7 @@ async fn insert_task(
         BackgroundTaskKind::StoragePolicyTempCleanup => "storage-policy-temp-cleanup",
         BackgroundTaskKind::StoragePolicyMigration => "storage-policy-migration",
         BackgroundTaskKind::BlobMaintenance => "blob-maintenance",
+        BackgroundTaskKind::OfflineDownload => "offline-download",
         BackgroundTaskKind::SystemRuntime => "task-cleanup",
     };
     let payload_json = match kind {
@@ -114,6 +115,13 @@ async fn insert_task(
         BackgroundTaskKind::BlobMaintenance => serde_json::json!({
             "action": "integrity_check",
             "blob_ids": [1],
+        }),
+        BackgroundTaskKind::OfflineDownload => serde_json::json!({
+            "url": "https://example.com/repo-test.bin",
+            "filename": "repo-test.bin",
+            "target_folder_id": null,
+            "expected_sha256": null,
+            "source_display_url": "https://example.com/repo-test.bin",
         }),
         BackgroundTaskKind::SystemRuntime => serde_json::json!({
             "task_name": task_name,

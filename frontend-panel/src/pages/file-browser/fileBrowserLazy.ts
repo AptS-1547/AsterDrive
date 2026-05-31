@@ -25,6 +25,11 @@ export const FileInfoDialog = lazyWithPreload(async () => {
 	return { default: module.FileInfoDialog };
 });
 
+export const OfflineDownloadDialog = lazyWithPreload(async () => {
+	const module = await import("@/components/files/OfflineDownloadDialog");
+	return { default: module.OfflineDownloadDialog };
+});
+
 export const RenameDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/RenameDialog");
 	return { default: module.RenameDialog };
@@ -46,6 +51,7 @@ export const FILE_BROWSER_LAZY_PRELOADERS = [
 	CreateFileDialog,
 	CreateFolderDialog,
 	FileInfoDialog,
+	OfflineDownloadDialog,
 	RenameDialog,
 	ShareDialog,
 	VersionHistoryDialog,

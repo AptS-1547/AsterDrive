@@ -106,6 +106,25 @@ fn title_message(payload: &TaskPayload) -> Option<TaskPresentationMessage> {
                 .as_ref()
                 .and_then(|blob_ids| (!blob_ids.is_empty()).then_some(blob_ids.len())),
         }),
+        TaskPayload::OfflineDownload(payload) => {
+            if let Some(filename) = payload.filename.as_deref().map(str::trim)
+                && !filename.is_empty()
+            {
+                Some(PresentationMessage::OfflineDownloadSourceTitle {
+                    filename: filename.to_string(),
+                    source: payload.source_display_url.clone(),
+                })
+            } else if let Some(target_folder_id) = payload.target_folder_id {
+                Some(PresentationMessage::OfflineDownloadTargetFolderTitle {
+                    source: payload.source_display_url.clone(),
+                    target_folder_id,
+                })
+            } else {
+                Some(PresentationMessage::OfflineDownloadUrlTitle {
+                    source: payload.source_display_url.clone(),
+                })
+            }
+        }
         TaskPayload::SystemRuntime(payload) => payload
             .task_name
             .known()
@@ -179,6 +198,13 @@ fn status_message_from_result(result: &TaskResult) -> Option<TaskPresentationMes
             })
         }
         TaskResult::BlobMaintenance(_) => Some(PresentationMessage::BlobMaintenanceFinishedStatus),
+        TaskResult::OfflineDownload(result) => {
+            Some(PresentationMessage::OfflineDownloadImportedStatus {
+                name: result.file_name.clone(),
+                target_path: result.file_path.clone(),
+                content_length: result.content_length,
+            })
+        }
         TaskResult::SystemRuntime(_) => None,
     }
     .map(Into::into)
@@ -294,6 +320,17 @@ enum PresentationMessage {
         action: BlobMaintenanceAction,
         selected_blob_count: Option<usize>,
     },
+    OfflineDownloadSourceTitle {
+        filename: String,
+        source: String,
+    },
+    OfflineDownloadTargetFolderTitle {
+        source: String,
+        target_folder_id: i64,
+    },
+    OfflineDownloadUrlTitle {
+        source: String,
+    },
     RuntimeTaskTitle {
         kind: SystemRuntimeTaskKind,
     },
@@ -335,6 +372,11 @@ enum PresentationMessage {
         renamed_opaque_blobs: i64,
     },
     BlobMaintenanceFinishedStatus,
+    OfflineDownloadImportedStatus {
+        name: String,
+        target_path: String,
+        content_length: i64,
+    },
     WaitingPresignedUrlExpiryStatus,
     SystemHealthyStatus,
     RuntimeSystemHealthIssueStatus {
@@ -439,6 +481,24 @@ impl From<PresentationMessage> for TaskPresentationMessage {
             PresentationMessage::RuntimeTaskTitle { kind } => {
                 (kind.presentation_code(), BTreeMap::new())
             }
+            PresentationMessage::OfflineDownloadSourceTitle { filename, source } => (
+                Code::TaskNameOfflineDownloadSource,
+                params([("filename", json!(filename)), ("source", json!(source))]),
+            ),
+            PresentationMessage::OfflineDownloadTargetFolderTitle {
+                source,
+                target_folder_id,
+            } => (
+                Code::TaskNameOfflineDownloadTargetFolder,
+                params([
+                    ("source", json!(source)),
+                    ("targetFolderId", json!(target_folder_id)),
+                ]),
+            ),
+            PresentationMessage::OfflineDownloadUrlTitle { source } => (
+                Code::TaskNameOfflineDownloadUrl,
+                params([("source", json!(source))]),
+            ),
             PresentationMessage::ArchiveReadyStatus {
                 name,
                 target_file_id,
@@ -522,6 +582,18 @@ impl From<PresentationMessage> for TaskPresentationMessage {
             PresentationMessage::BlobMaintenanceFinishedStatus => {
                 (Code::StatusTextBlobMaintenanceFinished, BTreeMap::new())
             }
+            PresentationMessage::OfflineDownloadImportedStatus {
+                name,
+                target_path,
+                content_length,
+            } => (
+                Code::StatusTextOfflineDownloadImported,
+                params([
+                    ("name", json!(name)),
+                    ("targetPath", json!(target_path)),
+                    ("contentLength", json!(content_length)),
+                ]),
+            ),
             PresentationMessage::WaitingPresignedUrlExpiryStatus => {
                 (Code::StatusTextWaitingPresignedUrlExpiry, BTreeMap::new())
             }

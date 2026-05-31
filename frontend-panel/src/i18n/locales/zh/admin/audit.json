@@ -98,6 +98,7 @@
 	"audit_action_archive_compress": "创建压缩包任务",
 	"audit_action_archive_extract": "创建解压任务",
 	"audit_action_archive_download": "下载压缩包",
+	"audit_action_offline_download": "创建链接导入任务",
 	"audit_action_trash_purge_all": "清空回收站",
 	"audit_action_remote_enrollment_redeem": "兑换远程节点注册",
 	"audit_action_remote_enrollment_ack": "确认远程节点注册",

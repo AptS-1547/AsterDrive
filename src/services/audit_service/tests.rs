@@ -288,6 +288,7 @@ fn audit_action_strings_match_existing_contract() {
         (AuditAction::ArchiveCompress, "archive_compress"),
         (AuditAction::ArchiveExtract, "archive_extract"),
         (AuditAction::ArchiveDownload, "archive_download"),
+        (AuditAction::OfflineDownload, "offline_download"),
         (AuditAction::TrashPurgeAll, "trash_purge_all"),
         (
             AuditAction::RemoteEnrollmentRedeem,

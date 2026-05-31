@@ -51,6 +51,8 @@ function taskIcon(task: TaskInfo): IconName {
 			return "HardDrive";
 		case "storage_policy_temp_cleanup":
 			return "Clock";
+		case "offline_download":
+			return "LinkSimple";
 		case "system_runtime":
 			return "Gear";
 		default:
@@ -209,6 +211,37 @@ function summaryParts(
 					value: t("tasks:summary_cleanup_temp_files"),
 				},
 			];
+		case "offline_download": {
+			const parts: SummaryPart[] = [
+				{
+					key: "action",
+					kind: "text",
+					value: t("tasks:summary_import_from_link"),
+				},
+				{
+					icon: "LinkSimple",
+					key: "source",
+					kind: "chip",
+					value: task.payload.source_display_url,
+				},
+			];
+			if (task.payload.filename) {
+				parts.push(
+					{
+						key: "filename-label",
+						kind: "text",
+						value: t("tasks:summary_filename"),
+					},
+					{
+						icon: "File",
+						key: "filename",
+						kind: "chip",
+						value: task.payload.filename,
+					},
+				);
+			}
+			return parts;
+		}
 		case "system_runtime":
 			return [
 				{

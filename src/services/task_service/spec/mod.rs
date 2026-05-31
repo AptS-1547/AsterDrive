@@ -305,11 +305,13 @@ macro_rules! define_task_spec {
 pub(crate) mod archive;
 pub(crate) mod maintenance;
 pub(crate) mod media;
+pub(crate) mod offline_download;
 pub(crate) mod runtime;
 pub(crate) mod storage;
 
 pub(crate) use archive::{ArchiveCompressTask, ArchiveExtractTask, ArchivePreviewGenerateTask};
 pub(crate) use maintenance::{BlobMaintenanceTask, TrashPurgeAllTask};
 pub(crate) use media::{MediaMetadataExtractTask, ThumbnailGenerateTask};
+pub(crate) use offline_download::OfflineDownloadTask;
 pub(crate) use runtime::SystemRuntimeTask;
 pub(crate) use storage::{StoragePolicyMigrationTask, StoragePolicyTempCleanupTask};
