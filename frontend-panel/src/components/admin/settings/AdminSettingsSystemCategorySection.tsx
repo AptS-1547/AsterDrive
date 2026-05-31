@@ -122,7 +122,8 @@ function AdminSettingsSystemSubcategoryCard({
 	const isMailTemplateSection =
 		category === "mail" && group.subcategory === "template";
 	const defaultCollapsed =
-		DEFAULT_COLLAPSED_SUBCATEGORY_GROUP_KEYS.has(groupKey);
+		DEFAULT_COLLAPSED_SUBCATEGORY_GROUP_KEYS.has(groupKey) ||
+		(category === "runtime" && group.subcategory !== "background_task");
 	const collapsible =
 		!isMailTemplateSection &&
 		(defaultCollapsed ||
