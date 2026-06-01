@@ -7,10 +7,12 @@ use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::system_config::{self, Entity as SystemConfig};
 use crate::errors::{AsterError, Result};
 use crate::services::preview_app_service;
-use crate::types::{MediaProcessorKind, SystemConfigSource, SystemConfigValueType};
+use crate::types::{
+    MediaProcessorKind, SystemConfigSource, SystemConfigValueType, SystemConfigVisibility,
+};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, QueryFilter,
     QueryOrder, QuerySelect, Set, TryInsertResult,
 };
 
@@ -46,6 +48,7 @@ fn build_system_active_model(
         requires_restart: Set(def.requires_restart),
         is_sensitive: Set(def.is_sensitive),
         source: Set(SystemConfigSource::System),
+        visibility: Set(SystemConfigVisibility::Private),
         namespace: Set(String::new()),
         category: Set(def.category.to_string()),
         description: Set(def.description.to_string()),
@@ -58,6 +61,7 @@ fn build_system_active_model(
 fn build_custom_active_model(
     key: &str,
     value: String,
+    visibility: SystemConfigVisibility,
     now: chrono::DateTime<Utc>,
     updated_by: Option<i64>,
 ) -> system_config::ActiveModel {
@@ -68,6 +72,7 @@ fn build_custom_active_model(
         requires_restart: Set(false),
         is_sensitive: Set(false),
         source: Set(SystemConfigSource::Custom),
+        visibility: Set(visibility),
         namespace: Set(String::new()),
         category: Set(String::new()),
         description: Set(String::new()),
@@ -110,6 +115,27 @@ pub async fn find_by_key<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_visible_custom<C: ConnectionTrait>(
+    db: &C,
+    include_authenticated: bool,
+) -> Result<Vec<system_config::Model>> {
+    let mut visibility_filter =
+        Condition::any().add(system_config::Column::Visibility.eq(SystemConfigVisibility::Public));
+    if include_authenticated {
+        visibility_filter = visibility_filter.add(
+            system_config::Column::Visibility.eq(SystemConfigVisibility::Authenticated),
+        );
+    }
+
+    SystemConfig::find()
+        .filter(system_config::Column::Source.eq(SystemConfigSource::Custom))
+        .filter(visibility_filter)
+        .order_by_asc(system_config::Column::Key)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn lock_by_key<C: ConnectionTrait>(db: &C, key: &str) -> Result<()> {
     let query = SystemConfig::find().filter(system_config::Column::Key.eq(key));
     let config = match db.get_database_backend() {
@@ -141,10 +167,28 @@ pub async fn upsert_with_actor<C: ConnectionTrait>(
     value: &str,
     updated_by: Option<i64>,
 ) -> Result<system_config::Model> {
+    upsert_with_options(db, key, value, None, updated_by).await
+}
+
+pub async fn upsert_with_options<C: ConnectionTrait>(
+    db: &C,
+    key: &str,
+    value: &str,
+    visibility: Option<SystemConfigVisibility>,
+    updated_by: Option<i64>,
+) -> Result<system_config::Model> {
     let now = Utc::now();
     let active = find_definition(key)
         .map(|def| build_system_active_model(def, value.to_string(), now, updated_by))
-        .unwrap_or_else(|| build_custom_active_model(key, value.to_string(), now, updated_by));
+        .unwrap_or_else(|| {
+            build_custom_active_model(
+                key,
+                value.to_string(),
+                visibility.unwrap_or(SystemConfigVisibility::Private),
+                now,
+                updated_by,
+            )
+        });
     let inserted = match SystemConfig::insert(active)
         .on_conflict_do_nothing_on([system_config::Column::Key])
         .exec(db)
@@ -166,6 +210,9 @@ pub async fn upsert_with_actor<C: ConnectionTrait>(
             .ok_or_else(|| AsterError::record_not_found(format!("config key '{key}'")))?;
         let mut active: system_config::ActiveModel = existing.into();
         active.value = Set(value.to_string());
+        if let Some(visibility) = visibility {
+            active.visibility = Set(visibility);
+        }
         active.updated_at = Set(now);
         active.updated_by = Set(updated_by);
         active.update(db).await.map_err(AsterError::from)?;

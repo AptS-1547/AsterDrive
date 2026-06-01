@@ -6,7 +6,11 @@ import type {
 	SystemSubcategoryGroup,
 	TimeDisplayUnitValue,
 } from "@/components/admin/settings/adminSettingsContentShared";
-import type { ConfigSchemaItem, SystemConfig } from "@/types/api";
+import type {
+	ConfigSchemaItem,
+	SystemConfig,
+	SystemConfigVisibility,
+} from "@/types/api";
 
 type TranslationFn = (key: string, options?: Record<string, unknown>) => string;
 
@@ -35,6 +39,7 @@ export interface AdminSettingsCategoryContentProps {
 	getSystemConfigDescription: (config: SystemConfig) => string | undefined;
 	getSystemConfigLabel: (config: SystemConfig) => string;
 	getSystemConfigSchema: (config: SystemConfig) => ConfigSchemaItem | undefined;
+	getCustomVisibilityDraft: (config: SystemConfig) => SystemConfigVisibility;
 	handleBuildWopiDiscoveryPreviewConfig: (options: {
 		discoveryUrl: string;
 		value: string;
@@ -62,6 +67,10 @@ export interface AdminSettingsCategoryContentProps {
 	toggleSubcategoryGroup: (groupKey: string, nextExpanded: boolean) => void;
 	toggleTemplateGroup: (groupKey: string, nextExpanded: boolean) => void;
 	updateDraftValue: (key: string, value: ConfigDraftValue) => void;
+	updateCustomVisibilityDraft: (
+		key: string,
+		visibility: SystemConfigVisibility,
+	) => void;
 	navigateToMailSettings: () => void;
 	updateNewCustomRow: (
 		id: string,

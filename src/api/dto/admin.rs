@@ -256,6 +256,7 @@ fn default_true() -> bool {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SetConfigReq {
     pub value: crate::services::config_service::SystemConfigValue,
+    pub visibility: Option<crate::types::SystemConfigVisibility>,
 }
 
 /// Execute a config action (e.g., send test email).

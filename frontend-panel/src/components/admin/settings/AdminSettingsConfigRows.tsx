@@ -49,10 +49,19 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { normalizePublicSiteUrl } from "@/lib/publicSiteUrl";
 import { cn } from "@/lib/utils";
-import type { ConfigSchemaOption, SystemConfig } from "@/types/api";
+import type {
+	ConfigSchemaOption,
+	SystemConfig,
+	SystemConfigVisibility,
+} from "@/types/api";
 
 const PUBLIC_SITE_URL_KEY = "public_site_url";
 const AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY = "auth_email_code_login_enabled";
+const CUSTOM_VISIBILITY_OPTIONS: SystemConfigVisibility[] = [
+	"private",
+	"public",
+	"authenticated",
+];
 
 function resolveSettingTranslation(
 	t: (key: string, options?: Record<string, unknown>) => string,
@@ -835,6 +844,47 @@ function ConfigInputControl({
 	);
 }
 
+function CustomVisibilitySelect({
+	id,
+	value,
+	onChange,
+}: {
+	id: string;
+	value: SystemConfigVisibility;
+	onChange: (value: SystemConfigVisibility) => void;
+}) {
+	const { t } = useAdminSettingsCategoryContent();
+
+	return (
+		<Select
+			items={CUSTOM_VISIBILITY_OPTIONS.map((option) => ({
+				label: t(`custom_config_visibility_${option}`),
+				value: option,
+			}))}
+			value={value}
+			onValueChange={(nextValue) =>
+				onChange(nextValue as SystemConfigVisibility)
+			}
+		>
+			<SelectTrigger
+				id={id}
+				width="fit"
+				className="min-w-40"
+				aria-label={t("custom_config_visibility")}
+			>
+				<SelectValue />
+			</SelectTrigger>
+			<SelectContent>
+				{CUSTOM_VISIBILITY_OPTIONS.map((option) => (
+					<SelectItem key={option} value={option}>
+						{t(`custom_config_visibility_${option}`)}
+					</SelectItem>
+				))}
+			</SelectContent>
+		</Select>
+	);
+}
+
 export function SystemConfigRow({ config }: { config: SystemConfig }) {
 	const {
 		configValidationErrors,
@@ -902,14 +952,20 @@ export function SystemConfigRow({ config }: { config: SystemConfig }) {
 }
 
 export function CustomConfigRow({ config }: { config: SystemConfig }) {
-	const { getDraftValue, markCustomDeleted, t } =
-		useAdminSettingsCategoryContent();
+	const {
+		getCustomVisibilityDraft,
+		getDraftValue,
+		markCustomDeleted,
+		t,
+		updateCustomVisibilityDraft,
+	} = useAdminSettingsCategoryContent();
 	const draftValue = getDraftValue(config);
+	const visibilityDraft = getCustomVisibilityDraft(config);
 	const valueType = getConfigValueType(config);
-	const draftChanged = !configDraftValuesEqual(
-		draftValue,
-		config.value as ConfigDraftValue,
-	);
+	const draftChanged =
+		!configDraftValuesEqual(draftValue, config.value as ConfigDraftValue) ||
+		visibilityDraft !==
+			((config.visibility as SystemConfigVisibility | undefined) ?? "private");
 	const multiline = isMultilineType(valueType);
 
 	return (
@@ -936,18 +992,27 @@ export function CustomConfigRow({ config }: { config: SystemConfig }) {
 				className={
 					multiline
 						? "space-y-3"
-						: "flex flex-col gap-3 sm:flex-row sm:items-center"
+						: "flex flex-col gap-3 xl:flex-row xl:items-center"
 				}
 			>
 				<ConfigInputControl config={config} draftValue={draftValue} fullWidth />
-				<Button
-					variant="ghost"
-					size="sm"
-					className="justify-start text-destructive"
-					onClick={() => markCustomDeleted(config.key)}
-				>
-					{t("core:delete")}
-				</Button>
+				<div className="flex flex-wrap items-center gap-2">
+					<CustomVisibilitySelect
+						id={`${config.key}-visibility`}
+						value={visibilityDraft}
+						onChange={(visibility) =>
+							updateCustomVisibilityDraft(config.key, visibility)
+						}
+					/>
+					<Button
+						variant="ghost"
+						size="sm"
+						className="justify-start text-destructive"
+						onClick={() => markCustomDeleted(config.key)}
+					>
+						{t("core:delete")}
+					</Button>
+				</div>
 			</div>
 		</div>
 	);
@@ -980,6 +1045,13 @@ export function NewCustomRow({ row }: { row: NewCustomDraft }) {
 						updateNewCustomRow(row.id, "value", event.target.value)
 					}
 					placeholder={t("config_value")}
+				/>
+				<CustomVisibilitySelect
+					id={`${row.id}-visibility`}
+					value={row.visibility}
+					onChange={(visibility) =>
+						updateNewCustomRow(row.id, "visibility", visibility)
+					}
 				/>
 				<Button
 					variant="ghost"

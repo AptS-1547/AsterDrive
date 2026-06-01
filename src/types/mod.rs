@@ -22,7 +22,7 @@ pub use auth::{
     ExternalAuthProtocol, ExternalAuthProviderKind, MfaFirstFactor, MfaMethod,
     MfaPersistentFactorMethod, TokenType, VerificationChannel, VerificationPurpose,
 };
-pub use config::{SystemConfigSource, SystemConfigValueType};
+pub use config::{SystemConfigSource, SystemConfigValueType, SystemConfigVisibility};
 pub use entity::EntityType;
 pub use file_category::FileCategory;
 pub use mail::{MailOutboxStatus, MailTemplateCode, StoredMailPayload};

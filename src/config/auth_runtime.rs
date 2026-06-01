@@ -330,6 +330,7 @@ mod tests {
             requires_restart: false,
             is_sensitive: false,
             source: crate::types::SystemConfigSource::System,
+            visibility: crate::types::SystemConfigVisibility::Private,
             namespace: String::new(),
             category: CONFIG_CATEGORY_AUTH.to_string(),
             description: "test".to_string(),

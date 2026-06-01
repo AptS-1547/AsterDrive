@@ -67,6 +67,7 @@ import type {
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
+	SystemConfigVisibility,
 	TaskInfo,
 	TaskPage,
 	TeamAuditPage,
@@ -596,8 +597,15 @@ export const adminConfigService = {
 
 	get: (key: string) => api.get<SystemConfig>(`/admin/config/${key}`),
 
-	set: (key: string, value: string | string[]) =>
-		api.put<SystemConfig>(`/admin/config/${key}`, { value }),
+	set: (
+		key: string,
+		value: string | string[],
+		visibility?: SystemConfigVisibility,
+	) =>
+		api.put<SystemConfig>(
+			`/admin/config/${key}`,
+			visibility ? { value, visibility } : { value },
+		),
 
 	delete: (key: string) => api.delete<void>(`/admin/config/${key}`),
 

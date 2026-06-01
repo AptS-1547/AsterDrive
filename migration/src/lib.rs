@@ -22,6 +22,7 @@ mod m20260527_000001_add_storage_migration_checkpoints;
 mod m20260528_000001_add_storage_migration_opaque_rename_count;
 mod m20260529_000001_add_remote_node_transport;
 mod m20260530_000001_add_webdav_account_team_scope;
+mod m20260601_000001_add_system_config_visibility;
 mod search_acceleration;
 mod time;
 
@@ -116,6 +117,7 @@ impl MigratorTrait for CurrentMigrator {
             Box::new(m20260528_000001_add_storage_migration_opaque_rename_count::Migration),
             Box::new(m20260529_000001_add_remote_node_transport::Migration),
             Box::new(m20260530_000001_add_webdav_account_team_scope::Migration),
+            Box::new(m20260601_000001_add_system_config_visibility::Migration),
         ]
     }
 }

@@ -37,6 +37,7 @@ fn config_model(key: &str, value: &str) -> system_config::Model {
         requires_restart: false,
         is_sensitive: false,
         source: SystemConfigSource::System,
+        visibility: crate::types::SystemConfigVisibility::Private,
         namespace: String::new(),
         category: CONFIG_CATEGORY_FILE_PROCESSING_MEDIA.to_string(),
         description: "test".to_string(),

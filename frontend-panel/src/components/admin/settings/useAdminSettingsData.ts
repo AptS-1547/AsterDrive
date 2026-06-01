@@ -50,6 +50,7 @@ import type {
 	ConfigActionType,
 	ConfigSchemaItem,
 	SystemConfig,
+	SystemConfigVisibility,
 	TemplateVariableGroup,
 } from "@/types/api";
 
@@ -122,6 +123,9 @@ export function useAdminSettingsData({
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [draftValues, setDraftValues] = useState<DraftValues>({});
+	const [customVisibilityDrafts, setCustomVisibilityDrafts] = useState<
+		Record<string, SystemConfigVisibility>
+	>({});
 	const [displayUnits, setDisplayUnits] = useState<
 		Partial<Record<string, TimeDisplayUnitValue | SizeDisplayUnitValue>>
 	>({});
@@ -270,6 +274,7 @@ export function useAdminSettingsData({
 
 	useEffect(() => {
 		setDraftValues(buildDraftValues(configs));
+		setCustomVisibilityDrafts({});
 		setDisplayUnits({});
 		setDeletedCustomKeys([]);
 		setNewCustomRows([]);
@@ -503,12 +508,19 @@ export function useAdminSettingsData({
 				if (deletedCustomKeySet.has(config.key)) {
 					return false;
 				}
-				return !configDraftValuesEqual(
+				const valueChanged = !configDraftValuesEqual(
 					draftValues[config.key] ?? (config.value as DraftValues[string]),
 					config.value as DraftValues[string],
 				);
+				const visibilityChanged =
+					!isSystemConfigSource(config.source) &&
+					Object.hasOwn(customVisibilityDrafts, config.key) &&
+					customVisibilityDrafts[config.key] !==
+						((config.visibility as SystemConfigVisibility | undefined) ??
+							"private");
+				return valueChanged || visibilityChanged;
 			}),
-		[configs, deletedCustomKeySet, draftValues],
+		[configs, customVisibilityDrafts, deletedCustomKeySet, draftValues],
 	);
 
 	const previewAppsValidationIssues = useMemo(() => {
@@ -624,6 +636,14 @@ export function useAdminSettingsData({
 		[draftValues],
 	);
 
+	const getCustomVisibilityDraft = useCallback(
+		(config: SystemConfig) =>
+			customVisibilityDrafts[config.key] ??
+			(config.visibility as SystemConfigVisibility | undefined) ??
+			"private",
+		[customVisibilityDrafts],
+	);
+
 	const getDraftValueByKey = useCallback(
 		(key: string) => {
 			if (Object.hasOwn(draftValues, key)) {
@@ -661,6 +681,16 @@ export function useAdminSettingsData({
 		[configsByKey],
 	);
 
+	const updateCustomVisibilityDraft = useCallback(
+		(key: string, visibility: SystemConfigVisibility) => {
+			setCustomVisibilityDrafts((previous) => ({
+				...previous,
+				[key]: visibility,
+			}));
+		},
+		[],
+	);
+
 	const toggleSubcategoryGroup = useCallback(
 		(groupKey: string, nextExpanded: boolean) => {
 			setExpandedSubcategoryGroups((previous) => ({
@@ -683,6 +713,7 @@ export function useAdminSettingsData({
 
 	const discardChanges = useCallback(() => {
 		setDraftValues(buildDraftValues(configs));
+		setCustomVisibilityDrafts({});
 		setDisplayUnits({});
 		setDeletedCustomKeys([]);
 		setNewCustomRows([]);
@@ -696,6 +727,7 @@ export function useAdminSettingsData({
 				id: `new-custom-${customDraftIdRef.current}`,
 				key: "",
 				value: "",
+				visibility: "private",
 			},
 		]);
 	}, []);
@@ -763,7 +795,13 @@ export function useAdminSettingsData({
 
 			for (const config of orderedChangedConfigs) {
 				const nextValue = getDraftValue(config);
-				const savedConfig = await adminConfigService.set(config.key, nextValue);
+				const savedConfig = await adminConfigService.set(
+					config.key,
+					nextValue,
+					isSystemConfigSource(config.source)
+						? undefined
+						: getCustomVisibilityDraft(config),
+				);
 				nextConfigsByKey.set(
 					config.key,
 					savedConfig.key === config.key
@@ -774,7 +812,11 @@ export function useAdminSettingsData({
 
 			for (const row of activeNewCustomRows) {
 				const key = row.key.trim();
-				const savedConfig = await adminConfigService.set(key, row.value);
+				const savedConfig = await adminConfigService.set(
+					key,
+					row.value,
+					row.visibility,
+				);
 				if (savedConfig.key !== key) {
 					throw new Error(`Saved config key mismatch: expected ${key}`);
 				}
@@ -783,6 +825,7 @@ export function useAdminSettingsData({
 
 			const nextConfigs = Array.from(nextConfigsByKey.values());
 			setConfigs(nextConfigs);
+			setCustomVisibilityDrafts({});
 			const nextPublicSiteUrl =
 				nextConfigsByKey.get(PUBLIC_SITE_URL_KEY)?.value;
 			if (Array.isArray(nextPublicSiteUrl)) {
@@ -821,6 +864,7 @@ export function useAdminSettingsData({
 		configs,
 		deletedCustomConfigs,
 		getDraftValue,
+		getCustomVisibilityDraft,
 		hasUnsavedChanges,
 		hasValidationError,
 		load,
@@ -843,6 +887,7 @@ export function useAdminSettingsData({
 		expandedTemplateGroups,
 		getDraftValue,
 		getDraftValueByKey,
+		getCustomVisibilityDraft,
 		getSystemConfigDescription,
 		getSystemConfigLabel,
 		getSystemConfigSchema,
@@ -880,6 +925,7 @@ export function useAdminSettingsData({
 		testEmailTarget,
 		toggleSubcategoryGroup,
 		toggleTemplateGroup,
+		updateCustomVisibilityDraft,
 		updateDraftValue,
 		updateNewCustomRow,
 		validationMessage,

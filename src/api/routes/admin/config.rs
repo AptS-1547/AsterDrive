@@ -111,8 +111,15 @@ pub async fn set_config(
     body: web::Json<SetConfigReq>,
 ) -> Result<HttpResponse> {
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    let config =
-        config_service::set_with_audit(&state, &path, &body.value, claims.user_id, &ctx).await?;
+    let config = config_service::set_with_audit_and_visibility(
+        &state,
+        &path,
+        &body.value,
+        body.visibility,
+        claims.user_id,
+        &ctx,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
 

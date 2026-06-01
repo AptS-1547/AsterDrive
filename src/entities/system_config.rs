@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::types::{SystemConfigSource, SystemConfigValueType};
+use crate::types::{SystemConfigSource, SystemConfigValueType, SystemConfigVisibility};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -29,6 +29,9 @@ pub struct Model {
     /// 来源：system（代码定义）/ custom（用户创建）
     #[serde(default = "default_source")]
     pub source: SystemConfigSource,
+    /// 自定义配置对消费侧的可见度：private / public / authenticated
+    #[serde(default = "default_visibility")]
+    pub visibility: SystemConfigVisibility,
     /// 自定义配置的命名空间，系统配置为 ""
     #[serde(default)]
     pub namespace: String,
@@ -49,6 +52,10 @@ fn default_value_type() -> SystemConfigValueType {
 
 fn default_source() -> SystemConfigSource {
     SystemConfigSource::System
+}
+
+fn default_visibility() -> SystemConfigVisibility {
+    SystemConfigVisibility::Private
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -186,6 +186,7 @@ fn apply_runtime_config_value(
         requires_restart: false,
         is_sensitive: false,
         source: SystemConfigSource::System,
+        visibility: crate::types::SystemConfigVisibility::Private,
         namespace: String::new(),
         category: CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW.to_string(),
         description: "test".to_string(),

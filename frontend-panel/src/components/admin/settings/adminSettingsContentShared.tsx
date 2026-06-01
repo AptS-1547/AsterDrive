@@ -13,6 +13,7 @@ import type {
 	SystemConfig,
 	SystemConfigSource,
 	SystemConfigValueType,
+	SystemConfigVisibility,
 } from "@/types/api";
 
 const TEMPLATE_GROUP_EXPAND_DURATION_MS = 280;
@@ -84,6 +85,7 @@ export type NewCustomDraft = {
 	id: string;
 	key: string;
 	value: string;
+	visibility: SystemConfigVisibility;
 };
 
 type CategoryPath = {

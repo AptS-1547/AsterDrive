@@ -1294,6 +1294,7 @@ pub fn system_config_model(key: &str, value: &str) -> aster_drive::entities::sys
         requires_restart: false,
         is_sensitive: false,
         source: aster_drive::types::SystemConfigSource::System,
+        visibility: aster_drive::types::SystemConfigVisibility::Private,
         namespace: String::new(),
         category: aster_drive::config::definitions::CONFIG_CATEGORY_SITE.to_string(),
         description: "test".to_string(),

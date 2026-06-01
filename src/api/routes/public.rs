@@ -1,10 +1,13 @@
 //! API 路由：`public`。
 
 use crate::api::dto::validate_request;
+use crate::api::request_auth::{access_cookie_token, bearer_token};
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::{audit_service, config_service, managed_follower_enrollment_service};
+use crate::services::{
+    audit_service, auth_service, config_service, managed_follower_enrollment_service,
+};
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -29,6 +32,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
     web::scope("/public")
         .route("/branding", web::get().to(get_branding))
         .route("/preview-apps", web::get().to(get_preview_apps))
+        .route("/custom-config", web::get().to(get_custom_config))
         .route("/thumbnail-support", web::get().to(get_thumbnail_support))
         .route("/media-data-support", web::get().to(get_media_data_support))
         .route(
@@ -71,6 +75,26 @@ pub async fn get_preview_apps(state: web::Data<PrimaryAppState>) -> Result<HttpR
 
 #[api_docs_macros::path(
     get,
+    path = "/api/v1/public/custom-config",
+    tag = "public",
+    operation_id = "get_public_custom_config",
+    responses(
+        (status = 200, description = "Custom config visible to the current request identity", body = inline(ApiResponse<config_service::PublicCustomConfig>)),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+    ),
+)]
+pub async fn get_custom_config(
+    state: web::Data<PrimaryAppState>,
+    req: HttpRequest,
+) -> Result<HttpResponse> {
+    let include_authenticated = request_has_valid_access_token(&state, &req).await?;
+    let custom_config =
+        config_service::get_public_custom_config(&state, include_authenticated).await?;
+    Ok(public_config_response(custom_config))
+}
+
+#[api_docs_macros::path(
+    get,
     path = "/api/v1/public/thumbnail-support",
     tag = "public",
     operation_id = "get_public_thumbnail_support",
@@ -101,6 +125,19 @@ fn public_config_response<T: serde::Serialize>(data: T) -> HttpResponse {
     HttpResponse::Ok()
         .insert_header(("Cache-Control", config_service::PUBLIC_CONFIG_CACHE_CONTROL))
         .json(ApiResponse::ok(data))
+}
+
+async fn request_has_valid_access_token(
+    state: &PrimaryAppState,
+    req: &HttpRequest,
+) -> Result<bool> {
+    let token = access_cookie_token(req).or_else(|| bearer_token(req));
+    let Some(token) = token else {
+        return Ok(false);
+    };
+
+    auth_service::authenticate_access_token(state, &token).await?;
+    Ok(true)
 }
 
 #[api_docs_macros::path(

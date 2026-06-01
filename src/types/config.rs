@@ -106,9 +106,56 @@ impl fmt::Display for SystemConfigSource {
     }
 }
 
+/// 自定义运行时配置的消费侧可见度。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
+#[serde(rename_all = "snake_case")]
+pub enum SystemConfigVisibility {
+    #[sea_orm(string_value = "private")]
+    Private,
+    #[sea_orm(string_value = "public")]
+    Public,
+    #[sea_orm(string_value = "authenticated")]
+    Authenticated,
+}
+
+impl SystemConfigVisibility {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Private => "private",
+            Self::Public => "public",
+            Self::Authenticated => "authenticated",
+        }
+    }
+
+    pub fn from_str_name(value: &str) -> Option<Self> {
+        match value {
+            "private" => Some(Self::Private),
+            "public" => Some(Self::Public),
+            "authenticated" => Some(Self::Authenticated),
+            _ => None,
+        }
+    }
+
+    pub const fn visible_to_public(self) -> bool {
+        matches!(self, Self::Public)
+    }
+
+    pub const fn visible_to_authenticated(self) -> bool {
+        matches!(self, Self::Public | Self::Authenticated)
+    }
+}
+
+impl fmt::Display for SystemConfigVisibility {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{SystemConfigSource, SystemConfigValueType};
+    use super::{SystemConfigSource, SystemConfigValueType, SystemConfigVisibility};
 
     #[test]
     fn system_config_value_type_round_trips_string_names() {
@@ -158,5 +205,37 @@ mod tests {
             assert_eq!(SystemConfigSource::from_str_name(name), Some(source));
         }
         assert_eq!(SystemConfigSource::from_str_name("tenant"), None);
+    }
+
+    #[test]
+    fn system_config_visibility_round_trips_string_names() {
+        let cases = [
+            (SystemConfigVisibility::Private, "private"),
+            (SystemConfigVisibility::Public, "public"),
+            (
+                SystemConfigVisibility::Authenticated,
+                "authenticated",
+            ),
+        ];
+
+        for (visibility, name) in cases {
+            assert_eq!(visibility.as_str(), name);
+            assert_eq!(visibility.to_string(), name);
+            assert_eq!(
+                SystemConfigVisibility::from_str_name(name),
+                Some(visibility)
+            );
+        }
+        assert_eq!(SystemConfigVisibility::from_str_name("internal"), None);
+    }
+
+    #[test]
+    fn system_config_visibility_checks_access_level() {
+        assert!(SystemConfigVisibility::Public.visible_to_public());
+        assert!(SystemConfigVisibility::Public.visible_to_authenticated());
+        assert!(!SystemConfigVisibility::Authenticated.visible_to_public());
+        assert!(SystemConfigVisibility::Authenticated.visible_to_authenticated());
+        assert!(!SystemConfigVisibility::Private.visible_to_public());
+        assert!(!SystemConfigVisibility::Private.visible_to_authenticated());
     }
 }

@@ -1,11 +1,14 @@
 use crate::config::branding;
 use crate::config::site_url;
 use crate::config::{auth_runtime, media_processing, operations};
+use crate::db::repository::config_repo;
+use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::preview_app_service;
 use crate::types::parse_storage_policy_options;
 use moka::future::Cache;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -49,6 +52,12 @@ pub struct PublicBranding {
     pub allow_user_registration: bool,
 }
 
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PublicCustomConfig {
+    pub entries: BTreeMap<String, String>,
+}
+
 pub fn get_public_branding(state: &PrimaryAppState) -> PublicBranding {
     let auth_policy = auth_runtime::RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     PublicBranding {
@@ -66,6 +75,18 @@ pub fn get_public_preview_apps(
     state: &PrimaryAppState,
 ) -> preview_app_service::PublicPreviewAppsConfig {
     preview_app_service::get_public_preview_apps(state)
+}
+
+pub async fn get_public_custom_config(
+    state: &PrimaryAppState,
+    include_authenticated: bool,
+) -> Result<PublicCustomConfig> {
+    let entries = config_repo::find_visible_custom(state.reader_db(), include_authenticated)
+        .await?
+        .into_iter()
+        .map(|config| (config.key, config.value))
+        .collect();
+    Ok(PublicCustomConfig { entries })
 }
 
 pub async fn get_public_media_data_support(

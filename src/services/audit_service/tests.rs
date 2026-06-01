@@ -515,6 +515,7 @@ async fn log_with_details_skips_details_when_action_scope_excludes_action() {
         requires_restart: false,
         is_sensitive: false,
         source: crate::types::SystemConfigSource::System,
+        visibility: crate::types::SystemConfigVisibility::Private,
         namespace: String::new(),
         category: crate::config::definitions::CONFIG_CATEGORY_AUDIT.to_string(),
         description: String::new(),

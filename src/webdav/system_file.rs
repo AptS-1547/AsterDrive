@@ -178,6 +178,7 @@ mod tests {
             requires_restart: false,
             is_sensitive: false,
             source: SystemConfigSource::System,
+            visibility: crate::types::SystemConfigVisibility::Private,
             namespace: String::new(),
             category: CONFIG_CATEGORY_WEBDAV.to_string(),
             description: "test".to_string(),

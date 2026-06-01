@@ -4411,7 +4411,7 @@ export interface components {
          * @description 审计日志动作
          * @enum {string}
          */
-        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_reset_user_mfa" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "admin_create_policy" | "admin_update_policy" | "admin_delete_policy" | "admin_delete_config" | "admin_delete_share" | "admin_force_unlock" | "admin_cleanup_expired_locks" | "admin_cleanup_tasks" | "admin_create_blob_maintenance_task" | "admin_create_remote_node" | "admin_update_remote_node" | "admin_delete_remote_node" | "admin_test_remote_node" | "admin_create_remote_node_enrollment_token" | "admin_create_remote_ingress_profile" | "admin_update_remote_ingress_profile" | "admin_delete_remote_ingress_profile" | "admin_create_external_auth_provider" | "admin_update_external_auth_provider" | "admin_delete_external_auth_provider" | "admin_test_external_auth_provider" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_create" | "file_delete" | "file_download" | "file_direct_link_create" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "file_preview_link_create" | "file_wopi_open" | "file_upload_cancel" | "file_restore" | "file_purge" | "file_lock" | "file_unlock" | "file_version_restore" | "file_version_delete" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "folder_restore" | "folder_purge" | "folder_lock" | "folder_unlock" | "property_set" | "property_delete" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "server_start" | "server_shutdown" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "task_retry" | "archive_compress" | "archive_extract" | "archive_download" | "offline_download" | "trash_purge_all" | "remote_enrollment_redeem" | "remote_enrollment_ack" | "user_revoke_other_sessions" | "user_revoke_session" | "user_update_preferences" | "user_update_profile" | "user_upload_avatar" | "user_set_avatar_source" | "user_update_wopi_info" | "webdav_account_create" | "webdav_account_delete" | "webdav_account_toggle" | "team_webdav_account_create" | "team_webdav_account_delete" | "team_webdav_account_toggle" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_mfa_enable" | "user_mfa_disable" | "user_mfa_recovery_codes_regenerate" | "user_mfa_email_code_send" | "user_mfa_challenge_success" | "user_mfa_challenge_failed" | "user_passkey_delete" | "user_passkey_login" | "user_passkey_register" | "user_passkey_rename" | "user_external_auth_login" | "user_external_auth_link" | "user_external_auth_unlink" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
+        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_reset_user_mfa" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "admin_create_policy" | "admin_update_policy" | "admin_delete_policy" | "admin_delete_config" | "admin_delete_share" | "admin_force_unlock" | "admin_cleanup_expired_locks" | "admin_cleanup_tasks" | "admin_create_blob_maintenance_task" | "admin_create_remote_node" | "admin_update_remote_node" | "admin_delete_remote_node" | "admin_test_remote_node" | "admin_create_remote_node_enrollment_token" | "admin_create_remote_ingress_profile" | "admin_update_remote_ingress_profile" | "admin_delete_remote_ingress_profile" | "admin_create_external_auth_provider" | "admin_update_external_auth_provider" | "admin_delete_external_auth_provider" | "admin_test_external_auth_provider" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_create" | "file_delete" | "file_download" | "file_direct_link_create" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "file_preview_link_create" | "file_wopi_open" | "file_upload_cancel" | "file_restore" | "file_purge" | "file_lock" | "file_unlock" | "file_version_restore" | "file_version_delete" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "folder_restore" | "folder_purge" | "folder_lock" | "folder_unlock" | "property_set" | "property_delete" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "server_start" | "server_shutdown" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "task_retry" | "archive_compress" | "archive_extract" | "archive_download" | "offline_download" | "trash_purge_all" | "remote_enrollment_redeem" | "remote_enrollment_ack" | "user_revoke_other_sessions" | "user_revoke_session" | "user_update_preferences" | "user_update_profile" | "user_upload_avatar" | "user_set_avatar_source" | "user_update_wopi_info" | "webdav_account_create" | "webdav_account_delete" | "webdav_account_toggle" | "team_webdav_account_create" | "team_webdav_account_delete" | "team_webdav_account_toggle" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_mfa_enable" | "user_mfa_disable" | "user_mfa_recovery_codes_regenerate" | "user_mfa_email_code_send" | "user_mfa_challenge_success" | "user_mfa_challenge_failed" | "user_passkey_delete" | "user_passkey_login" | "user_passkey_register" | "user_passkey_rename" | "user_external_auth_login" | "user_external_auth_link" | "user_external_auth_unlink" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration" | "follower_binding_sync" | "follower_object_read" | "follower_object_write" | "follower_object_delete" | "follower_object_compose" | "follower_ingress_profile_create" | "follower_ingress_profile_update" | "follower_ingress_profile_delete";
         /**
          * @description 审计日志实体类型
          * @enum {string}
@@ -4667,11 +4667,33 @@ export interface components {
             /** Format: int64 */
             parent_id?: number | null;
         };
+        /** @description Parameters for creating an offline download task. */
         CreateOfflineDownloadTaskParams: {
+            /**
+             * @description Optional expected SHA-256 checksum. Values are trimmed, lowercased, and
+             *     must be a 64-character hexadecimal string without a `0x` prefix, for
+             *     example `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`.
+             */
             expected_sha256?: string | null;
+            /**
+             * @description Optional target filename. Empty values are ignored; non-empty values
+             *     must pass `normalize_validate_name`, so path separators and unsafe
+             *     Windows device names are rejected.
+             */
             filename?: string | null;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Optional destination folder. `None` imports into the workspace root.
+             */
             target_folder_id?: number | null;
+            /**
+             * @description Source URL validated by `parse_and_validate_source_url`; only `http://`
+             *     and `https://` URLs with a host are accepted. Local or executable
+             *     schemes such as `file://`, `javascript:`, and `data:` are rejected.
+             *     Credentials in the URL userinfo component are rejected so they are not
+             *     persisted in task payloads; query parameters are accepted, but display
+             *     paths are derived through `redact_url_for_display`.
+             */
             url: string;
         };
         /** @description Create a storage policy group. */
@@ -5372,6 +5394,13 @@ export interface components {
             /** Format: int64 */
             view_count: number;
         };
+        /**
+         * @description Presentation-safe offline download payload used by task list views.
+         *
+         *     `OfflineDownloadTaskPayloadInfo` is derived from `OfflineDownloadTaskPayload`;
+         *     when `source_display_url` is absent, callers use `redact_url_for_display`
+         *     with `unwrap_or_else` fallback behavior so legacy payloads do not panic.
+         */
         OfflineDownloadTaskPayloadInfo: {
             expected_sha256?: string | null;
             filename?: string | null;
@@ -5379,8 +5408,12 @@ export interface components {
             /** Format: int64 */
             target_folder_id?: number | null;
         };
+        /** @description Result payload for offline downloads. */
         OfflineDownloadTaskResult: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Final imported content length in bytes.
+             */
             content_length: number;
             /** Format: int64 */
             file_id: number;
@@ -5388,7 +5421,12 @@ export interface components {
             file_path: string;
             /** Format: int64 */
             folder_id?: number | null;
+            /** @description Final SHA-256 digest in lowercase hexadecimal. */
             sha256: string;
+            /**
+             * @description Redacted display URL derived from the payload or source URL. This value
+             *     is always safe to render in task detail views.
+             */
             source_display_url: string;
         };
         OffsetPage_AdminExternalAuthProviderInfo: {
@@ -5718,6 +5756,7 @@ export interface components {
                 updated_by?: number | null;
                 value: components["schemas"]["SystemConfigValue"];
                 value_type: components["schemas"]["SystemConfigValueType"];
+                visibility: components["schemas"]["SystemConfigVisibility"];
             }[];
             /** Format: int64 */
             limit: number;
@@ -6351,6 +6390,7 @@ export interface components {
         /** @description Set a system configuration value. */
         SetConfigReq: {
             value: components["schemas"]["SystemConfigValue"];
+            visibility?: null | components["schemas"]["SystemConfigVisibility"];
         };
         /** @description Lock or unlock a file. */
         SetLockReq: {
@@ -6629,6 +6669,7 @@ export interface components {
             updated_by?: number | null;
             value: components["schemas"]["SystemConfigValue"];
             value_type: components["schemas"]["SystemConfigValueType"];
+            visibility: components["schemas"]["SystemConfigVisibility"];
         };
         /**
          * @description 运行时配置来源
@@ -6641,6 +6682,11 @@ export interface components {
          * @enum {string}
          */
         SystemConfigValueType: "string" | "multiline" | "string_array" | "string_enum_set" | "number" | "boolean";
+        /**
+         * @description 自定义运行时配置的消费侧可见度。
+         * @enum {string}
+         */
+        SystemConfigVisibility: "private" | "public" | "authenticated";
         TaskInfo: {
             /** Format: int32 */
             attempt_count: number;
@@ -7415,6 +7461,7 @@ export interface operations {
                                 updated_by?: number | null;
                                 value: components["schemas"]["SystemConfigValue"];
                                 value_type: components["schemas"]["SystemConfigValueType"];
+                                visibility: components["schemas"]["SystemConfigVisibility"];
                             }[];
                             /** Format: int64 */
                             limit: number;
@@ -7547,6 +7594,7 @@ export interface operations {
                             updated_by?: number | null;
                             value: components["schemas"]["SystemConfigValue"];
                             value_type: components["schemas"]["SystemConfigValueType"];
+                            visibility: components["schemas"]["SystemConfigVisibility"];
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
@@ -7615,6 +7663,7 @@ export interface operations {
                             updated_by?: number | null;
                             value: components["schemas"]["SystemConfigValue"];
                             value_type: components["schemas"]["SystemConfigValueType"];
+                            visibility: components["schemas"]["SystemConfigVisibility"];
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
