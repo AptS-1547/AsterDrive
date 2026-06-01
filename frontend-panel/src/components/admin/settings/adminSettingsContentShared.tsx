@@ -1,11 +1,4 @@
-import {
-	type ReactNode,
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { CodePreviewEditor } from "@/components/files/preview/CodePreviewEditor";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -20,6 +13,7 @@ const TEMPLATE_GROUP_EXPAND_DURATION_MS = 280;
 const TEMPLATE_GROUP_COLLAPSE_DURATION_MS = 240;
 const TEMPLATE_GROUP_EXPAND_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 const TEMPLATE_GROUP_COLLAPSE_EASING = "cubic-bezier(0.32, 0, 0.67, 0.96)";
+export const REDACTED_CONFIG_VALUE = "***REDACTED***";
 
 const SIZE_CONFIG_KEYS = new Set(["default_storage_quota"]);
 
@@ -240,6 +234,28 @@ export function configDraftValuesEqual(
 	return (left ?? "") === (right ?? "");
 }
 
+export function isRedactedConfigValue(value: ConfigDraftValue | undefined) {
+	return typeof value === "string" && value.trim() === REDACTED_CONFIG_VALUE;
+}
+
+export function configDraftValueChanged(
+	config: SystemConfig,
+	draftValue: ConfigDraftValue | undefined,
+) {
+	const currentValue = config.value as ConfigDraftValue;
+	if (
+		getConfigIsSensitive(config) &&
+		isRedactedConfigValue(currentValue) &&
+		configValueToString(draftValue).trim() === ""
+	) {
+		return false;
+	}
+	if (getConfigIsSensitive(config) && isRedactedConfigValue(currentValue)) {
+		return true;
+	}
+	return !configDraftValuesEqual(draftValue, currentValue);
+}
+
 export function isSystemConfigSource(source: SystemConfigSource) {
 	return source === "system";
 }
@@ -358,20 +374,9 @@ export function UrlAssetPreview({
 	url: string;
 	appearance: BrandingAssetPreviewAppearance;
 }) {
-	const [debouncedUrl, setDebouncedUrl] = useState(url);
-
-	useEffect(() => {
-		const timer = window.setTimeout(() => {
-			setDebouncedUrl(url);
-		}, 300);
-		return () => window.clearTimeout(timer);
-	}, [url]);
-
-	const normalizedUrl = useMemo(
-		() => normalizeAssetPreviewUrl(debouncedUrl),
-		[debouncedUrl],
-	);
-	const isInvalid = debouncedUrl.trim().length > 0 && !normalizedUrl;
+	const trimmedUrl = url.trim();
+	const normalizedUrl = useMemo(() => normalizeAssetPreviewUrl(url), [url]);
+	const isInvalid = trimmedUrl.length > 0 && !normalizedUrl;
 	const previewClassName = cn(
 		"group flex h-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border transition-colors",
 		appearance.frameClassName,
@@ -413,14 +418,13 @@ export function UrlAssetPreview({
 					{previewContent}
 				</a>
 			) : (
-				<div
-					role="img"
-					className={previewClassName}
-					title={debouncedUrl.trim() || appearance.fallbackLabel}
-					aria-label={debouncedUrl.trim() || appearance.fallbackLabel}
+				<figure
+					className={cn(previewClassName, "m-0")}
+					title={trimmedUrl || appearance.fallbackLabel}
+					aria-label={trimmedUrl || appearance.fallbackLabel}
 				>
 					{previewContent}
-				</div>
+				</figure>
 			)}
 		</div>
 	);
@@ -588,101 +592,27 @@ export function AnimatedCollapsible({
 	contentClassName?: string;
 	open: boolean;
 }) {
-	const containerRef = useRef<HTMLDivElement | null>(null);
-	const contentRef = useRef<HTMLDivElement | null>(null);
-	const [mounted, setMounted] = useState(open);
-
-	useEffect(() => {
-		if (typeof window === "undefined") {
-			setMounted(open);
-			return;
-		}
-
-		if (open) {
-			setMounted(true);
-		}
-	}, [open]);
-
-	useLayoutEffect(() => {
-		if (typeof window === "undefined" || !mounted) {
-			return;
-		}
-
-		const container = containerRef.current;
-		const content = contentRef.current;
-		if (!container || !content) {
-			return;
-		}
-
-		const prefersReducedMotion =
-			typeof window.matchMedia === "function" &&
-			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-		const duration = prefersReducedMotion
-			? 0
-			: open
-				? TEMPLATE_GROUP_EXPAND_DURATION_MS
-				: TEMPLATE_GROUP_COLLAPSE_DURATION_MS;
-		let frameA: number | null = null;
-		let frameB: number | null = null;
-		let timer: number | null = null;
-		const fullHeight = `${content.scrollHeight}px`;
-
-		container.style.overflow = "hidden";
-		container.style.transitionProperty = "max-height, opacity";
-		container.style.transitionDuration = `${duration}ms`;
-		container.style.transitionTimingFunction = open
-			? TEMPLATE_GROUP_EXPAND_EASING
-			: TEMPLATE_GROUP_COLLAPSE_EASING;
-
-		if (open) {
-			container.style.maxHeight = "0px";
-			container.style.opacity = "0";
-			frameA = window.requestAnimationFrame(() => {
-				frameB = window.requestAnimationFrame(() => {
-					container.style.maxHeight = fullHeight;
-					container.style.opacity = "1";
-				});
-			});
-			timer = window.setTimeout(() => {
-				container.style.maxHeight = "none";
-				container.style.opacity = "1";
-			}, duration);
-		} else {
-			container.style.maxHeight = fullHeight;
-			container.style.opacity = "1";
-			frameA = window.requestAnimationFrame(() => {
-				container.style.maxHeight = "0px";
-				container.style.opacity = "0";
-			});
-			timer = window.setTimeout(() => {
-				setMounted(false);
-			}, duration);
-		}
-
-		return () => {
-			if (frameA !== null) {
-				window.cancelAnimationFrame(frameA);
-			}
-			if (frameB !== null) {
-				window.cancelAnimationFrame(frameB);
-			}
-			if (timer !== null) {
-				window.clearTimeout(timer);
-			}
-		};
-	}, [mounted, open]);
-
-	if (!mounted) {
-		return null;
-	}
-
 	return (
 		<div
-			ref={containerRef}
 			aria-hidden={!open}
-			className={cn("overflow-hidden", className)}
+			inert={!open}
+			className={cn(
+				"grid overflow-hidden transition-[grid-template-rows,opacity] motion-reduce:transition-none",
+				open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+				className,
+			)}
+			style={{
+				transitionDuration: `${
+					open
+						? TEMPLATE_GROUP_EXPAND_DURATION_MS
+						: TEMPLATE_GROUP_COLLAPSE_DURATION_MS
+				}ms`,
+				transitionTimingFunction: open
+					? TEMPLATE_GROUP_EXPAND_EASING
+					: TEMPLATE_GROUP_COLLAPSE_EASING,
+			}}
 		>
-			<div ref={contentRef} className={cn("min-h-0", contentClassName)}>
+			<div className={cn("min-h-0 overflow-hidden", contentClassName)}>
 				{children}
 			</div>
 		</div>
@@ -697,7 +627,11 @@ export function buildDraftValues(configs: SystemConfig[]) {
 	return Object.fromEntries(
 		configs.map((config) => [
 			config.key,
-			Array.isArray(config.value) ? [...config.value] : config.value,
+			getConfigIsSensitive(config) && isRedactedConfigValue(config.value)
+				? ""
+				: Array.isArray(config.value)
+					? [...config.value]
+					: config.value,
 		]),
 	) as DraftValues;
 }

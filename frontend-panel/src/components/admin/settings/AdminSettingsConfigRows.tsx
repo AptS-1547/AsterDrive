@@ -9,7 +9,7 @@ import { useAdminSettingsCategoryContent } from "@/components/admin/settings/Adm
 import {
 	ConfigCodeEditor,
 	type ConfigDraftValue,
-	configDraftValuesEqual,
+	configDraftValueChanged,
 	configValueToString,
 	configValueToStringArray,
 	formatDisplayValue,
@@ -26,6 +26,7 @@ import {
 	isBrandingAssetConfig,
 	isMultilineType,
 	isNumberType,
+	isRedactedConfigValue,
 	isSizeConfig,
 	isStringArrayType,
 	isStringEnumSetType,
@@ -117,10 +118,7 @@ function FieldMeta({ config }: { config: SystemConfig }) {
 		openTemplateVariablesDialog,
 		t,
 	} = useAdminSettingsCategoryContent();
-	const draftChanged = !configDraftValuesEqual(
-		getDraftValue(config),
-		config.value as ConfigDraftValue,
-	);
+	const draftChanged = configDraftValueChanged(config, getDraftValue(config));
 	const requiresRestart = getConfigRequiresRestart(config);
 	const configLabel = getSystemConfigLabel(config);
 	const configDescription = getSystemConfigDescription(config);
@@ -708,6 +706,11 @@ function ConfigInputControl({
 	const valueType = getConfigValueType(config);
 	const draftStringValue = configValueToString(draftValue);
 	const isSensitive = getConfigIsSensitive(config);
+	const sensitiveRedactedValue =
+		isSensitive && isRedactedConfigValue(config.value);
+	const inputPlaceholder = sensitiveRedactedValue
+		? t("settings_sensitive_keep_placeholder")
+		: t("config_value");
 	const multiline = isMultilineType(valueType);
 	const stringArray = isStringArrayType(valueType);
 	const stringEnumSet = isStringEnumSetType(valueType);
@@ -733,7 +736,7 @@ function ConfigInputControl({
 						onChange={(event) =>
 							updateDraftValue(config.key, event.target.value)
 						}
-						placeholder={t("config_value")}
+						placeholder={inputPlaceholder}
 					/>
 				</div>
 				<UrlAssetPreview
@@ -847,7 +850,7 @@ function ConfigInputControl({
 			value={draftStringValue}
 			aria-invalid={hasError ? true : undefined}
 			onChange={(event) => updateDraftValue(config.key, event.target.value)}
-			placeholder={t("config_value")}
+			placeholder={inputPlaceholder}
 		/>
 	);
 }
@@ -971,7 +974,7 @@ export function CustomConfigRow({ config }: { config: SystemConfig }) {
 	const visibilityDraft = getCustomVisibilityDraft(config);
 	const valueType = getConfigValueType(config);
 	const draftChanged =
-		!configDraftValuesEqual(draftValue, config.value as ConfigDraftValue) ||
+		configDraftValueChanged(config, draftValue) ||
 		visibilityDraft !==
 			((config.visibility as SystemConfigVisibility | undefined) ?? "private");
 	const multiline = isMultilineType(valueType);

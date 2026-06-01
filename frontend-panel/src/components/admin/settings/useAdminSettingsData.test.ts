@@ -459,6 +459,68 @@ describe("useAdminSettingsData", () => {
 		expect(mockState.deleteConfig).not.toHaveBeenCalled();
 	});
 
+	it("keeps redacted sensitive configs empty and unchanged after loading", async () => {
+		const { result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		const secretConfig = result.current.configs.find(
+			(config) => config.key === OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+		);
+		expect(secretConfig).toBeDefined();
+		expect(result.current.getDraftValue(secretConfig as SystemConfig)).toBe("");
+		expect(result.current.changedCount).toBe(0);
+		expect(result.current.hasUnsavedChanges).toBe(false);
+	});
+
+	it("does not save unchanged redacted sensitive configs when another config changes", async () => {
+		const { result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		act(() => {
+			result.current.updateDraftValue("public_site_url", [
+				"https://next.example.com",
+			]);
+		});
+
+		await act(async () => {
+			await result.current.handleSaveAll();
+		});
+
+		expect(mockState.setConfig).toHaveBeenCalledWith("public_site_url", [
+			"https://next.example.com",
+		]);
+		expect(mockState.setConfig).not.toHaveBeenCalledWith(
+			OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+			expect.anything(),
+		);
+	});
+
+	it("saves a literal redacted marker when the admin types it as a new sensitive value", async () => {
+		const { result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		act(() => {
+			result.current.updateDraftValue(
+				OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+				"***REDACTED***",
+			);
+		});
+
+		expect(result.current.changedCount).toBe(1);
+
+		await act(async () => {
+			await result.current.handleSaveAll();
+		});
+
+		expect(mockState.setConfig).toHaveBeenCalledWith(
+			OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+			"***REDACTED***",
+		);
+	});
+
 	it("saves custom config visibility for existing and new custom rows", async () => {
 		const { result } = renderUseAdminSettingsData();
 
@@ -1023,6 +1085,40 @@ describe("useAdminSettingsData", () => {
 					[OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY]: "***REDACTED***",
 				}),
 			}),
+		);
+	});
+
+	it("sends a literal redacted marker when the admin types it as a new aria2 secret", async () => {
+		mockState.actionConfig.mockResolvedValueOnce({
+			message: "aria2 RPC ready: version 1.37.0, 12 enabled features",
+		});
+		const { result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		const savedRegistry = result.current.configs.find(
+			(config) => config.key === OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
+		)?.value as string;
+
+		act(() => {
+			result.current.updateDraftValue(
+				OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+				"***REDACTED***",
+			);
+		});
+
+		await act(async () => {
+			await result.current.handleTestAria2Rpc(savedRegistry);
+		});
+
+		expect(mockState.actionConfig).toHaveBeenCalledWith(
+			OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
+			{
+				action: "test_aria2_rpc",
+				draft_values: {
+					[OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY]: "***REDACTED***",
+				},
+			},
 		);
 	});
 

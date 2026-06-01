@@ -14,16 +14,19 @@ import {
 } from "@/components/admin/previewAppsConfigEditorShared";
 import {
 	buildDraftValues,
+	configDraftValueChanged,
 	configDraftValuesEqual,
 	configValueToString,
 	configValueToStringArray,
 	type DraftValues,
 	formatSubcategoryLabel,
 	getConfigDescription,
+	getConfigIsSensitive,
 	getConfigValueType,
 	getMailTemplateGroupId,
 	getMailTemplateGroupOrderIndex,
 	getSubcategoryGroupKey,
+	isRedactedConfigValue,
 	isStringEnumSetType,
 	isSystemConfigSource,
 	type NewCustomDraft,
@@ -90,19 +93,31 @@ const MEDIA_DATA_SUPPORT_CONFIG_KEYS = new Set([
 	"media_metadata_max_source_bytes",
 ]);
 
-function configValueForKey(
-	configsByKey: Map<string, SystemConfig>,
-	key: string,
-) {
-	return configsByKey.get(key)?.value as DraftValues[string] | undefined;
-}
-
 function draftValueChangedForKey(
 	configsByKey: Map<string, SystemConfig>,
 	key: string,
 	value: DraftValues[string] | undefined,
 ) {
-	return !configDraftValuesEqual(value, configValueForKey(configsByKey, key));
+	const config = configsByKey.get(key);
+	if (!config) {
+		return !configDraftValuesEqual(value, undefined);
+	}
+	return configDraftValueChanged(config, value);
+}
+
+function effectiveDraftValueForConfig(
+	config: SystemConfig | undefined,
+	value: DraftValues[string] | undefined,
+) {
+	if (
+		config &&
+		getConfigIsSensitive(config) &&
+		isRedactedConfigValue(config.value) &&
+		configValueToString(value).trim() === ""
+	) {
+		return config.value as DraftValues[string];
+	}
+	return value;
 }
 
 type TranslationFn = (key: string, options?: Record<string, unknown>) => string;
@@ -173,6 +188,14 @@ export function useAdminSettingsData({
 		useState<string | null>(null);
 	const [testEmailTarget, setTestEmailTarget] = useState("");
 	const [sendingTestEmail, setSendingTestEmail] = useState(false);
+
+	const resetEditableState = useCallback((nextConfigs: SystemConfig[]) => {
+		setDraftValues(buildDraftValues(nextConfigs));
+		setCustomVisibilityDrafts({});
+		setDisplayUnits({});
+		setDeletedCustomKeys([]);
+		setNewCustomRows([]);
+	}, []);
 
 	const openTestEmailDialog = useCallback(() => {
 		setTestEmailTarget(currentUserEmail);
@@ -316,44 +339,41 @@ export function useAdminSettingsData({
 		[configs, draftValues],
 	);
 
-	const load = useCallback(async (options?: { showLoading?: boolean }) => {
-		const showLoading = options?.showLoading ?? true;
+	const load = useCallback(
+		async (options?: { showLoading?: boolean }) => {
+			const showLoading = options?.showLoading ?? true;
 
-		try {
-			if (showLoading) {
-				setLoading(true);
+			try {
+				if (showLoading) {
+					setLoading(true);
+				}
+				const [cfgs, schemaList, nextTemplateVariableGroups] =
+					await Promise.all([
+						loadAllSystemConfigs(),
+						loadAdminConfigSchema(),
+						loadAdminTemplateVariables().catch((error) => {
+							handleApiError(error);
+							return [];
+						}),
+					]);
+				setConfigs(cfgs);
+				resetEditableState(cfgs);
+				setSchemas(schemaList);
+				setTemplateVariableGroups(nextTemplateVariableGroups);
+			} catch (error) {
+				handleApiError(error);
+			} finally {
+				if (showLoading) {
+					setLoading(false);
+				}
 			}
-			const [cfgs, schemaList, nextTemplateVariableGroups] = await Promise.all([
-				loadAllSystemConfigs(),
-				loadAdminConfigSchema(),
-				loadAdminTemplateVariables().catch((error) => {
-					handleApiError(error);
-					return [];
-				}),
-			]);
-			setConfigs(cfgs);
-			setSchemas(schemaList);
-			setTemplateVariableGroups(nextTemplateVariableGroups);
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			if (showLoading) {
-				setLoading(false);
-			}
-		}
-	}, []);
+		},
+		[resetEditableState],
+	);
 
 	useEffect(() => {
 		void load();
 	}, [load]);
-
-	useEffect(() => {
-		setDraftValues(buildDraftValues(configs));
-		setCustomVisibilityDrafts({});
-		setDisplayUnits({});
-		setDeletedCustomKeys([]);
-		setNewCustomRows([]);
-	}, [configs]);
 
 	const schemaMap = useMemo(() => {
 		const map = new Map<string, ConfigSchemaItem>();
@@ -594,9 +614,9 @@ export function useAdminSettingsData({
 				if (deletedCustomKeySet.has(config.key)) {
 					return false;
 				}
-				const valueChanged = !configDraftValuesEqual(
+				const valueChanged = configDraftValueChanged(
+					config,
 					draftValues[config.key] ?? (config.value as DraftValues[string]),
-					config.value as DraftValues[string],
 				);
 				const visibilityChanged =
 					!isSystemConfigSource(config.source) &&
@@ -654,8 +674,13 @@ export function useAdminSettingsData({
 
 	const configValidationErrors = useMemo(() => {
 		const errors = new Map<string, string>();
-		const draftValueByKey = (key: string) =>
-			draftValues[key] ?? (configsByKey.get(key)?.value as DraftValues[string]);
+		const draftValueByKey = (key: string) => {
+			const config = configsByKey.get(key);
+			return effectiveDraftValueForConfig(
+				config,
+				draftValues[key] ?? (config?.value as DraftValues[string]),
+			);
+		};
 		const allowedOrigins = configValueToString(
 			draftValueByKey(CORS_ALLOWED_ORIGINS_KEY),
 		).trim();
@@ -763,12 +788,11 @@ export function useAdminSettingsData({
 			setDraftValues((previous) => {
 				const next = { ...previous, [key]: value };
 				const readNextValue = (lookupKey: string) => {
+					const config = configsByKey.get(lookupKey);
 					if (Object.hasOwn(next, lookupKey)) {
-						return next[lookupKey];
+						return effectiveDraftValueForConfig(config, next[lookupKey]);
 					}
-					return configsByKey.get(lookupKey)?.value as
-						| DraftValues[string]
-						| undefined;
+					return config?.value as DraftValues[string] | undefined;
 				};
 
 				if (
@@ -816,12 +840,8 @@ export function useAdminSettingsData({
 	);
 
 	const discardChanges = useCallback(() => {
-		setDraftValues(buildDraftValues(configs));
-		setCustomVisibilityDrafts({});
-		setDisplayUnits({});
-		setDeletedCustomKeys([]);
-		setNewCustomRows([]);
-	}, [configs]);
+		resetEditableState(configs);
+	}, [configs, resetEditableState]);
 
 	const appendCustomDraftRow = useCallback(() => {
 		customDraftIdRef.current += 1;
@@ -929,7 +949,7 @@ export function useAdminSettingsData({
 
 			const nextConfigs = Array.from(nextConfigsByKey.values());
 			setConfigs(nextConfigs);
-			setCustomVisibilityDrafts({});
+			resetEditableState(nextConfigs);
 			const nextPublicSiteUrl =
 				nextConfigsByKey.get(PUBLIC_SITE_URL_KEY)?.value;
 			if (Array.isArray(nextPublicSiteUrl)) {
@@ -973,6 +993,7 @@ export function useAdminSettingsData({
 		hasValidationError,
 		load,
 		onPublicSiteUrlChanged,
+		resetEditableState,
 		saving,
 		t,
 	]);
