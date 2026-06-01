@@ -147,6 +147,7 @@ pub const OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY: &str = "offline_download_max
 pub const OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY: &str = "offline_download_max_mb_per_sec";
 pub const OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY: &str = "offline_download_max_concurrency";
 pub const OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY: &str = "offline_download_request_timeout_secs";
+pub const OFFLINE_DOWNLOAD_TEMP_DIR_KEY: &str = "offline_download_temp_dir";
 pub const OFFLINE_DOWNLOAD_ENGINE_KEY: &str = "offline_download_engine";
 pub const OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY: &str = "offline_download_engine_registry_json";
 pub const OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY: &str = "offline_download_aria2_rpc_url";
@@ -794,6 +795,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Timeout in seconds for offline download HTTP requests. Tune this with offline_download_max_file_size_bytes and offline_download_max_mb_per_sec; the 1 GiB / 600s defaults require roughly 1.7 MiB/s sustained throughput.",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
+        label_i18n_key: "settings_item_offline_download_temp_dir_label",
+        description_i18n_key: "settings_item_offline_download_temp_dir_desc",
+        value_type: SystemConfigValueType::String,
+        default_fn: || String::new(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Optional absolute staging directory for offline download files. AsterDrive and external downloaders such as aria2 must both be able to access the same path. Empty uses the normal server temp dir.",
     },
     ConfigDef {
         key: OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY,

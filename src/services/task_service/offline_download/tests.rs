@@ -11,6 +11,7 @@ use super::aria2::{
     Aria2AddUriOptions, Aria2DownloadStatus, Aria2OfflineDownloadEngine, Aria2RpcCallError,
     Aria2RpcClient, Aria2RpcMethod, Aria2RpcParam, aria2_rpc_error_is_missing_download,
     aria2_rpc_error_is_unauthorized, parse_aria2_length, parse_aria2_rpc_error_response,
+    prepare_aria2_output_dir,
 };
 use super::naming::{
     filename_from_content_disposition, offline_download_task_display_name_with_engine,
@@ -495,6 +496,11 @@ fn aria2_rpc_missing_download_detection_is_method_and_status_specific() {
         1,
         None,
     ));
+    assert!(aria2_rpc_error_is_missing_download(
+        Aria2RpcMethod::ForceRemove,
+        1,
+        Some(reqwest::StatusCode::BAD_REQUEST),
+    ));
     assert!(!aria2_rpc_error_is_missing_download(
         Aria2RpcMethod::GetVersion,
         1,
@@ -502,9 +508,32 @@ fn aria2_rpc_missing_download_detection_is_method_and_status_specific() {
     ));
     assert!(!aria2_rpc_error_is_missing_download(
         Aria2RpcMethod::ForceRemove,
-        1,
+        2,
         Some(reqwest::StatusCode::BAD_REQUEST),
     ));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn aria2_output_dir_is_writable_by_external_process_user() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = std::env::temp_dir().join(format!(
+        "aster-drive-aria2-output-dir-{}",
+        crate::utils::id::new_uuid()
+    ));
+    let temp_path = root.join("tasks/42/7/source");
+
+    prepare_aria2_output_dir(&temp_path).await.unwrap();
+
+    let token_dir = temp_path.parent().unwrap();
+    let task_dir = token_dir.parent().unwrap();
+    let tasks_dir = task_dir.parent().unwrap();
+    let modes = [tasks_dir, task_dir, token_dir]
+        .map(|dir| std::fs::metadata(dir).unwrap().permissions().mode() & 0o777);
+    let _ = std::fs::remove_dir_all(root);
+
+    assert_eq!(modes, [0o777, 0o777, 0o777]);
 }
 
 #[test]

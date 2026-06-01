@@ -21,9 +21,11 @@ use super::runtime::{
 };
 use super::{
     OFFLINE_DOWNLOAD_TEMP_FILE_NAME, OfflineDownloadComplete, OfflineDownloadEngine,
-    OfflineDownloadStartRequest, PROGRESS_UPDATE_INTERVAL, ensure_download_size_allowed,
-    resolve_source_host, transient_storage_error, verify_expected_sha256,
+    OfflineDownloadStartRequest, ensure_download_size_allowed, resolve_source_host,
+    transient_storage_error, verify_expected_sha256,
 };
+
+const ARIA2_STATUS_POLL_INTERVAL: StdDuration = StdDuration::from_secs(2);
 
 pub(super) struct Aria2OfflineDownloadEngine {
     pub(super) max_bytes: i64,
@@ -122,6 +124,7 @@ impl OfflineDownloadEngine for Aria2OfflineDownloadEngine {
             );
         }
 
+        prepare_aria2_output_dir(&request.temp_path).await?;
         let gid = self
             .client
             .add_uri(request.url.as_str(), self.options(&request))
@@ -149,6 +152,45 @@ impl OfflineDownloadEngine for Aria2OfflineDownloadEngine {
     }
 }
 
+pub(super) async fn prepare_aria2_output_dir(temp_path: &Path) -> Result<()> {
+    let Some(dir) = temp_path.parent() else {
+        return Ok(());
+    };
+    tokio::fs::create_dir_all(dir).await.map_aster_err_ctx(
+        "create aria2 offline download output dir",
+        AsterError::storage_driver_error,
+    )?;
+    allow_external_aria2_writer_chain(dir).await
+}
+
+#[cfg(unix)]
+async fn allow_external_aria2_writer_chain(token_dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let Some(task_dir) = token_dir.parent() else {
+        return Ok(());
+    };
+    let Some(tasks_dir) = task_dir.parent() else {
+        return Ok(());
+    };
+
+    for dir in [tasks_dir, task_dir, token_dir] {
+        tokio::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o777))
+            .await
+            .map_aster_err_ctx(
+                "set aria2 offline download output dir permissions",
+                AsterError::storage_driver_error,
+            )?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn allow_external_aria2_writer_chain(_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
 impl Aria2OfflineDownloadEngine {
     async fn poll_until_complete(
         &self,
@@ -160,7 +202,7 @@ impl Aria2OfflineDownloadEngine {
     ) -> Result<OfflineDownloadComplete> {
         let started_at = Instant::now();
         let mut last_progress = Instant::now()
-            .checked_sub(PROGRESS_UPDATE_INTERVAL)
+            .checked_sub(ARIA2_STATUS_POLL_INTERVAL)
             .unwrap_or_else(Instant::now);
         let mut declared_content_length = None;
 
@@ -188,7 +230,7 @@ impl Aria2OfflineDownloadEngine {
                 Aria2DownloadStatus::Active
                 | Aria2DownloadStatus::Waiting
                 | Aria2DownloadStatus::Paused => {
-                    if last_progress.elapsed() >= PROGRESS_UPDATE_INTERVAL {
+                    if last_progress.elapsed() >= ARIA2_STATUS_POLL_INTERVAL {
                         let progress_total = total.max(completed);
                         let status_text = format!("Downloaded {completed} bytes");
                         set_task_step_active(
@@ -227,7 +269,7 @@ impl Aria2OfflineDownloadEngine {
                 }
             }
 
-            sleep(PROGRESS_UPDATE_INTERVAL).await;
+            sleep(ARIA2_STATUS_POLL_INTERVAL).await;
         }
 
         let bytes_written = downloaded_file_size(&request.temp_path).await?;
@@ -679,7 +721,7 @@ pub(super) fn aria2_rpc_error_is_missing_download(
         method,
         Aria2RpcMethod::ForceRemove | Aria2RpcMethod::RemoveDownloadResult
     ) && code == 1
-        && http_status.is_none()
+        && (http_status.is_none() || http_status == Some(reqwest::StatusCode::BAD_REQUEST))
 }
 
 #[derive(Debug, Deserialize)]

@@ -77,6 +77,8 @@
 	"settings_item_offline_download_max_concurrency_desc": "The maximum number of link import download tasks the server may execute at the same time.",
 	"settings_item_offline_download_request_timeout_secs_label": "Link import request timeout",
 	"settings_item_offline_download_request_timeout_secs_desc": "The maximum number of seconds allowed for one outbound HTTP/HTTPS download request. Tune this with the size and speed caps; 1 GiB in 600 seconds needs about 1.7 MiB/s.",
+	"settings_item_offline_download_temp_dir_label": "Offline download temp directory",
+	"settings_item_offline_download_temp_dir_desc": "Absolute path used to stage link-import files. AsterDrive and external downloaders such as aria2 must be able to access and write the same path; leave blank to use the default server temp directory.",
 	"settings_item_offline_download_aria2_rpc_url_label": "aria2 RPC URL",
 	"settings_item_offline_download_aria2_rpc_url_desc": "The aria2 JSON-RPC endpoint used when the link import engine is aria2, such as http://127.0.0.1:6800/jsonrpc.",
 	"settings_item_offline_download_aria2_rpc_secret_label": "aria2 RPC secret",

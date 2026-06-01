@@ -120,12 +120,15 @@ export ASTERDRIVE_ARIA2_RPC_SECRET="$(openssl rand -hex 24)"
 docker compose --profile aria2 up -d
 ```
 
-Then open `Admin -> System Settings -> File Processing -> Link Import` and enable `aria2` in the link-import engine registry. If you want the built-in downloader as fallback, keep `builtin` enabled after `aria2`; if you want aria2 only, disable `builtin`. You can also disable both engines, which disables new link-import tasks. Then set these runtime config values:
+Then open `Admin -> System Settings -> File Processing -> Link Import` and enable `aria2` in the link-import engine registry. If you want the built-in downloader as fallback, keep `builtin` enabled after `aria2`; if you want aria2 only, disable `builtin`. Then set these runtime config values:
 
 | Config key | Value |
 | --- | --- |
+| `offline_download_temp_dir` | `/data/.tmp/offline-download` |
 | `offline_download_aria2_rpc_url` | `http://aria2:6800/jsonrpc` |
 | `offline_download_aria2_rpc_secret` | the value of `ASTERDRIVE_ARIA2_RPC_SECRET` above |
+
+If you start only aria2 with Compose while running AsterDrive on the host with `cargo run`, use `http://127.0.0.1:6800/jsonrpc` instead. This mixed development mode still requires `offline_download_temp_dir` to be the same absolute path visible to both sides. For example, mount host `./data/offline-download-temp` into the aria2 container at `/Users/esap/Desktop/Github/AsterDrive/data/offline-download-temp`, then put that host absolute path in AsterDrive.
 
 After saving, use **Test aria2** in the link-import engine registry. The server calls `aria2.getVersion` with the current RPC URL and secret to confirm AsterDrive can reach the aria2 JSON-RPC endpoint.
 
@@ -143,10 +146,16 @@ docker compose exec asterdrive /usr/local/bin/aster_drive \
 
 docker compose exec asterdrive /usr/local/bin/aster_drive \
   config --database-url "sqlite:///data/asterdrive.db?mode=rwc" \
+  set --key offline_download_temp_dir --value /data/.tmp/offline-download
+
+docker compose exec asterdrive /usr/local/bin/aster_drive \
+  config --database-url "sqlite:///data/asterdrive.db?mode=rwc" \
   set --key offline_download_aria2_rpc_secret --value "$ASTERDRIVE_ARIA2_RPC_SECRET"
 ```
 
-Do not publish aria2 port `6800` to the host or the public internet. This Compose example uses `expose` so only services on the same Docker network can reach the RPC endpoint. aria2 still performs its own DNS resolution and outbound connection for downloads, so production deployments should also restrict its reachable network using Docker networking, host firewall rules, or upstream network policy.
+Do not publish aria2 port `6800` to the public internet in production; if host-side AsterDrive does not need to reach it, do not publish it to the host either. aria2 still performs its own DNS resolution and outbound connection for downloads, so production deployments should also restrict its reachable network using Docker networking, host firewall rules, or upstream network policy.
+
+For full configuration, security boundaries, and troubleshooting, see [Offline Download](/en/config/offline-download).
 
 ## First Deployment Checks Worth Doing
 
@@ -159,7 +168,7 @@ Do not publish aria2 port `6800` to the host or the public internet. This Compos
 - Whether the database, upload directory, and temporary directories all live in the bind-mounted `./data` directory, with nothing accidentally written inside the container layer.
 - Whether the default policy group has been created.
 - If external Office / WOPI openers are enabled, whether at least one real Office file can be opened and saved.
-- If aria2 link import is enabled, whether `offline_download_aria2_rpc_url` points to the Docker-internal address `http://aria2:6800/jsonrpc`, and whether the aria2 RPC port is not exposed publicly.
+- If aria2 link import is enabled, whether `offline_download_aria2_rpc_url` points to the Docker-internal address `http://aria2:6800/jsonrpc` for full Docker deployments, whether `offline_download_temp_dir` is the same absolute path visible to both sides, or whether RPC points to `http://127.0.0.1:6800/jsonrpc` for host-side `cargo run` + Compose aria2 development; and whether the aria2 RPC port is not exposed publicly.
 - If you plan to use S3 / MinIO later, whether browser upload CORS rules and secret management for object storage have been planned.
 - If this instance should actually run as a `follower`, whether long-term `start_mode`, single-use bootstrap ENV, and the primary-side default receiving target have been configured according to [Docker Follower Node Deployment](/en/deployment/docker-follower).
 

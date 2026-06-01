@@ -322,7 +322,7 @@ async fn retry_task_record(state: &PrimaryAppState, task: &background_task::Mode
         ));
     }
 
-    cleanup_task_temp_dir_for_task(state, task.id).await?;
+    cleanup_task_temp_dir_for_task_kind(state, task.kind, task.id).await?;
     // 手动重试会复用同一条任务记录，而不是新建“子任务”。
     // 这样前端和审计侧只需要跟踪一个稳定 task_id。
     let steps_json = serialize_task_steps(&registry::initial_task_steps(task.kind))?;
@@ -923,17 +923,21 @@ pub(super) async fn prepare_task_temp_dir(
     state: &PrimaryAppState,
     lease: TaskLease,
 ) -> Result<String> {
+    prepare_task_temp_dir_in_root(&state.config.server.temp_dir, lease).await
+}
+
+pub(super) async fn prepare_task_temp_dir_in_root(
+    temp_root: &str,
+    lease: TaskLease,
+) -> Result<String> {
     // 临时目录按 task_id/token 隔离：
     // temp/tasks/{task_id}/{processing_token}
     //
     // 这样任务被 stale reclaim 后，新旧 worker 不会写进同一个目录。
     // 这里也只清当前 lease 的 token 目录，避免旧 worker 启动时把新 lease 的产物删掉。
-    cleanup_task_temp_dir_for_lease(state, lease).await?;
-    let task_temp_dir = crate::utils::paths::task_token_temp_dir(
-        &state.config.server.temp_dir,
-        lease.task_id,
-        lease.processing_token,
-    );
+    cleanup_task_temp_dir_for_lease_in_root(temp_root, lease).await?;
+    let task_temp_dir =
+        crate::utils::paths::task_token_temp_dir(temp_root, lease.task_id, lease.processing_token);
     tokio::fs::create_dir_all(&task_temp_dir)
         .await
         .map_err(|error| {
@@ -942,12 +946,12 @@ pub(super) async fn prepare_task_temp_dir(
     Ok(task_temp_dir)
 }
 
-pub(super) async fn cleanup_task_temp_dir_for_lease(
-    state: &PrimaryAppState,
+pub(super) async fn cleanup_task_temp_dir_for_lease_in_root(
+    temp_root: &str,
     lease: TaskLease,
 ) -> Result<()> {
     crate::utils::cleanup_temp_dir(&crate::utils::paths::task_token_temp_dir(
-        &state.config.server.temp_dir,
+        temp_root,
         lease.task_id,
         lease.processing_token,
     ))
@@ -959,13 +963,31 @@ pub(super) async fn cleanup_task_temp_dir_for_task(
     state: &PrimaryAppState,
     task_id: i64,
 ) -> Result<()> {
+    cleanup_task_temp_dir_for_task_in_root(&state.config.server.temp_dir, task_id).await
+}
+
+async fn cleanup_task_temp_dir_for_task_kind(
+    state: &PrimaryAppState,
+    kind: BackgroundTaskKind,
+    task_id: i64,
+) -> Result<()> {
+    cleanup_task_temp_dir_for_task(state, task_id).await?;
+    if kind == BackgroundTaskKind::OfflineDownload
+        && let Some(temp_root) = operations::offline_download_temp_dir(&state.runtime_config)
+        && temp_root != state.config.server.temp_dir
+    {
+        cleanup_task_temp_dir_for_task_in_root(&temp_root, task_id).await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn cleanup_task_temp_dir_for_task_in_root(
+    temp_root: &str,
+    task_id: i64,
+) -> Result<()> {
     // 成功路径会删整个任务根目录，因为到这里说明已经没有活跃 lease 需要保留产物了。
     // 如果任务在失败/崩溃/重启中断时没走到这里，后续由 task-cleanup 周期任务兜底清理。
-    crate::utils::cleanup_temp_dir(&crate::utils::paths::task_temp_dir(
-        &state.config.server.temp_dir,
-        task_id,
-    ))
-    .await;
+    crate::utils::cleanup_temp_dir(&crate::utils::paths::task_temp_dir(temp_root, task_id)).await;
     Ok(())
 }
 

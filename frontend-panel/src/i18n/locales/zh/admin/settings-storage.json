@@ -77,6 +77,8 @@
 	"settings_item_offline_download_max_concurrency_desc": "系统同时最多允许执行多少个链接导入下载任务。",
 	"settings_item_offline_download_request_timeout_secs_label": "链接导入请求超时",
 	"settings_item_offline_download_request_timeout_secs_desc": "单次 HTTP/HTTPS 外部下载请求允许持续的最长秒数。请和大小与速度上限一起调整；默认 1 GiB / 600 秒大约需要 1.7 MiB/s 的持续吞吐。",
+	"settings_item_offline_download_temp_dir_label": "离线下载临时目录",
+	"settings_item_offline_download_temp_dir_desc": "用于临时存放链接导入文件的绝对路径。AsterDrive 和外部下载器（如 aria2）都必须能用同一个路径访问并读写；留空使用默认服务临时目录。",
 	"settings_item_offline_download_aria2_rpc_url_label": "aria2 RPC 地址",
 	"settings_item_offline_download_aria2_rpc_url_desc": "链接导入引擎为 aria2 时使用的 aria2 JSON-RPC 端点，例如 http://127.0.0.1:6800/jsonrpc。",
 	"settings_item_offline_download_aria2_rpc_secret_label": "aria2 RPC 密钥",

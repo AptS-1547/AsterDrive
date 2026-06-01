@@ -159,6 +159,9 @@ where
         operations::OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY => {
             operations::normalize_offline_download_aria2_rpc_url_config_value(value)
         }
+        operations::OFFLINE_DOWNLOAD_TEMP_DIR_KEY => {
+            operations::normalize_offline_download_temp_dir_config_value(value)
+        }
         operations::OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY => Ok(value.trim().to_string()),
         operations::SHARE_STREAM_SESSION_TTL_SECS_KEY => {
             operations::normalize_share_stream_session_ttl_config_value(key, value)

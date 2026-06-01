@@ -10,9 +10,9 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     folder_service,
     task_service::{
-        TaskInfo, TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
+        TaskInfo, TaskLeaseGuard, cleanup_task_temp_dir_for_task_in_root, create_typed_task_record,
         get_task_in_scope, is_task_lease_lost, is_task_lease_renewal_timed_out, mark_task_progress,
-        mark_task_succeeded, prepare_task_temp_dir,
+        mark_task_succeeded, prepare_task_temp_dir_in_root,
         spec::{self, OfflineDownloadTask, decode_payload_as},
         steps::{
             TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_STORE_RESULT, TASK_STEP_VALIDATE_SOURCE,
@@ -132,7 +132,8 @@ pub(super) async fn process_offline_download_task(
             .source_display_url
             .clone()
             .unwrap_or_else(|| redact_url_for_display(&source_url));
-        let task_temp_dir = prepare_task_temp_dir(state, lease_guard.lease()).await?;
+        let temp_root = offline_download_temp_root(state);
+        let task_temp_dir = prepare_task_temp_dir_in_root(&temp_root, lease_guard.lease()).await?;
         let temp_path = Path::new(&task_temp_dir).join(OFFLINE_DOWNLOAD_TEMP_FILE_NAME);
         let max_bytes = operations::offline_download_max_file_size_bytes(&state.runtime_config);
         let max_bytes_per_sec =
@@ -261,7 +262,7 @@ pub(super) async fn process_offline_download_task(
             true,
         )
         .await?;
-        cleanup_task_temp_dir_for_task(state, task.id).await?;
+        cleanup_task_temp_dir_for_task_in_root(&temp_root, task.id).await?;
         set_task_step_succeeded(
             &mut steps,
             TASK_STEP_STORE_RESULT,
@@ -297,7 +298,11 @@ pub(super) async fn process_offline_download_task(
         Err(error) => {
             if !is_task_lease_lost(&error)
                 && !is_task_lease_renewal_timed_out(&error)
-                && let Err(cleanup_error) = cleanup_task_temp_dir_for_task(state, task.id).await
+                && let Err(cleanup_error) = cleanup_task_temp_dir_for_task_in_root(
+                    &offline_download_temp_root(state),
+                    task.id,
+                )
+                .await
             {
                 tracing::warn!(
                     task_id = task.id,
@@ -307,6 +312,11 @@ pub(super) async fn process_offline_download_task(
             Err(error)
         }
     }
+}
+
+pub(super) fn offline_download_temp_root(state: &PrimaryAppState) -> String {
+    operations::offline_download_temp_dir(&state.runtime_config)
+        .unwrap_or_else(|| state.config.server.temp_dir.clone())
 }
 
 pub(super) struct OfflineDownloadRetryPolicy;

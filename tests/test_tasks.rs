@@ -18,6 +18,7 @@ use aster_drive::config::operations::{
     OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY, OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY,
     OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY, OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY,
     OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
+    OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
 };
 use aster_drive::db::repository::{background_task_repo, file_repo};
 use aster_drive::entities::{background_task, file_blob};
@@ -1800,6 +1801,69 @@ async fn test_cleanup_expired_keeps_terminal_task_records() {
         .await
         .expect("repeated task cleanup should still succeed");
     assert_eq!(cleaned_again, 0);
+}
+
+#[actix_web::test]
+async fn test_cleanup_expired_scans_offline_download_temp_dir() {
+    let state = common::setup().await;
+    let custom_temp_root = std::env::temp_dir().join(format!(
+        "aster-drive-offline-task-cleanup-{}",
+        aster_drive::utils::id::new_uuid()
+    ));
+    let custom_temp_root = custom_temp_root.to_string_lossy().to_string();
+    state.runtime_config.apply(common::system_config_model(
+        OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
+        &custom_temp_root,
+    ));
+
+    let now = Utc::now();
+    let task = background_task_repo::create(
+        state.writer_db(),
+        background_task::ActiveModel {
+            kind: Set(BackgroundTaskKind::OfflineDownload),
+            status: Set(BackgroundTaskStatus::Failed),
+            creator_user_id: Set(None),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set("expired-offline-download".to_string()),
+            payload_json: Set(StoredTaskPayload("{}".to_string())),
+            result_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(0),
+            progress_total: Set(0),
+            status_text: Set(Some("failed".to_string())),
+            attempt_count: Set(1),
+            max_attempts: Set(1),
+            next_run_at: Set(now - Duration::hours(2)),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            started_at: Set(Some(now - Duration::hours(2))),
+            finished_at: Set(Some(now - Duration::hours(2))),
+            last_error: Set(Some("failed".to_string())),
+            expires_at: Set(now - Duration::hours(1)),
+            created_at: Set(now - Duration::hours(2)),
+            updated_at: Set(now - Duration::hours(2)),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("expired offline download task should be inserted");
+
+    let task_temp_dir = aster_drive::utils::paths::task_temp_dir(&custom_temp_root, task.id);
+    std::fs::create_dir_all(&task_temp_dir).expect("offline download temp dir should be created");
+    std::fs::write(format!("{task_temp_dir}/source"), b"expired")
+        .expect("offline download temp artifact should be written");
+
+    let cleaned = task_service::cleanup_expired(&state)
+        .await
+        .expect("task cleanup should succeed");
+    assert_eq!(cleaned, 1);
+    assert!(
+        !std::path::Path::new(&task_temp_dir).exists(),
+        "offline download temp dir should be removed from custom root"
+    );
+
+    let _ = std::fs::remove_dir_all(&custom_temp_root);
 }
 
 #[actix_web::test]
