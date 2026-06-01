@@ -30,10 +30,9 @@ pub use crate::config::definitions::{
     OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY, OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY,
     OFFLINE_DOWNLOAD_ENGINE_KEY, OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY,
     OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY, OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
-    OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
-    REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
-    SHARE_STREAM_SESSION_TTL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
-    THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+    OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY, REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+    SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, SHARE_STREAM_SESSION_TTL_SECS_KEY,
+    TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, THUMBNAIL_MAX_SOURCE_BYTES_KEY,
 };
 
 pub const DEFAULT_MAIL_OUTBOX_DISPATCH_INTERVAL_SECS: u64 = 5;
@@ -156,7 +155,9 @@ pub fn normalize_offline_download_aria2_rpc_url_config_value(value: &str) -> Res
         return Ok(String::new());
     }
     let url = url::Url::parse(trimmed).map_err(|error| {
-        AsterError::validation_error(format!("offline_download_aria2_rpc_url is invalid: {error}"))
+        AsterError::validation_error(format!(
+            "offline_download_aria2_rpc_url is invalid: {error}"
+        ))
     })?;
     match url.scheme() {
         "http" | "https" => {}
@@ -833,8 +834,7 @@ mod tests {
         DEFAULT_TASK_LIST_MAX_LIMIT, DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT,
         MAX_SHARE_STREAM_SESSION_TTL_SECS, MIN_SHARE_STREAM_SESSION_TTL_SECS,
         OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
-        REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
-        SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+        REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
         SHARE_STREAM_SESSION_TTL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
         archive_extract_max_staging_bytes, avatar_max_upload_size_bytes,
         background_task_archive_max_concurrency, background_task_dispatch_idle_max_interval_secs,

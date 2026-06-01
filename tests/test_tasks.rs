@@ -13,6 +13,11 @@ use tokio::sync::broadcast;
 
 use aster_drive::config::operations::{
     BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY, BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY, OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY, OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY,
+    OFFLINE_DOWNLOAD_ENGINE_KEY, OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY,
+    OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
 };
 use aster_drive::db::repository::{background_task_repo, file_repo};
 use aster_drive::entities::{background_task, file_blob};
@@ -24,6 +29,13 @@ use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPay
 
 const OLD_BACKGROUND_TASK_DISPLAY_NAME_LIMIT: usize = 255;
 const EXPANDED_BACKGROUND_TASK_DISPLAY_NAME_LIMIT: usize = 512;
+const ARIA2_TEST_IMAGE_TAG: &str = "latest";
+
+struct Aria2TestContext {
+    _container: testcontainers::ContainerAsync<testcontainers::GenericImage>,
+    rpc_url: String,
+    rpc_secret: String,
+}
 
 macro_rules! register_user {
     ($app:expr, $db:expr, $mail_sender:expr, $username:expr, $email:expr, $password:expr) => {{
@@ -201,6 +213,74 @@ fn assert_task_steps(body: &Value, expected: &[(&str, &str)]) {
         .map(|(key, status)| (key.to_string(), status.to_string()))
         .collect::<Vec<_>>();
     assert_eq!(actual, expected);
+}
+
+async fn start_aria2_context(temp_dir: &str) -> Aria2TestContext {
+    use testcontainers::{
+        GenericImage, ImageExt,
+        core::{IntoContainerPort, Mount},
+        runners::AsyncRunner,
+    };
+
+    let host_temp_dir = std::fs::canonicalize(temp_dir).unwrap_or_else(|_| temp_dir.into());
+    let rpc_secret = format!("asterdrive-{}", uuid::Uuid::new_v4().simple());
+    let container = GenericImage::new("p3terx/aria2-pro", ARIA2_TEST_IMAGE_TAG)
+        .with_exposed_port(IntoContainerPort::tcp(6800))
+        .with_env_var("PUID", "0")
+        .with_env_var("PGID", "0")
+        .with_env_var("RPC_SECRET", rpc_secret.as_str())
+        .with_mount(Mount::bind_mount(
+            host_temp_dir.to_string_lossy().to_string(),
+            temp_dir.to_string(),
+        ))
+        .start()
+        .await
+        .expect("failed to start aria2 test container");
+
+    let port = container
+        .get_host_port_ipv4(IntoContainerPort::tcp(6800))
+        .await
+        .expect("aria2 RPC port should resolve");
+    let rpc_url = format!("http://127.0.0.1:{port}/jsonrpc");
+    wait_for_aria2_rpc(&rpc_url, &rpc_secret).await;
+
+    Aria2TestContext {
+        _container: container,
+        rpc_url,
+        rpc_secret,
+    }
+}
+
+async fn wait_for_aria2_rpc(rpc_url: &str, rpc_secret: &str) {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .expect("aria2 wait client should build");
+
+    for _ in 0..60 {
+        let response = client
+            .post(rpc_url)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": "asterdrive-test-wait",
+                "method": "aria2.getVersion",
+                "params": [format!("token:{rpc_secret}")]
+            }))
+            .send()
+            .await;
+
+        if let Ok(response) = response
+            && response.status().is_success()
+            && let Ok(body) = response.json::<Value>().await
+            && body.get("result").is_some()
+        {
+            return;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    panic!("aria2 RPC did not become ready at {rpc_url}");
 }
 
 async fn drain_storage_change_events(
@@ -816,6 +896,126 @@ async fn assert_response_status(
         );
     }
     resp
+}
+
+#[actix_web::test]
+async fn test_offline_download_aria2_engine_imports_example_com_e2e() {
+    let state = common::setup().await;
+    let aria2 = start_aria2_context(&state.config.server.temp_dir).await;
+
+    for (key, value) in [
+        (OFFLINE_DOWNLOAD_ENGINE_KEY, "aria2"),
+        (OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY, aria2.rpc_url.as_str()),
+        (
+            OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+            aria2.rpc_secret.as_str(),
+        ),
+        (OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY, "5"),
+        (OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY, "1"),
+        (OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY, "1"),
+        (OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY, "1048576"),
+        (OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "0"),
+        (OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY, "30"),
+    ] {
+        aster_drive::services::config_service::set(&state, key, value, 1)
+            .await
+            .expect("offline download aria2 config should update");
+    }
+
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/tasks/offline-download")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "url": "https://example.com/",
+            "filename": "aria2-example.html"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let created: Value = test::read_body_json(resp).await;
+    let task_id = created["data"]["id"]
+        .as_i64()
+        .expect("created task id should exist");
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("aria2 offline download task should drain");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(stats.failed, 0);
+    assert_eq!(stats.retried, 0);
+
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id)
+        .await
+        .expect("aria2 offline download task should load");
+    assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+    let runtime_json = task
+        .runtime_json
+        .as_ref()
+        .expect("aria2 task should persist runtime_json");
+    let runtime: Value =
+        serde_json::from_str(runtime_json.as_ref()).expect("runtime_json should parse");
+    assert!(
+        runtime["aria2"]["gid"]
+            .as_str()
+            .is_some_and(|gid| !gid.is_empty()),
+        "aria2 GID should be persisted in runtime_json"
+    );
+    assert!(
+        runtime["aria2"]["processing_token"]
+            .as_i64()
+            .is_some_and(|token| token > 0),
+        "aria2 runtime_json should include the processing token"
+    );
+
+    let result: Value = serde_json::from_str(
+        task.result_json
+            .as_ref()
+            .expect("aria2 task should persist result_json")
+            .as_ref(),
+    )
+    .expect("offline download result should parse");
+    assert_eq!(result["file_name"], "aria2-example.html");
+    assert!(
+        result["content_length"]
+            .as_i64()
+            .is_some_and(|length| length > 0)
+    );
+    assert!(
+        result["sha256"]
+            .as_str()
+            .is_some_and(|sha256| sha256.len() == 64)
+    );
+    let file_id = result["file_id"]
+        .as_i64()
+        .expect("offline download result should include file_id");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let downloaded = test::read_body(resp).await;
+    let downloaded = String::from_utf8_lossy(&downloaded);
+    assert!(downloaded.contains("Example Domain"));
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/tasks/{task_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let task_info: Value = test::read_body_json(resp).await;
+    assert_eq!(task_info["data"]["status"], "succeeded");
+    assert!(
+        task_info["data"].get("runtime_json").is_none(),
+        "runtime_json is internal state and should not leak through TaskInfo"
+    );
 }
 
 #[actix_web::test]

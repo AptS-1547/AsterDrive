@@ -11,7 +11,6 @@ use futures::StreamExt;
 use governor::{Quota, RateLimiter};
 use reqwest::header::{CONTENT_DISPOSITION, CONTENT_LENGTH};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::{Value, json};
 use sha2::Digest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::sleep;
@@ -26,14 +25,13 @@ use crate::services::{
     task_service::{
         TaskInfo, TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
         get_task_in_scope, is_task_lease_lost, is_task_lease_renewal_timed_out, mark_task_progress,
-        mark_task_succeeded, prepare_task_temp_dir,
+        mark_task_succeeded, prepare_task_temp_dir, set_task_runtime_json,
         spec::{self, OfflineDownloadTask, decode_payload_as},
         steps::{
             TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_STORE_RESULT, TASK_STEP_VALIDATE_SOURCE,
             TASK_STEP_VERIFY_SOURCE, TASK_STEP_WAITING, parse_task_steps_json,
             set_task_step_active, set_task_step_succeeded,
         },
-        set_task_runtime_json,
         task_scope,
         types::{
             CreateOfflineDownloadTaskParams, OfflineDownloadTaskPayload, OfflineDownloadTaskResult,
@@ -167,7 +165,10 @@ pub(super) async fn process_offline_download_task(
                     temp_path: temp_path.clone(),
                     expected_sha256: payload.expected_sha256.clone(),
                     max_bytes_per_sec,
-                    runtime_json: task.runtime_json.as_ref().map(|value| value.as_ref().to_string()),
+                    runtime_json: task
+                        .runtime_json
+                        .as_ref()
+                        .map(|value| value.as_ref().to_string()),
                 },
                 &mut steps,
             )
@@ -353,9 +354,9 @@ fn offline_download_engine(
     timeout: StdDuration,
 ) -> Result<Box<dyn OfflineDownloadEngine + Send>> {
     match operations::offline_download_engine(&state.runtime_config) {
-        operations::OfflineDownloadEngine::Builtin => {
-            Ok(Box::new(BuiltinHttpOfflineDownloadEngine::new(max_bytes, timeout)))
-        }
+        operations::OfflineDownloadEngine::Builtin => Ok(Box::new(
+            BuiltinHttpOfflineDownloadEngine::new(max_bytes, timeout),
+        )),
         operations::OfflineDownloadEngine::Aria2 => Ok(Box::new(
             Aria2OfflineDownloadEngine::from_runtime_config(state, max_bytes, timeout)?,
         )),
@@ -535,10 +536,9 @@ impl Aria2OfflineDownloadEngine {
                 rpc_timeout,
             )?,
             split: operations::offline_download_aria2_split(&state.runtime_config),
-            max_connection_per_server:
-                operations::offline_download_aria2_max_connection_per_server(
-                    &state.runtime_config,
-                ),
+            max_connection_per_server: operations::offline_download_aria2_max_connection_per_server(
+                &state.runtime_config,
+            ),
             lowest_speed_limit_bytes_per_sec:
                 operations::offline_download_aria2_lowest_speed_limit_bytes_per_sec(
                     &state.runtime_config,
@@ -546,8 +546,7 @@ impl Aria2OfflineDownloadEngine {
         })
     }
 
-    fn options(&self, request: &OfflineDownloadStartRequest) -> serde_json::Map<String, Value> {
-        let mut options = serde_json::Map::new();
+    fn options(&self, request: &OfflineDownloadStartRequest) -> Aria2AddUriOptions {
         let dir = request
             .temp_path
             .parent()
@@ -558,35 +557,23 @@ impl Aria2OfflineDownloadEngine {
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_else(|| OFFLINE_DOWNLOAD_TEMP_FILE_NAME.to_string());
-        options.insert("dir".to_string(), Value::String(dir));
-        options.insert("out".to_string(), Value::String(out));
-        options.insert("allow-overwrite".to_string(), Value::String("true".to_string()));
-        options.insert(
-            "auto-file-renaming".to_string(),
-            Value::String("false".to_string()),
-        );
-        options.insert("follow-torrent".to_string(), Value::String("false".to_string()));
-        options.insert("follow-metalink".to_string(), Value::String("false".to_string()));
-        options.insert("max-redirect".to_string(), Value::String("0".to_string()));
-        options.insert(
-            "user-agent".to_string(),
-            Value::String(crate::utils::OUTBOUND_HTTP_USER_AGENT.to_string()),
-        );
-        options.insert("split".to_string(), Value::String(self.split.to_string()));
-        options.insert(
-            "max-connection-per-server".to_string(),
-            Value::String(self.max_connection_per_server.to_string()),
-        );
-        if let Some(limit) = self.lowest_speed_limit_bytes_per_sec {
-            options.insert(
-                "lowest-speed-limit".to_string(),
-                Value::String(limit.to_string()),
-            );
+
+        Aria2AddUriOptions {
+            dir,
+            out,
+            allow_overwrite: "true".to_string(),
+            auto_file_renaming: "false".to_string(),
+            follow_torrent: "false".to_string(),
+            follow_metalink: "false".to_string(),
+            max_redirect: "0".to_string(),
+            user_agent: crate::utils::OUTBOUND_HTTP_USER_AGENT.to_string(),
+            split: self.split.to_string(),
+            max_connection_per_server: self.max_connection_per_server.to_string(),
+            lowest_speed_limit: self
+                .lowest_speed_limit_bytes_per_sec
+                .map(|limit| limit.to_string()),
+            max_download_limit: request.max_bytes_per_sec.map(|limit| limit.to_string()),
         }
-        if let Some(limit) = request.max_bytes_per_sec {
-            options.insert("max-download-limit".to_string(), Value::String(limit.to_string()));
-        }
-        options
     }
 }
 
@@ -600,7 +587,8 @@ impl OfflineDownloadEngine for Aria2OfflineDownloadEngine {
         steps: &mut [super::TaskStepInfo],
     ) -> Result<OfflineDownloadComplete> {
         resolve_source_host(&request.url).await?;
-        let mut runtime_state = decode_offline_download_runtime_state(request.runtime_json.as_deref());
+        let mut runtime_state =
+            decode_offline_download_runtime_state(request.runtime_json.as_deref());
         if let Some(previous) = runtime_state.aria2.as_ref()
             && previous.processing_token != lease_guard.lease().processing_token
             && let Err(error) = self.client.force_remove(&previous.gid).await
@@ -670,11 +658,13 @@ impl Aria2OfflineDownloadEngine {
                 declared_content_length = Some(total);
             }
 
-            match status.status.as_str() {
-                "complete" => {
+            match &status.status {
+                Aria2DownloadStatus::Complete => {
                     break;
                 }
-                "active" | "waiting" | "paused" => {
+                Aria2DownloadStatus::Active
+                | Aria2DownloadStatus::Waiting
+                | Aria2DownloadStatus::Paused => {
                     if last_progress.elapsed() >= PROGRESS_UPDATE_INTERVAL {
                         let progress_total = total.max(completed);
                         let status_text = format!("Downloaded {completed} bytes");
@@ -696,18 +686,18 @@ impl Aria2OfflineDownloadEngine {
                         last_progress = Instant::now();
                     }
                 }
-                "error" => {
+                Aria2DownloadStatus::Error => {
                     return Err(AsterError::storage_driver_error(format!(
                         "transient: aria2 offline download failed: {}",
                         status.error_summary()
                     )));
                 }
-                "removed" => {
+                Aria2DownloadStatus::Removed => {
                     return Err(AsterError::storage_driver_error(
                         "transient: aria2 offline download was removed",
                     ));
                 }
-                other => {
+                Aria2DownloadStatus::Unknown(other) => {
                     return Err(AsterError::storage_driver_error(format!(
                         "transient: aria2 offline download entered unsupported status {other}"
                     )));
@@ -734,7 +724,10 @@ impl Aria2OfflineDownloadEngine {
         let sha256 = sha256_file(&request.temp_path).await?;
         verify_expected_sha256(request.expected_sha256.as_deref(), &sha256)?;
         if let Err(error) = self.client.remove_download_result(gid).await {
-            tracing::warn!(gid, "failed to remove completed aria2 download result: {error}");
+            tracing::warn!(
+                gid,
+                "failed to remove completed aria2 download result: {error}"
+            );
         }
 
         Ok(OfflineDownloadComplete {
@@ -777,8 +770,10 @@ async fn persist_offline_download_runtime_state(
     lease_guard: &TaskLeaseGuard,
     runtime_state: &OfflineDownloadRuntimeState,
 ) -> Result<()> {
-    let runtime_json = serde_json::to_string(runtime_state)
-        .map_aster_err_ctx("serialize offline download runtime state", AsterError::internal_error)?;
+    let runtime_json = serde_json::to_string(runtime_state).map_aster_err_ctx(
+        "serialize offline download runtime state",
+        AsterError::internal_error,
+    )?;
     set_task_runtime_json(state, lease_guard, Some(&runtime_json)).await
 }
 
@@ -790,10 +785,8 @@ struct Aria2RpcClient {
 
 impl Aria2RpcClient {
     fn new(endpoint: &str, secret: Option<String>, timeout: StdDuration) -> Result<Self> {
-        let endpoint = Url::parse(endpoint).map_aster_err_ctx(
-            "parse aria2 RPC URL",
-            AsterError::validation_error,
-        )?;
+        let endpoint = Url::parse(endpoint)
+            .map_aster_err_ctx("parse aria2 RPC URL", AsterError::validation_error)?;
         let client = reqwest::Client::builder()
             .timeout(timeout)
             .user_agent(crate::utils::OUTBOUND_HTTP_USER_AGENT)
@@ -806,31 +799,30 @@ impl Aria2RpcClient {
         })
     }
 
-    async fn add_uri(
-        &self,
-        source_url: &str,
-        options: serde_json::Map<String, Value>,
-    ) -> Result<String> {
+    async fn add_uri(&self, source_url: &str, options: Aria2AddUriOptions) -> Result<String> {
         self.call(
-            "aria2.addUri",
-            self.params(json!([source_url]), Some(Value::Object(options))),
+            Aria2RpcMethod::AddUri,
+            self.params(
+                Aria2RpcParam::Uris(vec![source_url.to_string()]),
+                Some(Aria2RpcParam::AddUriOptions(options)),
+            ),
         )
         .await
     }
 
     async fn tell_status(&self, gid: &str) -> Result<Aria2TellStatus> {
         self.call(
-            "aria2.tellStatus",
+            Aria2RpcMethod::TellStatus,
             self.params(
-                Value::String(gid.to_string()),
-                Some(json!([
-                    "gid",
-                    "status",
-                    "totalLength",
-                    "completedLength",
-                    "downloadSpeed",
-                    "errorCode",
-                    "errorMessage"
+                Aria2RpcParam::String(gid.to_string()),
+                Some(Aria2RpcParam::TellStatusKeys(vec![
+                    Aria2TellStatusKey::Gid,
+                    Aria2TellStatusKey::Status,
+                    Aria2TellStatusKey::TotalLength,
+                    Aria2TellStatusKey::CompletedLength,
+                    Aria2TellStatusKey::DownloadSpeed,
+                    Aria2TellStatusKey::ErrorCode,
+                    Aria2TellStatusKey::ErrorMessage,
                 ])),
             ),
         )
@@ -838,28 +830,33 @@ impl Aria2RpcClient {
     }
 
     async fn force_remove(&self, gid: &str) -> Result<()> {
-        self.call_ignore_missing("aria2.forceRemove", gid).await
+        self.call_ignore_missing(Aria2RpcMethod::ForceRemove, gid)
+            .await
     }
 
     async fn remove_download_result(&self, gid: &str) -> Result<()> {
-        self.call_ignore_missing("aria2.removeDownloadResult", gid).await
+        self.call_ignore_missing(Aria2RpcMethod::RemoveDownloadResult, gid)
+            .await
     }
 
-    async fn call_ignore_missing(&self, method: &str, gid: &str) -> Result<()> {
+    async fn call_ignore_missing(&self, method: Aria2RpcMethod, gid: &str) -> Result<()> {
         match self
-            .call::<Value>(method, self.params(Value::String(gid.to_string()), None))
+            .call_raw::<String>(
+                method,
+                self.params(Aria2RpcParam::String(gid.to_string()), None),
+            )
             .await
         {
             Ok(_) => Ok(()),
-            Err(error) if aria2_missing_download_error(&error) => Ok(()),
-            Err(error) => Err(error),
+            Err(Aria2RpcCallError::Rpc { code: 1, .. }) => Ok(()),
+            Err(error) => Err(error.into_aster_error()),
         }
     }
 
-    fn params(&self, first: Value, second: Option<Value>) -> Vec<Value> {
+    fn params(&self, first: Aria2RpcParam, second: Option<Aria2RpcParam>) -> Vec<Aria2RpcParam> {
         let mut params = Vec::new();
         if let Some(secret) = self.secret.as_deref() {
-            params.push(Value::String(format!("token:{secret}")));
+            params.push(Aria2RpcParam::String(format!("token:{secret}")));
         }
         params.push(first);
         if let Some(second) = second {
@@ -868,11 +865,25 @@ impl Aria2RpcClient {
         params
     }
 
-    async fn call<T: DeserializeOwned>(&self, method: &str, params: Vec<Value>) -> Result<T> {
+    async fn call<T: DeserializeOwned>(
+        &self,
+        method: Aria2RpcMethod,
+        params: Vec<Aria2RpcParam>,
+    ) -> Result<T> {
+        self.call_raw(method, params)
+            .await
+            .map_err(Aria2RpcCallError::into_aster_error)
+    }
+
+    async fn call_raw<T: DeserializeOwned>(
+        &self,
+        method: Aria2RpcMethod,
+        params: Vec<Aria2RpcParam>,
+    ) -> std::result::Result<T, Aria2RpcCallError> {
         let request = Aria2JsonRpcRequest {
             jsonrpc: "2.0",
             id: format!("asterdrive-{}", crate::utils::id::new_uuid()),
-            method,
+            method: method.as_str(),
             params,
         };
         let response = self
@@ -881,28 +892,135 @@ impl Aria2RpcClient {
             .json(&request)
             .send()
             .await
-            .map_aster_err_ctx("send aria2 RPC request", transient_storage_error)?;
+            .map_err(|error| {
+                Aria2RpcCallError::Transport(transient_storage_error(format!(
+                    "send aria2 RPC request: {error}"
+                )))
+            })?;
         if !response.status().is_success() {
-            return Err(AsterError::storage_driver_error(format!(
-                "transient: aria2 RPC returned HTTP {}",
-                response.status()
-            )));
+            return Err(Aria2RpcCallError::Transport(
+                AsterError::storage_driver_error(format!(
+                    "transient: aria2 RPC returned HTTP {}",
+                    response.status()
+                )),
+            ));
         }
         let body = response
             .json::<Aria2JsonRpcResponse<T>>()
             .await
-            .map_aster_err_ctx("decode aria2 RPC response", transient_storage_error)?;
+            .map_err(|error| {
+                Aria2RpcCallError::Transport(transient_storage_error(format!(
+                    "decode aria2 RPC response: {error}"
+                )))
+            })?;
         if let Some(error) = body.error {
-            return Err(AsterError::storage_driver_error(format!(
-                "transient: aria2 RPC {method} failed with code {}: {}",
-                error.code, error.message
-            )));
+            return Err(Aria2RpcCallError::Rpc {
+                method: method.as_str(),
+                code: error.code,
+                message: error.message,
+            });
         }
         body.result.ok_or_else(|| {
-            AsterError::storage_driver_error(format!(
-                "transient: aria2 RPC {method} returned no result"
-            ))
+            Aria2RpcCallError::Transport(AsterError::storage_driver_error(format!(
+                "transient: aria2 RPC {} returned no result",
+                method.as_str()
+            )))
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Aria2RpcMethod {
+    AddUri,
+    TellStatus,
+    ForceRemove,
+    RemoveDownloadResult,
+}
+
+impl Aria2RpcMethod {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::AddUri => "aria2.addUri",
+            Self::TellStatus => "aria2.tellStatus",
+            Self::ForceRemove => "aria2.forceRemove",
+            Self::RemoveDownloadResult => "aria2.removeDownloadResult",
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum Aria2RpcParam {
+    String(String),
+    Uris(Vec<String>),
+    AddUriOptions(Aria2AddUriOptions),
+    TellStatusKeys(Vec<Aria2TellStatusKey>),
+}
+
+#[derive(Debug, Serialize)]
+struct Aria2AddUriOptions {
+    dir: String,
+    out: String,
+    #[serde(rename = "allow-overwrite")]
+    allow_overwrite: String,
+    #[serde(rename = "auto-file-renaming")]
+    auto_file_renaming: String,
+    #[serde(rename = "follow-torrent")]
+    follow_torrent: String,
+    #[serde(rename = "follow-metalink")]
+    follow_metalink: String,
+    #[serde(rename = "max-redirect")]
+    max_redirect: String,
+    #[serde(rename = "user-agent")]
+    user_agent: String,
+    split: String,
+    #[serde(rename = "max-connection-per-server")]
+    max_connection_per_server: String,
+    #[serde(rename = "lowest-speed-limit", skip_serializing_if = "Option::is_none")]
+    lowest_speed_limit: Option<String>,
+    #[serde(rename = "max-download-limit", skip_serializing_if = "Option::is_none")]
+    max_download_limit: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+enum Aria2TellStatusKey {
+    #[serde(rename = "gid")]
+    Gid,
+    #[serde(rename = "status")]
+    Status,
+    #[serde(rename = "totalLength")]
+    TotalLength,
+    #[serde(rename = "completedLength")]
+    CompletedLength,
+    #[serde(rename = "downloadSpeed")]
+    DownloadSpeed,
+    #[serde(rename = "errorCode")]
+    ErrorCode,
+    #[serde(rename = "errorMessage")]
+    ErrorMessage,
+}
+
+enum Aria2RpcCallError {
+    Rpc {
+        method: &'static str,
+        code: i64,
+        message: String,
+    },
+    Transport(AsterError),
+}
+
+impl Aria2RpcCallError {
+    fn into_aster_error(self) -> AsterError {
+        match self {
+            Self::Rpc {
+                method,
+                code,
+                message,
+            } => AsterError::storage_driver_error(format!(
+                "transient: aria2 RPC {method} failed with code {code}: {message}"
+            )),
+            Self::Transport(error) => error,
+        }
     }
 }
 
@@ -911,7 +1029,7 @@ pub(super) struct Aria2JsonRpcRequest<'a> {
     jsonrpc: &'static str,
     id: String,
     method: &'a str,
-    params: Vec<Value>,
+    params: Vec<Aria2RpcParam>,
 }
 
 #[derive(Deserialize)]
@@ -928,7 +1046,7 @@ struct Aria2JsonRpcError {
 
 #[derive(Debug, Deserialize)]
 struct Aria2TellStatus {
-    status: String,
+    status: Aria2DownloadStatus,
     #[serde(rename = "totalLength", default)]
     total_length: String,
     #[serde(rename = "completedLength", default)]
@@ -937,6 +1055,35 @@ struct Aria2TellStatus {
     error_code: Option<String>,
     #[serde(rename = "errorMessage", default)]
     error_message: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Aria2DownloadStatus {
+    Active,
+    Waiting,
+    Paused,
+    Error,
+    Complete,
+    Removed,
+    Unknown(String),
+}
+
+impl<'de> Deserialize<'de> for Aria2DownloadStatus {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "active" => Self::Active,
+            "waiting" => Self::Waiting,
+            "paused" => Self::Paused,
+            "error" => Self::Error,
+            "complete" => Self::Complete,
+            "removed" => Self::Removed,
+            _ => Self::Unknown(value),
+        })
+    }
 }
 
 impl Aria2TellStatus {
@@ -952,10 +1099,6 @@ impl Aria2TellStatus {
     }
 }
 
-fn aria2_missing_download_error(error: &AsterError) -> bool {
-    matches!(error, AsterError::StorageDriverError(message) if message.contains("code 1"))
-}
-
 fn parse_aria2_length(value: &str, field: &str) -> Result<i64> {
     if value.trim().is_empty() {
         return Ok(0);
@@ -967,23 +1110,25 @@ fn parse_aria2_length(value: &str, field: &str) -> Result<i64> {
 }
 
 async fn downloaded_file_size(path: &Path) -> Result<i64> {
-    let metadata = tokio::fs::metadata(path)
-        .await
-        .map_aster_err_ctx("stat offline download temp file", AsterError::storage_driver_error)?;
+    let metadata = tokio::fs::metadata(path).await.map_aster_err_ctx(
+        "stat offline download temp file",
+        AsterError::storage_driver_error,
+    )?;
     u64_to_i64(metadata.len(), "offline download temp file size")
 }
 
 async fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = tokio::fs::File::open(path)
-        .await
-        .map_aster_err_ctx("open offline download temp file", AsterError::storage_driver_error)?;
+    let mut file = tokio::fs::File::open(path).await.map_aster_err_ctx(
+        "open offline download temp file",
+        AsterError::storage_driver_error,
+    )?;
     let mut hasher = crate::utils::hash::new_sha256();
     let mut buffer = vec![0_u8; 64 * 1024];
     loop {
-        let read = file
-            .read(&mut buffer)
-            .await
-            .map_aster_err_ctx("read offline download temp file", AsterError::storage_driver_error)?;
+        let read = file.read(&mut buffer).await.map_aster_err_ctx(
+            "read offline download temp file",
+            AsterError::storage_driver_error,
+        )?;
         if read == 0 {
             break;
         }
@@ -1354,6 +1499,7 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     use serde_json::Value;
+    use serde_json::json;
 
     use super::*;
 
@@ -1585,10 +1731,16 @@ mod tests {
             runtime_json: None,
         };
 
-        let options = engine.options(&request);
+        let options = serde_json::to_value(engine.options(&request)).unwrap();
 
-        assert_eq!(options.get("dir"), Some(&Value::String("/tmp/asterdrive-task".to_string())));
-        assert_eq!(options.get("out"), Some(&Value::String("source".to_string())));
+        assert_eq!(
+            options.get("dir"),
+            Some(&Value::String("/tmp/asterdrive-task".to_string()))
+        );
+        assert_eq!(
+            options.get("out"),
+            Some(&Value::String("source".to_string()))
+        );
         assert_eq!(options.get("split"), Some(&Value::String("4".to_string())));
         assert_eq!(
             options.get("max-connection-per-server"),
@@ -1603,7 +1755,7 @@ mod tests {
             Some(&Value::String("1024".to_string()))
         );
         assert!(
-            !options.contains_key("max-overall-download-limit"),
+            options.get("max-overall-download-limit").is_none(),
             "task-level settings must not mutate aria2 global bandwidth limits"
         );
     }
@@ -1618,12 +1770,161 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            client.params(Value::String("gid-1".to_string()), None),
-            vec![
-                Value::String("token:rpc-secret".to_string()),
-                Value::String("gid-1".to_string())
-            ]
+            serde_json::to_value(client.params(Aria2RpcParam::String("gid-1".to_string()), None))
+                .unwrap(),
+            json!(["token:rpc-secret", "gid-1"])
         );
+    }
+
+    #[test]
+    fn aria2_add_uri_params_match_json_rpc_shape() {
+        let client = Aria2RpcClient::new(
+            "http://127.0.0.1:6800/jsonrpc",
+            Some("rpc-secret".to_string()),
+            StdDuration::from_secs(1),
+        )
+        .unwrap();
+        let options = Aria2AddUriOptions {
+            dir: "/tmp/task".to_string(),
+            out: "source".to_string(),
+            allow_overwrite: "true".to_string(),
+            auto_file_renaming: "false".to_string(),
+            follow_torrent: "false".to_string(),
+            follow_metalink: "false".to_string(),
+            max_redirect: "0".to_string(),
+            user_agent: "AsterDrive-test".to_string(),
+            split: "1".to_string(),
+            max_connection_per_server: "1".to_string(),
+            lowest_speed_limit: None,
+            max_download_limit: Some("1024".to_string()),
+        };
+
+        assert_eq!(
+            serde_json::to_value(client.params(
+                Aria2RpcParam::Uris(vec!["https://example.com/".to_string()]),
+                Some(Aria2RpcParam::AddUriOptions(options))
+            ))
+            .unwrap(),
+            json!([
+                "token:rpc-secret",
+                ["https://example.com/"],
+                {
+                    "dir": "/tmp/task",
+                    "out": "source",
+                    "allow-overwrite": "true",
+                    "auto-file-renaming": "false",
+                    "follow-torrent": "false",
+                    "follow-metalink": "false",
+                    "max-redirect": "0",
+                    "user-agent": "AsterDrive-test",
+                    "split": "1",
+                    "max-connection-per-server": "1",
+                    "max-download-limit": "1024"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn aria2_rpc_params_omit_secret_when_absent() {
+        let client = Aria2RpcClient::new(
+            "http://127.0.0.1:6800/jsonrpc",
+            None,
+            StdDuration::from_secs(1),
+        )
+        .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(client.params(Aria2RpcParam::String("gid-1".to_string()), None))
+                .unwrap(),
+            json!(["gid-1"])
+        );
+    }
+
+    #[test]
+    fn aria2_options_omit_optional_limits_when_unset() {
+        let engine = Aria2OfflineDownloadEngine {
+            max_bytes: 1024,
+            download_timeout: StdDuration::from_secs(60),
+            client: Aria2RpcClient::new(
+                "http://127.0.0.1:6800/jsonrpc",
+                None,
+                StdDuration::from_secs(1),
+            )
+            .unwrap(),
+            split: 1,
+            max_connection_per_server: 1,
+            lowest_speed_limit_bytes_per_sec: None,
+        };
+        let request = OfflineDownloadStartRequest {
+            url: Url::parse("https://example.com/file.bin").unwrap(),
+            temp_path: PathBuf::from("/tmp/asterdrive-task/source"),
+            expected_sha256: None,
+            max_bytes_per_sec: None,
+            runtime_json: None,
+        };
+
+        let options = engine.options(&request);
+
+        let options = serde_json::to_value(options).unwrap();
+        assert!(options.get("lowest-speed-limit").is_none());
+        assert!(options.get("max-download-limit").is_none());
+        assert!(options.get("max-overall-download-limit").is_none());
+    }
+
+    #[test]
+    fn aria2_rpc_call_error_preserves_structured_code_until_conversion() {
+        let missing = Aria2RpcCallError::Rpc {
+            method: "aria2.forceRemove",
+            code: 1,
+            message: "GID not found".to_string(),
+        };
+        assert!(matches!(missing, Aria2RpcCallError::Rpc { code: 1, .. }));
+
+        let other = Aria2RpcCallError::Rpc {
+            method: "aria2.forceRemove",
+            code: 10,
+            message: "other failure".to_string(),
+        };
+        assert!(!matches!(other, Aria2RpcCallError::Rpc { code: 1, .. }));
+
+        let converted = other.into_aster_error();
+        assert!(matches!(
+            converted,
+            AsterError::StorageDriverError(message)
+                if message.contains("aria2.forceRemove failed with code 10: other failure")
+        ));
+    }
+
+    #[test]
+    fn aria2_download_status_deserializes_known_and_unknown_values() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            status: Aria2DownloadStatus,
+        }
+
+        assert!(matches!(
+            serde_json::from_str::<Wrapper>(r#"{"status":"active"}"#)
+                .unwrap()
+                .status,
+            Aria2DownloadStatus::Active
+        ));
+        assert!(matches!(
+            serde_json::from_str::<Wrapper>(r#"{"status":"future"}"#)
+                .unwrap()
+                .status,
+            Aria2DownloadStatus::Unknown(value) if value == "future"
+        ));
+    }
+
+    #[test]
+    fn parse_aria2_length_handles_empty_and_rejects_invalid_or_oversized_values() {
+        assert_eq!(parse_aria2_length("", "aria2 totalLength").unwrap(), 0);
+        assert_eq!(parse_aria2_length("0", "aria2 totalLength").unwrap(), 0);
+        assert_eq!(parse_aria2_length("42", "aria2 totalLength").unwrap(), 42);
+        assert!(parse_aria2_length("-1", "aria2 totalLength").is_err());
+        assert!(parse_aria2_length("not-a-number", "aria2 totalLength").is_err());
+        assert!(parse_aria2_length(&u64::MAX.to_string(), "aria2 totalLength").is_err());
     }
 
     #[test]
@@ -1640,5 +1941,20 @@ mod tests {
         let aria2 = decoded.aria2.unwrap();
         assert_eq!(aria2.gid, "abc123");
         assert_eq!(aria2.processing_token, 7);
+    }
+
+    #[test]
+    fn offline_download_runtime_state_ignores_missing_blank_and_invalid_json() {
+        assert!(decode_offline_download_runtime_state(None).aria2.is_none());
+        assert!(
+            decode_offline_download_runtime_state(Some("  "))
+                .aria2
+                .is_none()
+        );
+        assert!(
+            decode_offline_download_runtime_state(Some("{not-json"))
+                .aria2
+                .is_none()
+        );
     }
 }

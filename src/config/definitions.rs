@@ -824,9 +824,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         label_i18n_key: "settings_item_offline_download_aria2_split_label",
         description_i18n_key: "settings_item_offline_download_aria2_split_desc",
         value_type: SystemConfigValueType::Number,
-        default_fn: || {
-            crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_ARIA2_SPLIT.to_string()
-        },
+        default_fn: || crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_ARIA2_SPLIT.to_string(),
         requires_restart: false,
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
