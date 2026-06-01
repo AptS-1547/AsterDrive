@@ -86,6 +86,8 @@ Opaque keys are not content hashes and are never merged across policies. If the 
 
 `filename`, `target_folder_id`, and `expected_sha256` are optional. The server stores a redacted source URL in `payload.source_display_url`. On success, `result` includes the imported `file_id`, `file_name`, `folder_id`, `file_path`, `source_display_url`, `content_length`, and actual `sha256`.
 
+The link-import engine is selected by administrator runtime config, not by the task request body. Switching between the built-in downloader and aria2 does not change the task kind, create request, `payload`, or `result` shape. When aria2 is used, the execution GID is persisted as internal runtime metadata in `background_tasks.runtime_json` for diagnostics and recovery boundaries; it is not a public API field.
+
 ## Pagination
 
 List endpoints use offset pagination:
@@ -129,7 +131,7 @@ Lists and details return `TaskInfo`, with fields such as:
 - `created_at`
 - `updated_at`
 
-`payload` and `result` are structured objects, not the old `payload_json` / `result_json` fields. `steps` gives per-stage state and progress. `can_retry = true` appears only for failed tasks that allow manual retry.
+`payload` and `result` are structured objects, not the old `payload_json` / `result_json` fields. Internal execution state is not exposed through `TaskInfo`; for example, the aria2 engine persists its GID in `background_tasks.runtime_json`, not in `payload` or `result`. `steps` gives per-stage state and progress. `can_retry = true` appears only for failed tasks that allow manual retry.
 
 ## Current task kinds and statuses
 
@@ -172,6 +174,6 @@ If the task is not failed, the API returns `400`.
 - `/batch/archive-compress` and `/files/{id}/extract` do create visible background tasks
 - archive preview endpoints return `202` while generation is queued; clients should retry the original endpoint
 - `DELETE /trash` creates `trash_purge_all` instead of synchronously emptying trash
-- `/tasks/offline-download` returns `TaskInfo` immediately; progress should be shown in the task center
+- `/tasks/offline-download` returns `TaskInfo` immediately; progress should be shown in the task center; clients should not pass an engine choice in the request body
 - `/admin/storage-migrations/dry-run` does not create a task; `POST /admin/storage-migrations` does
 - `POST /admin/file-blobs/maintenance` creates `blob_maintenance`

@@ -92,6 +92,8 @@
 
 其中 `filename`、`target_folder_id` 和 `expected_sha256` 都可省略。服务端会把源地址脱敏后写入 `payload.source_display_url`，任务完成后 `result` 会包含导入后的 `file_id`、`file_name`、`folder_id`、`file_path`、`source_display_url`、`content_length` 和实际 `sha256`。
 
+链接导入引擎由管理员运行时配置决定，任务 API 不需要也不能指定引擎。无论使用内置下载器还是 aria2，引擎切换都不会改变任务类型、创建请求体、`payload` 和 `result` 结构。aria2 执行期的 GID 会作为内部运行时元数据写入 `background_tasks.runtime_json`，用于失败诊断和恢复边界，不作为公开 API 字段返回。
+
 ## 分页
 
 列表接口都使用 offset 分页参数：
@@ -139,6 +141,7 @@
 
 - `creator` 是创建者用户摘要；系统运行任务和缩略图任务通常为 `null`
 - `payload` / `result` 已经是结构化对象，不再是旧文档里说的 `payload_json` / `result_json`
+- 执行期内部状态不会出现在 `TaskInfo` 里；例如 aria2 引擎的 GID 会持久化在 `background_tasks.runtime_json`，但不会放进 `payload` 或 `result`
 - `steps` 会给出更细的阶段状态、阶段进度和阶段文案
 - `can_retry = true` 目前只在 `status = failed` 且失败类型允许手动重试时出现
 - `progress_total <= 0` 时，成功任务的 `progress_percent` 会直接视为 `100`
@@ -179,7 +182,7 @@
 - `storage_policy_temp_cleanup`：强制删除存储策略后，兜底清理遗留的临时对象和 multipart upload
 - `storage_policy_migration`：管理员发起的跨策略 blob 迁移任务，支持 checkpoint 恢复
 - `blob_maintenance`：管理员发起的 blob 维护任务，支持完整性检查、引用计数修复和孤儿 blob 清理
-- `offline_download`：从 HTTP/HTTPS 链接下载文件并导入到工作空间；任务过程是流式下载到临时文件，再做 SHA-256 校验和入库，不会把整文件先塞进内存
+- `offline_download`：从 HTTP/HTTPS 链接下载文件并导入到工作空间；默认内置引擎会流式下载到临时文件，再做 SHA-256 校验和入库，不会把整文件先塞进内存；如果管理员启用 aria2，引擎差异对任务 API 透明
 
 ## `POST /tasks/{id}/retry`
 
@@ -199,7 +202,7 @@
 - `/batch/archive-compress` 和 `/files/{id}/extract` 才会真正创建这里能看到的后台任务
 - `/files/{id}/archive-preview` 和公开分享归档预览接口第一次命中未生成缓存时，会创建 `archive_preview_generate`；接口本身返回 `202`，前端应稍后重试原接口，而不是轮询任务详情作为唯一入口
 - `DELETE /trash` 和团队对应接口不会同步清空回收站，而是创建 `trash_purge_all` 任务并返回 `TaskInfo`
-- `/tasks/offline-download` 和团队对应接口会创建 `offline_download` 任务并立即返回 `TaskInfo`；前端应在任务中心展示进度，不要等待请求同步完成下载
+- `/tasks/offline-download` 和团队对应接口会创建 `offline_download` 任务并立即返回 `TaskInfo`；前端应在任务中心展示进度，不要等待请求同步完成下载；引擎选择由管理员配置控制，不应由客户端请求体传入
 - `/admin/storage-migrations/dry-run` 只做预检查，不创建任务；`POST /admin/storage-migrations` 才会创建 `storage_policy_migration`
 - `POST /admin/file-blobs/maintenance` 会创建 `blob_maintenance`，`integrity_check` 不写入 blob，`ref_count_reconcile` 只修正引用计数，`orphan_cleanup` 会先重新核算引用再清理仍然无引用的 blob
 

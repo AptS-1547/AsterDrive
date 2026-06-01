@@ -311,6 +311,10 @@ Runtime config entries defined by the system cannot be deleted; custom entries c
 
 Admin task APIs can see system tasks and blob-level cache tasks that ordinary users normally cannot see.
 
+Link import is controlled by the `offline_download_*` runtime config keys. `offline_download_engine` accepts `builtin` or `aria2` and defaults to `builtin`; file size, per-task speed, concurrency, and request timeout apply to both engines. When `offline_download_engine = aria2`, the aria2 RPC URL, RPC secret, RPC timeout, split, per-server connection count, and low-speed limit keys configure the administrator-managed aria2 JSON-RPC daemon. AsterDrive does not pass through arbitrary aria2 options, and the per-task speed limit maps to aria2 `max-download-limit`, not a daemon-wide limit.
+
+When aria2 is enabled, AsterDrive still validates the HTTP/HTTPS source URL before dispatching the task, but the aria2 daemon performs its own DNS resolution and outbound connection. Operators should isolate the daemon at the network layer and restrict the JSON-RPC endpoint to AsterDrive.
+
 ## Operational notes
 
 - Admin endpoints are intentionally grouped around operational ownership: storage, users, teams, shares, tasks, config, locks, audit, and observability.

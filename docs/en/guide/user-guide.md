@@ -187,12 +187,12 @@ When creating the task, you can fill in:
 
 Link import creates a background task. It does not block the page. Check progress in the current workspace's `Task Center`; tasks created in a team space only appear in that team's task center.
 
-Administrators can limit the maximum file size, per-task download speed, number of concurrent link-import tasks, and request timeout. When a limit is exceeded, the task fails and the task details show the reason.
+Administrators can limit the maximum file size, per-task download speed, number of concurrent link-import tasks, and request timeout. They can also choose the built-in downloader or an administrator-managed aria2 engine. When a limit is exceeded, the task fails and the task details show the reason.
 
 The UI shows the speed limit in MB/s because it is easier for most users to understand than Mbps. The backend setting still uses bytes-per-second internally.
 
 ::: tip Not every link is allowed
-To prevent the server from being used to reach internal or metadata addresses, link import only supports HTTP/HTTPS and rejects hosts that resolve to loopback, private, link-local, multicast, documentation, or cloud metadata ranges. The current implementation does not follow HTTP redirects. If the source site returns a redirect, use the final direct download URL instead.
+To prevent the server from being used to reach internal or metadata addresses, link import only supports HTTP/HTTPS and rejects hosts that resolve to loopback, private, link-local, multicast, documentation, or cloud metadata ranges. The current implementation does not follow HTTP redirects. If the source site returns a redirect, use the final direct download URL instead. If the site enables the aria2 engine, AsterDrive still performs these checks first, but the actual outbound connection is made by the administrator-managed aria2 service.
 :::
 
 ## Trash

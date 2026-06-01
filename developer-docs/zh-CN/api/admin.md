@@ -518,10 +518,17 @@
 - `background_task_storage_migration_max_concurrency`
 - `share_download_rollback_queue_capacity`
 - `share_stream_session_ttl_secs`
+- `offline_download_engine`
 - `offline_download_max_file_size_bytes`
 - `offline_download_max_mb_per_sec`
 - `offline_download_max_concurrency`
 - `offline_download_request_timeout_secs`
+- `offline_download_aria2_rpc_url`
+- `offline_download_aria2_rpc_secret`
+- `offline_download_aria2_request_timeout_secs`
+- `offline_download_aria2_split`
+- `offline_download_aria2_max_connection_per_server`
+- `offline_download_aria2_lowest_speed_limit_bytes_per_sec`
 - `archive_extract_max_source_bytes`
 - `archive_extract_max_uncompressed_bytes`
 - `archive_extract_max_entries`
@@ -556,7 +563,11 @@
 
 `POST /admin/config/media_processing_registry_json/action` 支持 `test_vips_cli`、`test_ffmpeg_cli` 和 `test_ffprobe_cli`，会用当前草稿注册表或已保存注册表里的命令执行探测，适用于二进制文件改名、不在 PATH 下，或安装在自定义路径的环境。
 
-链接导入由 `offline_download_*` 四个键控制：最大文件大小、单任务速度上限、任务并发数和单次请求超时。速度键 `offline_download_max_mb_per_sec` 的单位是 MB/s，值为 `0` 表示不限速；后端下载过程会流式写入临时文件，再校验 SHA-256 并导入工作空间。
+链接导入由 `offline_download_*` 键控制。`offline_download_engine` 可选 `builtin` 或 `aria2`，默认 `builtin`；文件大小、单任务速度上限、任务并发数和请求超时对两种引擎都生效。速度键 `offline_download_max_mb_per_sec` 的单位是 MB/s，值为 `0` 表示不限速；在 aria2 引擎下会映射为单任务的 `max-download-limit`，不是全局 daemon 限速。
+
+`offline_download_aria2_rpc_url`、`offline_download_aria2_rpc_secret`、`offline_download_aria2_request_timeout_secs`、`offline_download_aria2_split`、`offline_download_aria2_max_connection_per_server` 和 `offline_download_aria2_lowest_speed_limit_bytes_per_sec` 只在 `offline_download_engine = aria2` 时使用。RPC URL 只能是 HTTP(S) 且不能带账号密码；RPC secret 是敏感配置，读取时会脱敏。AsterDrive 不透传任意 aria2 参数，只暴露这些管理员控制的安全子集。启用 aria2 时，AsterDrive 仍会在派发前校验 HTTP/HTTPS URL，但 aria2 守护进程会自行 DNS 解析和出站连接；部署时应隔离 aria2 网络，并限制 JSON-RPC 端点只允许 AsterDrive 访问。
+
+内置引擎会把下载流式写入临时文件，再校验 SHA-256 并导入工作空间，不会把整文件先塞进内存。
 
 邮箱验证码 MFA 由 `auth_email_code_login_*` 四个键控制。启用 `auth_email_code_login_enabled` 前，SMTP host、发件人地址必须完整，SMTP 用户名和密码也必须成对配置；如果后续邮件关键配置被改到不可投递状态，服务端会自动把 `auth_email_code_login_enabled` 写回 `false`。邮件正文和主题使用 `mail_template_login_email_code_subject` / `mail_template_login_email_code_html`。
 
