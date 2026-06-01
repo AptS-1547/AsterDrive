@@ -5,12 +5,7 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Duration, Utc};
-use rsa::{
-    BoxedUint, RsaPublicKey,
-    pkcs1v15::{Signature, VerifyingKey},
-    signature::Verifier,
-};
-use sha2::Sha256;
+use ring::signature::{RSA_PKCS1_2048_8192_SHA256, RsaPublicKeyComponents};
 
 use crate::errors::{AsterError, Result};
 
@@ -25,7 +20,8 @@ pub(crate) struct WopiProofKeySet {
 
 #[derive(Debug, Clone)]
 struct WopiProofPublicKey {
-    key: RsaPublicKey,
+    modulus: Vec<u8>,
+    exponent: Vec<u8>,
 }
 
 pub(crate) fn parse_wopi_proof_key_set(
@@ -35,7 +31,8 @@ pub(crate) fn parse_wopi_proof_key_set(
     old_exponent: Option<&str>,
 ) -> Result<WopiProofKeySet> {
     let current = WopiProofPublicKey {
-        key: parse_wopi_rsa_key(current_modulus, current_exponent)?,
+        modulus: parse_wopi_key_component(current_modulus, "modulus")?,
+        exponent: parse_wopi_key_component(current_exponent, "exponent")?,
     };
     let old = match (
         old_modulus.map(str::trim).filter(|value| !value.is_empty()),
@@ -45,7 +42,8 @@ pub(crate) fn parse_wopi_proof_key_set(
     ) {
         (None, None) => None,
         (Some(modulus), Some(exponent)) => Some(WopiProofPublicKey {
-            key: parse_wopi_rsa_key(modulus, exponent)?,
+            modulus: parse_wopi_key_component(modulus, "old modulus")?,
+            exponent: parse_wopi_key_component(exponent, "old exponent")?,
         }),
         _ => {
             return Err(AsterError::validation_error(
@@ -94,19 +92,21 @@ pub(crate) fn validate_wopi_proof(
     ))
 }
 
-fn parse_wopi_rsa_key(modulus: &str, exponent: &str) -> Result<RsaPublicKey> {
-    let modulus = STANDARD
-        .decode(modulus.trim())
-        .map_err(|_| AsterError::validation_error("WOPI proof-key modulus must be valid base64"))?;
-    let exponent = STANDARD.decode(exponent.trim()).map_err(|_| {
-        AsterError::validation_error("WOPI proof-key exponent must be valid base64")
+fn parse_wopi_key_component(encoded: &str, name: &str) -> Result<Vec<u8>> {
+    let decoded = STANDARD.decode(encoded.trim()).map_err(|_| {
+        AsterError::validation_error(format!("WOPI proof-key {name} must be valid base64"))
     })?;
-
-    RsaPublicKey::new(
-        BoxedUint::from_be_slice_vartime(&modulus),
-        BoxedUint::from_be_slice_vartime(&exponent),
-    )
-    .map_err(|error| AsterError::validation_error(format!("invalid WOPI proof-key: {error}")))
+    let first_nonzero = decoded
+        .iter()
+        .position(|value| *value != 0)
+        .unwrap_or(decoded.len());
+    let trimmed = decoded[first_nonzero..].to_vec();
+    if trimmed.is_empty() {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {name} must not be zero"
+        )));
+    }
+    Ok(trimmed)
 }
 
 fn parse_wopi_timestamp(timestamp: Option<&str>) -> Result<i64> {
@@ -162,11 +162,17 @@ fn verify_wopi_signature(
     let decoded_signature = STANDARD
         .decode(encoded_signature.trim())
         .map_err(|_| AsterError::internal_error("WOPI proof signature must be valid base64"))?;
-    let signature = Signature::try_from(decoded_signature.as_slice()).map_err(|_| {
-        AsterError::internal_error("WOPI proof signature is not a valid RSA PKCS#1 blob")
-    })?;
-    let verifying_key = VerifyingKey::<Sha256>::new(key.key.clone());
-    Ok(verifying_key.verify(expected_proof, &signature).is_ok())
+    let public_key = RsaPublicKeyComponents {
+        n: key.modulus.as_slice(),
+        e: key.exponent.as_slice(),
+    };
+    Ok(public_key
+        .verify(
+            &RSA_PKCS1_2048_8192_SHA256,
+            expected_proof,
+            &decoded_signature,
+        )
+        .is_ok())
 }
 
 fn dotnet_ticks(value: DateTime<Utc>) -> i64 {
@@ -177,37 +183,115 @@ fn dotnet_ticks(value: DateTime<Utc>) -> i64 {
 mod tests {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use chrono::{Duration, Utc};
-    use rsa::{
-        RsaPrivateKey,
-        pkcs1v15::SigningKey,
-        signature::{SignatureEncoding, Signer},
-        traits::PublicKeyParts,
+    use ring::{
+        rand::SystemRandom,
+        signature::{RSA_PKCS1_SHA256, RsaKeyPair, RsaPublicKeyComponents},
     };
-    use sha2::Sha256;
 
     use super::{
         WopiProofKeySet, build_expected_proof, dotnet_ticks, parse_wopi_proof_key_set,
         validate_wopi_proof,
     };
 
-    fn build_test_keys() -> (RsaPrivateKey, RsaPrivateKey, WopiProofKeySet) {
-        let mut rng = rand::rng();
-        let current = RsaPrivateKey::new(&mut rng, 2048).unwrap();
-        let old = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+    const CURRENT_PRIVATE_KEY: &str = r#"
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEAvLjzLcWtd+Rn5EKEGSEt7HsRUg6rQd9rc+CF4tPYOOMEKTyB
+M5z9mWWV6+IMNDRh57E+3QAPAIthcBqEkws7aIHA3bm0owFFt1E1UGmfDoJWLJvT
+oGUkuL//qWTHXdxVID5fNHSpksfPQcxoIPSqhgP3AQkzsi06taFehYSZeUBcctPm
+Px0LPfamGy9yd28CtC0MpIUkpp8Y3iDfx4CyOoNxymxEIpM9O86IpiyP3jZ3qNA+
+ldP4dYaWfw2aDKA+xt8VcAJ8ONHR9lZBzJxiUl3ouz/j5sgCAkQHgviPuZ9GtyXG
+uqGuztg33ktjPP+Nt3hNOO6/BMM1bI1xLN5yEQIDAQABAoIBAAhyKofw4duMwE2J
+4ImTX4/Gzjai620uR4vPD47gNjwNhOEnkQyzSPI1hqkg27T2Zy9MUmjnmMRIeJrg
+xPAjv4vkyrHhnsDwzKLwoncv0ut+T8b9TlJOVH9kMFfvZ7C+rJydzfr2AaTNBmyG
+bl6TNJJ82PAV7ldaCNeaGjXVglzXvalw3vXalh2UHXkGWxWDr9G4/y3iF52L1gDD
+OH8o82cQXEm/yAbFeWtPERtkxWpsEQTOxnrqYdQeJ18tWIEQVFtGl6wCjYHYFqaw
+n1xdo6Lr87oSqxNnpNFDrhHNeKlC+c5cWyA51TR3z0u/ZS7z24idcCZJebb6XDo6
+Fr+3u8UCgYEA/j2OzVExgFJQ8Nu3r2QyIweMEjBbxjt2Y6xK4mvpo5VrWq5llBpj
+zCzn8AJSxHQqdXBgK+6zuQuTeWQz3YIC49/NZ/2aGdcusuTdTNN8yqrX5IXOWwAJ
+YRW7dLRq6fJ+vhTtOSaOS8BCRQmF6YWzvOzSbwFtpri4Ih919ZGZvRMCgYEAvgdQ
+D1owrFXZov5es8/gJoMZLNOJr3LM7QDZzrcyohBimVNbdWrFYGf5U2J8l+aOod8U
+DUSu48+MVttrs22mvrN9TTV3AK1vDsQHZdSjpp44XZWB1/kZNWZWLqbK4SdByFIU
+z9zJKLnVP8QKQpw8JkmPMfHirT+62D8vqYi47MsCgYEA2+qBiMYvzHDnxMA5zkQc
+PkK7/cvIxtsOmD8jc2Gm8rI/72ulQAvnwWgipHBOCdL2Gym+dqH+4hTKVxm+518b
+guNHOSmbz7hbk7D2YAscCe7n2quHiR2p/0meIeAiDwWMbn2JiYL5WTsP18naBNp7
+U/OCPzT8FVf5JsMR9P4h/vMCgYBO7dCmH8r5ucrk9Yy2WRB8TpWlVdPpiOBvTJwr
+TVJ9mBqsHsBtO8Txrx4TMWQY3828lGDKxg1yWCGtbgQFCfVpXjocWKmuIVtwoaGE
+/VZf/XXiARhmcXO0B2aih+rarCiZoOY+FDGFdfKKQs4ULrqZGJKepx6E4WSlL1GH
+tF9DEwKBgQDnZskrCh32LTbUPIsL/0dmOb8N4/PCTQbjfYksUhATzh4P70NjI7e0
+4ZhQ2zrejfnc3k+fWn2GIlkckwosLAI6f/A7ZTh8CTAPtKOXpNZAh24r5yDYRdI9
+F6gxJgCziHksLP4HsC5JC5RoOoSOPQclCtnS/1wUWyArvcWzVU/JUw==
+-----END RSA PRIVATE KEY-----
+"#;
+
+    const OLD_PRIVATE_KEY: &str = r#"
+-----BEGIN RSA PRIVATE KEY-----
+MIIEogIBAAKCAQEAvcp/R2SvETmScvR9YgyB2Y/4Vxj8+MWfYfh7RFFTWEP84vOP
+PaqmLzxAwOAYZBE5/beEaGaxwro+bdXcqsCrWhTJDtAO2+6NCBXFd+FV8Y4s/Mpc
+KRzEvOiquIn9gdT4QAd25HkYQ0EZrVSzFA4FKblDFmfYNCkDRANbXhtihhJTXgEx
+8ffa/j5sNhit+A8f+9uF56gWGD5FVYAjIiVzFmqzD7tHENKd6rnJDYNfvPJfJYn6
+vMfKC44ixsthZA00AZ5lD95hBLl1jrGkHyhsJy9iIqDrT/uQLH7WgeRRqPTkC4DM
+BIMDqdb8g+rIg6qm2+jhUAQSnn8M70qfJ+GE8wIDAQABAoIBACjf7EKRfhzNE+vb
+GQfdXrffCGKluJHRag6dB9tCUptfZR7xyqdC0fC5Xs7LVKV0ilNIy2T6vQ0NtHVO
+Smyh+yV29YhRqemW+lvD6Jf1eV+BOdIluOyHzB1NVLtSyLzGA8MyeFojdGTDqAaL
+B9hpXpZKVpcEPW2aaaAjwvFFH5Z1C28OlkdCk7f4qE1HYLk0bF9rUpjExz5GwFnE
+8Rmvc6pml/eI7eHY+WddWeJnXHvhiw6tCo0HJgscksjDZn+OscHZSEQmyoQ7wEQI
+B6TdBVSFawvOevopUXfO8eYTwHyhKUnArEgE/fNXBg78FMhE7y9PPRKEhaJCXsh+
+PUmTmGECgYEA9VK2UrDtljP8wpgoApJOm7+rA6DHY+kqGnYWabDleAoFH/H2eXoc
+TmLNulme5giX/dY7WJ9qBH1yK3UZ8TQRz5+9BxdhDpo4LRjUEOuuzolDtm1hqlUW
+hE4DY+VL2x7+/SO2rHQCIYniyKil7FJ3Ym3jOoPIDoNmXUn2FpCiMeECgYEAxg0R
+zkoQ6pwy6XPeAZEPuJdtD2uXDIsW/EupHevP8uOn0JTepn0T29OT2dGNPJYSfBOb
+L+AMnV32IidLLMoqEm/YbFrUUJfAvukWQEm6BJv1Djw3RKsfBSfsCnB0nQT+JZuf
+UYeJ45jUt8mjDT9X7s7QRoB2vftNMWvVlcC4eVMCgYAlfDP7wqkrEFqI6XMDoZN9
+XPYmocSV0aTrUivujmchxnYuAWzl9vCoUZSZ6uPKxnljAf8jdYhfk0OEvGnwX0Jx
+dTkPAlWEQ7Bdw7Nzum+Fg5fjIieQPVwpbzo5Y2oJ21yfFXvuMfO5aDZM7ugbiiZP
+1faolEZXYWCc1JZTsFn4QQKBgEePcV+YY4Rh7ANuWkk2oPeRv1ZTCcD+gM+ohvLI
+wdqBZ6F2KPz/NK25RTLvBJlfoE40x14FFonF6altiTwl0A3ZW9nK9+wm6P4SOngA
+K7Z+o40BNPca3Zp/UkpzV69knm/4SxiqYKhcEIBX2xJuUNd44siWolEC/GFfFU2G
+1SEBAoGAYdgiEhIdsrrK5j08Ib8uYVLYVw+dvwdK+ylBw9RwqakIkI0se2Vm2LOK
+ABzR7yXWbGsEuWuFOURfwc0jHSCA/s/p0oKRTJS1xFbdO92VCBJwTvvltcjGHXre
+80sGcP+jhvPhNUptnWQJP2ioMw6kjhQfMxJaMF5g/cfmRggGvMY=
+-----END RSA PRIVATE KEY-----
+"#;
+
+    fn build_test_keys() -> (RsaKeyPair, RsaKeyPair, WopiProofKeySet) {
+        let current = load_private_key(CURRENT_PRIVATE_KEY);
+        let old = load_private_key(OLD_PRIVATE_KEY);
+        let current_public = public_components(&current);
+        let old_public = public_components(&old);
         let proof_keys = parse_wopi_proof_key_set(
-            &STANDARD.encode(current.to_public_key().n().to_be_bytes_trimmed_vartime()),
-            &STANDARD.encode(current.to_public_key().e().to_be_bytes_trimmed_vartime()),
-            Some(&STANDARD.encode(old.to_public_key().n().to_be_bytes_trimmed_vartime())),
-            Some(&STANDARD.encode(old.to_public_key().e().to_be_bytes_trimmed_vartime())),
+            &STANDARD.encode(&current_public.n),
+            &STANDARD.encode(&current_public.e),
+            Some(&STANDARD.encode(&old_public.n)),
+            Some(&STANDARD.encode(&old_public.e)),
         )
         .unwrap();
 
         (current, old, proof_keys)
     }
 
-    fn sign(private_key: &RsaPrivateKey, payload: &[u8]) -> String {
-        let signing_key = SigningKey::<Sha256>::new(private_key.clone());
-        STANDARD.encode(signing_key.sign(payload).to_vec())
+    fn load_private_key(pem: &str) -> RsaKeyPair {
+        RsaKeyPair::from_der(&decode_pem(pem)).unwrap()
+    }
+
+    fn decode_pem(pem: &str) -> Vec<u8> {
+        let body: String = pem
+            .lines()
+            .filter(|line| !line.starts_with("-----"))
+            .collect();
+        STANDARD.decode(body).unwrap()
+    }
+
+    fn public_components(key: &RsaKeyPair) -> RsaPublicKeyComponents<Vec<u8>> {
+        RsaPublicKeyComponents::from(key.public())
+    }
+
+    fn sign(private_key: &RsaKeyPair, payload: &[u8]) -> String {
+        let rng = SystemRandom::new();
+        let mut signature = vec![0; private_key.public().modulus_len()];
+        private_key
+            .sign(&RSA_PKCS1_SHA256, &rng, payload, &mut signature)
+            .unwrap();
+        STANDARD.encode(signature)
     }
 
     fn build_reference_payload(access_token: &str, request_url: &str, timestamp: i64) -> Vec<u8> {
@@ -311,6 +395,31 @@ mod tests {
     }
 
     #[test]
+    fn validate_wopi_proof_rejects_proof_old_signed_by_old_key() {
+        let (_current, old, proof_keys) = build_test_keys();
+        let now = Utc::now();
+        let timestamp = dotnet_ticks(now);
+        let payload = build_reference_payload(
+            "wopi_token",
+            "https://drive.example.com/api/v1/wopi/files/7?access_token=wopi_token",
+            timestamp,
+        );
+
+        let err = validate_wopi_proof(
+            &proof_keys,
+            "wopi_token",
+            "https://drive.example.com/api/v1/wopi/files/7?access_token=wopi_token",
+            Some(&STANDARD.encode([0_u8; 256])),
+            Some(&sign(&old, &payload)),
+            Some(&timestamp.to_string()),
+            now,
+        )
+        .unwrap_err();
+
+        assert!(err.message().contains("WOPI proof validation failed"));
+    }
+
+    #[test]
     fn validate_wopi_proof_rejects_stale_timestamp() {
         let (current, _old, proof_keys) = build_test_keys();
         let now = Utc::now();
@@ -368,11 +477,9 @@ mod tests {
 
     #[test]
     fn parse_wopi_proof_key_set_requires_old_pairs() {
-        let mut rng = rand::rng();
-        let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
         let err = parse_wopi_proof_key_set(
-            &STANDARD.encode(key.to_public_key().n().to_be_bytes_trimmed_vartime()),
-            &STANDARD.encode(key.to_public_key().e().to_be_bytes_trimmed_vartime()),
+            &STANDARD.encode([1_u8; 256]),
+            &STANDARD.encode([1_u8, 0, 1]),
             Some("AQAB"),
             None,
         )

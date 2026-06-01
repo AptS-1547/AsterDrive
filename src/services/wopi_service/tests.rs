@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use rsa::{RsaPrivateKey, traits::PublicKeyParts};
 use serde_json::json;
 
 use super::discovery::{
@@ -326,10 +325,8 @@ fn normalize_requested_rename_target_normalizes_nfd_and_rejects_windows_reserved
 
 #[test]
 fn parse_discovery_xml_extracts_proof_keys() {
-    let mut rng = rand::rng();
-    let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
-    let modulus = STANDARD.encode(key.to_public_key().n().to_be_bytes_trimmed_vartime());
-    let exponent = STANDARD.encode(key.to_public_key().e().to_be_bytes_trimmed_vartime());
+    let modulus = STANDARD.encode([1_u8; 256]);
+    let exponent = STANDARD.encode([1_u8, 0, 1]);
     let discovery = parse_discovery_xml(&format!(
         r#"
             <wopi-discovery>

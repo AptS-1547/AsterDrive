@@ -8,18 +8,54 @@ use jsonwebtoken::{
         RSAKeyParameters,
     },
 };
-use rsa::{RsaPrivateKey, RsaPublicKey, pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts};
+use ring::signature::{KeyPair, RsaKeyPair, RsaPublicKeyComponents};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
 use super::TEST_CLIENT_ID;
 
 const TEST_KID: &str = "aster-test-kid";
+const TEST_RSA_PRIVATE_KEY: &str = r#"
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEAvLjzLcWtd+Rn5EKEGSEt7HsRUg6rQd9rc+CF4tPYOOMEKTyB
+M5z9mWWV6+IMNDRh57E+3QAPAIthcBqEkws7aIHA3bm0owFFt1E1UGmfDoJWLJvT
+oGUkuL//qWTHXdxVID5fNHSpksfPQcxoIPSqhgP3AQkzsi06taFehYSZeUBcctPm
+Px0LPfamGy9yd28CtC0MpIUkpp8Y3iDfx4CyOoNxymxEIpM9O86IpiyP3jZ3qNA+
+ldP4dYaWfw2aDKA+xt8VcAJ8ONHR9lZBzJxiUl3ouz/j5sgCAkQHgviPuZ9GtyXG
+uqGuztg33ktjPP+Nt3hNOO6/BMM1bI1xLN5yEQIDAQABAoIBAAhyKofw4duMwE2J
+4ImTX4/Gzjai620uR4vPD47gNjwNhOEnkQyzSPI1hqkg27T2Zy9MUmjnmMRIeJrg
+xPAjv4vkyrHhnsDwzKLwoncv0ut+T8b9TlJOVH9kMFfvZ7C+rJydzfr2AaTNBmyG
+bl6TNJJ82PAV7ldaCNeaGjXVglzXvalw3vXalh2UHXkGWxWDr9G4/y3iF52L1gDD
+OH8o82cQXEm/yAbFeWtPERtkxWpsEQTOxnrqYdQeJ18tWIEQVFtGl6wCjYHYFqaw
+n1xdo6Lr87oSqxNnpNFDrhHNeKlC+c5cWyA51TR3z0u/ZS7z24idcCZJebb6XDo6
+Fr+3u8UCgYEA/j2OzVExgFJQ8Nu3r2QyIweMEjBbxjt2Y6xK4mvpo5VrWq5llBpj
+zCzn8AJSxHQqdXBgK+6zuQuTeWQz3YIC49/NZ/2aGdcusuTdTNN8yqrX5IXOWwAJ
+YRW7dLRq6fJ+vhTtOSaOS8BCRQmF6YWzvOzSbwFtpri4Ih919ZGZvRMCgYEAvgdQ
+D1owrFXZov5es8/gJoMZLNOJr3LM7QDZzrcyohBimVNbdWrFYGf5U2J8l+aOod8U
+DUSu48+MVttrs22mvrN9TTV3AK1vDsQHZdSjpp44XZWB1/kZNWZWLqbK4SdByFIU
+z9zJKLnVP8QKQpw8JkmPMfHirT+62D8vqYi47MsCgYEA2+qBiMYvzHDnxMA5zkQc
+PkK7/cvIxtsOmD8jc2Gm8rI/72ulQAvnwWgipHBOCdL2Gym+dqH+4hTKVxm+518b
+guNHOSmbz7hbk7D2YAscCe7n2quHiR2p/0meIeAiDwWMbn2JiYL5WTsP18naBNp7
+U/OCPzT8FVf5JsMR9P4h/vMCgYBO7dCmH8r5ucrk9Yy2WRB8TpWlVdPpiOBvTJwr
+TVJ9mBqsHsBtO8Txrx4TMWQY3828lGDKxg1yWCGtbgQFCfVpXjocWKmuIVtwoaGE
+/VZf/XXiARhmcXO0B2aih+rarCiZoOY+FDGFdfKKQs4ULrqZGJKepx6E4WSlL1GH
+tF9DEwKBgQDnZskrCh32LTbUPIsL/0dmOb8N4/PCTQbjfYksUhATzh4P70NjI7e0
+4ZhQ2zrejfnc3k+fWn2GIlkckwosLAI6f/A7ZTh8CTAPtKOXpNZAh24r5yDYRdI9
+F6gxJgCziHksLP4HsC5JC5RoOoSOPQclCtnS/1wUWyArvcWzVU/JUw==
+-----END RSA PRIVATE KEY-----
+"#;
+
+#[derive(Clone)]
+struct StaticRsaKey {
+    private_der: Vec<u8>,
+    modulus: Vec<u8>,
+    exponent: Vec<u8>,
+}
 
 #[derive(Clone)]
 pub struct MockOidcProvider {
     pub issuer: String,
-    key: Arc<RsaPrivateKey>,
+    key: Arc<StaticRsaKey>,
     authorization_requests: Arc<Mutex<Vec<AuthorizeRequest>>>,
     token_subject: Arc<Mutex<String>>,
     token_email: Arc<Mutex<Option<String>>>,
@@ -53,8 +89,7 @@ struct TokenRequest {
 
 impl MockOidcProvider {
     fn new() -> Self {
-        let mut rng = rand::rng();
-        let key = RsaPrivateKey::new(&mut rng, 2048).expect("RSA key should generate");
+        let key = StaticRsaKey::from_pem(TEST_RSA_PRIVATE_KEY);
         Self {
             issuer: String::new(),
             key: Arc::new(key),
@@ -132,7 +167,6 @@ impl MockOidcProvider {
     }
 
     fn public_jwk(&self) -> Jwk {
-        let public = RsaPublicKey::from(self.key.as_ref());
         Jwk {
             common: CommonParameters {
                 public_key_use: Some(PublicKeyUse::Signature),
@@ -141,8 +175,8 @@ impl MockOidcProvider {
                 ..Default::default()
             },
             algorithm: AlgorithmParameters::RSA(RSAKeyParameters {
-                n: base64_url(public.n().to_be_bytes_trimmed_vartime()),
-                e: base64_url(public.e().to_be_bytes_trimmed_vartime()),
+                n: base64_url(&self.key.modulus),
+                e: base64_url(&self.key.exponent),
                 ..Default::default()
             }),
         }
@@ -197,13 +231,36 @@ impl MockOidcProvider {
         }
         let mut header = Header::new(Algorithm::RS256);
         header.kid = Some(TEST_KID.to_string());
-        let der = self
-            .key
-            .to_pkcs1_der()
-            .expect("private key should encode to pkcs1");
-        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_rsa_der(der.as_bytes()))
-            .expect("id_token should sign")
+        jsonwebtoken::encode(
+            &header,
+            &claims,
+            &EncodingKey::from_rsa_der(&self.key.private_der),
+        )
+        .expect("id_token should sign")
     }
+}
+
+impl StaticRsaKey {
+    fn from_pem(pem: &str) -> Self {
+        let private_der = decode_pem(pem);
+        let key_pair = RsaKeyPair::from_der(&private_der).expect("RSA private key should parse");
+        let public = RsaPublicKeyComponents::<Vec<u8>>::from(key_pair.public());
+        Self {
+            private_der,
+            modulus: public.n,
+            exponent: public.e,
+        }
+    }
+}
+
+fn decode_pem(pem: &str) -> Vec<u8> {
+    let body: String = pem
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .collect();
+    base64::engine::general_purpose::STANDARD
+        .decode(body)
+        .expect("RSA private key PEM should decode")
 }
 
 fn base64_url(bytes: impl AsRef<[u8]>) -> String {
