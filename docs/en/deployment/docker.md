@@ -102,6 +102,50 @@ services:
 
 Before running `docker compose up -d` for the first time, prepare the host directory with `mkdir -p ./data && sudo chown -R 10001:10001 ./data` as described at the top. Otherwise, the in-container `aster` user (UID/GID `10001`) cannot write to it, and startup will fail.
 
+## Enable aria2 Link Import with Compose
+
+The repository root `docker-compose.yml` includes an optional `aria2` profile. Plain `docker compose up -d` does not start it; aria2 is started only when the profile is enabled explicitly.
+
+Prepare both the AsterDrive data directory and the aria2 configuration directory first. AsterDrive and aria2 must mount the same host `./data` directory at the same in-container `/data` path, because AsterDrive passes task temporary file paths such as `/data/.tmp/...` to aria2 as absolute paths:
+
+```bash
+mkdir -p ./data ./aria2-config
+sudo chown -R 10001:10001 ./data ./aria2-config
+```
+
+Set an RPC secret and start both services:
+
+```bash
+export ASTERDRIVE_ARIA2_RPC_SECRET="$(openssl rand -hex 24)"
+docker compose --profile aria2 up -d
+```
+
+Then open `Admin -> System Settings -> File Processing -> Link Import` and set these runtime config values:
+
+| Config key | Value |
+| --- | --- |
+| `offline_download_engine` | `aria2` |
+| `offline_download_aria2_rpc_url` | `http://aria2:6800/jsonrpc` |
+| `offline_download_aria2_rpc_secret` | the value of `ASTERDRIVE_ARIA2_RPC_SECRET` above |
+
+You can also write the SQLite runtime config from the CLI during a maintenance window:
+
+```bash
+docker compose exec asterdrive /usr/local/bin/aster_drive \
+  config --database-url "sqlite:///data/asterdrive.db?mode=rwc" \
+  set --key offline_download_engine --value aria2
+
+docker compose exec asterdrive /usr/local/bin/aster_drive \
+  config --database-url "sqlite:///data/asterdrive.db?mode=rwc" \
+  set --key offline_download_aria2_rpc_url --value http://aria2:6800/jsonrpc
+
+docker compose exec asterdrive /usr/local/bin/aster_drive \
+  config --database-url "sqlite:///data/asterdrive.db?mode=rwc" \
+  set --key offline_download_aria2_rpc_secret --value "$ASTERDRIVE_ARIA2_RPC_SECRET"
+```
+
+Do not publish aria2 port `6800` to the host or the public internet. This Compose example uses `expose` so only services on the same Docker network can reach the RPC endpoint. aria2 still performs its own DNS resolution and outbound connection for downloads, so production deployments should also restrict its reachable network using Docker networking, host firewall rules, or upstream network policy.
+
 ## First Deployment Checks Worth Doing
 
 - Whether `auth.jwt_secret` has been fixed.
@@ -113,6 +157,7 @@ Before running `docker compose up -d` for the first time, prepare the host direc
 - Whether the database, upload directory, and temporary directories all live in the bind-mounted `./data` directory, with nothing accidentally written inside the container layer.
 - Whether the default policy group has been created.
 - If external Office / WOPI openers are enabled, whether at least one real Office file can be opened and saved.
+- If aria2 link import is enabled, whether `offline_download_aria2_rpc_url` points to the Docker-internal address `http://aria2:6800/jsonrpc`, and whether the aria2 RPC port is not exposed publicly.
 - If you plan to use S3 / MinIO later, whether browser upload CORS rules and secret management for object storage have been planned.
 - If this instance should actually run as a `follower`, whether long-term `start_mode`, single-use bootstrap ENV, and the primary-side default receiving target have been configured according to [Docker Follower Node Deployment](/en/deployment/docker-follower).
 

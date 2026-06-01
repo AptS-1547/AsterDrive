@@ -102,6 +102,50 @@ services:
 
 第一次执行 `docker compose up -d` 之前，请先按顶部说明执行 `mkdir -p ./data && sudo chown -R 10001:10001 ./data`，将宿主机目录准备好。否则容器内的 `aster` 用户（UID/GID `10001`）将无法写入，导致启动失败。
 
+## Compose 启用 aria2 链接导入
+
+仓库根目录的 `docker-compose.yml` 里带了一个可选的 `aria2` profile。默认 `docker compose up -d` 不会启动它；只有显式打开 profile 时才会拉起 aria2 JSON-RPC 服务。
+
+先准备 AsterDrive 数据目录和 aria2 配置目录。AsterDrive 和 aria2 必须把同一个宿主机 `./data` 挂到容器内同一个 `/data` 路径，因为 AsterDrive 会把 `/data/.tmp/...` 这样的任务临时文件绝对路径传给 aria2：
+
+```bash
+mkdir -p ./data ./aria2-config
+sudo chown -R 10001:10001 ./data ./aria2-config
+```
+
+设置一个 RPC 密钥后启动：
+
+```bash
+export ASTERDRIVE_ARIA2_RPC_SECRET="$(openssl rand -hex 24)"
+docker compose --profile aria2 up -d
+```
+
+然后到 `管理 -> 系统设置 -> 文件处理 -> 链接导入`，把这些运行时配置改成：
+
+| 配置项 | 值 |
+| --- | --- |
+| `offline_download_engine` | `aria2` |
+| `offline_download_aria2_rpc_url` | `http://aria2:6800/jsonrpc` |
+| `offline_download_aria2_rpc_secret` | 上面 `ASTERDRIVE_ARIA2_RPC_SECRET` 的值 |
+
+也可以在停机窗口里用 CLI 写入 SQLite 运行时配置：
+
+```bash
+docker compose exec asterdrive /usr/local/bin/aster_drive \
+  config --database-url "sqlite:///data/asterdrive.db?mode=rwc" \
+  set --key offline_download_engine --value aria2
+
+docker compose exec asterdrive /usr/local/bin/aster_drive \
+  config --database-url "sqlite:///data/asterdrive.db?mode=rwc" \
+  set --key offline_download_aria2_rpc_url --value http://aria2:6800/jsonrpc
+
+docker compose exec asterdrive /usr/local/bin/aster_drive \
+  config --database-url "sqlite:///data/asterdrive.db?mode=rwc" \
+  set --key offline_download_aria2_rpc_secret --value "$ASTERDRIVE_ARIA2_RPC_SECRET"
+```
+
+不要把 aria2 的 `6800` 端口发布到宿主机或公网。这个 Compose 示例只用 `expose` 让同一 Docker 网络里的 AsterDrive 访问 RPC；aria2 实际下载时仍会自行 DNS 解析和出站连接，所以如果你在生产环境启用它，还应该用 Docker 网络、宿主机防火墙或上游网络策略限制它能访问的范围。
+
 ## 第一次部署最值得先确认的项
 
 - `auth.jwt_secret` 是否已经固定
@@ -113,6 +157,7 @@ services:
 - 数据库、上传目录和临时目录是否都落在 bind mount 的 `./data` 目录里，没有遗漏写到容器内层
 - 默认策略组是否已经创建
 - 如果启用了外部 Office / WOPI 打开方式，至少用一个真实 Office 文件试开并保存一次
+- 如果启用了 aria2 链接导入，`offline_download_aria2_rpc_url` 是否指向 Docker 内网地址 `http://aria2:6800/jsonrpc`，并且没有把 aria2 RPC 端口暴露到公网
 - 如果以后要走 S3 / MinIO，是否已经计划好对象存储浏览器上传放行规则和密钥管理
 - 如果这台实例实际要跑成 `follower`，是否已经按 [Docker 部署从节点](/deployment/docker-follower) 配好长期 `start_mode`、一次性 bootstrap ENV，并在主控节点创建默认接收落点
 
