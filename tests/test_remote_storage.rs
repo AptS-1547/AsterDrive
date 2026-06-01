@@ -29,9 +29,10 @@ use aster_drive::storage::remote_protocol::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_SIGNATURE_HEADER,
     INTERNAL_AUTH_TIMESTAMP_HEADER, INTERNAL_STORAGE_BASE_PATH,
     INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL, INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL,
-    RemoteCreateIngressProfileRequest, RemoteCreateLocalIngressProfileRequest,
-    RemoteStorageCapabilities, RemoteStorageClient, RemoteStorageComposeRequest,
-    RemoteUpdateIngressProfileRequest, sign_internal_request, sign_presigned_request,
+    RemoteBindingSyncRequest, RemoteCreateIngressProfileRequest,
+    RemoteCreateLocalIngressProfileRequest, RemoteStorageCapabilities, RemoteStorageClient,
+    RemoteStorageComposeRequest, RemoteUpdateIngressProfileRequest, sign_internal_request,
+    sign_presigned_request,
 };
 use aster_drive::types::{
     DriverType, NullablePatch, RemoteDownloadStrategy, RemoteNodeTransportMode,
@@ -42,7 +43,7 @@ use bytes::Bytes;
 use chrono::{Duration as ChronoDuration, Utc};
 use futures::TryStreamExt;
 use futures::future::join_all;
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -119,6 +120,7 @@ fn follower_view_with_server_port(
     aster_drive::runtime::FollowerAppState {
         db_handles: state.db_handles.clone(),
         driver_registry: state.driver_registry.clone(),
+        runtime_config: state.runtime_config.clone(),
         policy_snapshot: state.policy_snapshot.clone(),
         config: Arc::new(config),
         cache: state.cache.clone(),
@@ -1145,6 +1147,29 @@ fn managed_ingress_object_path(
     )
 }
 
+async fn latest_audit_log(
+    db: &sea_orm::DatabaseConnection,
+    action: aster_drive::types::AuditAction,
+) -> aster_drive::entities::audit_log::Model {
+    aster_drive::entities::audit_log::Entity::find()
+        .filter(aster_drive::entities::audit_log::Column::Action.eq(action))
+        .order_by_desc(aster_drive::entities::audit_log::Column::Id)
+        .one(db)
+        .await
+        .expect("audit log query should succeed")
+        .expect("audit log entry should exist")
+}
+
+fn audit_details(entry: &aster_drive::entities::audit_log::Model) -> serde_json::Value {
+    serde_json::from_str(
+        entry
+            .details
+            .as_deref()
+            .expect("audit details should exist"),
+    )
+    .expect("audit details should parse")
+}
+
 async fn remote_driver_for_policy_connection_test_objects(
     provider_state: &aster_drive::runtime::PrimaryAppState,
     profile_base_path: &str,
@@ -1403,6 +1428,273 @@ async fn test_managed_ingress_profile_handles_remote_writes_without_legacy_bindi
     provider_server.stop().await;
     let _ = tokio::fs::remove_dir_all(managed_root.join("managed-a")).await;
     let _ = tokio::fs::remove_dir(&managed_root).await;
+}
+
+#[tokio::test]
+async fn test_follower_internal_storage_records_object_audit_logs() {
+    let provider_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+    let (binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "object-audit-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: "object-audit-ak".to_string(),
+            secret_key: "object-audit-sk".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+    create_managed_local_ingress_for_binding(&provider_state, &binding.access_key, "object-audit")
+        .await;
+
+    let client = RemoteStorageClient::new(
+        &provider_server.base_url,
+        &binding.access_key,
+        &binding.secret_key,
+    )
+    .expect("remote storage client should build");
+    client
+        .put_bytes("audit-object.bin", b"audit payload")
+        .await
+        .expect("object write should succeed");
+    let write_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerObjectWrite,
+    )
+    .await;
+    assert_eq!(write_entry.user_id, 0);
+    assert_eq!(write_entry.entity_name.as_deref(), Some("audit-object.bin"));
+    let write_details = audit_details(&write_entry);
+    assert_eq!(write_details["binding_id"], binding.id);
+    assert_eq!(write_details["object_key"], "audit-object.bin");
+    assert_eq!(write_details["size"], 13);
+    assert!(
+        write_details["storage_path"]
+            .as_str()
+            .expect("storage path should be string")
+            .ends_with("/audit-object.bin")
+    );
+
+    let downloaded = client
+        .get_bytes("audit-object.bin")
+        .await
+        .expect("object read should succeed");
+    assert_eq!(downloaded, b"audit payload");
+    let read_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerObjectRead,
+    )
+    .await;
+    assert_eq!(read_entry.entity_name.as_deref(), Some("audit-object.bin"));
+    let read_details = audit_details(&read_entry);
+    assert_eq!(read_details["binding_id"], binding.id);
+    assert_eq!(read_details["object_key"], "audit-object.bin");
+    assert_eq!(read_details["size"], 13);
+    assert_eq!(read_details["partial"], false);
+
+    client
+        .delete("audit-object.bin")
+        .await
+        .expect("object delete should succeed");
+    let delete_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerObjectDelete,
+    )
+    .await;
+    assert_eq!(
+        delete_entry.entity_name.as_deref(),
+        Some("audit-object.bin")
+    );
+    let delete_details = audit_details(&delete_entry);
+    assert_eq!(delete_details["binding_id"], binding.id);
+    assert_eq!(delete_details["object_key"], "audit-object.bin");
+
+    client
+        .put_bytes("audit-part-a.bin", b"abc")
+        .await
+        .expect("first compose part write should succeed");
+    client
+        .put_bytes("audit-part-b.bin", b"def")
+        .await
+        .expect("second compose part write should succeed");
+    let composed = client
+        .compose_objects(
+            "audit-composed.bin",
+            vec![
+                "audit-part-a.bin".to_string(),
+                "audit-part-b.bin".to_string(),
+            ],
+            6,
+        )
+        .await
+        .expect("object compose should succeed");
+    assert_eq!(composed.bytes_written, 6);
+    let compose_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerObjectCompose,
+    )
+    .await;
+    assert_eq!(
+        compose_entry.entity_name.as_deref(),
+        Some("audit-composed.bin")
+    );
+    let compose_details = audit_details(&compose_entry);
+    assert_eq!(compose_details["binding_id"], binding.id);
+    assert_eq!(compose_details["object_key"], "audit-composed.bin");
+    assert_eq!(compose_details["size"], 6);
+    assert_eq!(compose_details["bytes_written"], 6);
+    assert_eq!(
+        compose_details["parts"],
+        serde_json::json!(["audit-part-a.bin", "audit-part-b.bin"])
+    );
+    assert!(
+        compose_details["storage_path"]
+            .as_str()
+            .expect("compose storage path should be string")
+            .ends_with("/audit-composed.bin")
+    );
+
+    provider_server.stop().await;
+}
+
+#[tokio::test]
+async fn test_follower_internal_storage_records_binding_and_profile_audit_logs() {
+    let provider_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+    let (binding, _) = master_binding_service::upsert_from_enrollment(
+        provider_state.writer_db(),
+        master_binding_service::UpsertMasterBindingInput {
+            name: "profile-audit-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: "profile-audit-ak".to_string(),
+            secret_key: "profile-audit-sk".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(provider_state.writer_db())
+        .await
+        .expect("provider binding registry should reload");
+
+    let client = RemoteStorageClient::new(
+        &provider_server.base_url,
+        &binding.access_key,
+        &binding.secret_key,
+    )
+    .expect("remote storage client should build");
+    client
+        .sync_binding(&RemoteBindingSyncRequest {
+            name: "profile-audit-renamed".to_string(),
+            is_enabled: false,
+        })
+        .await
+        .expect("binding sync should succeed");
+    let sync_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerBindingSync,
+    )
+    .await;
+    assert_eq!(sync_entry.entity_id, Some(binding.id));
+    assert_eq!(
+        sync_entry.entity_name.as_deref(),
+        Some("profile-audit-renamed")
+    );
+    let sync_details = audit_details(&sync_entry);
+    assert_eq!(sync_details["binding_id"], binding.id);
+    assert_eq!(sync_details["name"], "profile-audit-renamed");
+    assert_eq!(sync_details["is_enabled"], false);
+    assert!(sync_details.get("access_key").is_none());
+
+    client
+        .sync_binding(&RemoteBindingSyncRequest {
+            name: "profile-audit-renamed".to_string(),
+            is_enabled: true,
+        })
+        .await
+        .expect("binding should be re-enabled for profile operations");
+
+    let profile = client
+        .create_ingress_profile(&RemoteCreateIngressProfileRequest::Local(
+            RemoteCreateLocalIngressProfileRequest {
+                name: "Profile Audit Local".to_string(),
+                base_path: "profile-audit-a".to_string(),
+                max_file_size: 0,
+                is_default: true,
+            },
+        ))
+        .await
+        .expect("ingress profile create should succeed");
+    let create_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerIngressProfileCreate,
+    )
+    .await;
+    assert_eq!(
+        create_entry.entity_name.as_deref(),
+        Some(profile.profile_key.as_str())
+    );
+    let create_details = audit_details(&create_entry);
+    assert_eq!(create_details["binding_id"], binding.id);
+    assert_eq!(create_details["profile_key"], profile.profile_key);
+    assert_eq!(create_details["driver_type"], "local");
+    assert_eq!(create_details["is_default"], true);
+
+    let updated = client
+        .update_ingress_profile(
+            &profile.profile_key,
+            &RemoteUpdateIngressProfileRequest {
+                name: Some("Profile Audit Updated".to_string()),
+                base_path: Some("profile-audit-b".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("ingress profile update should succeed");
+    let update_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerIngressProfileUpdate,
+    )
+    .await;
+    assert_eq!(
+        update_entry.entity_name.as_deref(),
+        Some(updated.profile_key.as_str())
+    );
+    let update_details = audit_details(&update_entry);
+    assert_eq!(update_details["binding_id"], binding.id);
+    assert_eq!(update_details["profile_key"], updated.profile_key);
+    assert_eq!(update_details["driver_type"], "local");
+    assert_eq!(update_details["is_default"], true);
+
+    client
+        .delete_ingress_profile(&profile.profile_key)
+        .await
+        .expect("ingress profile delete should succeed");
+    let delete_entry = latest_audit_log(
+        provider_state.writer_db(),
+        aster_drive::types::AuditAction::FollowerIngressProfileDelete,
+    )
+    .await;
+    assert_eq!(
+        delete_entry.entity_name.as_deref(),
+        Some(profile.profile_key.as_str())
+    );
+    let delete_details = audit_details(&delete_entry);
+    assert_eq!(delete_details["binding_id"], binding.id);
+    assert_eq!(delete_details["profile_key"], profile.profile_key);
+    assert_eq!(delete_details["driver_type"], "local");
+    assert_eq!(delete_details["is_default"], true);
+
+    provider_server.stop().await;
 }
 
 #[tokio::test]

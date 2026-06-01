@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::db::repository::audit_log_repo;
 use crate::entities::audit_log;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::types::{AuditAction, AuditEntityType};
 
 use super::context::AuditContext;
@@ -277,12 +277,12 @@ impl AuditLogManager {
     }
 }
 
-pub fn should_record(state: &PrimaryAppState, action: AuditAction) -> bool {
-    state.should_record_audit_action(action)
+pub fn should_record<S: SharedRuntimeState>(state: &S, action: AuditAction) -> bool {
+    state.runtime_config().should_record_audit_action(action)
 }
 
-async fn record_prechecked(
-    state: &PrimaryAppState,
+async fn record_prechecked<S: SharedRuntimeState>(
+    state: &S,
     ctx: &AuditContext,
     action: AuditAction,
     entity_type: AuditEntityType,
@@ -311,8 +311,8 @@ async fn record_prechecked(
     }
 }
 
-pub async fn log(
-    state: &PrimaryAppState,
+pub async fn log<S: SharedRuntimeState>(
+    state: &S,
     ctx: &AuditContext,
     action: AuditAction,
     entity_type: AuditEntityType,
@@ -336,8 +336,8 @@ pub async fn log(
     .await;
 }
 
-pub async fn log_with_details<F>(
-    state: &PrimaryAppState,
+pub async fn log_with_details<S, F>(
+    state: &S,
     ctx: &AuditContext,
     action: AuditAction,
     entity_type: AuditEntityType,
@@ -345,6 +345,7 @@ pub async fn log_with_details<F>(
     entity_name: Option<&str>,
     details: F,
 ) where
+    S: SharedRuntimeState,
     F: FnOnce() -> Option<serde_json::Value>,
 {
     if !should_record(state, action) {

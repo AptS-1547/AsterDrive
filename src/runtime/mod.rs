@@ -44,6 +44,7 @@ pub struct PrimaryAppState {
 pub struct FollowerAppState {
     pub db_handles: DbHandles,
     pub driver_registry: Arc<DriverRegistry>,
+    pub runtime_config: Arc<RuntimeConfig>,
     pub policy_snapshot: Arc<PolicySnapshot>,
     pub config: Arc<Config>,
     pub cache: Arc<dyn CacheBackend>,
@@ -54,6 +55,7 @@ pub trait SharedRuntimeState {
     fn writer_db(&self) -> &DatabaseConnection;
     fn reader_db(&self) -> &DatabaseConnection;
     fn driver_registry(&self) -> &Arc<DriverRegistry>;
+    fn runtime_config(&self) -> &Arc<RuntimeConfig>;
     fn policy_snapshot(&self) -> &Arc<PolicySnapshot>;
     fn config(&self) -> &Arc<Config>;
     fn cache(&self) -> &Arc<dyn CacheBackend>;
@@ -61,7 +63,6 @@ pub trait SharedRuntimeState {
 }
 
 pub trait PrimaryRuntimeState: SharedRuntimeState {
-    fn runtime_config(&self) -> &Arc<RuntimeConfig>;
     fn mail_sender(&self) -> &Arc<dyn MailSender>;
     fn storage_change_tx(&self) -> &tokio::sync::broadcast::Sender<StorageChangeEvent>;
     fn share_download_rollback(&self) -> &ShareDownloadRollbackQueue;
@@ -109,6 +110,7 @@ impl From<&PrimaryAppState> for FollowerAppState {
         Self {
             db_handles: state.db_handles.clone(),
             driver_registry: state.driver_registry.clone(),
+            runtime_config: state.runtime_config.clone(),
             policy_snapshot: state.policy_snapshot.clone(),
             config: state.config.clone(),
             cache: state.cache.clone(),
@@ -144,6 +146,10 @@ impl SharedRuntimeState for PrimaryAppState {
         &self.driver_registry
     }
 
+    fn runtime_config(&self) -> &Arc<RuntimeConfig> {
+        &self.runtime_config
+    }
+
     fn policy_snapshot(&self) -> &Arc<PolicySnapshot> {
         &self.policy_snapshot
     }
@@ -162,10 +168,6 @@ impl SharedRuntimeState for PrimaryAppState {
 }
 
 impl PrimaryRuntimeState for PrimaryAppState {
-    fn runtime_config(&self) -> &Arc<RuntimeConfig> {
-        &self.runtime_config
-    }
-
     fn mail_sender(&self) -> &Arc<dyn MailSender> {
         &self.mail_sender
     }
@@ -194,6 +196,10 @@ impl SharedRuntimeState for FollowerAppState {
 
     fn driver_registry(&self) -> &Arc<DriverRegistry> {
         &self.driver_registry
+    }
+
+    fn runtime_config(&self) -> &Arc<RuntimeConfig> {
+        &self.runtime_config
     }
 
     fn policy_snapshot(&self) -> &Arc<PolicySnapshot> {
@@ -228,6 +234,10 @@ impl<T: SharedRuntimeState> SharedRuntimeState for web::Data<T> {
         self.get_ref().driver_registry()
     }
 
+    fn runtime_config(&self) -> &Arc<RuntimeConfig> {
+        self.get_ref().runtime_config()
+    }
+
     fn policy_snapshot(&self) -> &Arc<PolicySnapshot> {
         self.get_ref().policy_snapshot()
     }
@@ -246,10 +256,6 @@ impl<T: SharedRuntimeState> SharedRuntimeState for web::Data<T> {
 }
 
 impl<T: PrimaryRuntimeState> PrimaryRuntimeState for web::Data<T> {
-    fn runtime_config(&self) -> &Arc<RuntimeConfig> {
-        self.get_ref().runtime_config()
-    }
-
     fn mail_sender(&self) -> &Arc<dyn MailSender> {
         self.get_ref().mail_sender()
     }
@@ -336,6 +342,10 @@ mod tests {
         assert!(Arc::ptr_eq(
             &state.driver_registry,
             follower.driver_registry()
+        ));
+        assert!(Arc::ptr_eq(
+            &state.runtime_config,
+            follower.runtime_config()
         ));
         assert!(Arc::ptr_eq(
             &state.policy_snapshot,

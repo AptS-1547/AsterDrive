@@ -24,6 +24,7 @@ use std::sync::Arc;
 struct TestFollowerState {
     db: DatabaseConnection,
     driver_registry: Arc<crate::storage::DriverRegistry>,
+    runtime_config: Arc<crate::config::RuntimeConfig>,
     policy_snapshot: Arc<crate::storage::PolicySnapshot>,
     config: Arc<crate::config::Config>,
     cache: Arc<dyn crate::cache::CacheBackend>,
@@ -41,6 +42,10 @@ impl SharedRuntimeState for TestFollowerState {
 
     fn driver_registry(&self) -> &Arc<crate::storage::DriverRegistry> {
         &self.driver_registry
+    }
+
+    fn runtime_config(&self) -> &Arc<crate::config::RuntimeConfig> {
+        &self.runtime_config
     }
 
     fn policy_snapshot(&self) -> &Arc<crate::storage::PolicySnapshot> {
@@ -98,6 +103,7 @@ async fn setup_state() -> TestFollowerState {
     TestFollowerState {
         db,
         driver_registry: Arc::new(crate::storage::DriverRegistry::noop()),
+        runtime_config: Arc::new(crate::config::RuntimeConfig::new()),
         policy_snapshot: Arc::new(crate::storage::PolicySnapshot::new()),
         config,
         cache,

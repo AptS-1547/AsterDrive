@@ -118,7 +118,7 @@ pub async fn delete<S: FollowerRuntimeState>(
     state: &S,
     binding: &master_binding::Model,
     profile_key: &str,
-) -> Result<()> {
+) -> Result<RemoteIngressProfileInfo> {
     let existing = find_profile_or_err(state, binding.id, profile_key).await?;
     tracing::debug!(
         binding_id = binding.id,
@@ -145,7 +145,7 @@ pub async fn delete<S: FollowerRuntimeState>(
         profile_key = %existing.profile_key,
         "deleted managed ingress profile"
     );
-    Ok(())
+    Ok(existing.into())
 }
 
 pub async fn resolve_effective_target<S: FollowerRuntimeState>(

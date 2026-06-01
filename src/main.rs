@@ -248,16 +248,7 @@ async fn run_primary_http_server(
         task_state,
         share_download_rollback_worker,
     );
-    aster_drive::services::audit_service::log(
-        server_state.as_ref(),
-        &aster_drive::services::audit_service::AuditContext::system(),
-        aster_drive::services::audit_service::AuditAction::ServerStart,
-        aster_drive::services::audit_service::AuditEntityType::SystemConfig,
-        None,
-        None,
-        None,
-    )
-    .await;
+    aster_drive::runtime::startup::record_server_start(server_state.as_ref()).await;
     tokio::spawn(async move {
         aster_drive::runtime::shutdown::wait_for_signal().await;
         http_shutdown_token.cancel();
@@ -266,7 +257,7 @@ async fn run_primary_http_server(
 
     let server_result = server.await;
     tracing::info!("server stopped");
-    aster_drive::runtime::shutdown::record_primary_server_shutdown(state.as_ref()).await;
+    aster_drive::runtime::shutdown::record_server_shutdown(state.as_ref()).await;
     aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db).await;
     server_result
 }
@@ -317,6 +308,7 @@ async fn run_follower_http_server(
     let server_handle = server.handle();
     let background_tasks =
         aster_drive::runtime::tasks::spawn_follower_background_tasks(state.clone());
+    aster_drive::runtime::startup::record_server_start(state.as_ref()).await;
     tokio::spawn(async move {
         aster_drive::runtime::shutdown::wait_for_signal().await;
         http_shutdown_token.cancel();
@@ -325,6 +317,7 @@ async fn run_follower_http_server(
 
     let server_result = server.await;
     tracing::info!("server stopped");
+    aster_drive::runtime::shutdown::record_server_shutdown(state.as_ref()).await;
     aster_drive::runtime::shutdown::perform_shutdown(background_tasks, shutdown_db).await;
     server_result
 }

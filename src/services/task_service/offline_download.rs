@@ -563,8 +563,7 @@ fn effective_offline_download_request_timeout(
     }
 
     let max_bytes = i64_to_u64(max_bytes, "offline download max file size")?;
-    let expected_secs =
-        (u128::from(max_bytes) + u128::from(max_bytes_per_sec) - 1) / u128::from(max_bytes_per_sec);
+    let expected_secs = u128::from(max_bytes).div_ceil(u128::from(max_bytes_per_sec));
     let expected_secs =
         expected_secs.saturating_add(u128::from(THROTTLED_DOWNLOAD_TIMEOUT_SLACK_SECS));
     let expected_secs = u128_to_u64(expected_secs, "offline download effective timeout")?;

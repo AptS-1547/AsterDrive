@@ -141,6 +141,18 @@ macro_rules! define_audit_action_list {
             UserRegister,
             UserResendEmailChange,
             UserResendRegistration,
+            // Follower actions are written to the follower node's own audit table.
+            // The primary admin audit page will not see them unless follower logs are
+            // queried directly or aggregated later, so keep them distinct from
+            // primary-side Admin* remote management actions.
+            FollowerBindingSync,
+            FollowerObjectRead,
+            FollowerObjectWrite,
+            FollowerObjectDelete,
+            FollowerObjectCompose,
+            FollowerIngressProfileCreate,
+            FollowerIngressProfileUpdate,
+            FollowerIngressProfileDelete,
         }
     };
 }
@@ -620,6 +632,22 @@ pub enum AuditAction {
     UserResendEmailChange,
     #[sea_orm(string_value = "user_resend_registration")]
     UserResendRegistration,
+    #[sea_orm(string_value = "follower_binding_sync")]
+    FollowerBindingSync,
+    #[sea_orm(string_value = "follower_object_read")]
+    FollowerObjectRead,
+    #[sea_orm(string_value = "follower_object_write")]
+    FollowerObjectWrite,
+    #[sea_orm(string_value = "follower_object_delete")]
+    FollowerObjectDelete,
+    #[sea_orm(string_value = "follower_object_compose")]
+    FollowerObjectCompose,
+    #[sea_orm(string_value = "follower_ingress_profile_create")]
+    FollowerIngressProfileCreate,
+    #[sea_orm(string_value = "follower_ingress_profile_update")]
+    FollowerIngressProfileUpdate,
+    #[sea_orm(string_value = "follower_ingress_profile_delete")]
+    FollowerIngressProfileDelete,
 }
 
 impl AuditAction {
@@ -759,6 +787,14 @@ impl AuditAction {
             Self::UserRegister => 128,
             Self::UserResendEmailChange => 129,
             Self::UserResendRegistration => 130,
+            Self::FollowerBindingSync => 131,
+            Self::FollowerObjectRead => 132,
+            Self::FollowerObjectWrite => 133,
+            Self::FollowerObjectDelete => 134,
+            Self::FollowerObjectCompose => 135,
+            Self::FollowerIngressProfileCreate => 136,
+            Self::FollowerIngressProfileUpdate => 137,
+            Self::FollowerIngressProfileDelete => 138,
         }
     }
 
@@ -897,6 +933,14 @@ impl AuditAction {
             Self::UserRegister => "user_register",
             Self::UserResendEmailChange => "user_resend_email_change",
             Self::UserResendRegistration => "user_resend_registration",
+            Self::FollowerBindingSync => "follower_binding_sync",
+            Self::FollowerObjectRead => "follower_object_read",
+            Self::FollowerObjectWrite => "follower_object_write",
+            Self::FollowerObjectDelete => "follower_object_delete",
+            Self::FollowerObjectCompose => "follower_object_compose",
+            Self::FollowerIngressProfileCreate => "follower_ingress_profile_create",
+            Self::FollowerIngressProfileUpdate => "follower_ingress_profile_update",
+            Self::FollowerIngressProfileDelete => "follower_ingress_profile_delete",
         }
     }
 
@@ -1035,6 +1079,14 @@ impl AuditAction {
             "user_register" => Some(Self::UserRegister),
             "user_resend_email_change" => Some(Self::UserResendEmailChange),
             "user_resend_registration" => Some(Self::UserResendRegistration),
+            "follower_binding_sync" => Some(Self::FollowerBindingSync),
+            "follower_object_read" => Some(Self::FollowerObjectRead),
+            "follower_object_write" => Some(Self::FollowerObjectWrite),
+            "follower_object_delete" => Some(Self::FollowerObjectDelete),
+            "follower_object_compose" => Some(Self::FollowerObjectCompose),
+            "follower_ingress_profile_create" => Some(Self::FollowerIngressProfileCreate),
+            "follower_ingress_profile_update" => Some(Self::FollowerIngressProfileUpdate),
+            "follower_ingress_profile_delete" => Some(Self::FollowerIngressProfileDelete),
             _ => None,
         }
     }
@@ -1163,6 +1215,14 @@ impl AuditAction {
             | Self::UserRegister
             | Self::UserResendEmailChange
             | Self::UserResendRegistration => "auth",
+            Self::FollowerBindingSync => "remote",
+            Self::FollowerObjectRead
+            | Self::FollowerObjectWrite
+            | Self::FollowerObjectDelete
+            | Self::FollowerObjectCompose => "remote_storage",
+            Self::FollowerIngressProfileCreate
+            | Self::FollowerIngressProfileUpdate
+            | Self::FollowerIngressProfileDelete => "remote_ingress",
         }
     }
 }

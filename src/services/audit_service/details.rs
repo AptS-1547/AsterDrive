@@ -200,6 +200,36 @@ pub struct RemoteIngressProfileAuditDetails<'a> {
 }
 
 #[derive(Serialize)]
+pub struct FollowerBindingAuditDetails<'a> {
+    pub binding_id: i64,
+    pub name: &'a str,
+    pub is_enabled: bool,
+}
+
+#[derive(Serialize)]
+pub struct FollowerObjectAuditDetails<'a> {
+    pub binding_id: i64,
+    pub object_key: &'a str,
+    pub storage_path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes_written: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partial: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parts: Option<&'a [String]>,
+}
+
+#[derive(Serialize)]
+pub struct FollowerIngressProfileAuditDetails<'a> {
+    pub binding_id: i64,
+    pub profile_key: &'a str,
+    pub driver_type: &'a str,
+    pub is_default: bool,
+}
+
+#[derive(Serialize)]
 pub struct LockAuditDetails {
     pub entity_type: EntityType,
     pub entity_id: i64,

@@ -368,6 +368,26 @@ fn audit_action_strings_match_existing_contract() {
             AuditAction::UserResendRegistration,
             "user_resend_registration",
         ),
+        (AuditAction::FollowerBindingSync, "follower_binding_sync"),
+        (AuditAction::FollowerObjectRead, "follower_object_read"),
+        (AuditAction::FollowerObjectWrite, "follower_object_write"),
+        (AuditAction::FollowerObjectDelete, "follower_object_delete"),
+        (
+            AuditAction::FollowerObjectCompose,
+            "follower_object_compose",
+        ),
+        (
+            AuditAction::FollowerIngressProfileCreate,
+            "follower_ingress_profile_create",
+        ),
+        (
+            AuditAction::FollowerIngressProfileUpdate,
+            "follower_ingress_profile_update",
+        ),
+        (
+            AuditAction::FollowerIngressProfileDelete,
+            "follower_ingress_profile_delete",
+        ),
     ];
 
     for (action, expected) in cases {
@@ -433,6 +453,49 @@ async fn log_writes_synchronously_without_global_manager() {
 
     let count = audit_log::Entity::find()
         .filter(audit_log::Column::Action.eq(AuditAction::FileUpload))
+        .count(&db)
+        .await
+        .expect("audit query should succeed");
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn follower_state_can_record_allowed_audit_log() {
+    let db = in_memory_db().await;
+
+    let runtime_config = std::sync::Arc::new(crate::config::RuntimeConfig::new());
+    runtime_config
+        .reload(&db)
+        .await
+        .expect("runtime config should load");
+    let cache = crate::cache::create_cache(&crate::config::CacheConfig {
+        enabled: false,
+        ..Default::default()
+    })
+    .await;
+    let state = crate::runtime::FollowerAppState {
+        db_handles: crate::db::DbHandles::single(db.clone()),
+        driver_registry: std::sync::Arc::new(crate::storage::DriverRegistry::noop()),
+        runtime_config,
+        policy_snapshot: std::sync::Arc::new(crate::storage::PolicySnapshot::new()),
+        config: std::sync::Arc::new(crate::config::Config::default()),
+        cache,
+        metrics: crate::metrics_core::NoopMetrics::arc(),
+    };
+
+    super::log(
+        &state,
+        &AuditContext::system(),
+        AuditAction::FollowerObjectWrite,
+        crate::services::audit_service::AuditEntityType::File,
+        None,
+        Some("remote/object.bin"),
+        None,
+    )
+    .await;
+
+    let count = audit_log::Entity::find()
+        .filter(audit_log::Column::Action.eq(AuditAction::FollowerObjectWrite))
         .count(&db)
         .await
         .expect("audit query should succeed");
