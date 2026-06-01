@@ -5,12 +5,7 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Duration, Utc};
-use rsa::{
-    BoxedUint, RsaPublicKey,
-    pkcs1v15::{Signature, VerifyingKey},
-    signature::Verifier,
-};
-use sha2::Sha256;
+use ring::signature::{RSA_PKCS1_2048_8192_SHA256, RsaPublicKeyComponents};
 
 use crate::errors::{AsterError, Result};
 
@@ -25,7 +20,8 @@ pub(crate) struct WopiProofKeySet {
 
 #[derive(Debug, Clone)]
 struct WopiProofPublicKey {
-    key: RsaPublicKey,
+    modulus: Vec<u8>,
+    exponent: Vec<u8>,
 }
 
 pub(crate) fn parse_wopi_proof_key_set(
@@ -34,8 +30,12 @@ pub(crate) fn parse_wopi_proof_key_set(
     old_modulus: Option<&str>,
     old_exponent: Option<&str>,
 ) -> Result<WopiProofKeySet> {
+    let current_modulus = parse_wopi_key_component(current_modulus, "modulus")?;
+    let current_exponent = parse_wopi_key_component(current_exponent, "exponent")?;
+    validate_wopi_rsa_public_key(&current_modulus, &current_exponent, "current")?;
     let current = WopiProofPublicKey {
-        key: parse_wopi_rsa_key(current_modulus, current_exponent)?,
+        modulus: current_modulus,
+        exponent: current_exponent,
     };
     let old = match (
         old_modulus.map(str::trim).filter(|value| !value.is_empty()),
@@ -44,9 +44,12 @@ pub(crate) fn parse_wopi_proof_key_set(
             .filter(|value| !value.is_empty()),
     ) {
         (None, None) => None,
-        (Some(modulus), Some(exponent)) => Some(WopiProofPublicKey {
-            key: parse_wopi_rsa_key(modulus, exponent)?,
-        }),
+        (Some(modulus), Some(exponent)) => {
+            let modulus = parse_wopi_key_component(modulus, "old modulus")?;
+            let exponent = parse_wopi_key_component(exponent, "old exponent")?;
+            validate_wopi_rsa_public_key(&modulus, &exponent, "old")?;
+            Some(WopiProofPublicKey { modulus, exponent })
+        }
         _ => {
             return Err(AsterError::validation_error(
                 "WOPI proof-key old modulus/exponent must be provided together",
@@ -94,19 +97,69 @@ pub(crate) fn validate_wopi_proof(
     ))
 }
 
-fn parse_wopi_rsa_key(modulus: &str, exponent: &str) -> Result<RsaPublicKey> {
-    let modulus = STANDARD
-        .decode(modulus.trim())
-        .map_err(|_| AsterError::validation_error("WOPI proof-key modulus must be valid base64"))?;
-    let exponent = STANDARD.decode(exponent.trim()).map_err(|_| {
-        AsterError::validation_error("WOPI proof-key exponent must be valid base64")
+fn parse_wopi_key_component(encoded: &str, name: &str) -> Result<Vec<u8>> {
+    let decoded = STANDARD.decode(encoded.trim()).map_err(|_| {
+        AsterError::validation_error(format!("WOPI proof-key {name} must be valid base64"))
     })?;
+    let first_nonzero = decoded
+        .iter()
+        .position(|value| *value != 0)
+        .unwrap_or(decoded.len());
+    let trimmed = decoded[first_nonzero..].to_vec();
+    if trimmed.is_empty() {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {name} must not be zero"
+        )));
+    }
+    Ok(trimmed)
+}
 
-    RsaPublicKey::new(
-        BoxedUint::from_be_slice_vartime(&modulus),
-        BoxedUint::from_be_slice_vartime(&exponent),
-    )
-    .map_err(|error| AsterError::validation_error(format!("invalid WOPI proof-key: {error}")))
+fn validate_wopi_rsa_public_key(modulus: &[u8], exponent: &[u8], key_name: &str) -> Result<()> {
+    let modulus_bit_len = bit_len(modulus);
+    if !(2048..=8192).contains(&modulus_bit_len) {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} modulus must be 2048-8192 bits"
+        )));
+    }
+    if modulus.last().is_some_and(|value| value % 2 == 0) {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} modulus must be odd"
+        )));
+    }
+
+    let exponent_value = parse_wopi_rsa_exponent(exponent, key_name)?;
+    if exponent_value > ((1_u64 << 33) - 1) {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} exponent is too large"
+        )));
+    }
+    if exponent_value < 3 || exponent_value % 2 == 0 {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} exponent must be an odd integer >= 3"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_wopi_rsa_exponent(exponent: &[u8], key_name: &str) -> Result<u64> {
+    if exponent.len() > 8 {
+        return Err(AsterError::validation_error(format!(
+            "WOPI proof-key {key_name} exponent is too large"
+        )));
+    }
+
+    let mut value = 0_u64;
+    for byte in exponent {
+        value = (value << 8) | u64::from(*byte);
+    }
+    Ok(value)
+}
+
+fn bit_len(bytes: &[u8]) -> usize {
+    let Some(first) = bytes.first() else {
+        return 0;
+    };
+    (bytes.len() - 1) * 8 + (u8::BITS as usize - first.leading_zeros() as usize)
 }
 
 fn parse_wopi_timestamp(timestamp: Option<&str>) -> Result<i64> {
@@ -162,11 +215,17 @@ fn verify_wopi_signature(
     let decoded_signature = STANDARD
         .decode(encoded_signature.trim())
         .map_err(|_| AsterError::internal_error("WOPI proof signature must be valid base64"))?;
-    let signature = Signature::try_from(decoded_signature.as_slice()).map_err(|_| {
-        AsterError::internal_error("WOPI proof signature is not a valid RSA PKCS#1 blob")
-    })?;
-    let verifying_key = VerifyingKey::<Sha256>::new(key.key.clone());
-    Ok(verifying_key.verify(expected_proof, &signature).is_ok())
+    let public_key = RsaPublicKeyComponents {
+        n: key.modulus.as_slice(),
+        e: key.exponent.as_slice(),
+    };
+    Ok(public_key
+        .verify(
+            &RSA_PKCS1_2048_8192_SHA256,
+            expected_proof,
+            &decoded_signature,
+        )
+        .is_ok())
 }
 
 fn dotnet_ticks(value: DateTime<Utc>) -> i64 {
@@ -177,37 +236,66 @@ fn dotnet_ticks(value: DateTime<Utc>) -> i64 {
 mod tests {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use chrono::{Duration, Utc};
-    use rsa::{
-        RsaPrivateKey,
-        pkcs1v15::SigningKey,
-        signature::{SignatureEncoding, Signer},
-        traits::PublicKeyParts,
+    use ring::{
+        rand::SystemRandom,
+        signature::{RSA_PKCS1_SHA256, RsaKeyPair, RsaPublicKeyComponents},
     };
-    use sha2::Sha256;
 
     use super::{
         WopiProofKeySet, build_expected_proof, dotnet_ticks, parse_wopi_proof_key_set,
         validate_wopi_proof,
     };
 
-    fn build_test_keys() -> (RsaPrivateKey, RsaPrivateKey, WopiProofKeySet) {
-        let mut rng = rand::rng();
-        let current = RsaPrivateKey::new(&mut rng, 2048).unwrap();
-        let old = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+    const CURRENT_PRIVATE_KEY: &str =
+        include_str!("../../../tests/fixtures/rsa/wopi_current_test_key.pem");
+    const OLD_PRIVATE_KEY: &str = include_str!("../../../tests/fixtures/rsa/wopi_old_test_key.pem");
+
+    fn build_test_keys() -> (RsaKeyPair, RsaKeyPair, WopiProofKeySet) {
+        let current = load_private_key(CURRENT_PRIVATE_KEY);
+        let old = load_private_key(OLD_PRIVATE_KEY);
+        let current_public = public_components(&current);
+        let old_public = public_components(&old);
         let proof_keys = parse_wopi_proof_key_set(
-            &STANDARD.encode(current.to_public_key().n().to_be_bytes_trimmed_vartime()),
-            &STANDARD.encode(current.to_public_key().e().to_be_bytes_trimmed_vartime()),
-            Some(&STANDARD.encode(old.to_public_key().n().to_be_bytes_trimmed_vartime())),
-            Some(&STANDARD.encode(old.to_public_key().e().to_be_bytes_trimmed_vartime())),
+            &STANDARD.encode(&current_public.n),
+            &STANDARD.encode(&current_public.e),
+            Some(&STANDARD.encode(&old_public.n)),
+            Some(&STANDARD.encode(&old_public.e)),
         )
         .unwrap();
 
         (current, old, proof_keys)
     }
 
-    fn sign(private_key: &RsaPrivateKey, payload: &[u8]) -> String {
-        let signing_key = SigningKey::<Sha256>::new(private_key.clone());
-        STANDARD.encode(signing_key.sign(payload).to_vec())
+    fn load_private_key(pem: &str) -> RsaKeyPair {
+        RsaKeyPair::from_der(&decode_pem(pem)).unwrap()
+    }
+
+    fn decode_pem(pem: &str) -> Vec<u8> {
+        let body: String = pem
+            .lines()
+            .filter(|line| !line.starts_with("-----"))
+            .collect();
+        STANDARD.decode(body).unwrap()
+    }
+
+    fn public_components(key: &RsaKeyPair) -> RsaPublicKeyComponents<Vec<u8>> {
+        RsaPublicKeyComponents::from(key.public())
+    }
+
+    fn sign(private_key: &RsaKeyPair, payload: &[u8]) -> String {
+        let rng = SystemRandom::new();
+        let mut signature = vec![0; private_key.public().modulus_len()];
+        private_key
+            .sign(&RSA_PKCS1_SHA256, &rng, payload, &mut signature)
+            .unwrap();
+        STANDARD.encode(signature)
+    }
+
+    fn valid_test_modulus() -> Vec<u8> {
+        let mut modulus = vec![0_u8; 256];
+        modulus[0] = 0x80;
+        modulus[255] = 1;
+        modulus
     }
 
     fn build_reference_payload(access_token: &str, request_url: &str, timestamp: i64) -> Vec<u8> {
@@ -311,6 +399,31 @@ mod tests {
     }
 
     #[test]
+    fn validate_wopi_proof_rejects_proof_old_signed_by_old_key() {
+        let (_current, old, proof_keys) = build_test_keys();
+        let now = Utc::now();
+        let timestamp = dotnet_ticks(now);
+        let payload = build_reference_payload(
+            "wopi_token",
+            "https://drive.example.com/api/v1/wopi/files/7?access_token=wopi_token",
+            timestamp,
+        );
+
+        let err = validate_wopi_proof(
+            &proof_keys,
+            "wopi_token",
+            "https://drive.example.com/api/v1/wopi/files/7?access_token=wopi_token",
+            Some(&STANDARD.encode([0_u8; 256])),
+            Some(&sign(&old, &payload)),
+            Some(&timestamp.to_string()),
+            now,
+        )
+        .unwrap_err();
+
+        assert!(err.message().contains("WOPI proof validation failed"));
+    }
+
+    #[test]
     fn validate_wopi_proof_rejects_stale_timestamp() {
         let (current, _old, proof_keys) = build_test_keys();
         let now = Utc::now();
@@ -368,15 +481,46 @@ mod tests {
 
     #[test]
     fn parse_wopi_proof_key_set_requires_old_pairs() {
-        let mut rng = rand::rng();
-        let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+        let modulus = valid_test_modulus();
         let err = parse_wopi_proof_key_set(
-            &STANDARD.encode(key.to_public_key().n().to_be_bytes_trimmed_vartime()),
-            &STANDARD.encode(key.to_public_key().e().to_be_bytes_trimmed_vartime()),
+            &STANDARD.encode(modulus),
+            &STANDARD.encode([1_u8, 0, 1]),
             Some("AQAB"),
             None,
         )
         .unwrap_err();
         assert!(err.message().contains("must be provided together"));
+    }
+
+    #[test]
+    fn parse_wopi_proof_key_set_rejects_invalid_rsa_constraints() {
+        let modulus = valid_test_modulus();
+
+        let short_modulus_err = parse_wopi_proof_key_set(
+            &STANDARD.encode([0x80_u8; 128]),
+            &STANDARD.encode([1_u8, 0, 1]),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(short_modulus_err.message().contains("2048-8192 bits"));
+
+        let even_exponent_err = parse_wopi_proof_key_set(
+            &STANDARD.encode(&modulus),
+            &STANDARD.encode([2_u8]),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(even_exponent_err.message().contains("odd integer >= 3"));
+
+        let large_exponent_err = parse_wopi_proof_key_set(
+            &STANDARD.encode(modulus),
+            &STANDARD.encode([2_u8, 0, 0, 0, 0]),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(large_exponent_err.message().contains("too large"));
     }
 }

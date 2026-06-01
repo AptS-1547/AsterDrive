@@ -8,18 +8,26 @@ use jsonwebtoken::{
         RSAKeyParameters,
     },
 };
-use rsa::{RsaPrivateKey, RsaPublicKey, pkcs1::EncodeRsaPrivateKey, traits::PublicKeyParts};
+use ring::signature::{KeyPair, RsaKeyPair, RsaPublicKeyComponents};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 
 use super::TEST_CLIENT_ID;
 
 const TEST_KID: &str = "aster-test-kid";
+const TEST_RSA_PRIVATE_KEY: &str = include_str!("../../fixtures/rsa/wopi_current_test_key.pem");
+
+#[derive(Clone)]
+struct StaticRsaKey {
+    private_der: Vec<u8>,
+    modulus: Vec<u8>,
+    exponent: Vec<u8>,
+}
 
 #[derive(Clone)]
 pub struct MockOidcProvider {
     pub issuer: String,
-    key: Arc<RsaPrivateKey>,
+    key: Arc<StaticRsaKey>,
     authorization_requests: Arc<Mutex<Vec<AuthorizeRequest>>>,
     token_subject: Arc<Mutex<String>>,
     token_email: Arc<Mutex<Option<String>>>,
@@ -53,8 +61,7 @@ struct TokenRequest {
 
 impl MockOidcProvider {
     fn new() -> Self {
-        let mut rng = rand::rng();
-        let key = RsaPrivateKey::new(&mut rng, 2048).expect("RSA key should generate");
+        let key = StaticRsaKey::from_pem(TEST_RSA_PRIVATE_KEY);
         Self {
             issuer: String::new(),
             key: Arc::new(key),
@@ -132,7 +139,6 @@ impl MockOidcProvider {
     }
 
     fn public_jwk(&self) -> Jwk {
-        let public = RsaPublicKey::from(self.key.as_ref());
         Jwk {
             common: CommonParameters {
                 public_key_use: Some(PublicKeyUse::Signature),
@@ -141,8 +147,8 @@ impl MockOidcProvider {
                 ..Default::default()
             },
             algorithm: AlgorithmParameters::RSA(RSAKeyParameters {
-                n: base64_url(public.n().to_be_bytes_trimmed_vartime()),
-                e: base64_url(public.e().to_be_bytes_trimmed_vartime()),
+                n: base64_url(&self.key.modulus),
+                e: base64_url(&self.key.exponent),
                 ..Default::default()
             }),
         }
@@ -197,13 +203,36 @@ impl MockOidcProvider {
         }
         let mut header = Header::new(Algorithm::RS256);
         header.kid = Some(TEST_KID.to_string());
-        let der = self
-            .key
-            .to_pkcs1_der()
-            .expect("private key should encode to pkcs1");
-        jsonwebtoken::encode(&header, &claims, &EncodingKey::from_rsa_der(der.as_bytes()))
-            .expect("id_token should sign")
+        jsonwebtoken::encode(
+            &header,
+            &claims,
+            &EncodingKey::from_rsa_der(&self.key.private_der),
+        )
+        .expect("id_token should sign")
     }
+}
+
+impl StaticRsaKey {
+    fn from_pem(pem: &str) -> Self {
+        let private_der = decode_pem(pem);
+        let key_pair = RsaKeyPair::from_der(&private_der).expect("RSA private key should parse");
+        let public = RsaPublicKeyComponents::<Vec<u8>>::from(key_pair.public());
+        Self {
+            private_der,
+            modulus: public.n,
+            exponent: public.e,
+        }
+    }
+}
+
+fn decode_pem(pem: &str) -> Vec<u8> {
+    let body: String = pem
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .collect();
+    base64::engine::general_purpose::STANDARD
+        .decode(body)
+        .expect("RSA private key PEM should decode")
 }
 
 fn base64_url(bytes: impl AsRef<[u8]>) -> String {
