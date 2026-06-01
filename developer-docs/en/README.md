@@ -6,8 +6,16 @@ The `docs/` tree is reserved for deployment-facing and end-user documentation, s
 
 ## Languages
 
-- [Simplified Chinese](./zh-CN/README.md)
-- [English](./en/README.md)
+- [Simplified Chinese](../zh-CN/README.md)
+- English
+
+## Entry Points
+
+- [Architecture Overview](./architecture.md)
+- [Core Module Design Notes](./module-designs.md)
+- [External Authentication Module](./external-auth.md)
+- [API Overview](./api/index.md)
+- [Testing and Database Backends](./testing.md)
 
 ## Current Status
 
