@@ -61,7 +61,7 @@ pub(crate) fn prepare_non_dedup_blob_upload(
                 policy_id: policy.id,
             }
         }
-        DriverType::S3 => {
+        DriverType::S3 | DriverType::TencentCos => {
             let upload_id = crate::utils::id::new_uuid();
             PreparedNonDedupBlobUpload::S3 {
                 storage_path: format!("files/{upload_id}"),

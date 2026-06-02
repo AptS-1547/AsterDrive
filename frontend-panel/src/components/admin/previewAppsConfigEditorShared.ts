@@ -171,6 +171,9 @@ function readPreviewAppProvider(value: unknown): PreviewAppProviderValue {
 	if (normalized === "wopi") {
 		return "wopi";
 	}
+	if (normalized === "native_preview") {
+		return "native_preview";
+	}
 	return "";
 }
 
@@ -388,6 +391,10 @@ export function getPreviewAppDefaultIcon(key: string, provider?: unknown) {
 		return PREVIEW_APP_ICON_URLS.web;
 	}
 
+	if (getPreviewAppProvider(provider) === "native_preview") {
+		return PREVIEW_APP_ICON_URLS.file;
+	}
+
 	return PREVIEW_APP_KEY_META[key.trim()]?.icon ?? PREVIEW_APP_ICON_URLS.web;
 }
 
@@ -395,6 +402,9 @@ export function getPreviewAppKindLabelKey(key: string, provider?: unknown) {
 	const resolvedProvider = getPreviewAppProvider(provider);
 	if (resolvedProvider === "wopi") {
 		return "preview_apps_provider_wopi";
+	}
+	if (resolvedProvider === "native_preview") {
+		return "preview_apps_provider_native_preview";
 	}
 
 	return (
@@ -419,6 +429,10 @@ export function isUrlTemplatePreviewApp(app: PreviewAppsEditorApp) {
 
 export function isWopiPreviewApp(app: PreviewAppsEditorApp) {
 	return app.provider === "wopi";
+}
+
+export function isNativePreviewApp(app: PreviewAppsEditorApp) {
+	return app.provider === "native_preview";
 }
 
 export function parsePreviewAppsConfig(value: string): PreviewAppsEditorConfig {
@@ -576,6 +590,17 @@ export function getPreviewAppsConfigIssues(
 			if (!actionUrl && !actionUrlTemplate && !discoveryUrl) {
 				issues.push({
 					key: "preview_apps_error_wopi_target_required",
+					values: { index: appNumber },
+				});
+			}
+		}
+
+		if (provider === "native_preview") {
+			const mode =
+				typeof app.config.mode === "string" ? app.config.mode.trim() : "";
+			if (!mode) {
+				issues.push({
+					key: "preview_apps_error_native_preview_mode_required",
 					values: { index: appNumber },
 				});
 			}

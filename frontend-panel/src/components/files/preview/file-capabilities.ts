@@ -424,6 +424,9 @@ function getConfiguredPreviewProvider(
 	if (provider === "url_template") {
 		return "url_template";
 	}
+	if (provider === "native_preview") {
+		return "native_preview";
+	}
 	return null;
 }
 
@@ -441,6 +444,10 @@ function getConfiguredPreviewMode(
 
 	if (provider === "wopi") {
 		return "wopi";
+	}
+
+	if (provider === "native_preview") {
+		return "native_preview";
 	}
 
 	switch (key) {

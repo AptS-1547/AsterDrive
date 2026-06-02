@@ -22,6 +22,7 @@ pub fn driver_type_supports_native_thumbnail(driver_type: DriverType) -> bool {
     match driver_type {
         DriverType::Local => false,
         DriverType::S3 => false,
+        DriverType::TencentCos => true,
         DriverType::Remote => false,
     }
 }
@@ -148,6 +149,13 @@ pub trait StorageDriver: Send + Sync {
         None
     }
 
+    /// 获取存储侧外部预览 / 文件解析支持
+    ///
+    /// COS CI 等驱动返回 Some；普通 S3、本地存储等返回 None。
+    fn as_native_preview(&self) -> Option<&dyn super::extensions::NativePreviewStorageDriver> {
+        None
+    }
+
     /// 获取容量观测信息。
     ///
     /// 不支持容量查询的驱动必须明确返回 `StorageErrorKind::Unsupported`，不要静默
@@ -223,9 +231,12 @@ mod tests {
     }
 
     #[test]
-    fn no_driver_type_currently_supports_native_thumbnail_by_default() {
+    fn only_vendor_drivers_with_native_processors_support_native_thumbnail() {
         assert!(!driver_type_supports_native_thumbnail(DriverType::Local));
         assert!(!driver_type_supports_native_thumbnail(DriverType::S3));
+        assert!(driver_type_supports_native_thumbnail(
+            DriverType::TencentCos
+        ));
         assert!(!driver_type_supports_native_thumbnail(DriverType::Remote));
     }
 

@@ -148,6 +148,10 @@ export type DirectLinkQuery = components["schemas"]["DirectLinkQuery"];
 export type FileSearchItem = components["schemas"]["FileSearchItem"];
 export type MyShareInfo = components["schemas"]["MyShareInfo"];
 export type PreviewLinkInfo = components["schemas"]["PreviewLinkInfo"];
+export type NativePreviewOpenMode =
+	components["schemas"]["NativePreviewOpenMode"];
+export type NativePreviewSession =
+	components["schemas"]["NativePreviewSession"];
 export type ShareStreamSessionInfo =
 	components["schemas"]["ShareStreamSessionInfo"];
 export type SearchParams = components["schemas"]["SearchParams"];
@@ -343,6 +347,8 @@ export type OfflineDownloadTaskPayloadInfo =
 export type OfflineDownloadTaskResult =
 	components["schemas"]["OfflineDownloadTaskResult"];
 export type S3DownloadStrategy = components["schemas"]["S3DownloadStrategy"];
+export type StoragePolicySummaryInfo =
+	components["schemas"]["StoragePolicySummaryInfo"];
 export type StoragePolicyGroupItem =
 	components["schemas"]["StoragePolicyGroupItemInfo"];
 export type StoragePolicyGroup =

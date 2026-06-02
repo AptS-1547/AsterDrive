@@ -80,7 +80,9 @@ pub(crate) fn resolve_policy_upload_transport(
     let options = parse_storage_policy_options(policy.options.as_ref());
     match policy.driver_type {
         DriverType::Local => PolicyUploadTransport::Local,
-        DriverType::S3 => PolicyUploadTransport::S3(options.effective_s3_upload_strategy()),
+        DriverType::S3 | DriverType::TencentCos => {
+            PolicyUploadTransport::S3(options.effective_s3_upload_strategy())
+        }
         DriverType::Remote => {
             PolicyUploadTransport::Remote(options.effective_remote_upload_strategy())
         }

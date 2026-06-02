@@ -24,6 +24,7 @@ describe("storagePolicyDialogShared", () => {
 				allowed_types: [],
 				options: {
 					content_dedup: true,
+					storage_native_processing_enabled: true,
 					thumbnail_processor: "storage_native",
 					thumbnail_extensions: ["png", "jpg"],
 				},
@@ -49,6 +50,7 @@ describe("storagePolicyDialogShared", () => {
 			remote_upload_strategy: "relay_stream",
 			s3_upload_strategy: "relay_stream",
 			s3_download_strategy: "relay_stream",
+			storage_native_processing_enabled: true,
 			thumbnail_processor: "storage_native",
 			thumbnail_extensions: ["png", "jpg"],
 		});
@@ -73,6 +75,7 @@ describe("storagePolicyDialogShared", () => {
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "presigned",
 				s3_download_strategy: "relay_stream",
+				storage_native_processing_enabled: false,
 				thumbnail_processor: null,
 				thumbnail_extensions: [],
 			}),
@@ -113,6 +116,7 @@ describe("storagePolicyDialogShared", () => {
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "presigned",
+				storage_native_processing_enabled: false,
 				thumbnail_processor: null,
 				thumbnail_extensions: [],
 			}),
@@ -150,6 +154,7 @@ describe("storagePolicyDialogShared", () => {
 				remote_upload_strategy: "presigned",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "relay_stream",
+				storage_native_processing_enabled: false,
 				thumbnail_processor: null,
 				thumbnail_extensions: [],
 			}),
@@ -189,6 +194,7 @@ describe("storagePolicyDialogShared", () => {
 				remote_upload_strategy: "presigned",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "relay_stream",
+				storage_native_processing_enabled: false,
 				thumbnail_processor: null,
 				thumbnail_extensions: [],
 			}),
@@ -221,6 +227,7 @@ describe("storagePolicyDialogShared", () => {
 			remote_upload_strategy: "presigned" as const,
 			s3_upload_strategy: "relay_stream" as const,
 			s3_download_strategy: "relay_stream" as const,
+			storage_native_processing_enabled: true,
 			thumbnail_processor: "storage_native" as const,
 			thumbnail_extensions: ["png", "jpg"],
 		};
@@ -228,14 +235,90 @@ describe("storagePolicyDialogShared", () => {
 		expect(buildCreatePolicyPayload(form).options).toEqual({
 			remote_download_strategy: "presigned",
 			remote_upload_strategy: "presigned",
+			storage_native_processing_enabled: true,
 			thumbnail_processor: "storage_native",
 			thumbnail_extensions: ["png", "jpg"],
 		});
 		expect(buildUpdatePolicyPayload(form).options).toEqual({
 			remote_download_strategy: "presigned",
 			remote_upload_strategy: "presigned",
+			storage_native_processing_enabled: true,
 			thumbnail_processor: "storage_native",
 			thumbnail_extensions: ["png", "jpg"],
+		});
+	});
+
+	it("keeps storage-native thumbnail suffixes independent per policy", () => {
+		const baseForm = {
+			name: "COS Native",
+			driver_type: "tencent_cos" as const,
+			endpoint: "https://cos.ap-guangzhou.myqcloud.com",
+			bucket: "bucket-1250000000",
+			access_key: "AKID",
+			secret_key: "SECRET",
+			base_path: "",
+			remote_node_id: "",
+			max_file_size: "",
+			chunk_size: "5",
+			is_default: false,
+			content_dedup: false,
+			remote_download_strategy: "relay_stream" as const,
+			remote_upload_strategy: "relay_stream" as const,
+			s3_upload_strategy: "relay_stream" as const,
+			s3_download_strategy: "relay_stream" as const,
+			storage_native_processing_enabled: true,
+			thumbnail_processor: "storage_native" as const,
+			thumbnail_extensions: [" .PNG ", "jpg", ".png"],
+		};
+
+		expect(buildCreatePolicyPayload(baseForm).options).toEqual({
+			s3_upload_strategy: "relay_stream",
+			s3_download_strategy: "relay_stream",
+			storage_native_processing_enabled: true,
+			thumbnail_processor: "storage_native",
+			thumbnail_extensions: ["png", "jpg"],
+		});
+		expect(
+			buildCreatePolicyPayload({
+				...baseForm,
+				name: "COS WebP",
+				thumbnail_extensions: ["webp", "gif"],
+			}).options,
+		).toEqual({
+			s3_upload_strategy: "relay_stream",
+			s3_download_strategy: "relay_stream",
+			storage_native_processing_enabled: true,
+			thumbnail_processor: "storage_native",
+			thumbnail_extensions: ["webp", "gif"],
+		});
+	});
+
+	it("does not persist native thumbnail suffixes when storage-native processing is disabled", () => {
+		const payload = buildCreatePolicyPayload({
+			name: "Plain S3",
+			driver_type: "s3",
+			endpoint: "https://s3.example.com",
+			bucket: "bucket",
+			access_key: "AKID",
+			secret_key: "SECRET",
+			base_path: "",
+			remote_node_id: "",
+			max_file_size: "",
+			chunk_size: "5",
+			is_default: false,
+			content_dedup: false,
+			remote_download_strategy: "relay_stream",
+			remote_upload_strategy: "relay_stream",
+			s3_upload_strategy: "relay_stream",
+			s3_download_strategy: "relay_stream",
+			storage_native_processing_enabled: false,
+			thumbnail_processor: "storage_native",
+			thumbnail_extensions: ["png"],
+		});
+
+		expect(payload.options).toEqual({
+			s3_upload_strategy: "relay_stream",
+			s3_download_strategy: "relay_stream",
 		});
 	});
 });

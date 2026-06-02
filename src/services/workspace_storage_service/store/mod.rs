@@ -153,7 +153,7 @@ pub(crate) async fn create_empty(
             crate::types::DriverType::Local => {
                 create_nondedup_blob(&txn, EMPTY_SIZE, policy.id).await?
             }
-            crate::types::DriverType::S3 => {
+            crate::types::DriverType::S3 | crate::types::DriverType::TencentCos => {
                 let upload_id = crate::utils::id::new_uuid();
                 create_s3_nondedup_blob(&txn, EMPTY_SIZE, policy.id, &upload_id).await?
             }

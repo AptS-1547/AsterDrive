@@ -17,7 +17,8 @@ pub use driver::{
 };
 pub use error::StorageErrorKind;
 pub use extensions::{
-    ListStorageDriver, LocalPathStorageDriver, PresignedStorageDriver, StorageCapacityInfo,
+    ListStorageDriver, LocalPathStorageDriver, NativePreviewOpenMode, NativePreviewRequest,
+    NativePreviewResult, NativePreviewStorageDriver, PresignedStorageDriver, StorageCapacityInfo,
     StorageCapacityStatus, StreamUploadDriver,
 };
 pub use multipart::MultipartStorageDriver;

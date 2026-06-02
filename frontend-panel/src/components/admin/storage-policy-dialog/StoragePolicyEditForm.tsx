@@ -16,9 +16,13 @@ import {
 	S3ConnectionFields,
 	S3DownloadStrategyField,
 	S3UploadStrategyField,
+	StorageNativeProcessingField,
 	type StoragePolicyDriverOption,
 } from "@/components/admin/StoragePolicyDialogFields";
-import type { PolicyFormData } from "@/components/admin/storagePolicyDialogShared";
+import {
+	isS3CompatibleDriver,
+	type PolicyFormData,
+} from "@/components/admin/storagePolicyDialogShared";
 import { cn } from "@/lib/utils";
 import type { RemoteNodeInfo, StoragePolicyCapacityInfo } from "@/types/api";
 import type {
@@ -111,7 +115,7 @@ export function StoragePolicyEditForm({
 					</div>
 				</section>
 
-				{form.driver_type === "s3" ? (
+				{isS3CompatibleDriver(form.driver_type) ? (
 					<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
 						<PolicySectionIntro
 							title={t("policy_editor_connection_title")}
@@ -154,7 +158,7 @@ export function StoragePolicyEditForm({
 						description={t("policy_editor_rules_desc")}
 					/>
 					<div className="space-y-4">
-						{form.driver_type === "s3" ? (
+						{isS3CompatibleDriver(form.driver_type) ? (
 							<>
 								<S3UploadStrategyField
 									form={form}
@@ -195,6 +199,20 @@ export function StoragePolicyEditForm({
 						/>
 					</div>
 				</section>
+
+				{form.driver_type === "tencent_cos" ? (
+					<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
+						<PolicySectionIntro
+							title={t("policy_storage_native_section_title")}
+							description={t("policy_storage_native_section_desc")}
+						/>
+						<StorageNativeProcessingField
+							form={form}
+							t={t}
+							onFieldChange={onFieldChange}
+						/>
+					</section>
+				) : null}
 			</div>
 		</div>
 	);

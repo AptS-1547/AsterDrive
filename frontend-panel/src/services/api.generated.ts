@@ -4782,7 +4782,7 @@ export interface components {
          * @description 存储驱动类型
          * @enum {string}
          */
-        DriverType: "local" | "s3" | "remote";
+        DriverType: "local" | "s3" | "tencent_cos" | "remote";
         /** @description Check a storage policy migration plan without creating a task. */
         DryRunStoragePolicyMigrationReq: {
             delete_source_after_success?: boolean;
@@ -5403,6 +5403,16 @@ export interface components {
             /** Format: int64 */
             view_count: number;
         };
+        /** @enum {string} */
+        NativePreviewOpenMode: "iframe" | "new_tab";
+        NativePreviewSession: {
+            action_url: string;
+            cache_key?: string | null;
+            expires_at: string;
+            mode: components["schemas"]["NativePreviewOpenMode"];
+            provider: string;
+            version?: string | null;
+        };
         /**
          * @description Presentation-safe offline download payload used by task list views.
          *
@@ -5894,6 +5904,10 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        /** @description Open file with a storage-native preview provider. */
+        OpenNativePreviewRequest: {
+            app_key: string;
+        };
         /** @description WOPI open file request. */
         OpenWopiRequest: {
             app_key: string;
@@ -6032,7 +6046,7 @@ export interface components {
             part_numbers: number[];
         };
         /** @enum {string} */
-        PreviewAppProvider: "builtin" | "url_template" | "wopi";
+        PreviewAppProvider: "builtin" | "url_template" | "wopi" | "native_preview";
         PreviewLinkInfo: {
             expires_at: string;
             /** Format: int32 */
@@ -6638,6 +6652,7 @@ export interface components {
             /** Format: int64 */
             s3_read_timeout_secs?: number | null;
             s3_upload_strategy?: null | components["schemas"]["S3UploadStrategy"];
+            storage_native_processing_enabled?: boolean | null;
             thumbnail_extensions?: string[];
             thumbnail_processor?: null | components["schemas"]["MediaProcessorKind"];
         };

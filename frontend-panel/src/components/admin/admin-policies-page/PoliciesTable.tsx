@@ -163,7 +163,9 @@ export function PoliciesTable({
 										? t("driver_type_local")
 										: policy.driver_type === "remote"
 											? t("driver_type_remote")
-											: t("driver_type_s3")}
+											: policy.driver_type === "tencent_cos"
+												? t("driver_type_tencent_cos")
+												: t("driver_type_s3")}
 								</Badge>
 							</div>
 						</TableCell>

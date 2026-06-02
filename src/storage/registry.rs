@@ -5,6 +5,7 @@ use super::driver::StorageDriver;
 use super::drivers::local::LocalDriver;
 use super::drivers::remote::RemoteDriver;
 use super::drivers::s3::S3Driver;
+use super::drivers::tencent_cos::TencentCosDriver;
 use super::error::storage_driver_error;
 use super::metrics_driver::{MetricsMultipartStorageDriver, MetricsStorageDriver};
 use super::multipart::MultipartStorageDriver;
@@ -254,6 +255,12 @@ impl DriverRegistry {
             }
             DriverType::S3 => {
                 let driver = Arc::new(S3Driver::new(policy)?);
+                let storage: Arc<dyn StorageDriver> = driver.clone();
+                let multipart: Arc<dyn MultipartStorageDriver> = driver;
+                Ok(self.build_entry(policy.driver_type, storage, Some(multipart)))
+            }
+            DriverType::TencentCos => {
+                let driver = Arc::new(TencentCosDriver::new(policy)?);
                 let storage: Arc<dyn StorageDriver> = driver.clone();
                 let multipart: Arc<dyn MultipartStorageDriver> = driver;
                 Ok(self.build_entry(policy.driver_type, storage, Some(multipart)))

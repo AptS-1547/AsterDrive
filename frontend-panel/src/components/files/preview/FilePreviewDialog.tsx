@@ -25,6 +25,7 @@ export function FilePreviewDialog({
 	loadMusicBackendMetadata,
 	mediaStreamLinkFactory,
 	wopiSessionFactory,
+	nativePreviewSessionFactory,
 	openMode = "auto",
 }: FilePreviewDialogProps) {
 	const { i18n, t } = useTranslation(["core", "files"]);
@@ -45,6 +46,7 @@ export function FilePreviewDialog({
 		loadMusicBackendMetadata,
 		mediaStreamLinkFactory,
 		wopiSessionFactory,
+		nativePreviewSessionFactory,
 		openMode,
 		language: i18n?.language,
 		translateFileLabel,
@@ -95,6 +97,9 @@ export function FilePreviewDialog({
 									thumbnailPath={model.resolvedThumbnailPath}
 									getOptionLabel={model.getOptionLabel}
 									previewLinkFactory={previewLinkFactory}
+									nativePreviewSessionFactory={
+										model.nativePreviewSessionFactory
+									}
 									archivePreviewFactory={model.activeArchivePreviewFactory}
 									loadMusicBackendMetadata={
 										model.resolvedLoadMusicBackendMetadata

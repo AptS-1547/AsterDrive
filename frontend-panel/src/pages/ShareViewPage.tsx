@@ -106,6 +106,15 @@ function SharePreviewElement({
 								retainedPreviewFile.id,
 							)
 				}
+				nativePreviewSessionFactory={(appKey) =>
+					info?.share_type === "file"
+						? shareService.createNativePreviewSession(token, appKey)
+						: shareService.createFolderFileNativePreviewSession(
+								token,
+								retainedPreviewFile.id,
+								appKey,
+							)
+				}
 				archivePreviewFactory={(options) =>
 					info?.share_type === "file"
 						? shareService.getArchivePreview(token, options)

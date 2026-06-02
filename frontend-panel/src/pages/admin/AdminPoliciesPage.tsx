@@ -11,11 +11,13 @@ import {
 	buildCreatePolicyPayload,
 	buildPolicyTestPayload,
 	buildUpdatePolicyPayload,
+	DEFAULT_STORAGE_NATIVE_THUMBNAIL_EXTENSIONS,
 	emptyForm,
 	getEndpointValidationMessage,
 	getPolicyConnectionTestKey,
 	getPolicyForm,
 	hasConnectionFieldChanges,
+	isS3CompatibleDriver,
 	normalizePolicyForm,
 	type PolicyFormData,
 } from "@/components/admin/storagePolicyDialogShared";
@@ -384,17 +386,42 @@ function useAdminPoliciesPageContent() {
 	const setField = <K extends keyof PolicyFormData>(
 		key: K,
 		value: PolicyFormData[K],
-	) => setForm((prev) => ({ ...prev, [key]: value }));
+	) =>
+		setForm((prev) => {
+			if (key === "storage_native_processing_enabled") {
+				const enabled = value as boolean;
+				return {
+					...prev,
+					storage_native_processing_enabled: enabled,
+					thumbnail_processor: enabled ? "storage_native" : null,
+					thumbnail_extensions: enabled
+						? prev.thumbnail_extensions.length > 0
+							? prev.thumbnail_extensions
+							: [...DEFAULT_STORAGE_NATIVE_THUMBNAIL_EXTENSIONS]
+						: [],
+				};
+			}
+
+			return { ...prev, [key]: value };
+		});
 
 	const setDriverType = (driverType: DriverType) => {
 		setValidatedConnectionKey(null);
 		setCreateStepTouched(false);
 		setForm((prev) => {
-			if (driverType === "s3") {
+			if (isS3CompatibleDriver(driverType)) {
 				return {
 					...prev,
 					driver_type: driverType,
 					remote_node_id: "",
+					storage_native_processing_enabled:
+						driverType === "tencent_cos"
+							? prev.storage_native_processing_enabled
+							: false,
+					thumbnail_processor:
+						driverType === "tencent_cos" ? prev.thumbnail_processor : null,
+					thumbnail_extensions:
+						driverType === "tencent_cos" ? prev.thumbnail_extensions : [],
 				};
 			}
 
@@ -407,6 +434,9 @@ function useAdminPoliciesPageContent() {
 					access_key: "",
 					secret_key: "",
 					content_dedup: false,
+					storage_native_processing_enabled: false,
+					thumbnail_processor: null,
+					thumbnail_extensions: [],
 					remote_download_strategy: "relay_stream",
 					remote_upload_strategy: "relay_stream",
 				};
@@ -420,6 +450,9 @@ function useAdminPoliciesPageContent() {
 				access_key: "",
 				secret_key: "",
 				remote_node_id: "",
+				storage_native_processing_enabled: false,
+				thumbnail_processor: null,
+				thumbnail_extensions: [],
 				remote_download_strategy: "relay_stream",
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "relay_stream",
@@ -458,7 +491,7 @@ function useAdminPoliciesPageContent() {
 			}
 
 			if (
-				currentForm.driver_type === "s3" ||
+				isS3CompatibleDriver(currentForm.driver_type) ||
 				currentForm.driver_type === "remote"
 			) {
 				setValidatedConnectionKey(getPolicyConnectionTestKey(currentForm));
@@ -511,7 +544,10 @@ function useAdminPoliciesPageContent() {
 	};
 
 	const shouldRunConnectionSaveTest = () => {
-		if (form.driver_type !== "s3" && form.driver_type !== "remote") {
+		if (
+			!isS3CompatibleDriver(form.driver_type) &&
+			form.driver_type !== "remote"
+		) {
 			return false;
 		}
 
@@ -572,7 +608,7 @@ function useAdminPoliciesPageContent() {
 			return;
 		}
 
-		if (form.driver_type === "s3" && !form.bucket.trim()) {
+		if (isS3CompatibleDriver(form.driver_type) && !form.bucket.trim()) {
 			return;
 		}
 

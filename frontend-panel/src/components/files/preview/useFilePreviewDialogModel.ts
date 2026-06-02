@@ -8,6 +8,7 @@ import type {
 	ArchivePreviewManifest,
 	FileInfo,
 	FileListItem,
+	NativePreviewSession,
 	PreviewLinkInfo,
 	ShareStreamSessionInfo,
 	WopiLaunchSession,
@@ -43,6 +44,9 @@ export interface FilePreviewDialogProps {
 	loadMusicBackendMetadata?: MusicPlayerTrack["loadBackendMetadata"];
 	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
 	wopiSessionFactory?: (appKey: string) => Promise<WopiLaunchSession>;
+	nativePreviewSessionFactory?: (
+		appKey: string,
+	) => Promise<NativePreviewSession>;
 	openMode?: "auto" | "direct" | "picker";
 }
 
@@ -163,7 +167,11 @@ function getEmbeddedOptionMode(option: OpenWithOption | null) {
 		return "new_tab";
 	}
 
-	if (option.mode !== "url_template" && option.mode !== "wopi") {
+	if (
+		option.mode !== "url_template" &&
+		option.mode !== "wopi" &&
+		option.mode !== "native_preview"
+	) {
 		return "iframe";
 	}
 
@@ -183,6 +191,7 @@ export function useFilePreviewDialogModel({
 	loadMusicBackendMetadata,
 	mediaStreamLinkFactory,
 	wopiSessionFactory,
+	nativePreviewSessionFactory,
 	openMode = "auto",
 	language,
 	translateFileLabel,
@@ -263,8 +272,10 @@ export function useFilePreviewDialogModel({
 	const isOptionAvailable = useCallback(
 		(option: OpenWithOption) =>
 			(option.mode !== "wopi" || Boolean(wopiSessionFactory)) &&
+			(option.mode !== "native_preview" ||
+				Boolean(nativePreviewSessionFactory)) &&
 			(option.mode !== "archive" || Boolean(archivePreviewFactory)),
-		[archivePreviewFactory, wopiSessionFactory],
+		[archivePreviewFactory, nativePreviewSessionFactory, wopiSessionFactory],
 	);
 
 	const allOptions = useMemo(
@@ -419,7 +430,9 @@ export function useFilePreviewDialogModel({
 	const usesInnerScroll =
 		activeOption?.mode === "pdf" ||
 		activeOption?.mode === "table" ||
-		((activeOption?.mode === "url_template" || activeOption?.mode === "wopi") &&
+		((activeOption?.mode === "url_template" ||
+			activeOption?.mode === "wopi" ||
+			activeOption?.mode === "native_preview") &&
 			getEmbeddedOptionMode(activeOption) !== "new_tab");
 	const fillsViewportHeight =
 		activeOption?.mode === "code" ||
@@ -428,7 +441,9 @@ export function useFilePreviewDialogModel({
 		activeOption?.mode === "archive" ||
 		activeOption?.mode === "pdf" ||
 		activeOption?.mode === "table" ||
-		((activeOption?.mode === "url_template" || activeOption?.mode === "wopi") &&
+		((activeOption?.mode === "url_template" ||
+			activeOption?.mode === "wopi" ||
+			activeOption?.mode === "native_preview") &&
 			getEmbeddedOptionMode(activeOption) !== "new_tab");
 
 	const closeWithGuard = useCallback(() => {
@@ -540,6 +555,7 @@ export function useFilePreviewDialogModel({
 			dispatch({ type: "setShowAllOpenMethods", open: true }),
 		confirmOpen: state.confirmOpen,
 		mediaStreamLinkFactory,
+		nativePreviewSessionFactory,
 		previewLinkFactory,
 	};
 }

@@ -76,12 +76,20 @@ If an opaque key already exists in the target policy, the migration does not ove
 | Item | Purpose |
 | --- | --- |
 | Name | Display name in the admin console |
-| Driver type | `local`, `s3`, or `remote` |
+| Driver type | `local`, `s3`, `tencent_cos`, or `remote` |
 | Connection information | Local directory / S3 endpoint, bucket, secrets / bound follower node |
 | Single-file size limit | Maximum upload size. `0` = unlimited. |
 | Chunk size | Size of each chunk for large-file uploads |
 | Default policy | Preferred by newly created default groups or default routing rules |
-| Extra options | Local content deduplication, S3 upload/download methods, remote upload/download methods, and so on |
+| Extra options | Local content deduplication, S3 upload/download methods, remote upload/download methods, storage-native processing, and so on |
+
+::: warning Storage-native processing can incur provider charges
+`Storage-native processing` is a master switch on each storage policy. AsterDrive only calls native data-processing features exposed by the resolved storage driver after this switch is enabled. For Tencent COS policies, this maps to COS CI features such as document preview and COS-native image thumbnails.
+
+Each policy can also define its own native-thumbnail suffix list. For example, one COS policy can allow only `jpg,png`, while another COS policy allows `webp,gif`. Non-matching files continue through the global media processors.
+
+These features are billed by the storage provider. AsterDrive caches generated thumbnails and similar derivatives so they are not processed on every view, but the first generation, document-preview entry creation, and provider-side conversion requests can still incur charges. Check the relevant COS / COS CI pricing rules and free quotas before enabling it.
+:::
 
 ## How to Choose Between the Three Storage Types
 

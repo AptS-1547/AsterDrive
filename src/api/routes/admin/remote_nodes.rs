@@ -24,6 +24,7 @@ fn driver_type_audit_name(driver_type: DriverType) -> &'static str {
     match driver_type {
         DriverType::Local => "local",
         DriverType::S3 => "s3",
+        DriverType::TencentCos => "tencent_cos",
         DriverType::Remote => "remote",
     }
 }

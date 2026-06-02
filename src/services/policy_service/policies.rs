@@ -9,6 +9,7 @@ use crate::db::repository::{file_repo, managed_follower_repo, policy_group_repo,
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
 use crate::runtime::{PrimaryAppState, PrimaryRuntimeState};
+use crate::storage::drivers::tencent_cos::TencentCosDriver;
 use crate::types::{
     DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
     parse_storage_policy_options,
@@ -28,6 +29,7 @@ fn driver_type_name(driver_type: DriverType) -> &'static str {
     match driver_type {
         DriverType::Local => "local",
         DriverType::S3 => "s3",
+        DriverType::TencentCos => "tencent_cos",
         DriverType::Remote => "remote",
     }
 }
@@ -65,7 +67,7 @@ fn validate_connection_credentials(
     secret_key: &str,
 ) -> Result<()> {
     match driver_type {
-        DriverType::S3 => {
+        DriverType::S3 | DriverType::TencentCos => {
             validate_connection_secret(access_key, "access_key", "S3-compatible")?;
             validate_connection_secret(secret_key, "secret_key", "S3-compatible")?;
         }
@@ -520,6 +522,7 @@ pub async fn test_connection_params<S: PrimaryRuntimeState>(
             )
         }
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
+        DriverType::TencentCos => Box::new(TencentCosDriver::new(&fake_policy)?),
     };
 
     probe_storage_driver(driver.as_ref(), "connection test failed").await

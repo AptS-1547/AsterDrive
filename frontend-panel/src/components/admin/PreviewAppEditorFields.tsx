@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import {
 	formatPreviewAppsDelimitedInput,
 	getPreviewAppProvider,
+	isNativePreviewApp,
 	isTablePreviewAppKey,
 	isUrlTemplatePreviewApp,
 	isWopiPreviewApp,
@@ -135,12 +136,21 @@ export function PreviewAppEditorFields({
 								label: t("preview_apps_provider_wopi"),
 								value: "wopi",
 							},
+							{
+								label: t("preview_apps_provider_native_preview"),
+								value: "native_preview",
+							},
 						]}
 						value={getPreviewAppProvider(app.provider) || "url_template"}
 						onValueChange={(provider) =>
 							updateApp(index, (current) => ({
 								...current,
-								provider: provider === "wopi" ? "wopi" : "url_template",
+								provider:
+									provider === "wopi"
+										? "wopi"
+										: provider === "native_preview"
+											? "native_preview"
+											: "url_template",
 								config: {
 									...current.config,
 									mode:
@@ -163,6 +173,9 @@ export function PreviewAppEditorFields({
 							</SelectItem>
 							<SelectItem value="wopi">
 								{t("preview_apps_provider_wopi")}
+							</SelectItem>
+							<SelectItem value="native_preview">
+								{t("preview_apps_provider_native_preview")}
 							</SelectItem>
 						</SelectContent>
 					</Select>
@@ -466,6 +479,52 @@ export function PreviewAppEditorFields({
 						</div>
 					</EditorField>
 				</>
+			) : null}
+			{isNativePreviewApp(app) ? (
+				<EditorField
+					label={t("preview_apps_native_preview_mode")}
+					description={t("preview_apps_native_preview_mode_desc")}
+				>
+					<Select
+						items={[
+							{
+								label: t("preview_apps_native_preview_mode_iframe"),
+								value: "iframe",
+							},
+							{
+								label: t("preview_apps_native_preview_mode_new_tab"),
+								value: "new_tab",
+							},
+						]}
+						value={
+							typeof app.config.mode === "string" ? app.config.mode : "iframe"
+						}
+						onValueChange={(mode) =>
+							updateApp(index, (current) => ({
+								...current,
+								config: {
+									...current.config,
+									mode: mode ?? "iframe",
+								},
+							}))
+						}
+					>
+						<SelectTrigger
+							size="sm"
+							aria-label={t("preview_apps_native_preview_mode")}
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="iframe">
+								{t("preview_apps_native_preview_mode_iframe")}
+							</SelectItem>
+							<SelectItem value="new_tab">
+								{t("preview_apps_native_preview_mode_new_tab")}
+							</SelectItem>
+						</SelectContent>
+					</Select>
+				</EditorField>
 			) : null}
 		</div>
 	);

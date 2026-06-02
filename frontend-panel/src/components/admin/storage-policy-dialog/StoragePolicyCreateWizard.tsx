@@ -5,6 +5,7 @@ import {
 	LocalContentDedupField,
 	PolicyBasePathField,
 	PolicyNameField,
+	PolicySectionIntro,
 	PolicySummaryCard,
 	RemoteDownloadStrategyField,
 	RemoteNodeField,
@@ -14,9 +15,13 @@ import {
 	S3DownloadStrategyField,
 	S3UploadStrategyField,
 	StorageDriverVisual,
+	StorageNativeProcessingField,
 	type StoragePolicyDriverOption,
 } from "@/components/admin/StoragePolicyDialogFields";
-import type { PolicyFormData } from "@/components/admin/storagePolicyDialogShared";
+import {
+	isS3CompatibleDriver,
+	type PolicyFormData,
+} from "@/components/admin/storagePolicyDialogShared";
 import { cn } from "@/lib/utils";
 import type { DriverType, RemoteNodeInfo } from "@/types/api";
 import type {
@@ -214,7 +219,7 @@ export function StoragePolicyCreateWizard({
 										t={t}
 										onFieldChange={onFieldChange}
 									/>
-									{form.driver_type === "s3" ? (
+									{isS3CompatibleDriver(form.driver_type) ? (
 										<S3ConnectionFields
 											form={form}
 											bucketError={createBucketError}
@@ -254,8 +259,10 @@ export function StoragePolicyCreateWizard({
 										{currentStorageOption.description}
 									</p>
 									<p className="mt-4 text-xs leading-5 text-muted-foreground">
-										{form.driver_type === "s3"
-											? t("policy_wizard_s3_helper")
+										{isS3CompatibleDriver(form.driver_type)
+											? form.driver_type === "tencent_cos"
+												? t("policy_wizard_tencent_cos_helper")
+												: t("policy_wizard_s3_helper")
 											: form.driver_type === "remote"
 												? t("policy_wizard_remote_helper")
 												: t("policy_wizard_local_helper")}
@@ -265,8 +272,8 @@ export function StoragePolicyCreateWizard({
 						) : (
 							<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
 								<div className="space-y-4">
-									{form.driver_type === "s3" ? (
-										<>
+									{isS3CompatibleDriver(form.driver_type) ? (
+										<div className="space-y-4">
 											<S3UploadStrategyField
 												form={form}
 												t={t}
@@ -277,7 +284,7 @@ export function StoragePolicyCreateWizard({
 												t={t}
 												onFieldChange={onFieldChange}
 											/>
-										</>
+										</div>
 									) : form.driver_type === "remote" ? (
 										<>
 											<RemoteRulesHelper t={t} />
@@ -316,6 +323,19 @@ export function StoragePolicyCreateWizard({
 										t={t}
 										onFieldChange={onFieldChange}
 									/>
+									{form.driver_type === "tencent_cos" ? (
+										<div className="space-y-3 border-t border-border/70 pt-4">
+											<PolicySectionIntro
+												title={t("policy_storage_native_section_title")}
+												description={t("policy_storage_native_section_desc")}
+											/>
+											<StorageNativeProcessingField
+												form={form}
+												t={t}
+												onFieldChange={onFieldChange}
+											/>
+										</div>
+									) : null}
 								</div>
 								<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
 									<PolicySummaryCard

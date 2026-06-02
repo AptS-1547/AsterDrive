@@ -51,6 +51,8 @@ vi.mock("react-i18next", () => ({
 					return "Local";
 				case "driver_type_s3":
 					return "S3";
+				case "driver_type_tencent_cos":
+					return "Tencent COS";
 				case "driver_type_remote":
 					return "Remote";
 				case "access_key":
@@ -1158,6 +1160,20 @@ describe("AdminPoliciesPage", () => {
 			"animate-in",
 			"fade-in",
 			"slide-in-from-left-6",
+		);
+	});
+
+	it("uses the Tencent COS storage image in the create driver picker", () => {
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+
+		const cosOption = screen.getByRole("button", { name: /Tencent COS/ });
+		const cosImage = within(cosOption).getByRole("presentation");
+
+		expect(cosImage).toHaveAttribute(
+			"src",
+			"/static/storage/tencent-cloud-cos.webp",
 		);
 	});
 

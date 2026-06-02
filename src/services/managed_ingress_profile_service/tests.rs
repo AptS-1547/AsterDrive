@@ -407,6 +407,25 @@ async fn driver_builder_rejects_remote_managed_ingress_profiles() {
 }
 
 #[tokio::test]
+async fn driver_builder_rejects_tencent_cos_managed_ingress_profiles() {
+    let state = setup_state().await;
+    let profile = model_with_driver(DriverType::TencentCos);
+
+    let validate_error = validate_driver_from_profile(&state, &profile).unwrap_err();
+    assert!(
+        validate_error
+            .message()
+            .contains("do not support the tencent_cos driver")
+    );
+    let build_error = expect_aster_err(build_driver_from_profile(&state, &profile));
+    assert!(
+        build_error
+            .message()
+            .contains("do not support the tencent_cos driver")
+    );
+}
+
+#[tokio::test]
 async fn create_sets_first_profile_as_default_and_applies_local_driver() {
     let state = setup_state().await;
     let binding = create_binding(&state, "ak-first").await;

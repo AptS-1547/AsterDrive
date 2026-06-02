@@ -334,6 +334,10 @@ impl StorageDriver for MetricsStorageDriver {
         self.inner.as_native_thumbnail()
     }
 
+    fn as_native_preview(&self) -> Option<&dyn super::extensions::NativePreviewStorageDriver> {
+        self.inner.as_native_preview()
+    }
+
     fn as_multipart(&self) -> Option<&dyn super::multipart::MultipartStorageDriver> {
         self.multipart.as_deref()
     }

@@ -1,7 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { StoragePolicyDriverOption } from "@/components/admin/StoragePolicyDialogFields";
-import type { PolicyFormData } from "@/components/admin/storagePolicyDialogShared";
+import {
+	isS3CompatibleDriver,
+	type PolicyFormData,
+} from "@/components/admin/storagePolicyDialogShared";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -88,6 +91,12 @@ function useStoragePolicyDialogContent({
 			iconSrc: "/static/storage/amazon-s3.svg",
 		},
 		{
+			type: "tencent_cos",
+			title: t("driver_type_tencent_cos"),
+			description: t("policy_wizard_tencent_cos_storage_desc"),
+			iconSrc: "/static/storage/tencent-cloud-cos.webp",
+		},
+		{
 			type: "remote",
 			title: t("driver_type_remote"),
 			description: t("policy_wizard_remote_storage_desc"),
@@ -100,18 +109,16 @@ function useStoragePolicyDialogContent({
 			description: t("policy_wizard_step_storage_desc"),
 		},
 		{
-			title:
-				form.driver_type === "s3"
-					? t("policy_wizard_step_connection_title")
-					: form.driver_type === "remote"
-						? t("policy_wizard_step_remote_title")
-						: t("policy_wizard_step_local_title"),
-			description:
-				form.driver_type === "s3"
-					? t("policy_wizard_step_connection_desc")
-					: form.driver_type === "remote"
-						? t("policy_wizard_step_remote_desc")
-						: t("policy_wizard_step_local_desc"),
+			title: isS3CompatibleDriver(form.driver_type)
+				? t("policy_wizard_step_connection_title")
+				: form.driver_type === "remote"
+					? t("policy_wizard_step_remote_title")
+					: t("policy_wizard_step_local_title"),
+			description: isS3CompatibleDriver(form.driver_type)
+				? t("policy_wizard_step_connection_desc")
+				: form.driver_type === "remote"
+					? t("policy_wizard_step_remote_desc")
+					: t("policy_wizard_step_local_desc"),
 		},
 		{
 			title: t("policy_wizard_step_rules_title"),
@@ -142,9 +149,11 @@ function useStoragePolicyDialogContent({
 	const currentDriverBadgeClass =
 		form.driver_type === "s3"
 			? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
-			: form.driver_type === "remote"
-				? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300"
-				: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
+			: form.driver_type === "tencent_cos"
+				? "border-cyan-500/60 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
+				: form.driver_type === "remote"
+					? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300"
+					: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
 	const createNameError =
 		isCreateMode && createStep === 1 && createStepTouched && !form.name.trim()
 			? t("policy_wizard_name_required")
@@ -153,7 +162,7 @@ function useStoragePolicyDialogContent({
 		isCreateMode &&
 		createStep === 1 &&
 		createStepTouched &&
-		form.driver_type === "s3" &&
+		isS3CompatibleDriver(form.driver_type) &&
 		!form.bucket.trim()
 			? t("policy_wizard_bucket_required")
 			: null;
@@ -186,6 +195,12 @@ function useStoragePolicyDialogContent({
 	const contentDedupLabel = form.content_dedup
 		? t("policy_wizard_enabled")
 		: t("policy_wizard_disabled");
+	const storageNativeThumbnailExtensionsLabel =
+		form.storage_native_processing_enabled &&
+		form.thumbnail_processor === "storage_native" &&
+		form.thumbnail_extensions.length > 0
+			? form.thumbnail_extensions.join(", ")
+			: t("policy_wizard_disabled");
 	const createSummaryItems = [
 		{ label: t("driver_type"), value: currentStorageOption.title },
 		{
@@ -219,7 +234,7 @@ function useStoragePolicyDialogContent({
 					},
 				]
 			: []),
-		...(form.driver_type === "s3"
+		...(isS3CompatibleDriver(form.driver_type)
 			? [
 					{
 						label: t("endpoint"),
@@ -234,6 +249,20 @@ function useStoragePolicyDialogContent({
 						label: t("s3_download_strategy"),
 						value: s3DownloadStrategyLabel,
 					},
+					...(form.driver_type === "tencent_cos"
+						? [
+								{
+									label: t("storage_native_processing_enabled"),
+									value: form.storage_native_processing_enabled
+										? t("policy_wizard_enabled")
+										: t("policy_wizard_disabled"),
+								},
+								{
+									label: t("storage_native_thumbnail_extensions"),
+									value: storageNativeThumbnailExtensionsLabel,
+								},
+							]
+						: []),
 				]
 			: []),
 		...(form.driver_type === "remote"
@@ -358,7 +387,7 @@ function useStoragePolicyDialogContent({
 								) : (
 									<>
 										{createStep === 1 &&
-										(form.driver_type === "s3" ||
+										(isS3CompatibleDriver(form.driver_type) ||
 											form.driver_type === "remote") ? (
 											<StoragePolicyTestConnectionButton
 												onTest={onRunConnectionTest}

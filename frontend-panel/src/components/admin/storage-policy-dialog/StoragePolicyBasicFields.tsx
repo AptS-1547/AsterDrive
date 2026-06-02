@@ -73,6 +73,56 @@ export function LocalContentDedupField({
 	);
 }
 
+export function StorageNativeProcessingField({
+	form,
+	onFieldChange,
+	t,
+}: SharedFieldProps) {
+	const thumbnailExtensionsValue = form.thumbnail_extensions.join(", ");
+
+	return (
+		<div className="space-y-2 rounded-xl border border-border/70 bg-muted/20 p-4">
+			<div className="flex items-center gap-2">
+				<Switch
+					id="storage_native_processing_enabled"
+					checked={form.storage_native_processing_enabled}
+					onCheckedChange={(value) =>
+						onFieldChange("storage_native_processing_enabled", value)
+					}
+				/>
+				<Label htmlFor="storage_native_processing_enabled">
+					{t("storage_native_processing_enabled")}
+				</Label>
+			</div>
+			<p className="text-xs leading-5 text-muted-foreground">
+				{t("storage_native_processing_enabled_desc")}
+			</p>
+			{form.storage_native_processing_enabled ? (
+				<div className="space-y-2 pt-2">
+					<Label htmlFor="storage_native_thumbnail_extensions">
+						{t("storage_native_thumbnail_extensions")}
+					</Label>
+					<Input
+						id="storage_native_thumbnail_extensions"
+						value={thumbnailExtensionsValue}
+						onChange={(e) =>
+							onFieldChange(
+								"thumbnail_extensions",
+								e.target.value.split(",").map((value) => value.trim()),
+							)
+						}
+						className={ADMIN_CONTROL_HEIGHT_CLASS}
+						placeholder="jpg, jpeg, png, webp, gif"
+					/>
+					<p className="text-xs leading-5 text-muted-foreground">
+						{t("storage_native_thumbnail_extensions_desc")}
+					</p>
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 export function LimitsFields({ form, onFieldChange, t }: SharedFieldProps) {
 	return (
 		<>

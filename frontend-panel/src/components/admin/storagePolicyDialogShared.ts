@@ -21,6 +21,29 @@ export type {
 	S3UploadStrategy,
 } from "@/types/api";
 
+export function isS3CompatibleDriver(driverType: DriverType) {
+	return driverType === "s3" || driverType === "tencent_cos";
+}
+
+export const DEFAULT_STORAGE_NATIVE_THUMBNAIL_EXTENSIONS = [
+	"jpg",
+	"jpeg",
+	"png",
+	"webp",
+	"gif",
+];
+
+export function normalizeThumbnailExtensions(values: string[]) {
+	const normalized: string[] = [];
+	for (const value of values) {
+		const extension = value.trim().replace(/^\.+/, "").toLowerCase();
+		if (extension && !normalized.includes(extension)) {
+			normalized.push(extension);
+		}
+	}
+	return normalized;
+}
+
 export interface PolicyFormData {
 	name: string;
 	driver_type: DriverType;
@@ -38,6 +61,7 @@ export interface PolicyFormData {
 	remote_upload_strategy: RemoteUploadStrategy;
 	s3_upload_strategy: S3UploadStrategy;
 	s3_download_strategy: S3DownloadStrategy;
+	storage_native_processing_enabled: boolean;
 	thumbnail_processor: StoragePolicyOptions["thumbnail_processor"];
 	thumbnail_extensions: string[];
 }
@@ -94,9 +118,14 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 		});
 	}
 
-	if (form.thumbnail_processor) {
-		options.thumbnail_processor = form.thumbnail_processor;
-		options.thumbnail_extensions = form.thumbnail_extensions;
+	if (form.storage_native_processing_enabled) {
+		options.storage_native_processing_enabled = true;
+		if (form.thumbnail_processor) {
+			options.thumbnail_processor = form.thumbnail_processor;
+			options.thumbnail_extensions = normalizeThumbnailExtensions(
+				form.thumbnail_extensions,
+			);
+		}
 	}
 
 	return options;
@@ -128,13 +157,21 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 		remote_upload_strategy: getEffectiveRemoteUploadStrategy(options),
 		s3_upload_strategy: getEffectiveS3UploadStrategy(options),
 		s3_download_strategy: getEffectiveS3DownloadStrategy(options),
-		thumbnail_processor: options.thumbnail_processor ?? null,
-		thumbnail_extensions: options.thumbnail_extensions ?? [],
+		storage_native_processing_enabled:
+			options.storage_native_processing_enabled === true,
+		thumbnail_processor:
+			options.storage_native_processing_enabled === true
+				? (options.thumbnail_processor ?? null)
+				: null,
+		thumbnail_extensions:
+			options.storage_native_processing_enabled === true
+				? (options.thumbnail_extensions ?? [])
+				: [],
 	};
 }
 
 export function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
-	if (form.driver_type !== "s3") {
+	if (!isS3CompatibleDriver(form.driver_type)) {
 		return form;
 	}
 
@@ -232,7 +269,7 @@ export function hasConnectionFieldChanges(
 		return true;
 	}
 
-	if (normalizedForm.driver_type === "s3") {
+	if (isS3CompatibleDriver(normalizedForm.driver_type)) {
 		return (
 			normalizedForm.endpoint !== editingPolicy.endpoint ||
 			normalizedForm.bucket !== editingPolicy.bucket ||
@@ -293,6 +330,7 @@ export const emptyForm: PolicyFormData = {
 	remote_upload_strategy: "relay_stream",
 	s3_upload_strategy: "relay_stream",
 	s3_download_strategy: "relay_stream",
+	storage_native_processing_enabled: false,
 	thumbnail_processor: null,
 	thumbnail_extensions: [],
 };

@@ -155,7 +155,7 @@ fn normalize_profile_fields(fields: IngressProfileFields) -> Result<NormalizedIn
     }
 
     match driver_type {
-        DriverType::Remote => Err(validation_error_with_subcode(
+        DriverType::TencentCos | DriverType::Remote => Err(validation_error_with_subcode(
             ApiSubcode::ManagedIngressDriverUnsupported,
             "managed ingress profiles only support local and s3 drivers",
         )),

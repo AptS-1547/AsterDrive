@@ -6,6 +6,7 @@ export {
 	LocalContentDedupField,
 	PolicyBasePathField,
 	PolicyNameField,
+	StorageNativeProcessingField,
 } from "@/components/admin/storage-policy-dialog/StoragePolicyBasicFields";
 export type {
 	PolicyFieldChange,

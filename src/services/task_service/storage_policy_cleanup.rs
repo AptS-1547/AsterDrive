@@ -9,7 +9,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::storage::StorageErrorKind;
 use crate::storage::driver::StorageDriver;
-use crate::storage::drivers::{local::LocalDriver, s3::S3Driver};
+use crate::storage::drivers::{local::LocalDriver, s3::S3Driver, tencent_cos::TencentCosDriver};
 use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
 use crate::utils::numbers::u64_to_i64;
 
@@ -299,6 +299,7 @@ fn driver_from_payload(
     match policy.driver_type {
         DriverType::Local => Ok(Box::new(LocalDriver::new(&policy)?)),
         DriverType::S3 => Ok(Box::new(S3Driver::new(&policy)?)),
+        DriverType::TencentCos => Ok(Box::new(TencentCosDriver::new(&policy)?)),
         DriverType::Remote => {
             let remote = payload.remote_node.as_ref().ok_or_else(|| {
                 AsterError::validation_error(

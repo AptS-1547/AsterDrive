@@ -5,4 +5,6 @@
 pub mod local;
 pub mod remote;
 pub mod s3;
+pub mod s3_compatible;
 pub mod s3_config;
+pub mod tencent_cos;
