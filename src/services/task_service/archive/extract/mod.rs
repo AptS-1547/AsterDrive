@@ -172,6 +172,7 @@ pub(super) async fn process_archive_extract_task(
             AsterError::internal_error(format!("archive extract worker failed: {error}"))
         })??;
 
+        context.ensure_active()?;
         let created_root = create_unique_folder_in_scope(
             state,
             scope,
@@ -180,6 +181,7 @@ pub(super) async fn process_archive_extract_task(
         )
         .await?;
 
+        context.ensure_active()?;
         set_task_step_active(
             &mut steps,
             TASK_STEP_IMPORT_RESULT,

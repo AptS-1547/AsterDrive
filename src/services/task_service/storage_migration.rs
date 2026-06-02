@@ -376,6 +376,7 @@ pub(super) async fn process_storage_policy_migration_task(
         ));
     }
 
+    context.ensure_active()?;
     storage_migration_checkpoint_repo::set_stage(
         state.writer_db(),
         task.id,
@@ -438,6 +439,7 @@ pub(super) async fn process_storage_policy_migration_task(
             context.ensure_active()?;
             let outcome = migrate_one_blob(
                 state,
+                &context,
                 task.id,
                 payload.source_policy_id,
                 payload.target_policy_id,
@@ -475,6 +477,7 @@ pub(super) async fn process_storage_policy_migration_task(
         }
     }
 
+    context.ensure_active()?;
     checkpoint = storage_migration_checkpoint_repo::set_stage(
         state.writer_db(),
         task.id,
@@ -531,6 +534,7 @@ pub(super) async fn process_storage_policy_migration_task(
 
 async fn migrate_one_blob(
     state: &PrimaryAppState,
+    context: &TaskExecutionContext,
     task_id: i64,
     source_policy_id: i64,
     target_policy_id: i64,
@@ -577,7 +581,14 @@ async fn migrate_one_blob(
     if let Some(target_blob) = existing_target_blob.as_ref()
         && content_hash
     {
-        verify_existing_target(target_driver, target_blob, &latest.hash, latest.size).await?;
+        verify_existing_target(
+            context,
+            target_driver,
+            target_blob,
+            &latest.hash,
+            latest.size,
+        )
+        .await?;
         return merge_blob_records(state, task_id, latest, target_blob.clone()).await;
     }
     let renamed_opaque_blob = !content_hash && existing_target_blob.is_some();
@@ -590,6 +601,7 @@ async fn migrate_one_blob(
 
     copy_blob_streaming(
         state,
+        context,
         source_driver,
         target_driver,
         target_policy_id,
@@ -747,21 +759,29 @@ fn checkpoint_delta(
 
 async fn copy_blob_streaming(
     state: &PrimaryAppState,
+    context: &TaskExecutionContext,
     source_driver: &dyn StorageDriver,
     target_driver: &dyn StorageDriver,
     target_policy_id: i64,
     blob: &file_blob::Model,
     target_path: &str,
 ) -> Result<()> {
+    context.ensure_active()?;
     let source_stream = source_driver.get_stream(&blob.storage_path).await?;
-    let hashing_reader = HashingReader::new(source_stream);
+    context.ensure_active()?;
+    let hashing_reader = HashingReader::new(source_stream, context.clone());
     let digest = hashing_reader.digest_handle();
     let stream_upload = target_driver.as_stream_upload().ok_or_else(|| {
         AsterError::storage_driver_error("target storage policy does not support stream upload")
     })?;
-    stream_upload
+    let upload_result = stream_upload
         .put_reader(target_path, Box::new(hashing_reader), blob.size)
-        .await?;
+        .await;
+    if let Err(error) = upload_result {
+        context.ensure_active()?;
+        return Err(error);
+    }
+    context.ensure_active()?;
     let verify_result = async {
         let copied_hash = digest.finish_hex()?;
         if is_content_sha256_blob_key(&blob.hash) && copied_hash != blob.hash {
@@ -770,7 +790,7 @@ async fn copy_blob_streaming(
                 blob.id
             )));
         }
-        verify_target_object(target_driver, target_path, &copied_hash, blob.size).await
+        verify_target_object(context, target_driver, target_path, &copied_hash, blob.size).await
     }
     .await;
 
@@ -836,6 +856,7 @@ fn is_content_sha256_blob_key(hash: &str) -> bool {
 }
 
 async fn verify_existing_target(
+    context: &TaskExecutionContext,
     target_driver: &dyn StorageDriver,
     target_blob: &file_blob::Model,
     source_hash: &str,
@@ -847,6 +868,7 @@ async fn verify_existing_target(
         ));
     }
     verify_target_object(
+        context,
         target_driver,
         &target_blob.storage_path,
         source_hash,
@@ -856,12 +878,15 @@ async fn verify_existing_target(
 }
 
 async fn verify_target_object(
+    context: &TaskExecutionContext,
     target_driver: &dyn StorageDriver,
     target_path: &str,
     expected_hash: &str,
     expected_size: i64,
 ) -> Result<()> {
+    context.ensure_active()?;
     let metadata = target_driver.metadata(target_path).await?;
+    context.ensure_active()?;
     let actual_size = u64_to_i64(metadata.size, "target blob metadata size")?;
     if actual_size != expected_size {
         return Err(AsterError::storage_driver_error(format!(
@@ -872,6 +897,7 @@ async fn verify_target_object(
     let mut hasher = new_sha256();
     let mut buf = vec![0_u8; 64 * 1024];
     loop {
+        context.ensure_active()?;
         let read = stream.read(&mut buf).await.map_aster_err_ctx(
             "read target object for hash verification",
             AsterError::storage_driver_error,
@@ -956,18 +982,20 @@ fn policy_identity(policy: &storage_policy::Model) -> serde_json::Value {
 struct HashingReader {
     inner: Box<dyn AsyncRead + Unpin + Send + Sync>,
     digest: HashDigestHandle,
+    context: TaskExecutionContext,
 }
 
 #[derive(Clone)]
 struct HashDigestHandle(std::sync::Arc<std::sync::Mutex<Option<sha2::Sha256>>>);
 
 impl HashingReader {
-    fn new(inner: Box<dyn AsyncRead + Unpin + Send>) -> Self {
+    fn new(inner: Box<dyn AsyncRead + Unpin + Send>, context: TaskExecutionContext) -> Self {
         Self {
             inner: Self::wrap_inner(inner),
             digest: HashDigestHandle(std::sync::Arc::new(std::sync::Mutex::new(Some(
                 new_sha256(),
             )))),
+            context,
         }
     }
 
@@ -1017,6 +1045,13 @@ impl AsyncRead for HashingReader {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
+        if let Err(error) = self.context.ensure_active() {
+            return Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                error.to_string(),
+            )));
+        }
+
         let before = buf.filled().len();
         let poll = Pin::new(&mut self.inner).poll_read(cx, buf);
         if let Poll::Ready(Ok(())) = &poll {
@@ -1049,7 +1084,9 @@ impl HashDigestHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::task_service::{TaskLease, is_task_worker_shutdown_requested};
     use crate::storage::{StorageCapacityInfo, StorageCapacityStatus};
+    use tokio_util::sync::CancellationToken;
 
     fn capacity(
         status: StorageCapacityStatus,
@@ -1111,5 +1148,27 @@ mod tests {
         assert!(!storage_policy_migration_can_start(
             &StoragePolicyMigrationCapacityCheck::Insufficient
         ));
+    }
+
+    #[tokio::test]
+    async fn hashing_reader_stops_when_shutdown_is_requested() {
+        let shutdown_token = CancellationToken::new();
+        let context = TaskExecutionContext::new(TaskLease::new(42, 7), shutdown_token.clone());
+        shutdown_token.cancel();
+
+        let mut reader =
+            HashingReader::new(Box::new(tokio::io::repeat(1).take(1)), context.clone());
+        let mut buffer = [0_u8; 1];
+
+        let error = reader
+            .read(&mut buffer)
+            .await
+            .expect_err("cancelled context should stop migration stream reads");
+        assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+
+        let shutdown_error = context
+            .ensure_active()
+            .expect_err("cancelled context should remain visible as a task shutdown");
+        assert!(is_task_worker_shutdown_requested(&shutdown_error));
     }
 }

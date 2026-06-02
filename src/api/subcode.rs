@@ -141,6 +141,7 @@ define_api_subcodes! {
 
     TaskLeaseLost => "task.lease_lost",
     TaskLeaseRenewalTimedOut => "task.lease_renewal_timed_out",
+    TaskWorkerShutdownRequested => "task.worker_shutdown_requested",
 
     TeamMemberExists => "team.member_exists",
 

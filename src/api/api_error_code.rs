@@ -216,6 +216,7 @@ define_api_error_codes! {
     // task service/runtime: background task lease failures.
     TaskLeaseLost => "task.lease_lost",
     TaskLeaseRenewalTimedOut => "task.lease_renewal_timed_out",
+    TaskWorkerShutdownRequested => "task.worker_shutdown_requested",
 
     // team member repository: member uniqueness conflicts.
     TeamMemberExists => "team.member_exists",

@@ -253,6 +253,11 @@ pub(super) struct TaskExecutionContext {
     // lease guard. The context keeps shutdown cancellation and lease fencing
     // together, so deep helper code cannot accidentally keep running after the
     // dispatcher has started graceful shutdown.
+    //
+    // The same cancellation token is intentionally held twice:
+    // - TaskLeaseGuard uses it from synchronous ensure_active() checkpoints.
+    // - TaskExecutionContext uses it in async select! paths, such as sleeps and
+    //   stream reads, where waiting must be interrupted immediately.
     lease_guard: TaskLeaseGuard,
     shutdown_token: CancellationToken,
 }
@@ -1157,10 +1162,13 @@ pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
 }
 
 pub(super) fn task_worker_shutdown_requested(lease: TaskLease) -> AsterError {
-    AsterError::precondition_failed(format!(
-        "{TASK_WORKER_SHUTDOWN_REQUESTED_MESSAGE_PREFIX} for task #{} with token {}",
-        lease.task_id, lease.processing_token
-    ))
+    precondition_failed_with_subcode(
+        ApiSubcode::TaskWorkerShutdownRequested,
+        format!(
+            "{TASK_WORKER_SHUTDOWN_REQUESTED_MESSAGE_PREFIX} for task #{} with token {}",
+            lease.task_id, lease.processing_token
+        ),
+    )
 }
 
 pub(super) fn is_task_lease_lost(error: &AsterError) -> bool {
@@ -1172,9 +1180,7 @@ pub(super) fn is_task_lease_renewal_timed_out(error: &AsterError) -> bool {
 }
 
 pub(super) fn is_task_worker_shutdown_requested(error: &AsterError) -> bool {
-    error
-        .raw_message()
-        .starts_with(TASK_WORKER_SHUTDOWN_REQUESTED_MESSAGE_PREFIX)
+    error.api_error_subcode() == Some(ApiSubcode::TaskWorkerShutdownRequested)
 }
 
 fn task_lease_renewal_timeout() -> StdDuration {

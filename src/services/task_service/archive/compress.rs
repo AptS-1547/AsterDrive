@@ -233,6 +233,7 @@ pub(super) async fn process_archive_compress_task(
                 AsterError::internal_error(format!("archive compress worker failed: {error}"))
             })??;
 
+        context.ensure_active()?;
         set_task_step_active(
             &mut steps,
             TASK_STEP_STORE_RESULT,

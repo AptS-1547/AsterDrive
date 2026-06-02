@@ -153,6 +153,8 @@ const errorSubcodeKeys: Partial<Record<ApiSubcodeType, string>> = {
 	[ApiSubcode.StorageUnsupported]: "errors:storage_operation_unsupported",
 	[ApiSubcode.TaskLeaseLost]: "errors:task_lease_lost",
 	[ApiSubcode.TaskLeaseRenewalTimedOut]: "errors:task_lease_renewal_timed_out",
+	[ApiSubcode.TaskWorkerShutdownRequested]:
+		"errors:task_worker_shutdown_requested",
 	[ApiSubcode.ThumbnailFormatGuessFailed]:
 		"errors:thumbnail_format_guess_failed",
 	[ApiSubcode.ThumbnailDecodeFailed]: "errors:thumbnail_decode_failed",

@@ -44,6 +44,7 @@ pub(super) async fn process_trash_purge_all_task(
         Some("Worker claimed task"),
         None,
     )?;
+    context.ensure_active()?;
     set_task_step_active(
         &mut steps,
         TASK_STEP_PURGE_TRASH,
@@ -52,7 +53,6 @@ pub(super) async fn process_trash_purge_all_task(
     )?;
     mark_task_progress(state, &lease_guard, 0, 0, Some("Purging trash"), &steps).await?;
 
-    context.ensure_active()?;
     let purge_summary =
         crate::services::trash_service::purge_all_in_scope_silent(state, scope).await?;
     let purged = purge_summary.purged;

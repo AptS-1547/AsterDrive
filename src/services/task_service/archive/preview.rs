@@ -149,6 +149,7 @@ pub(super) async fn process_archive_preview_task(
         let driver = state.driver_registry.get_driver(&policy)?;
         let use_range_scan = driver.supports_efficient_range();
         let source_archive_path = if use_range_scan {
+            context.ensure_active()?;
             set_task_step_succeeded(
                 &mut steps,
                 TASK_STEP_DOWNLOAD_SOURCE,
@@ -157,6 +158,7 @@ pub(super) async fn process_archive_preview_task(
             )?;
             None
         } else {
+            context.ensure_active()?;
             set_task_step_active(
                 &mut steps,
                 TASK_STEP_DOWNLOAD_SOURCE,
@@ -191,6 +193,7 @@ pub(super) async fn process_archive_preview_task(
             )?;
             Some(source_archive_path)
         };
+        context.ensure_active()?;
         set_task_step_active(
             &mut steps,
             TASK_STEP_SCAN_ARCHIVE,
@@ -226,6 +229,7 @@ pub(super) async fn process_archive_preview_task(
                 .await?
             }
         };
+        context.ensure_active()?;
         set_task_step_succeeded(
             &mut steps,
             TASK_STEP_SCAN_ARCHIVE,

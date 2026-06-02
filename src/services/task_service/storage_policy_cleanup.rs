@@ -113,6 +113,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         Some("Policy driver snapshot is ready"),
         None,
     )?;
+    context.ensure_active()?;
     set_task_step_active(
         &mut steps,
         TASK_STEP_CLEANUP_OBJECTS,
@@ -198,6 +199,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         }
     }
 
+    context.ensure_active()?;
     if !stats.errors.is_empty() {
         return Err(AsterError::storage_driver_error(format!(
             "storage policy temp cleanup failed for {} object(s): {}",

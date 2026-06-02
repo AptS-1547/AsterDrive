@@ -191,6 +191,9 @@ async fn spawn_periodic<F, I, Fut>(
     // 必须用 `Instrument::instrument` 而非 `Span::enter`：后者返回的 guard
     // 跨 await 会被 drop（tracing 文档警告），span 只对同步段生效，
     // 而我们的 task_fn 全是 async 跨 await 的。
+    if shutdown_token.is_cancelled() {
+        return;
+    }
     run_periodic_iteration(name, &state, &task_fn)
         .instrument(tracing::info_span!("bg_task", task.name = task_name))
         .await;
@@ -268,6 +271,9 @@ async fn spawn_background_task_dispatcher(
         background_task_dispatch_interval(&state),
         background_task_dispatch_idle_max_interval(&state),
     );
+    if shutdown_token.is_cancelled() {
+        return;
+    }
     let iteration = run_background_task_dispatch_iteration(&state, shutdown_token.clone())
         .instrument(tracing::info_span!(
             "bg_task",
@@ -932,6 +938,7 @@ mod tests {
     use migration::Migrator;
     use sea_orm::{ActiveModelTrait, EntityTrait, Set};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     async fn setup_state() -> web::Data<PrimaryAppState> {
         let db = crate::db::connect_with_metrics(
@@ -1062,6 +1069,55 @@ mod tests {
             .expect("background worker should report shutdown");
 
         tasks.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_shutdown_token_skips_periodic_startup_iteration() {
+        let state = setup_state().await;
+        let shutdown_token = CancellationToken::new();
+        let calls = Arc::new(AtomicUsize::new(0));
+        shutdown_token.cancel();
+
+        spawn_periodic(
+            SystemRuntimeTaskKind::MailOutboxDispatch,
+            |_| Duration::from_secs(60),
+            None,
+            shutdown_token,
+            state.clone(),
+            {
+                let calls = calls.clone();
+                move |_| {
+                    let calls = calls.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        RuntimeTaskRunOutcome::succeeded(None)
+                    }
+                }
+            },
+        )
+        .await;
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        let tasks = crate::entities::background_task::Entity::find()
+            .all(state.writer_db())
+            .await
+            .unwrap();
+        assert!(tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pre_cancelled_shutdown_token_skips_dispatcher_startup_iteration() {
+        let state = setup_state().await;
+        let shutdown_token = CancellationToken::new();
+        shutdown_token.cancel();
+
+        spawn_background_task_dispatcher(shutdown_token, state.clone()).await;
+
+        let tasks = crate::entities::background_task::Entity::find()
+            .all(state.writer_db())
+            .await
+            .unwrap();
+        assert!(tasks.is_empty());
     }
 
     #[tokio::test]

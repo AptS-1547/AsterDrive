@@ -77,35 +77,40 @@ async fn process_claimed_task(
     //
     // 注意这里只能取消 async 外壳。真正耗时的压缩/解压是在 spawn_blocking 里，
     // 所以业务代码内部也必须周期性检查 lease guard，才能把旧 worker 真正停下来。
-    let process_future = registry::process_task(state, &task, context);
-    tokio::pin!(process_future);
+    let task_result = match context.ensure_active() {
+        Ok(()) => {
+            let process_future = registry::process_task(state, &task, context);
+            tokio::pin!(process_future);
 
-    let task_result = loop {
-        tokio::select! {
-            biased;
-            result = &mut process_future => break result,
-            _ = heartbeat.tick() => {
-                // 心跳写入返回 Err 时不能直接把 worker 判死，否则一次瞬时 DB 抖动
-                // 就会在 60 秒后把长任务误判成 stale 并触发二次认领。
-                match evaluate_heartbeat_result(
-                    &lease_guard,
-                    {
-                        let now = Utc::now();
-                        background_task_repo::touch_heartbeat(
-                            state.writer_db(),
-                            task.id,
-                            lease.processing_token,
-                            now,
-                            task_lease_expires_at(now),
-                        )
-                        .await
-                    },
-                ) {
-                    Ok(()) => {}
-                    Err(error) => break Err(error),
+            loop {
+                tokio::select! {
+                    biased;
+                    result = &mut process_future => break result,
+                    _ = heartbeat.tick() => {
+                        // 心跳写入返回 Err 时不能直接把 worker 判死，否则一次瞬时 DB 抖动
+                        // 就会在 60 秒后把长任务误判成 stale 并触发二次认领。
+                        match evaluate_heartbeat_result(
+                            &lease_guard,
+                            {
+                                let now = Utc::now();
+                                background_task_repo::touch_heartbeat(
+                                    state.writer_db(),
+                                    task.id,
+                                    lease.processing_token,
+                                    now,
+                                    task_lease_expires_at(now),
+                                )
+                                .await
+                            },
+                        ) {
+                            Ok(()) => {}
+                            Err(error) => break Err(error),
+                        }
+                    }
                 }
             }
         }
+        Err(error) => Err(error),
     };
 
     match task_result {

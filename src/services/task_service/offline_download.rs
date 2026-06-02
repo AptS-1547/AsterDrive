@@ -226,6 +226,7 @@ pub(super) async fn process_offline_download_task(
             Some((downloaded.bytes_written, downloaded.progress_total())),
         )?;
 
+        context.ensure_active()?;
         let filename = resolve_offline_download_filename(
             payload.filename.as_deref(),
             downloaded.response_filename.as_deref(),

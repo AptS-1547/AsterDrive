@@ -262,6 +262,34 @@ async fn run_claimed_tasks_marks_non_retryable_task_failure() {
     assert!(stored.finished_at.is_some());
 }
 
+#[tokio::test]
+async fn run_claimed_tasks_releases_pre_cancelled_task_without_running_handler() {
+    let state = build_dispatch_test_state().await;
+    let task = insert_processing_system_runtime_task(state.writer_db()).await;
+    let lease = TaskLease::new(task.id, task.processing_token);
+    let shutdown_token = CancellationToken::new();
+    shutdown_token.cancel();
+
+    let stats = run_claimed_tasks(&state, vec![(task.clone(), lease)], shutdown_token)
+        .await
+        .expect("shutdown release should be handled as a cooperative worker stop");
+
+    assert_eq!(stats, super::DispatchStats::default());
+
+    let stored = background_task_repo::find_by_id(state.writer_db(), task.id)
+        .await
+        .expect("released task should still exist");
+    assert_eq!(stored.status, BackgroundTaskStatus::Retry);
+    assert_eq!(stored.attempt_count, 0);
+    assert_eq!(stored.processing_started_at, None);
+    assert_eq!(stored.last_heartbeat_at, None);
+    assert_eq!(stored.lease_expires_at, None);
+    assert_eq!(stored.status_text, None);
+    assert_eq!(stored.last_error, None);
+    assert_eq!(stored.failure_can_retry, None);
+    assert_eq!(stored.finished_at, None);
+}
+
 #[test]
 fn task_lane_keeps_archive_and_thumbnail_separate() {
     assert_eq!(
@@ -518,6 +546,10 @@ async fn task_execution_context_reports_shutdown_request() {
         .ensure_active()
         .expect_err("cancelled shutdown token should stop the worker");
     assert!(is_task_worker_shutdown_requested(&error));
+    assert_eq!(
+        error.api_error_subcode(),
+        Some(crate::api::subcode::ApiSubcode::TaskWorkerShutdownRequested)
+    );
 
     let error = context
         .ensure_active()

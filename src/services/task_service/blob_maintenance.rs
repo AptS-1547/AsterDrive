@@ -204,6 +204,7 @@ async fn run_integrity_check(
     result: &mut BlobMaintenanceTaskResult,
 ) -> Result<()> {
     let lease_guard = context.lease_guard();
+    context.ensure_active()?;
     set_task_step_active(
         steps,
         TASK_STEP_CHECK_BLOBS,
@@ -277,6 +278,7 @@ async fn run_ref_count_reconcile(
     result: &mut BlobMaintenanceTaskResult,
 ) -> Result<()> {
     let lease_guard = context.lease_guard();
+    context.ensure_active()?;
     set_task_step_active(
         steps,
         TASK_STEP_RECONCILE_REFS,
@@ -374,6 +376,7 @@ async fn run_orphan_cleanup(
     result: &mut BlobMaintenanceTaskResult,
 ) -> Result<()> {
     let lease_guard = context.lease_guard();
+    context.ensure_active()?;
     set_task_step_active(
         steps,
         TASK_STEP_CLEANUP_OBJECTS,
