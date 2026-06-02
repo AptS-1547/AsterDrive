@@ -99,6 +99,8 @@ When creating a remote node record, choose one of three transport modes:
 
 If a remote policy needs `presigned` upload or download, use direct transport and make sure browsers can also reach the follower `base_url`. Reverse tunnel is suitable for `relay_stream`; it currently cannot generate presigned URLs that browsers use to connect directly to the follower.
 
+If your follower will sit behind public HTTPS, Tailscale / VPN, a Docker network, or reverse tunnel, read [Follower Node Network Topologies](/en/deployment/follower-network-topologies) first. That page explains what `base_url` means to the primary and to browsers separately.
+
 ::: warning Reverse tunnel is still under test
 Reverse tunnel lets the follower actively connect to the primary and does not require the primary to connect back to the follower. It still depends on the follower being able to reach the primary `public_site_url`, and proxies or firewalls in between must not block WebSocket or long-lived connections.
 

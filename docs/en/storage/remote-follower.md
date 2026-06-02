@@ -208,6 +208,12 @@ Before using it, confirm:
 
 If the primary node can access the follower node, but user browsers cannot, do not use remote `presigned`. If the remote node uses reverse tunnel, also avoid `presigned` and use `relay_stream` instead.
 
+::: warning A Tailscale / VPN Address Is Not a Public Address
+If the follower `base_url` is a Tailscale IP, MagicDNS name, or an internal name that only resolves through split DNS, remote `presigned` is suitable only for tailnet / VPN users. After public users open the primary site, their browsers are still redirected to that follower address. If the public network cannot resolve or route to it, upload and download fail.
+
+To let public users access these files, either give the follower a public HTTPS address, or set the remote policy upload/download mode to `relay_stream` so the primary relays the traffic. For topology trade-offs, see [Follower Node Network Topologies](/en/deployment/follower-network-topologies).
+:::
+
 Browser CORS requirements for remote `presigned` are stricter than ordinary primary-node relaying:
 
 | Direction | Required request headers | Response headers that must be exposed |

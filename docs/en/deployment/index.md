@@ -34,6 +34,7 @@ The three most important deployment concerns are:
 | --- | --- |
 | [Docker](/en/deployment/docker) | NAS, single-machine, small-team, and existing container environments |
 | [Docker follower node](/en/deployment/docker-follower) | Attaching another AsterDrive instance directly as a Docker follower |
+| [Follower node network topologies](/en/deployment/follower-network-topologies) | Choosing between public HTTPS, Tailscale / VPN, Docker networks, and reverse tunnel |
 | [systemd](/en/deployment/systemd) | Cloud hosts, physical machines, long-running stable services |
 | Run the binary directly | Local testing and temporary validation |
 
@@ -126,6 +127,7 @@ Validate other role-specific areas (WebDAV, WOPI, mail, trash, and so on) accord
 
 - Using Docker: see [Docker Deployment](/en/deployment/docker)
 - Running a remote follower node with Docker: see [Docker Follower Node Deployment](/en/deployment/docker-follower)
+- Unsure whether the follower should be public, inside Tailscale / VPN, or behind reverse tunnel: see [Follower Node Network Topologies](/en/deployment/follower-network-topologies)
 - Using systemd: see [systemd Deployment](/en/deployment/systemd)
 - Preparing backups, restore, and post-restore validation: see [Backup and Restore](/en/deployment/backup)
 - Want command-line deployment checks, offline configuration, or cross-database migration: see [Operations CLI](/en/deployment/ops-cli)

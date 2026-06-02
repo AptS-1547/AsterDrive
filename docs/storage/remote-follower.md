@@ -208,6 +208,12 @@ remote
 
 如果主控能访问从节点，但用户浏览器访问不到从节点，就不要用远程 `presigned`。如果远程节点走反向通道，也不要用 `presigned`，改用 `relay_stream`。
 
+::: warning Tailscale / VPN 地址不是公网地址
+如果从节点 `base_url` 是 Tailscale IP、MagicDNS 名称，或只在内网 split DNS 里解析的域名，远程 `presigned` 只适合 tailnet / VPN 内用户。公网用户打开主控站点后，浏览器仍然会被重定向到这个 follower 地址；公网无法解析或路由到它时，下载和上传都会失败。
+
+要让公网用户访问这类文件，要么给 follower 提供公网可达的 HTTPS 地址，要么把远程策略的上传/下载方式改成 `relay_stream`，让主控节点代转流量。不同拓扑的取舍见 [从节点网络部署方式](/deployment/follower-network-topologies)。
+:::
+
 远程 `presigned` 的浏览器 CORS 要求比普通主控中继更严格：
 
 | 方向 | 需要允许的请求头 | 需要暴露的响应头 |
