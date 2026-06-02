@@ -26,6 +26,10 @@ interface NativePreviewRequestKey {
 	label: string;
 }
 
+function requestNativePreviewSession(requestKey: NativePreviewRequestKey) {
+	return requestKey.createSession();
+}
+
 export function NativePreview({ createSession, label }: NativePreviewProps) {
 	const { t } = useTranslation("files");
 	const [previewState, setPreviewState] = useState<NativePreviewState | null>(
@@ -39,7 +43,7 @@ export function NativePreview({ createSession, label }: NativePreviewProps) {
 	useEffect(() => {
 		let cancelled = false;
 
-		void createSession()
+		void requestNativePreviewSession(requestKey)
 			.then((session) => {
 				if (cancelled) return;
 				setPreviewState({ requestKey, session });
@@ -52,7 +56,7 @@ export function NativePreview({ createSession, label }: NativePreviewProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [createSession, requestKey]);
+	}, [requestKey]);
 
 	const isLoading = previewState?.requestKey !== requestKey;
 	const session = isLoading ? null : previewState.session;
