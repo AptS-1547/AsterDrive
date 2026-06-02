@@ -25,7 +25,7 @@ const FilePreview = lazy(async () => {
 	return { default: module.FilePreview };
 });
 
-function SharePreviewElement({
+export function SharePreviewElement({
 	info,
 	token,
 	previewFile,

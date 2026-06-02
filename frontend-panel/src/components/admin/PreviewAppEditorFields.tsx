@@ -95,7 +95,6 @@ export function PreviewAppEditorFields({
 				index={index}
 				protectedBuiltin={protectedBuiltin}
 				t={t}
-				updateApp={updateApp}
 				updateDraft={updateDraft}
 			/>
 			{!protectedBuiltin ? (
@@ -154,9 +153,8 @@ function PreviewAppIdentityFields({
 	index,
 	protectedBuiltin,
 	t,
-	updateApp,
 	updateDraft,
-}: PreviewAppFieldGroupProps & {
+}: Omit<PreviewAppFieldGroupProps, "updateApp"> & {
 	protectedBuiltin: boolean;
 	updateDraft: UpdateDraft;
 }) {
@@ -188,12 +186,17 @@ function PreviewAppIdentityFields({
 			>
 				<Input
 					value={app.icon}
-					onChange={(event) =>
-						updateApp(index, (current) => ({
+					onChange={(event) => {
+						const nextIcon = event.target.value;
+						updateDraft((current) => ({
 							...current,
-							icon: event.target.value,
-						}))
-					}
+							apps: current.apps.map((candidate, appIndex) =>
+								appIndex === index
+									? { ...candidate, icon: nextIcon }
+									: candidate,
+							),
+						}));
+					}}
 				/>
 			</EditorField>
 		</>

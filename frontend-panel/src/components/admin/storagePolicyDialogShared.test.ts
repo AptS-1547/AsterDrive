@@ -4,6 +4,7 @@ import {
 	buildPolicyTestPayload,
 	buildUpdatePolicyPayload,
 	getPolicyForm,
+	hasConnectionFieldChanges,
 } from "@/components/admin/storagePolicyDialogShared";
 import type { StoragePolicy } from "@/types/api";
 
@@ -396,5 +397,84 @@ describe("storagePolicyDialogShared", () => {
 			storage_native_media_metadata_enabled: true,
 			media_metadata_extensions: ["mp4", "mov"],
 		});
+	});
+
+	it("detects connection field changes per driver without treating policy options as connection changes", () => {
+		const localPolicy = {
+			id: 11,
+			name: "Local",
+			driver_type: "local",
+			endpoint: "",
+			bucket: "",
+			access_key: "",
+			secret_key: "",
+			base_path: "/srv/data",
+			remote_node_id: null,
+			max_file_size: null,
+			allowed_types: [],
+			options: {},
+			is_default: false,
+			chunk_size: 5 * 1024 * 1024,
+			created_at: "",
+			updated_at: "",
+		} as StoragePolicy;
+		const localForm = getPolicyForm(localPolicy);
+
+		expect(
+			buildCreatePolicyPayload({
+				...localForm,
+				content_dedup: true,
+			}).options,
+		).toEqual({ content_dedup: true });
+		expect(hasConnectionFieldChanges(localForm, null)).toBe(true);
+		expect(hasConnectionFieldChanges(localForm, localPolicy)).toBe(false);
+		expect(
+			hasConnectionFieldChanges(
+				{ ...localForm, base_path: "/srv/other" },
+				localPolicy,
+			),
+		).toBe(true);
+
+		const remotePolicy = {
+			...localPolicy,
+			id: 12,
+			name: "Remote",
+			driver_type: "remote",
+			base_path: "tenant-a",
+			remote_node_id: 9,
+			options: {
+				remote_download_strategy: "presigned",
+				remote_upload_strategy: "presigned",
+			},
+		} as StoragePolicy;
+		const remoteForm = getPolicyForm(remotePolicy);
+
+		expect(hasConnectionFieldChanges(remoteForm, remotePolicy)).toBe(false);
+		expect(
+			hasConnectionFieldChanges(
+				{ ...remoteForm, remote_node_id: "10" },
+				remotePolicy,
+			),
+		).toBe(true);
+
+		const s3Policy = {
+			...localPolicy,
+			id: 13,
+			name: "S3",
+			driver_type: "s3",
+			endpoint: "https://s3.example.com",
+			bucket: "media",
+			base_path: "uploads",
+			options: {
+				s3_download_strategy: "presigned",
+				s3_upload_strategy: "presigned",
+			},
+		} as StoragePolicy;
+		const s3Form = getPolicyForm(s3Policy);
+
+		expect(hasConnectionFieldChanges(s3Form, s3Policy)).toBe(false);
+		expect(
+			hasConnectionFieldChanges({ ...s3Form, secret_key: "SECRET" }, s3Policy),
+		).toBe(true);
 	});
 });

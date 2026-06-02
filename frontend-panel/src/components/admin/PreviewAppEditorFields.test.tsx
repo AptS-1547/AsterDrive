@@ -178,9 +178,15 @@ describe("PreviewAppEditorFields", () => {
 				target: { value: "https://cdn.example.com/icon.svg" },
 			},
 		);
-		expect(applyUpdateApp(updateApp, app).icon).toBe(
-			"https://cdn.example.com/icon.svg",
-		);
+		const iconDraftUpdater = updateDraft.mock.calls.at(-1)?.[0] as (
+			current: PreviewAppsEditorConfig,
+		) => PreviewAppsEditorConfig;
+		expect(
+			iconDraftUpdater({
+				apps: [createUrlTemplateApp(), app],
+				version: 2,
+			}).apps[1]?.icon,
+		).toBe("https://cdn.example.com/icon.svg");
 
 		fireEvent.click(screen.getByRole("button", { name: "select-item:wopi" }));
 		expect(applyUpdateApp(updateApp, app)).toMatchObject({
@@ -266,6 +272,11 @@ describe("PreviewAppEditorFields", () => {
 			target: { value: "表格" },
 		});
 		expect(applyUpdateApp(updateApp, app).labels.zh).toBe("表格");
+
+		fireEvent.change(screen.getByDisplayValue("Viewer"), {
+			target: { value: "Table" },
+		});
+		expect(applyUpdateApp(updateApp, app).labels.en).toBe("Table");
 
 		fireEvent.click(screen.getByRole("button", { name: "select-item:;" }));
 		expect(applyUpdateApp(updateApp, app).config.delimiter).toBe(";");

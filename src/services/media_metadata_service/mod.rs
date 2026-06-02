@@ -247,11 +247,16 @@ async fn try_extract_storage_native_metadata(
     source_mime_type: &str,
     kind: MediaMetadataKind,
 ) -> Result<Option<ExtractedMediaMetadata>> {
-    if !storage_native_media_metadata_matches_file(state, blob, source_file_name, kind)? {
+    if kind == MediaMetadataKind::Image {
         return Ok(None);
     }
 
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let options = crate::types::parse_storage_policy_options(policy.options.as_ref());
+    if !options.storage_native_media_metadata_matches_file_name(source_file_name) {
+        return Ok(None);
+    }
+
     let driver = state.driver_registry.get_driver(&policy)?;
     let Some(native) = driver.as_native_media_metadata() else {
         tracing::warn!(

@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FOLDER_LIMIT } from "@/lib/constants";
-import ShareViewPage from "@/pages/ShareViewPage";
+import ShareViewPage, { SharePreviewElement } from "@/pages/ShareViewPage";
 import { ApiError } from "@/services/http";
 import { ErrorCode } from "@/types/api-helpers";
 
@@ -18,6 +18,7 @@ const mockState = vi.hoisted(() => ({
 		(token: string, fileId: number) =>
 			`https://download/${token}/files/${fileId}`,
 	),
+	factoryErrors: [] as string[],
 	downloadFolderPath: vi.fn(
 		(token: string, fileId: number) => `/s/${token}/files/${fileId}/download`,
 	),
@@ -321,21 +322,58 @@ vi.mock("@/components/files/FilePreview", () => ({
 						Boolean(mediaStreamLinkFactory),
 					)}
 				/>
-				<button type="button" onClick={() => void previewLinkFactory?.()}>
+				<button
+					type="button"
+					onClick={() => {
+						const promise = previewLinkFactory?.();
+						if (promise) {
+							void promise.catch((error: Error) => {
+								mockState.factoryErrors.push(error.message);
+							});
+						}
+					}}
+				>
 					call-preview-link
 				</button>
-				<button type="button" onClick={() => void archivePreviewFactory?.()}>
+				<button
+					type="button"
+					onClick={() => {
+						const promise = archivePreviewFactory?.();
+						if (promise) {
+							void promise.catch((error: Error) => {
+								mockState.factoryErrors.push(error.message);
+							});
+						}
+					}}
+				>
 					call-archive-preview
 				</button>
 				<button
 					type="button"
-					onClick={() =>
-						void loadMusicBackendMetadata?.(new AbortController().signal)
-					}
+					onClick={() => {
+						const promise = loadMusicBackendMetadata?.(
+							new AbortController().signal,
+						);
+						if (promise) {
+							void promise.catch((error: Error) => {
+								mockState.factoryErrors.push(error.message);
+							});
+						}
+					}}
 				>
 					call-music-metadata
 				</button>
-				<button type="button" onClick={() => void mediaStreamLinkFactory?.()}>
+				<button
+					type="button"
+					onClick={() => {
+						const promise = mediaStreamLinkFactory?.();
+						if (promise) {
+							void promise.catch((error: Error) => {
+								mockState.factoryErrors.push(error.message);
+							});
+						}
+					}}
+				>
 					call-stream-link
 				</button>
 				<button type="button" onClick={onClose}>
@@ -571,6 +609,7 @@ vi.mock("@/services/shareService", () => ({
 describe("ShareViewPage", () => {
 	beforeEach(() => {
 		mockState.downloadFolderFileUrl.mockClear();
+		mockState.factoryErrors = [];
 		mockState.createFolderFilePreviewLink.mockClear();
 		mockState.downloadFolderPath.mockClear();
 		mockState.downloadPath.mockClear();
@@ -629,6 +668,47 @@ describe("ShareViewPage", () => {
 
 		expect(await screen.findByText("errors:share_expired")).toBeInTheDocument();
 		expect(screen.getByText("unavailable")).toBeInTheDocument();
+	});
+
+	it("guards retained preview factories while share info is unavailable", async () => {
+		render(
+			<SharePreviewElement
+				info={null}
+				token="share-token"
+				previewFile={
+					{
+						id: 77,
+						mime_type: "audio/mpeg",
+						name: "orphaned-preview.mp3",
+						size: 77,
+					} as never
+				}
+				onClose={vi.fn()}
+			/>,
+		);
+
+		expect(await screen.findByTestId("file-preview")).toHaveAttribute(
+			"data-name",
+			"orphaned-preview.mp3",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "call-preview-link" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "call-archive-preview" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "call-music-metadata" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "call-stream-link" }));
+
+		await waitFor(() => {
+			expect(mockState.factoryErrors).toEqual([
+				"share preview link is unavailable",
+				"share archive preview is unavailable",
+				"share media metadata is unavailable",
+				"share media stream is unavailable",
+			]);
+		});
 	});
 
 	it("maps share load errors to the public unavailable panel", async () => {

@@ -693,6 +693,72 @@ describe("AdminPoliciesPage", () => {
 		expect(s3Badge).toHaveClass("bg-blue-500/10", "text-blue-600");
 	});
 
+	it("renders Tencent COS and remote fallback metadata", () => {
+		mockState.items = [
+			createPolicy({
+				id: 5,
+				name: "COS Media",
+				driver_type: "tencent_cos",
+				endpoint: "https://cos.ap-guangzhou.myqcloud.com",
+				bucket: "media-1250000000",
+			}),
+			createPolicy({
+				id: 6,
+				name: "Remote Missing",
+				driver_type: "remote",
+				base_path: "",
+				remote_node_id: 99,
+			}),
+			createPolicy({
+				id: 7,
+				name: "Remote Unbound",
+				driver_type: "remote",
+				base_path: "tenant-b",
+				remote_node_id: null,
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		const cosBadge = screen.getByText("Tencent COS");
+		expect(cosBadge).toHaveClass("bg-cyan-500/10", "text-cyan-700");
+		expect(
+			screen.getByText("https://cos.ap-guangzhou.myqcloud.com"),
+		).toBeInTheDocument();
+		expect(screen.getByText("media-1250000000")).toBeInTheDocument();
+		expect(screen.getByText("core:root")).toBeInTheDocument();
+		expect(screen.getByText("#99")).toBeInTheDocument();
+		expect(screen.getAllByText("-").length).toBeGreaterThan(0);
+	});
+
+	it("opens policy rows from the keyboard without letting action cells bubble", () => {
+		mockState.items = [
+			createPolicy({
+				id: 8,
+				name: "Keyboard S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "keyboard",
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		const row = screen.getByText("Keyboard S3").closest("tr");
+		const actionCell = screen
+			.getByRole("button", { name: "delete_policy" })
+			.closest("td");
+		if (!row || !actionCell) {
+			throw new Error("Expected policy row and action cell");
+		}
+
+		fireEvent.keyDown(actionCell, { key: "Enter" });
+		expect(screen.queryByDisplayValue("Keyboard S3")).not.toBeInTheDocument();
+
+		fireEvent.keyDown(row, { key: " " });
+		expect(screen.getByDisplayValue("Keyboard S3")).toBeInTheDocument();
+	});
+
 	it("updates pagination offset from the policy pager", () => {
 		mockState.items = [createPolicy({ id: 1, name: "Default Local" })];
 		mockState.total = 45;
