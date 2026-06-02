@@ -5,6 +5,7 @@ use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::io::AsyncWriteExt;
+use tokio_util::sync::CancellationToken;
 
 use super::cache::{fit_raw_manifest_to_cache_limit, serialize_cached_raw_manifest};
 use super::model::{ArchiveRawEntry, ArchiveRawManifest};
@@ -13,6 +14,7 @@ use super::*;
 use crate::config::definitions::CONFIG_CATEGORY_FILE_PROCESSING_ARCHIVE_PREVIEW;
 use crate::entities::system_config;
 use crate::services::archive_service::test_utils::create_single_file_zip_with_raw_name;
+use crate::services::task_service::{TaskExecutionContext, TaskLease};
 use crate::storage::BlobMetadata;
 use crate::storage::StorageDriver;
 use crate::types::{SystemConfigSource, SystemConfigValueType};
@@ -581,6 +583,7 @@ fn map_failed_task_error_falls_back_to_unavailable_when_unknown() {
 #[tokio::test]
 async fn bounded_copy_accepts_exact_size_and_preserves_bytes() {
     let (mut writer, mut reader) = tokio::io::duplex(16);
+    let context = test_execution_context();
     let producer = tokio::spawn(async move {
         writer
             .write_all(b"zip")
@@ -589,7 +592,8 @@ async fn bounded_copy_accepts_exact_size_and_preserves_bytes() {
     });
     let mut output = Vec::new();
 
-    let copied = copy_async_reader_to_writer_with_expected_size(
+    let copied = copy_async_reader_to_writer_with_execution_and_expected_size(
+        &context,
         &mut reader,
         &mut output,
         3,
@@ -608,9 +612,11 @@ async fn bounded_copy_accepts_exact_size_and_preserves_bytes() {
 
 #[tokio::test]
 async fn bounded_copy_rejects_short_and_long_streams() {
+    let context = test_execution_context();
     let mut short_reader = tokio::io::empty();
     let mut short_output = Vec::new();
-    let short_error = copy_async_reader_to_writer_with_expected_size(
+    let short_error = copy_async_reader_to_writer_with_execution_and_expected_size(
+        &context,
         &mut short_reader,
         &mut short_output,
         1,
@@ -635,7 +641,8 @@ async fn bounded_copy_rejects_short_and_long_streams() {
             .expect("write should succeed");
     });
     let mut long_output = Vec::new();
-    let long_error = copy_async_reader_to_writer_with_expected_size(
+    let long_error = copy_async_reader_to_writer_with_execution_and_expected_size(
+        &context,
         &mut reader,
         &mut long_output,
         3,
@@ -657,6 +664,34 @@ async fn bounded_copy_rejects_short_and_long_streams() {
             .message()
             .contains("expands beyond declared size")
     );
+}
+
+#[tokio::test]
+async fn bounded_copy_stops_before_reading_when_shutdown_requested() {
+    let shutdown_token = CancellationToken::new();
+    let context = TaskExecutionContext::new(TaskLease::new(42, 7), shutdown_token.clone());
+    shutdown_token.cancel();
+    let mut reader = tokio::io::empty();
+    let mut output = Vec::new();
+
+    let error = copy_async_reader_to_writer_with_execution_and_expected_size(
+        &context,
+        &mut reader,
+        &mut output,
+        0,
+        "source archive",
+        |message| {
+            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+        },
+    )
+    .await
+    .expect_err("shutdown should stop copy before reading");
+
+    assert!(error.message().contains("shutdown"));
+}
+
+fn test_execution_context() -> TaskExecutionContext {
+    TaskExecutionContext::new(TaskLease::new(42, 7), CancellationToken::new())
 }
 
 #[tokio::test(flavor = "multi_thread")]

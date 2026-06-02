@@ -177,6 +177,7 @@ pub(super) async fn process_archive_preview_task(
                 std::path::Path::new(&task_temp_dir).join(archive_format.temp_file_name());
             archive_preview_service::download_blob_to_temp(
                 state,
+                &context,
                 &source_file,
                 &blob,
                 &source_archive_path,

@@ -133,6 +133,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
     let mut current = 0_i64;
 
     for temp_key in &payload.temp_keys {
+        context.ensure_active()?;
         delete_object_if_present(driver.as_ref(), temp_key, &mut stats).await;
         current += 1;
         mark_task_progress(
@@ -148,6 +149,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
 
     if let Some(multipart) = driver.as_multipart() {
         for target in &payload.multipart_uploads {
+            context.ensure_active()?;
             match multipart
                 .abort_multipart_upload(&target.temp_key, &target.multipart_id)
                 .await
@@ -177,6 +179,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
         }
     } else {
         for target in &payload.multipart_uploads {
+            context.ensure_active()?;
             stats.failed_objects += 1;
             stats.errors.push(format!(
                 "driver does not support multipart cleanup for {} ({})",

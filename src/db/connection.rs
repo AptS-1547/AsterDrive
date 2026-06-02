@@ -42,7 +42,10 @@ pub async fn connect_with_metrics(
         max_retries: cfg.retry_count,
         ..Default::default()
     };
-    crate::db::retry::with_retry(&retry_config, || connect_once(cfg, metrics.clone())).await
+    crate::db::retry::with_retry(&retry_config, || {
+        Box::pin(connect_once(cfg, metrics.clone()))
+    })
+    .await
 }
 
 pub async fn connect_reader_for_writer_with_metrics(
