@@ -11,9 +11,10 @@ use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_subc
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::HASH_BUF_SIZE;
 use crate::services::workspace_storage_service::{
-    StoreFromTempHints, StoreFromTempParams, WorkspaceStorageScope, check_quota,
-    local_content_dedup_enabled, prepare_non_dedup_blob_upload, resolve_policy_for_size,
-    upload_temp_file_to_prepared_blob, verify_file_access,
+    StorageOperationContext, StoreFromTempHints, StoreFromTempParams, WorkspaceStorageScope,
+    check_quota, local_content_dedup_enabled, prepare_non_dedup_blob_upload,
+    resolve_policy_for_size, upload_temp_file_to_prepared_blob,
+    upload_temp_file_to_prepared_blob_cancellable, verify_file_access,
 };
 use crate::storage::driver::StorageDriver;
 
@@ -28,6 +29,7 @@ pub(super) struct PreparedStoreFromTemp {
     pub driver: Arc<dyn StorageDriver>,
     pub blob_plan: TempBlobPlan,
     pub overwrite_ctx: Option<OverwriteContext>,
+    pub operation_context: StorageOperationContext,
     pub storage_delta: i64,
     pub quota_prechecked: bool,
     pub mime: String,
@@ -67,7 +69,9 @@ pub(super) async fn prepare_store_from_temp(
         resolved_policy,
         precomputed_hash,
         actor_username,
+        operation_context,
     } = hints;
+    operation_context.checkpoint()?;
 
     tracing::debug!(
         scope = ?scope,
@@ -87,6 +91,7 @@ pub(super) async fn prepare_store_from_temp(
         Some(policy) => policy,
         None => resolve_policy_for_size(state, scope, folder_id, size).await?,
     };
+    operation_context.checkpoint()?;
     let should_dedup = local_content_dedup_enabled(&policy);
 
     tracing::debug!(
@@ -105,19 +110,50 @@ pub(super) async fn prepare_store_from_temp(
     }
 
     let driver = state.driver_registry.get_driver(&policy)?;
-    let blob_plan =
-        build_temp_blob_plan(temp_path, size, precomputed_hash, should_dedup, &policy).await?;
+    let blob_plan = build_temp_blob_plan(
+        temp_path,
+        size,
+        precomputed_hash,
+        should_dedup,
+        &policy,
+        &operation_context,
+    )
+    .await?;
+    operation_context.checkpoint()?;
     let overwrite_ctx =
         load_overwrite_context(state, scope, existing_file_id, skip_lock_check).await?;
+    operation_context.checkpoint()?;
     let storage_delta = overwrite_ctx.as_ref().map_or(size, |_| size);
 
     let quota_prechecked = storage_delta > 0 && matches!(blob_plan, TempBlobPlan::Preuploaded(_));
     if quota_prechecked {
         check_quota(state.writer_db(), scope, storage_delta).await?;
     }
+    operation_context.checkpoint()?;
 
     if let TempBlobPlan::Preuploaded(preuploaded_blob) = &blob_plan {
-        upload_temp_file_to_prepared_blob(driver.as_ref(), preuploaded_blob, temp_path).await?;
+        if operation_context.is_cancellable() {
+            upload_temp_file_to_prepared_blob_cancellable(
+                driver.as_ref(),
+                preuploaded_blob,
+                temp_path,
+                &operation_context,
+            )
+            .await?;
+        } else {
+            upload_temp_file_to_prepared_blob(driver.as_ref(), preuploaded_blob, temp_path).await?;
+        }
+        if let Err(error) = operation_context.checkpoint() {
+            crate::services::workspace_storage_service::cleanup_preuploaded_blob_upload(
+                driver.as_ref(),
+                preuploaded_blob,
+                "cancellation after temp preupload",
+            )
+            .await;
+            return Err(error);
+        }
+    } else {
+        operation_context.checkpoint()?;
     }
 
     Ok(PreparedStoreFromTemp {
@@ -131,6 +167,7 @@ pub(super) async fn prepare_store_from_temp(
         driver,
         blob_plan,
         overwrite_ctx,
+        operation_context,
         storage_delta,
         quota_prechecked,
         mime: mime_guess::from_path(&filename)
@@ -147,10 +184,11 @@ async fn build_temp_blob_plan(
     precomputed_hash: Option<&str>,
     should_dedup: bool,
     policy: &storage_policy::Model,
+    operation_context: &StorageOperationContext,
 ) -> Result<TempBlobPlan> {
     if should_dedup {
         return Ok(TempBlobPlan::Dedup(
-            compute_dedup_target(temp_path, precomputed_hash).await?,
+            compute_dedup_target(temp_path, precomputed_hash, operation_context).await?,
         ));
     }
 
@@ -162,9 +200,11 @@ async fn build_temp_blob_plan(
 async fn compute_dedup_target(
     temp_path: &str,
     precomputed_hash: Option<&str>,
+    operation_context: &StorageOperationContext,
 ) -> Result<DedupTarget> {
     use tokio::io::AsyncReadExt;
 
+    operation_context.checkpoint()?;
     let file_hash = match precomputed_hash {
         Some(file_hash) => file_hash.to_string(),
         None => {
@@ -174,6 +214,7 @@ async fn compute_dedup_target(
                 .map_aster_err_ctx("open temp", upload_hash_temp_open_failed)?;
             let mut buf = vec![0u8; HASH_BUF_SIZE];
             loop {
+                operation_context.checkpoint()?;
                 let n = reader
                     .read(&mut buf)
                     .await
@@ -183,6 +224,7 @@ async fn compute_dedup_target(
                 }
                 hasher.update(&buf[..n]);
             }
+            operation_context.checkpoint()?;
             crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
         }
     };

@@ -14,7 +14,7 @@ use crate::entities::storage_policy;
 use crate::errors::Result;
 
 pub use paths::{effective_base_path, resolved_base_path, upload_staging_path};
-pub use promote::promote_local_file_if_absent;
+pub use promote::{promote_local_file_if_absent, promote_local_file_if_absent_with_check};
 
 pub struct LocalDriver {
     pub(super) base_path: PathBuf,

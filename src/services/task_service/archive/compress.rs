@@ -258,7 +258,10 @@ pub(super) async fn process_archive_compress_task(
                 &archive_temp_path_string,
                 archive_size,
             ),
-            workspace_storage_service::StoreFromTempHints::default(),
+            workspace_storage_service::StoreFromTempHints {
+                operation_context: context.storage_operation_context(),
+                ..Default::default()
+            },
             workspace_storage_service::NewFileMode::ResolveUnique,
             EMIT_ARCHIVE_STORAGE_EVENT,
         )

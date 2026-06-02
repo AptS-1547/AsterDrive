@@ -381,6 +381,7 @@ pub(crate) async fn store_relative_target_from_stream(
                 resolved_policy,
                 precomputed_hash: precomputed_hash.as_deref(),
                 actor_username: None,
+                ..Default::default()
             },
         )
         .await
@@ -400,6 +401,7 @@ pub(crate) async fn store_relative_target_from_stream(
                 resolved_policy,
                 precomputed_hash: precomputed_hash.as_deref(),
                 actor_username: None,
+                ..Default::default()
             },
         )
         .await

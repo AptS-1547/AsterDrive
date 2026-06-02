@@ -3,7 +3,7 @@ use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{
-    check_quota, cleanup_preuploaded_blob_upload, persist_preuploaded_blob,
+    StorageOperationContext, check_quota, cleanup_preuploaded_blob_upload, persist_preuploaded_blob,
 };
 use sea_orm::ConnectionTrait;
 
@@ -27,6 +27,7 @@ pub(super) async fn persist_temp_store(
         driver,
         blob_plan,
         overwrite_ctx,
+        operation_context,
         storage_delta,
         quota_prechecked,
         mime,
@@ -35,19 +36,44 @@ pub(super) async fn persist_temp_store(
     } = prepared;
     let cleanup_blob_plan = blob_plan.clone();
 
+    operation_context.checkpoint()?;
     if storage_delta > 0 && !quota_prechecked {
         check_quota(state.writer_db(), scope, storage_delta).await?;
     }
-    let staged_dedup_target =
-        stage_temp_blob_before_transaction(&blob_plan, driver.as_ref(), size, &temp_path).await?;
+    operation_context.checkpoint()?;
+    let staged_dedup_target = stage_temp_blob_before_transaction(
+        &blob_plan,
+        driver.as_ref(),
+        size,
+        &temp_path,
+        &operation_context,
+    )
+    .await?;
+    if let Err(error) = operation_context.checkpoint() {
+        if staged_dedup_target {
+            rollback_staged_dedup_blob(state, &blob_plan, driver.as_ref(), policy.id).await;
+        }
+        if let TempBlobPlan::Preuploaded(preuploaded_blob) = &cleanup_blob_plan {
+            cleanup_preuploaded_blob_upload(
+                driver.as_ref(),
+                preuploaded_blob,
+                "cancellation after temp file upload",
+            )
+            .await;
+        }
+        return Err(error);
+    }
 
     let create_result = async {
         let txn = crate::db::transaction::begin(state.writer_db()).await?;
+        operation_context.checkpoint()?;
         if storage_delta > 0 {
             check_quota(&txn, scope, storage_delta).await?;
         }
+        operation_context.checkpoint()?;
 
         let blob = persist_temp_blob(&txn, &blob_plan, size, policy.id).await?;
+        operation_context.checkpoint()?;
         let result = super::write_record::write_file_record_from_temp(
             &txn,
             WriteFileRecordFromTempParams {
@@ -64,6 +90,7 @@ pub(super) async fn persist_temp_store(
             },
         )
         .await?;
+        operation_context.checkpoint()?;
 
         crate::db::transaction::commit(txn).await?;
         Ok::<file::Model, AsterError>(result)
@@ -94,14 +121,16 @@ async fn stage_temp_blob_before_transaction(
     driver: &dyn crate::storage::driver::StorageDriver,
     size: i64,
     temp_path: &str,
+    operation_context: &StorageOperationContext,
 ) -> Result<bool> {
     match blob_plan {
         TempBlobPlan::Dedup(target) => Ok(
-            crate::storage::drivers::local::promote_local_file_if_absent(
+            crate::storage::drivers::local::promote_local_file_if_absent_with_check(
                 driver,
                 &target.storage_path,
                 temp_path,
                 size,
+                || operation_context.checkpoint(),
             )
             .await?
             .created(),

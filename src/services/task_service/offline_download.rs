@@ -259,6 +259,7 @@ pub(super) async fn process_offline_download_task(
             ),
             workspace_storage_service::StoreFromTempHints {
                 precomputed_hash: Some(&downloaded.sha256),
+                operation_context: context.storage_operation_context(),
                 ..Default::default()
             },
             workspace_storage_service::NewFileMode::ResolveUnique,

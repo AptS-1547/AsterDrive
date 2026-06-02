@@ -124,6 +124,7 @@ pub(super) async fn upload_local_direct(
                     resolved_policy,
                     precomputed_hash: precomputed_hash.as_deref(),
                     actor_username,
+                    ..Default::default()
                 },
             )
             .await;

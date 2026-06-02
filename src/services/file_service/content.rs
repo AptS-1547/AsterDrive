@@ -321,6 +321,7 @@ pub(crate) async fn update_content_in_scope(
                 resolved_policy: Some(resolved_policy),
                 precomputed_hash: precomputed_hash.as_deref(),
                 actor_username: None,
+                ..Default::default()
             },
         )
         .await;
@@ -437,6 +438,7 @@ pub(crate) async fn update_content_stream_in_scope(
             resolved_policy,
             precomputed_hash: precomputed_hash.as_deref(),
             actor_username: None,
+            ..Default::default()
         },
     )
     .await;

@@ -5,10 +5,15 @@ use std::path::{Component, Path, PathBuf};
 use tokio::io::AsyncRead;
 
 use crate::entities::file_blob;
-use crate::errors::Result;
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::types::DriverType;
 
-use super::{create_nondedup_blob_with_key, create_remote_nondedup_blob, create_s3_nondedup_blob};
+use super::{
+    StorageOperationContext, create_nondedup_blob_with_key, create_remote_nondedup_blob,
+    create_s3_nondedup_blob,
+};
+
+const LOCAL_COPY_BUF_SIZE: usize = 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub(crate) enum PreparedNonDedupBlobUpload {
@@ -214,6 +219,199 @@ pub(crate) async fn upload_temp_file_to_prepared_blob(
     Ok(())
 }
 
+pub(crate) async fn upload_temp_file_to_prepared_blob_cancellable(
+    driver: &dyn crate::storage::driver::StorageDriver,
+    prepared: &PreparedNonDedupBlobUpload,
+    temp_path: &str,
+    operation_context: &StorageOperationContext,
+) -> Result<()> {
+    if let PreparedNonDedupBlobUpload::Local {
+        base_path,
+        storage_path,
+        size,
+        ..
+    } = prepared
+    {
+        return upload_temp_file_to_local_prepared_blob_cancellable(
+            base_path,
+            storage_path,
+            *size,
+            temp_path,
+            operation_context,
+        )
+        .await;
+    }
+
+    operation_context.checkpoint()?;
+    let file = tokio::fs::File::open(temp_path).await.map_aster_err_ctx(
+        "open temp file for upload",
+        AsterError::storage_driver_error,
+    )?;
+    let reader = operation_context.wrap_reader(Box::new(file));
+    upload_reader_to_prepared_blob_with_context(
+        driver,
+        prepared,
+        reader,
+        prepared_size(prepared),
+        operation_context,
+    )
+    .await
+}
+
+async fn upload_temp_file_to_local_prepared_blob_cancellable(
+    base_path: &Path,
+    storage_path: &str,
+    size: i64,
+    temp_path: &str,
+    operation_context: &StorageOperationContext,
+) -> Result<()> {
+    operation_context.checkpoint()?;
+    let full_path = base_path.join(storage_path.trim_start_matches('/'));
+    if let Some(parent) = full_path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+    }
+    operation_context.checkpoint()?;
+
+    let result = match tokio::fs::hard_link(temp_path, &full_path).await {
+        Ok(()) => validate_local_prepared_blob(&full_path, size, operation_context).await,
+        Err(link_error) => {
+            copy_temp_file_to_local_prepared_blob(
+                temp_path,
+                &full_path,
+                size,
+                link_error,
+                operation_context,
+            )
+            .await
+        }
+    };
+
+    if let Err(error) = result {
+        cleanup_local_prepared_blob(
+            base_path,
+            &full_path,
+            storage_path,
+            "cancellable upload error",
+        )
+        .await;
+        return Err(error);
+    }
+
+    if let Err(error) = operation_context.checkpoint() {
+        cleanup_local_prepared_blob(
+            base_path,
+            &full_path,
+            storage_path,
+            "cancellation after local upload",
+        )
+        .await;
+        return Err(error);
+    }
+    Ok(())
+}
+
+async fn copy_temp_file_to_local_prepared_blob(
+    temp_path: &str,
+    full_path: &Path,
+    size: i64,
+    link_error: std::io::Error,
+    operation_context: &StorageOperationContext,
+) -> Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    operation_context.checkpoint()?;
+    let mut source = tokio::fs::File::open(temp_path).await.map_err(|error| {
+        AsterError::storage_driver_error(format!(
+            "open local upload source after hardlink failed ({link_error}): {error}"
+        ))
+    })?;
+    let mut target = tokio::fs::File::create(full_path).await.map_aster_err_ctx(
+        "create local upload target",
+        AsterError::storage_driver_error,
+    )?;
+    let mut buf = vec![0_u8; LOCAL_COPY_BUF_SIZE];
+    let mut copied = 0_i64;
+
+    loop {
+        operation_context.checkpoint()?;
+        let read = source
+            .read(&mut buf)
+            .await
+            .map_aster_err_ctx("read local upload source", AsterError::storage_driver_error)?;
+        if read == 0 {
+            break;
+        }
+        target.write_all(&buf[..read]).await.map_aster_err_ctx(
+            "write local upload target",
+            AsterError::storage_driver_error,
+        )?;
+        let read = i64::try_from(read).map_err(|_| {
+            AsterError::storage_driver_error("local upload read size exceeds i64 range")
+        })?;
+        copied = copied
+            .checked_add(read)
+            .ok_or_else(|| AsterError::storage_driver_error("local upload copy size overflow"))?;
+    }
+    target.flush().await.map_aster_err_ctx(
+        "flush local upload target",
+        AsterError::storage_driver_error,
+    )?;
+    operation_context.checkpoint()?;
+
+    if copied != size {
+        return Err(AsterError::storage_driver_error(format!(
+            "local upload copy size mismatch: expected {size}, copied {copied}"
+        )));
+    }
+
+    Ok(())
+}
+
+async fn validate_local_prepared_blob(
+    full_path: &Path,
+    size: i64,
+    operation_context: &StorageOperationContext,
+) -> Result<()> {
+    let expected_size = crate::utils::numbers::i64_to_u64(size, "local upload blob size")?;
+    let metadata = tokio::fs::metadata(full_path).await.map_aster_err_ctx(
+        "inspect local upload blob",
+        AsterError::storage_driver_error,
+    )?;
+    if metadata.len() != expected_size {
+        return Err(AsterError::storage_driver_error(format!(
+            "local upload size mismatch: expected {expected_size}, actual {}",
+            metadata.len()
+        )));
+    }
+    operation_context.checkpoint()
+}
+
+async fn cleanup_local_prepared_blob(
+    base_path: &Path,
+    full_path: &Path,
+    storage_path: &str,
+    reason: &str,
+) {
+    match tokio::fs::remove_file(full_path).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            tracing::warn!(
+                storage_path,
+                full_path = %full_path.display(),
+                "failed to cleanup local prepared blob after {reason}: {error}"
+            );
+            return;
+        }
+    }
+
+    if let Some(parent) = full_path.parent() {
+        cleanup_empty_local_blob_dirs(parent, base_path).await;
+    }
+}
+
 pub(crate) async fn upload_reader_to_prepared_blob(
     driver: &dyn crate::storage::driver::StorageDriver,
     prepared: &PreparedNonDedupBlobUpload,
@@ -233,6 +431,44 @@ pub(crate) async fn upload_reader_to_prepared_blob(
     }
 
     Ok(())
+}
+
+async fn upload_reader_to_prepared_blob_with_context(
+    driver: &dyn crate::storage::driver::StorageDriver,
+    prepared: &PreparedNonDedupBlobUpload,
+    reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+    size: i64,
+    operation_context: &StorageOperationContext,
+) -> Result<()> {
+    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+        crate::errors::AsterError::storage_driver_error("stream upload not supported")
+    })?;
+
+    operation_context.checkpoint()?;
+    if let Err(error) = stream_driver
+        .put_reader(prepared.storage_path(), reader, size)
+        .await
+    {
+        cleanup_preuploaded_blob_upload(driver, prepared, "stream upload error").await;
+        if let Err(cancellation_error) = operation_context.checkpoint() {
+            return Err(cancellation_error);
+        }
+        return Err(error);
+    }
+    if let Err(error) = operation_context.checkpoint() {
+        cleanup_preuploaded_blob_upload(driver, prepared, "cancellation after stream upload").await;
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+fn prepared_size(prepared: &PreparedNonDedupBlobUpload) -> i64 {
+    match prepared {
+        PreparedNonDedupBlobUpload::Local { size, .. }
+        | PreparedNonDedupBlobUpload::S3 { size, .. }
+        | PreparedNonDedupBlobUpload::Remote { size, .. } => *size,
+    }
 }
 
 pub(crate) async fn persist_preuploaded_blob<C: ConnectionTrait>(

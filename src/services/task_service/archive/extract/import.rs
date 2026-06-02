@@ -106,7 +106,10 @@ pub(super) async fn materialize_archive_extract_stage(
                 &temp_path.to_string_lossy(),
                 size,
             ),
-            workspace_storage_service::StoreFromTempHints::default(),
+            workspace_storage_service::StoreFromTempHints {
+                operation_context: context.storage_operation_context(),
+                ..Default::default()
+            },
         )
         .await?;
         summary.file_ids.push(created.id);

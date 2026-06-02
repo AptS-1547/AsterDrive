@@ -289,6 +289,14 @@ impl TaskExecutionContext {
         self.lease_guard.ensure_active()
     }
 
+    pub(super) fn storage_operation_context(
+        &self,
+    ) -> workspace_storage_service::StorageOperationContext {
+        workspace_storage_service::StorageOperationContext::new(TaskStorageCancellationCheck {
+            context: self.clone(),
+        })
+    }
+
     pub(super) async fn sleep_or_shutdown(&self, duration: StdDuration) -> Result<()> {
         self.lease_guard.ensure_active()?;
 
@@ -302,6 +310,17 @@ impl TaskExecutionContext {
     pub(super) async fn shutdown_requested(&self) -> Result<()> {
         self.shutdown_token.cancelled().await;
         Err(self.lease_guard.mark_shutdown_requested())
+    }
+}
+
+#[derive(Clone)]
+struct TaskStorageCancellationCheck {
+    context: TaskExecutionContext,
+}
+
+impl workspace_storage_service::StorageCancellationCheck for TaskStorageCancellationCheck {
+    fn checkpoint(&self) -> Result<()> {
+        self.context.ensure_active()
     }
 }
 

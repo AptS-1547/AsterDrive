@@ -507,6 +507,7 @@ impl DavFile for AsterDavFile {
                             resolved_policy: resolved_policy_hint,
                             precomputed_hash: precomputed_hash.as_deref(),
                             actor_username: None,
+                            ..Default::default()
                         },
                     )
                     .await

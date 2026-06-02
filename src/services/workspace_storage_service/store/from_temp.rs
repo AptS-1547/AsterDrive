@@ -28,11 +28,14 @@ pub(crate) async fn store_from_temp_internal(
     new_file_mode: NewFileMode,
     emit_storage_event: bool,
 ) -> Result<file::Model> {
+    hints.operation_context.checkpoint()?;
     let prepared = prepare::prepare_store_from_temp(state, params, hints).await?;
     let scope = prepared.scope;
     let existing_file_id = prepared.existing_file_id;
     let storage_delta = prepared.storage_delta;
+    let operation_context = prepared.operation_context.clone();
     let overwritten = existing_file_id.is_some();
+    operation_context.checkpoint()?;
     let result = persist::persist_temp_store(state, prepared, new_file_mode).await?;
 
     if emit_storage_event {

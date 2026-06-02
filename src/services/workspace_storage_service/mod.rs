@@ -6,6 +6,7 @@
 
 mod blob_upload;
 mod multipart;
+mod operation_context;
 mod store;
 #[cfg(test)]
 mod tests;
@@ -39,9 +40,10 @@ pub(crate) use crate::services::workspace_scope_service::load_scope_actor_userna
 pub(crate) use blob_upload::{
     PreparedNonDedupBlobUpload, cleanup_preuploaded_blob_upload, persist_preuploaded_blob,
     prepare_non_dedup_blob_upload, upload_reader_to_prepared_blob,
-    upload_temp_file_to_prepared_blob,
+    upload_temp_file_to_prepared_blob, upload_temp_file_to_prepared_blob_cancellable,
 };
 pub(crate) use multipart::{WorkspaceUploadHints, upload_with_hints};
+pub(crate) use operation_context::{StorageCancellationCheck, StorageOperationContext};
 pub(crate) use store::from_temp::store_from_temp_internal;
 pub(crate) use store::{
     StoreFromTempHints, StoreFromTempParams, StorePreuploadedNondedupParams, create_empty,

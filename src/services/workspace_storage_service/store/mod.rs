@@ -67,6 +67,7 @@ pub(crate) struct StoreFromTempHints<'a> {
     pub resolved_policy: Option<crate::entities::storage_policy::Model>,
     pub precomputed_hash: Option<&'a str>,
     pub actor_username: Option<&'a str>,
+    pub operation_context: crate::services::workspace_storage_service::StorageOperationContext,
 }
 
 pub(crate) struct StorePreuploadedNondedupParams<'a> {
