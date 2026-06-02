@@ -3,7 +3,7 @@
 //! 将可选能力从核心 StorageDriver 分离，避免每个驱动被迫实现不需要的功能。
 
 use crate::errors::Result;
-use crate::storage::driver::{PresignedDownloadOptions, StoragePathVisitor};
+use crate::storage::traits::driver::{PresignedDownloadOptions, StoragePathVisitor};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -202,7 +202,7 @@ pub mod fallback {
         _size: i64,
     ) -> Result<String>
     where
-        D: crate::storage::driver::StorageDriver + ?Sized,
+        D: crate::storage::traits::driver::StorageDriver + ?Sized,
     {
         // 创建临时文件
         let temp_dir = std::env::temp_dir();
@@ -252,7 +252,7 @@ pub mod fallback {
 mod tests {
     use super::fallback::put_reader_with_temp_file;
     use crate::errors::Result;
-    use crate::storage::driver::{BlobMetadata, StorageDriver};
+    use crate::storage::traits::driver::{BlobMetadata, StorageDriver};
     use async_trait::async_trait;
     use std::collections::HashSet;
     use std::path::PathBuf;

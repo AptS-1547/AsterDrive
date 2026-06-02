@@ -8,8 +8,8 @@ use crate::entities::{background_task, managed_follower, storage_policy};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::storage::StorageErrorKind;
-use crate::storage::driver::StorageDriver;
 use crate::storage::drivers::{local::LocalDriver, s3::S3Driver, tencent_cos::TencentCosDriver};
+use crate::storage::traits::driver::StorageDriver;
 use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
 use crate::utils::numbers::u64_to_i64;
 

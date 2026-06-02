@@ -4,8 +4,8 @@ use std::sync::Arc;
 use crate::entities::{managed_ingress_profile, storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::FollowerRuntimeState;
-use crate::storage::driver::StorageDriver;
 use crate::storage::drivers::{local::LocalDriver, s3::S3Driver};
+use crate::storage::traits::driver::StorageDriver;
 use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
 
 use super::paths::resolve_managed_local_path;

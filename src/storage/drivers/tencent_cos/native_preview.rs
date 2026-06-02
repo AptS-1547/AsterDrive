@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::storage::extensions::{
+use crate::storage::traits::extensions::{
     NativePreviewMode, NativePreviewOpenMode, NativePreviewRequest, NativePreviewResult,
     NativePreviewStorageDriver,
 };

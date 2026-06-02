@@ -14,12 +14,12 @@ use tokio::io::AsyncRead;
 use super::s3::{S3Driver, S3DriverOptions};
 use crate::entities::storage_policy;
 use crate::errors::Result;
-use crate::storage::driver::{BlobMetadata, StorageDriver};
-use crate::storage::extensions::{
+use crate::storage::traits::driver::{BlobMetadata, StorageDriver};
+use crate::storage::traits::extensions::{
     ListStorageDriver, NativePreviewStorageDriver, NativeThumbnailStorageDriver,
     PresignedStorageDriver, StorageCapacityInfo, StreamUploadDriver,
 };
-use crate::storage::multipart::MultipartStorageDriver;
+use crate::storage::traits::multipart::MultipartStorageDriver;
 
 pub struct S3CompatibleDriver {
     inner: Arc<S3Driver>,

@@ -14,7 +14,7 @@ use crate::errors::{
 };
 use crate::runtime::PrimaryAppState;
 use crate::storage::StorageErrorKind;
-use crate::storage::multipart::MultipartStorageDriver;
+use crate::storage::traits::multipart::MultipartStorageDriver;
 use crate::types::UploadSessionStatus;
 use crate::utils::{id, paths};
 

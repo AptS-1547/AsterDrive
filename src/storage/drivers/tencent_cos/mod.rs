@@ -19,8 +19,10 @@ use super::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
-use crate::storage::extensions::{NativePreviewStorageDriver, NativeThumbnailStorageDriver};
 use crate::storage::object_key;
+use crate::storage::traits::extensions::{
+    NativePreviewStorageDriver, NativeThumbnailStorageDriver,
+};
 
 pub(super) const COS_NATIVE_PREVIEW_PROVIDER: &str = "tencent_cos_ci";
 pub(super) const COS_NATIVE_PREVIEW_VERSION: &str = "cos-ci-doc-preview-html-v1";

@@ -15,7 +15,7 @@ use crate::services::{
     share_service,
     workspace_storage_service::WorkspaceStorageScope,
 };
-use crate::storage::extensions::{
+use crate::storage::traits::extensions::{
     NativePreviewMode, NativePreviewOpenMode, NativePreviewRequest, NativePreviewResult,
 };
 use crate::types::parse_storage_policy_options;

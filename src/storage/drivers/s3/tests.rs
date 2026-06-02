@@ -3,10 +3,10 @@ use super::S3DriverOptions;
 use super::presigned::{MAX_PRESIGN_TTL, clamp_presign_ttl};
 use crate::entities::storage_policy;
 use crate::errors::AsterError;
-use crate::storage::driver::{StorageDriver, StoragePathVisitor};
 use crate::storage::error::StorageErrorKind;
-use crate::storage::extensions::{ListStorageDriver, PresignedStorageDriver};
-use crate::storage::multipart::MultipartStorageDriver;
+use crate::storage::traits::driver::{StorageDriver, StoragePathVisitor};
+use crate::storage::traits::extensions::{ListStorageDriver, PresignedStorageDriver};
+use crate::storage::traits::multipart::MultipartStorageDriver;
 use crate::types::{StoragePolicyOptions, serialize_storage_policy_options};
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_smithy_http_client::test_util::{ReplayEvent, StaticReplayClient, capture_request};
@@ -533,7 +533,7 @@ async fn presigned_url_includes_download_response_overrides() {
         .presigned_url(
             "folder/file name.txt",
             Duration::from_secs(60),
-            crate::storage::driver::PresignedDownloadOptions {
+            crate::storage::traits::driver::PresignedDownloadOptions {
                 response_cache_control: Some("private, max-age=60".to_string()),
                 response_content_disposition: Some(
                     "attachment; filename=\"file name.txt\"".to_string(),

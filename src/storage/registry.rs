@@ -1,14 +1,14 @@
 //! 存储子模块：`registry`。
 
 use super::StorageErrorKind;
-use super::driver::StorageDriver;
 use super::drivers::local::LocalDriver;
 use super::drivers::remote::RemoteDriver;
 use super::drivers::s3::S3Driver;
 use super::drivers::tencent_cos::TencentCosDriver;
 use super::error::storage_driver_error;
 use super::metrics_driver::{MetricsMultipartStorageDriver, MetricsStorageDriver};
-use super::multipart::MultipartStorageDriver;
+use super::traits::driver::StorageDriver;
+use super::traits::multipart::MultipartStorageDriver;
 use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{managed_follower_repo, master_binding_repo};
 use crate::entities::storage_policy;
@@ -361,7 +361,10 @@ mod tests {
             panic!("not used")
         }
 
-        async fn metadata(&self, _path: &str) -> Result<crate::storage::driver::BlobMetadata> {
+        async fn metadata(
+            &self,
+            _path: &str,
+        ) -> Result<crate::storage::traits::driver::BlobMetadata> {
             panic!("not used")
         }
 

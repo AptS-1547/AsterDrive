@@ -133,8 +133,8 @@ async fn materialize_local_cli_source(source_path: &Path, input_path: &Path) -> 
 mod tests {
     use super::{PreparedCliSourceKind, prepare_cli_source};
     use crate::errors::Result;
-    use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions, StorageDriver};
-    use crate::storage::extensions::{LocalPathStorageDriver, PresignedStorageDriver};
+    use crate::storage::traits::driver::{BlobMetadata, PresignedDownloadOptions, StorageDriver};
+    use crate::storage::traits::extensions::{LocalPathStorageDriver, PresignedStorageDriver};
     use async_trait::async_trait;
     use std::path::PathBuf;
     use std::pin::Pin;

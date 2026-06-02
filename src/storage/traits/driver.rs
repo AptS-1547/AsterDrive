@@ -161,8 +161,8 @@ pub trait StorageDriver: Send + Sync {
     /// 不支持容量查询的驱动必须明确返回 `StorageErrorKind::Unsupported`，不要静默
     /// 猜测或 panic。调用方可把该错误转换成用户可见的 `unsupported` 状态。
     async fn capacity_info(&self) -> Result<super::extensions::StorageCapacityInfo> {
-        Err(super::error::storage_driver_error(
-            super::StorageErrorKind::Unsupported,
+        Err(crate::storage::error::storage_driver_error(
+            crate::storage::StorageErrorKind::Unsupported,
             "storage driver does not support capacity observability",
         ))
     }

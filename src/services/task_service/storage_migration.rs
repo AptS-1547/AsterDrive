@@ -12,7 +12,7 @@ use crate::db::transaction;
 use crate::entities::{background_task, file_blob, storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
-use crate::storage::driver::StorageDriver;
+use crate::storage::traits::driver::StorageDriver;
 use crate::types::BackgroundTaskKind;
 use crate::utils::hash::{new_sha256, sha256_digest_to_hex, sha256_hex};
 use crate::utils::numbers::u64_to_i64;

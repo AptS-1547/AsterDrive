@@ -507,7 +507,7 @@ pub async fn test_connection_params<S: PrimaryRuntimeState>(
         updated_at: chrono::Utc::now(),
     };
 
-    let driver: Box<dyn crate::storage::driver::StorageDriver> = match driver_type {
+    let driver: Box<dyn crate::storage::traits::driver::StorageDriver> = match driver_type {
         DriverType::Local => Box::new(LocalDriver::new(&fake_policy)?),
         DriverType::Remote => {
             let remote_node_id = fake_policy.remote_node_id.ok_or_else(|| {
@@ -557,7 +557,7 @@ async fn ensure_remote_transport_supports_policy_options<C: sea_orm::ConnectionT
 }
 
 async fn probe_storage_driver(
-    driver: &dyn crate::storage::driver::StorageDriver,
+    driver: &dyn crate::storage::traits::driver::StorageDriver,
     write_error_context: &'static str,
 ) -> Result<()> {
     let test_path = format!("_aster_connection_test-{}", uuid::Uuid::new_v4());

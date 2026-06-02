@@ -2,8 +2,8 @@ use super::native_thumbnail::is_cos_image_thumbnail_candidate;
 use super::signing::cos_virtual_hosted_s3_endpoint;
 use super::*;
 use crate::entities::storage_policy;
-use crate::storage::driver::StorageDriver;
-use crate::storage::extensions::{
+use crate::storage::traits::driver::StorageDriver;
+use crate::storage::traits::extensions::{
     NativePreviewMode, NativePreviewOpenMode, NativePreviewRequest, NativePreviewStorageDriver,
     NativeThumbnailRequest, NativeThumbnailStorageDriver,
 };

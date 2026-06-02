@@ -4,7 +4,7 @@ use url::Url;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
-use crate::storage::extensions::{NativeThumbnailRequest, NativeThumbnailStorageDriver};
+use crate::storage::traits::extensions::{NativeThumbnailRequest, NativeThumbnailStorageDriver};
 
 use super::{COS_NATIVE_PREVIEW_PROVIDER, MAX_COS_THUMBNAIL_TTL, TencentCosDriver};
 
