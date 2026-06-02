@@ -425,9 +425,7 @@ async fn upload_reader_to_prepared_blob_with_context(
         .await
     {
         cleanup_preuploaded_blob_upload(driver, prepared, "stream upload error").await;
-        if let Err(cancellation_error) = operation_context.checkpoint() {
-            return Err(cancellation_error);
-        }
+        operation_context.checkpoint()?;
         return Err(error);
     }
     if let Err(error) = operation_context.checkpoint() {

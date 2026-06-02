@@ -56,6 +56,16 @@ struct BlobMigrationOutcome {
     renamed_opaque_blobs: i64,
 }
 
+struct BlobMigrationContext<'a> {
+    state: &'a PrimaryAppState,
+    execution: &'a TaskExecutionContext,
+    task_id: i64,
+    source_policy_id: i64,
+    target_policy_id: i64,
+    source_driver: &'a dyn StorageDriver,
+    target_driver: &'a dyn StorageDriver,
+}
+
 struct StoragePolicyMigrationPreflight {
     source_policy: storage_policy::Model,
     target_policy: storage_policy::Model,
@@ -409,6 +419,16 @@ pub(super) async fn process_storage_policy_migration_task(
     )
     .await?;
 
+    let migration_context = BlobMigrationContext {
+        state,
+        execution: &context,
+        task_id: task.id,
+        source_policy_id: payload.source_policy_id,
+        target_policy_id: payload.target_policy_id,
+        source_driver: source_driver.as_ref(),
+        target_driver: target_driver.as_ref(),
+    };
+
     loop {
         context.ensure_active()?;
         let blobs = file_repo::find_blobs_by_policy_paginated(
@@ -437,17 +457,7 @@ pub(super) async fn process_storage_policy_migration_task(
 
         for blob in blobs {
             context.ensure_active()?;
-            let outcome = migrate_one_blob(
-                state,
-                &context,
-                task.id,
-                payload.source_policy_id,
-                payload.target_policy_id,
-                source_driver.as_ref(),
-                target_driver.as_ref(),
-                blob,
-            )
-            .await?;
+            let outcome = migrate_one_blob(&migration_context, blob).await?;
 
             checkpoint =
                 storage_migration_checkpoint_repo::get_by_task_id(state.writer_db(), task.id)
@@ -533,15 +543,18 @@ pub(super) async fn process_storage_policy_migration_task(
 }
 
 async fn migrate_one_blob(
-    state: &PrimaryAppState,
-    context: &TaskExecutionContext,
-    task_id: i64,
-    source_policy_id: i64,
-    target_policy_id: i64,
-    source_driver: &dyn StorageDriver,
-    target_driver: &dyn StorageDriver,
+    migration: &BlobMigrationContext<'_>,
     blob: file_blob::Model,
 ) -> Result<BlobMigrationOutcome> {
+    let BlobMigrationContext {
+        state,
+        execution: context,
+        task_id,
+        source_policy_id,
+        target_policy_id,
+        source_driver,
+        target_driver,
+    } = *migration;
     let latest = match file_repo::find_blob_by_id(state.writer_db(), blob.id).await {
         Ok(blob) => blob,
         Err(error) if error.code() == "E006" => {
