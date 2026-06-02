@@ -59,7 +59,7 @@ impl RequestedProp {
         };
         let mut element = Element::new(&tag);
         if let Some(namespace) = &self.namespace
-            && namespace != "DAV:"
+            && should_declare_namespace(prefix, namespace)
         {
             element
                 .attributes
@@ -515,7 +515,7 @@ fn prop_element(prop: &DavProp, requested: Option<&RequestedProp>) -> Element {
     };
     let mut element = Element::new(&tag);
     if let Some(namespace) = namespace
-        && namespace != "DAV:"
+        && should_declare_namespace(prefix, namespace)
     {
         element
             .attributes
@@ -554,4 +554,8 @@ fn default_prefix(namespace: Option<&str>) -> &str {
         Some(_) => "A",
         None => "",
     }
+}
+
+fn should_declare_namespace(prefix: &str, namespace: &str) -> bool {
+    namespace != "DAV:" || prefix != "D"
 }

@@ -13,7 +13,9 @@ use aster_drive::types::{EntityType, TeamMemberRole, UserRole, UserStatus};
 use base64::Engine;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+use std::io::Cursor;
 use tokio::task::JoinHandle;
+use xmltree::Element;
 
 fn basic_auth_header(username: &str, password: &str) -> String {
     format!(
@@ -628,6 +630,67 @@ async fn test_webdav_real_http_put_with_content_length_persists_bytes() {
     assert_eq!(get.status(), reqwest::StatusCode::OK);
     let bytes = get.bytes().await.expect("real WebDAV GET body should read");
     assert_eq!(bytes.as_ref(), data.as_slice());
+
+    server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_webdav_real_http_rclone_propfind_reports_uploaded_size_with_declared_prefix() {
+    let state = common::setup().await;
+    let (username, password) = seed_real_webdav_account(&state).await;
+    let server = start_real_webdav_server(state).await;
+    let client = reqwest::Client::new();
+    let data: Vec<u8> = (0..=255).cycle().take(129106).collect();
+    let url = format!("{}/webdav/rclone-size-check.bin", server.base_url);
+
+    let put = client
+        .put(&url)
+        .basic_auth(&username, Some(&password))
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .header(reqwest::header::CONTENT_LENGTH, data.len().to_string())
+        .body(data)
+        .send()
+        .await
+        .expect("real WebDAV PUT for rclone PROPFIND check should receive a response");
+    assert!(
+        put.status() == reqwest::StatusCode::CREATED
+            || put.status() == reqwest::StatusCode::NO_CONTENT,
+        "real WebDAV PUT should create or overwrite the file, got {}",
+        put.status()
+    );
+
+    let propfind_body = r#"<?xml version="1.0"?>
+<d:propfind xmlns:d="DAV:">
+ <d:prop>
+  <d:displayname/>
+  <d:getlastmodified/>
+  <d:getcontentlength/>
+  <d:resourcetype/>
+ </d:prop>
+</d:propfind>"#;
+    let propfind = client
+        .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &url)
+        .basic_auth(&username, Some(&password))
+        .header("Depth", "0")
+        .header(reqwest::header::CONTENT_TYPE, "application/xml")
+        .body(propfind_body)
+        .send()
+        .await
+        .expect("rclone-style PROPFIND should receive a response");
+    assert_eq!(propfind.status(), reqwest::StatusCode::MULTI_STATUS);
+    let body = propfind
+        .text()
+        .await
+        .expect("rclone-style PROPFIND response body should be readable");
+    assert!(
+        body.contains("xmlns:d=\"DAV:\""),
+        "PROPFIND response must declare the lowercase DAV prefix used in echoed props: {body}"
+    );
+    assert!(
+        body.contains("<d:getcontentlength xmlns:d=\"DAV:\">129106</d:getcontentlength>"),
+        "PROPFIND response should report uploaded size under the requested DAV prefix: {body}"
+    );
+    Element::parse(Cursor::new(body.as_bytes())).expect("PROPFIND response XML should parse");
 
     server.stop().await;
 }

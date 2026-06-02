@@ -533,6 +533,120 @@ async fn propfind_href_is_percent_encoded_and_xml_parseable() {
     let _ = std::fs::remove_dir_all(temp_root);
 }
 
+#[actix_web::test]
+async fn propfind_declares_requested_dav_prefix_for_rclone_size_check() {
+    let driver = CountingDirectUploadDriver::default();
+    let (state, user, policy, temp_root) = build_webdav_test_state(
+        DriverType::Local,
+        crate::types::StoredStoragePolicyOptions::empty(),
+        std::sync::Arc::new(driver),
+    )
+    .await;
+    create_root_file(
+        &state,
+        user.id,
+        policy.id,
+        "rclone-size.txt",
+        129106,
+        "files/rclone.txt",
+    )
+    .await;
+
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
+    let lock_system = NoopLockSystem;
+    let req = actix_web::test::TestRequest::default()
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").expect("valid method"))
+        .uri("/webdav/rclone-size.txt")
+        .insert_header((header::HeaderName::from_static("depth"), "0"))
+        .to_http_request();
+    let body = br#"<?xml version="1.0"?>
+<d:propfind xmlns:d="DAV:">
+  <d:prop>
+    <d:displayname/>
+    <d:getlastmodified/>
+    <d:getcontentlength/>
+    <d:quota-used-bytes/>
+    <d:resourcetype/>
+  </d:prop>
+</d:propfind>"#;
+
+    let response = handle_propfind(&req, &dav_fs, &lock_system, "/webdav", body).await;
+
+    assert_eq!(response.status(), StatusCode::from_u16(207).unwrap());
+    let body = to_bytes(response.into_body())
+        .await
+        .expect("PROPFIND response body should be readable");
+    let body_text = String::from_utf8(body.to_vec()).expect("PROPFIND XML should be utf-8");
+    assert!(
+        body_text.contains("xmlns:d=\"DAV:\""),
+        "PROPFIND response must declare echoed lowercase DAV prefix: {body_text}"
+    );
+    assert!(
+        body_text.contains("<d:getcontentlength xmlns:d=\"DAV:\">129106</d:getcontentlength>"),
+        "PROPFIND response should expose file size under the requested DAV prefix: {body_text}"
+    );
+    assert!(
+        body_text.contains("<d:quota-used-bytes xmlns:d=\"DAV:\" />"),
+        "missing DAV props should also declare the echoed lowercase DAV prefix: {body_text}"
+    );
+    Element::parse(Cursor::new(body_text.as_bytes())).expect("PROPFIND XML should parse cleanly");
+
+    drop(state);
+    let _ = std::fs::remove_dir_all(temp_root);
+}
+
+#[actix_web::test]
+async fn propfind_allprop_keeps_default_dav_prefix_xml_parseable() {
+    let driver = CountingDirectUploadDriver::default();
+    let (state, user, policy, temp_root) = build_webdav_test_state(
+        DriverType::Local,
+        crate::types::StoredStoragePolicyOptions::empty(),
+        std::sync::Arc::new(driver),
+    )
+    .await;
+    create_root_file(
+        &state,
+        user.id,
+        policy.id,
+        "allprop.txt",
+        42,
+        "files/allprop.txt",
+    )
+    .await;
+
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
+    let lock_system = NoopLockSystem;
+    let req = actix_web::test::TestRequest::default()
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").expect("valid method"))
+        .uri("/webdav/allprop.txt")
+        .insert_header((header::HeaderName::from_static("depth"), "0"))
+        .to_http_request();
+
+    let response = handle_propfind(&req, &dav_fs, &lock_system, "/webdav", &[]).await;
+
+    assert_eq!(response.status(), StatusCode::from_u16(207).unwrap());
+    let body = to_bytes(response.into_body())
+        .await
+        .expect("PROPFIND response body should be readable");
+    let body_text = String::from_utf8(body.to_vec()).expect("PROPFIND XML should be utf-8");
+    assert!(
+        body_text.contains("<D:multistatus xmlns:D=\"DAV:\">"),
+        "allprop response should declare the canonical DAV prefix at the root: {body_text}"
+    );
+    assert!(
+        body_text.contains("<D:getcontentlength>42</D:getcontentlength>"),
+        "allprop response should expose file size under the canonical DAV prefix: {body_text}"
+    );
+    assert!(
+        !body_text.contains("xmlns:D=\"DAV:\" xmlns:D=\"DAV:\""),
+        "allprop response should not duplicate the canonical DAV namespace declaration: {body_text}"
+    );
+    Element::parse(Cursor::new(body_text.as_bytes())).expect("PROPFIND XML should parse cleanly");
+
+    drop(state);
+    let _ = std::fs::remove_dir_all(temp_root);
+}
+
 fn collect_href_text(element: &Element, hrefs: &mut Vec<String>) {
     if (element.name == "href" || element.name == "D:href")
         && let Some(text) = element.get_text()
