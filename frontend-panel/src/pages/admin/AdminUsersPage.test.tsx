@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cloneElement, isValidElement } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
@@ -445,7 +446,13 @@ vi.mock("@/components/ui/tooltip", () => ({
 	}: {
 		children?: React.ReactNode;
 		render?: React.ReactNode;
-	}) => render ?? children,
+	}) => {
+		if (render && isValidElement(render)) {
+			return cloneElement(render, undefined, children);
+		}
+
+		return <>{render ?? children}</>;
+	},
 }));
 
 vi.mock("@/hooks/useApiError", () => ({

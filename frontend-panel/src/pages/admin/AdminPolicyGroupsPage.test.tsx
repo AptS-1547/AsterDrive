@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { createContext, use } from "react";
+import { cloneElement, createContext, isValidElement, use } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invalidateAdminPolicyGroupLookup } from "@/lib/adminPolicyGroupLookup";
 import { invalidateAdminPolicyLookup } from "@/lib/adminPolicyLookup";
@@ -391,7 +391,13 @@ vi.mock("@/components/ui/tooltip", () => ({
 	}: {
 		children?: React.ReactNode;
 		render?: React.ReactNode;
-	}) => <>{render ?? children}</>,
+	}) => {
+		if (render && isValidElement(render)) {
+			return cloneElement(render, undefined, children);
+		}
+
+		return <>{render ?? children}</>;
+	},
 }));
 
 vi.mock("@/components/ui/table", () => ({

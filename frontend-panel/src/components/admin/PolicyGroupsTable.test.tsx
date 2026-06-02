@@ -354,6 +354,49 @@ describe("PolicyGroupsTable", () => {
 		expect(deleteButtons[1]).toBeDisabled();
 	});
 
+	it("keeps disabled action tooltips on fixed-size triggers", () => {
+		render(
+			<PolicyGroupsTable
+				{...createProps({
+					groups: [
+						createGroup({
+							id: 2,
+							is_default: true,
+							name: "Default Group",
+						}),
+					],
+					total: 1,
+				})}
+			/>,
+		);
+
+		const migrationButton = screen.getByRole("button", {
+			name: "migrate_policy_group_users",
+		});
+		const deleteButton = screen.getByRole("button", {
+			name: "delete_policy_group",
+		});
+
+		expect(migrationButton).toBeDisabled();
+		expect(deleteButton).toBeDisabled();
+		expect(migrationButton.parentElement).toHaveClass(
+			"inline-flex",
+			"size-8",
+			"shrink-0",
+		);
+		expect(deleteButton.parentElement).toHaveClass(
+			"inline-flex",
+			"size-8",
+			"shrink-0",
+		);
+		expect(
+			screen.getByText("policy_group_migration_unavailable"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("policy_group_delete_default_blocked"),
+		).toBeInTheDocument();
+	});
+
 	it("updates pagination state through the footer controls", () => {
 		render(<PolicyGroupsTable {...createProps()} />);
 

@@ -224,23 +224,25 @@ export function UsersTable({
 									<div className="flex justify-end">
 										<TooltipProvider>
 											<Tooltip>
-												<TooltipTrigger>
-													<div>
-														<Button
-															variant="ghost"
-															size="icon"
-															className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-															onClick={() => onDeleteUser(user.id)}
-															aria-label={deleteLabel}
-															title={deleteLabel}
-															disabled={user.id === 1 || isDeleting}
-														>
-															<Icon
-																name={isDeleting ? "Spinner" : "Trash"}
-																className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
-															/>
-														</Button>
-													</div>
+												<TooltipTrigger
+													render={
+														<span className="inline-flex size-8 shrink-0" />
+													}
+												>
+													<Button
+														variant="ghost"
+														size="icon"
+														className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+														onClick={() => onDeleteUser(user.id)}
+														aria-label={deleteLabel}
+														title={deleteLabel}
+														disabled={user.id === 1 || isDeleting}
+													>
+														<Icon
+															name={isDeleting ? "Spinner" : "Trash"}
+															className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
+														/>
+													</Button>
 												</TooltipTrigger>
 												{user.id === 1 ? (
 													<TooltipContent>

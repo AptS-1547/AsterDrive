@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { cloneElement, isValidElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { RemoteNodesTable } from "@/components/admin/admin-remote-nodes-page/RemoteNodesTable";
 import type { RemoteNodeInfo } from "@/types/api";
@@ -41,7 +42,19 @@ vi.mock("@/components/ui/tooltip", () => ({
 		<div role="tooltip">{children}</div>
 	),
 	TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
-	TooltipTrigger: ({ children }: { children: React.ReactNode }) => children,
+	TooltipTrigger: ({
+		children,
+		render,
+	}: {
+		children?: React.ReactNode;
+		render?: React.ReactNode;
+	}) => {
+		if (render && isValidElement(render)) {
+			return cloneElement(render, undefined, children);
+		}
+
+		return <>{render ?? children}</>;
+	},
 }));
 
 const remoteNode = (
@@ -199,7 +212,7 @@ describe("RemoteNodesTable", () => {
 		expect(
 			screen.getByRole("button", { name: "remote_node_deleting" }),
 		).toBeDisabled();
-		expect(screen.getAllByRole("tooltip").length).toBeGreaterThan(0);
+		expect(screen.queryByText("storage unavailable")).not.toBeInTheDocument();
 
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -212,6 +225,38 @@ describe("RemoteNodesTable", () => {
 
 		expect(onGenerateEnrollmentCommand).not.toHaveBeenCalled();
 		expect(onRequestDelete).not.toHaveBeenCalled();
+	});
+
+	it("keeps remote node errors out of the action column tooltip", () => {
+		const nodeError =
+			"connection refused while dialing the remote node at a very long diagnostic address";
+		const tunnelError = "reverse tunnel heartbeat timed out";
+
+		renderTable({
+			items: [
+				remoteNode({
+					last_error: nodeError,
+					tunnel: {
+						status: "offline",
+						last_error: tunnelError,
+						last_seen_at: null,
+					},
+				}),
+			],
+		});
+
+		expect(screen.queryByText(nodeError)).not.toBeInTheDocument();
+		expect(screen.getByText(tunnelError)).toBeInTheDocument();
+
+		const actionCell = screen
+			.getByRole("button", { name: "delete_remote_node" })
+			.closest("td");
+		expect(actionCell).toHaveClass("w-24", "whitespace-nowrap");
+		expect(
+			screen.getByRole("button", {
+				name: "remote_node_generate_enrollment_command",
+			}).parentElement,
+		).toHaveClass("inline-flex", "size-8", "shrink-0");
 	});
 
 	it("requests deletion from the row action", () => {

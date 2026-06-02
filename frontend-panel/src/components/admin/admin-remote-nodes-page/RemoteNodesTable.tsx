@@ -236,68 +236,61 @@ export function RemoteNodesTable({
 							</div>
 						</TableCell>
 						<TableCell
+							className={cn(
+								ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
+								"whitespace-nowrap",
+							)}
 							onClick={(event) => event.stopPropagation()}
 							onKeyDown={(event) => event.stopPropagation()}
 						>
-							<div className="flex justify-end gap-1">
+							<div className="flex w-full justify-end gap-1">
 								<TooltipProvider>
 									<Tooltip>
-										<TooltipTrigger>
-											<div>
-												<Button
-													variant="ghost"
-													size="icon"
-													className={ADMIN_ICON_BUTTON_CLASS}
-													onClick={() => onGenerateEnrollmentCommand(node)}
-													disabled={generateEnrollmentDisabled}
-													aria-label={generateEnrollmentLabel}
-													title={generateEnrollmentLabel}
-												>
-													<Icon
-														name={
-															generatingEnrollmentId === node.id
-																? "Spinner"
-																: "ClipboardText"
-														}
-														className={cn(
-															"size-3.5",
-															generatingEnrollmentId === node.id &&
-																"animate-spin",
-														)}
-													/>
-												</Button>
-											</div>
+										<TooltipTrigger
+											render={<span className="inline-flex size-8 shrink-0" />}
+										>
+											<Button
+												variant="ghost"
+												size="icon"
+												className={ADMIN_ICON_BUTTON_CLASS}
+												onClick={() => onGenerateEnrollmentCommand(node)}
+												disabled={generateEnrollmentDisabled}
+												aria-label={generateEnrollmentLabel}
+												title={generateEnrollmentLabel}
+											>
+												<Icon
+													name={
+														generatingEnrollmentId === node.id
+															? "Spinner"
+															: "ClipboardText"
+													}
+													className={cn(
+														"size-3.5",
+														generatingEnrollmentId === node.id &&
+															"animate-spin",
+													)}
+												/>
+											</Button>
 										</TooltipTrigger>
 										{enrollmentCompleted ? (
 											<TooltipContent>{generateEnrollmentLabel}</TooltipContent>
 										) : null}
 									</Tooltip>
 								</TooltipProvider>
-								<TooltipProvider>
-									<Tooltip>
-										<TooltipTrigger>
-											<div>
-												<Button
-													variant="ghost"
-													size="icon"
-													className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-													onClick={() => onRequestDelete(node.id)}
-													aria-label={deleteLabel}
-													title={deleteLabel}
-													disabled={isDeleting}
-												>
-													<Icon
-														name={isDeleting ? "Spinner" : "Trash"}
-														className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
-													/>
-												</Button>
-											</div>
-										</TooltipTrigger>
-										{node.last_error ? (
-											<TooltipContent>{node.last_error}</TooltipContent>
-										) : null}
-									</Tooltip>
-								</TooltipProvider>
+								<Button
+									variant="ghost"
+									size="icon"
+									className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+									onClick={() => onRequestDelete(node.id)}
+									aria-label={deleteLabel}
+									title={deleteLabel}
+									disabled={isDeleting}
+								>
+									<Icon
+										name={isDeleting ? "Spinner" : "Trash"}
+										className={`size-3.5 ${isDeleting ? "animate-spin" : ""}`}
+									/>
+								</Button>
 							</div>
 						</TableCell>
 					</TableRow>
