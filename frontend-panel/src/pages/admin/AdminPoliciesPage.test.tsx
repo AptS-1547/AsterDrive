@@ -752,6 +752,9 @@ describe("AdminPoliciesPage", () => {
 			throw new Error("Expected policy row and action cell");
 		}
 
+		fireEvent.keyDown(actionCell, { key: "a" });
+		expect(screen.queryByDisplayValue("Keyboard S3")).not.toBeInTheDocument();
+
 		fireEvent.keyDown(actionCell, { key: "Enter" });
 		expect(screen.queryByDisplayValue("Keyboard S3")).not.toBeInTheDocument();
 
@@ -1351,6 +1354,9 @@ describe("AdminPoliciesPage", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
 
+		// The connection test payload intentionally includes only connection
+		// fields; normalized storage-native suffix options are asserted in the
+		// create payload below.
 		await waitFor(() => {
 			expect(mockState.testParams).toHaveBeenCalledWith({
 				access_key: "AKID",

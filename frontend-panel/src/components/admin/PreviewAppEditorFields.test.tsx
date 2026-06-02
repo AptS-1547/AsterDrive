@@ -8,30 +8,41 @@ import type {
 
 const t = (key: string) => key;
 
-vi.mock("@/components/admin/DelimitedListInput", () => ({
-	DelimitedListInput: ({
-		onValueChange,
-		placeholder,
-		values,
-	}: {
-		onValueChange: (values: string[]) => void;
-		placeholder?: string;
-		values: string[];
-	}) => (
-		<input
-			aria-label={placeholder ?? "delimited-list"}
-			value={values.join(", ")}
-			onChange={(event) =>
-				onValueChange(
-					event.target.value
-						.split(",")
-						.map((value) => value.trim())
-						.filter(Boolean),
-				)
+vi.mock("@/components/admin/DelimitedListInput", () => {
+	function parseDelimitedListInputForTest(value: string) {
+		const items: string[] = [];
+		const seen = new Set<string>();
+		for (const rawItem of value.split(",")) {
+			const item = rawItem.trim();
+			if (item.length === 0 || seen.has(item)) {
+				continue;
 			}
-		/>
-	),
-}));
+			seen.add(item);
+			items.push(item);
+		}
+		return items;
+	}
+
+	return {
+		DelimitedListInput: ({
+			onValueChange,
+			placeholder,
+			values,
+		}: {
+			onValueChange: (values: string[]) => void;
+			placeholder?: string;
+			values: string[];
+		}) => (
+			<input
+				aria-label={placeholder ?? "delimited-list"}
+				value={values.join(", ")}
+				onChange={(event) =>
+					onValueChange(parseDelimitedListInputForTest(event.target.value))
+				}
+			/>
+		),
+	};
+});
 
 vi.mock("@/components/ui/input", () => ({
 	Input: ({
@@ -130,6 +141,9 @@ function applyUpdateApp(
 	updateApp: ReturnType<typeof vi.fn>,
 	app: PreviewAppsEditorApp,
 ) {
+	if (updateApp.mock.calls.length === 0) {
+		throw new Error("applyUpdateApp: updateApp was not called");
+	}
 	const [, updater] = updateApp.mock.calls.at(-1) as [
 		number,
 		(app: PreviewAppsEditorApp) => PreviewAppsEditorApp,

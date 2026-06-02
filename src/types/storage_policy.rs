@@ -312,6 +312,10 @@ impl StoragePolicyOptions {
     }
 
     pub fn storage_native_processing_enabled(&self) -> bool {
+        // Backward compatibility: legacy policies may set thumbnail_processor to
+        // StorageNative without storing this newer switch. In that missing case,
+        // derive the enabled default from thumbnail_processor; validation below
+        // still rejects an explicit false when StorageNative is selected.
         self.storage_native_processing_enabled
             .unwrap_or(self.thumbnail_processor == Some(MediaProcessorKind::StorageNative))
     }
@@ -455,7 +459,7 @@ fn validate_storage_policy_options(
     if has_storage_native_thumbnail_processor && !value.storage_native_processing_enabled() {
         let mut error = ValidationError::new("invalid");
         error.message = Some(
-            "storage_native_processing_enabled is required for storage_native thumbnails".into(),
+            "storage_native_processing_enabled cannot be explicitly disabled when thumbnail_processor is 'storage_native'. Either set it to true or omit the field.".into(),
         );
         return Err(error);
     }
@@ -565,6 +569,8 @@ mod tests {
         assert_eq!(parsed, DriverType::TencentCos);
 
         assert!(serde_json::from_str::<DriverType>(r#""tencentcos""#).is_err());
+        assert!(serde_json::from_str::<DriverType>(r#""tencentCos""#).is_err());
+        assert!(serde_json::from_str::<DriverType>(r#""tencent-cos""#).is_err());
     }
 
     #[test]
@@ -668,8 +674,21 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("storage_native_processing_enabled is required")
+                .contains("storage_native_processing_enabled cannot be explicitly disabled")
         );
+    }
+
+    #[test]
+    fn storage_native_thumbnail_accepts_explicit_enabled_processing_switch() {
+        let options = parse_storage_policy_options(
+            r#"{"storage_native_processing_enabled":true,"thumbnail_processor":"storage_native","thumbnail_extensions":["png"]}"#,
+        );
+
+        options
+            .validate()
+            .expect("explicitly enabled storage-native thumbnail options should be valid");
+        assert!(options.storage_native_processing_enabled());
+        assert!(options.uses_storage_native_thumbnail());
     }
 
     #[test]

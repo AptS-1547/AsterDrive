@@ -11,6 +11,12 @@ use super::TencentCosDriver;
 type HmacSha1 = Hmac<Sha1>;
 
 const COS_SIGN_ALGORITHM: &str = "sha1";
+
+// Tencent COS request-signature docs require UrlEncode for canonical query and
+// header keys/values. Query/header keys are lowercased after encoding, while
+// values keep their encoded case. The documented UrlEncode symbol table is:
+// space ; ! < " = # > $ ? % @ & [ ' \ ( ] ) ^ * ` + { , | / } :
+// Source: https://cloud.tencent.com/document/api/436/7778
 const COS_PATH_ENCODE_SET: &AsciiSet = &CONTROLS
     .add(b' ')
     .add(b'"')
@@ -188,7 +194,78 @@ fn hmac_sha1_hex(key: &[u8], message: &[u8]) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_param_list, canonical_params};
+    use super::{
+        canonical_param_list, canonical_params, percent_encode_path, percent_encode_query_key,
+        percent_encode_query_value,
+    };
+
+    #[test]
+    fn path_percent_encode_set_matches_cos_path_rules() {
+        let cases = [
+            (" ", "%20"),
+            ("\"", "%22"),
+            ("#", "%23"),
+            ("%", "%25"),
+            ("<", "%3C"),
+            (">", "%3E"),
+            ("?", "%3F"),
+            ("`", "%60"),
+            ("{", "%7B"),
+            ("}", "%7D"),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(percent_encode_path(input), expected, "input={input:?}");
+        }
+    }
+
+    #[test]
+    fn query_percent_encode_set_matches_cos_urlencode_rules() {
+        let cases = [
+            (" ", "%20", "%20"),
+            (";", "%3b", "%3B"),
+            ("!", "%21", "%21"),
+            ("<", "%3c", "%3C"),
+            ("\"", "%22", "%22"),
+            ("=", "%3d", "%3D"),
+            ("#", "%23", "%23"),
+            (">", "%3e", "%3E"),
+            ("$", "%24", "%24"),
+            ("?", "%3f", "%3F"),
+            ("%", "%25", "%25"),
+            ("@", "%40", "%40"),
+            ("&", "%26", "%26"),
+            ("[", "%5b", "%5B"),
+            ("'", "%27", "%27"),
+            ("\\", "%5c", "%5C"),
+            ("(", "%28", "%28"),
+            ("]", "%5d", "%5D"),
+            (")", "%29", "%29"),
+            ("^", "%5e", "%5E"),
+            ("*", "%2a", "%2A"),
+            ("`", "%60", "%60"),
+            ("+", "%2b", "%2B"),
+            ("{", "%7b", "%7B"),
+            (",", "%2c", "%2C"),
+            ("|", "%7c", "%7C"),
+            ("/", "%2f", "%2F"),
+            ("}", "%7d", "%7D"),
+            (":", "%3a", "%3A"),
+        ];
+
+        for (input, expected_key, expected_value) in cases {
+            assert_eq!(
+                percent_encode_query_key(input),
+                expected_key,
+                "query key input={input:?}"
+            );
+            assert_eq!(
+                percent_encode_query_value(input),
+                expected_value,
+                "query value input={input:?}"
+            );
+        }
+    }
 
     #[test]
     fn canonical_cos_params_lowercase_encoded_keys_but_not_values() {
@@ -208,5 +285,30 @@ mod tests {
             canonical_params(&params),
             "imagemogr2%2fthumbnail%2f320x240%3e%2fformat%2fwebp=&response-content-disposition=attachment%3B%20filename%3D%22%E6%8A%A5%E5%91%8A%201.pdf%22"
         );
+    }
+
+    #[test]
+    fn canonical_cos_params_cover_empty_special_and_already_encoded_values() {
+        let empty = [("", "")];
+        assert_eq!(canonical_param_list(&empty), "");
+        assert_eq!(canonical_params(&empty), "=");
+
+        let special = [("KEY", "!@#$%^&*()")];
+        assert_eq!(canonical_param_list(&special), "key");
+        assert_eq!(
+            canonical_params(&special),
+            "key=%21%40%23%24%25%5E%26%2A%28%29"
+        );
+
+        let already_encoded = [("key", "value%20with%20encoded")];
+        assert_eq!(canonical_param_list(&already_encoded), "key");
+        assert_eq!(
+            canonical_params(&already_encoded),
+            "key=value%2520with%2520encoded"
+        );
+
+        let mixed_case = [("MiXeD/Key", "Value%2FCase")];
+        assert_eq!(canonical_param_list(&mixed_case), "mixed%2fkey");
+        assert_eq!(canonical_params(&mixed_case), "mixed%2fkey=Value%252FCase");
     }
 }

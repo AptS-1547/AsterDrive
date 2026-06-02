@@ -201,6 +201,8 @@ describe("StoragePolicyBasicFields", () => {
 			},
 		);
 
+		// The field keeps the user's raw editing tokens; buildPolicyOptions
+		// normalizes, validates, and filters suffixes when creating the payload.
 		expect(onFieldChange).toHaveBeenCalledWith("thumbnail_extensions", [
 			" webp",
 			" .gif ",

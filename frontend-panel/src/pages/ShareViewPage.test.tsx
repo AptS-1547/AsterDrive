@@ -13,12 +13,19 @@ import { ErrorCode } from "@/types/api-helpers";
 
 const TEST_SHARE_PASSWORD = "TEST_PASSWORD";
 
+interface CapturedPreviewFactories {
+	archivePreviewFactory?: () => Promise<unknown>;
+	loadMusicBackendMetadata?: (signal?: AbortSignal) => Promise<unknown>;
+	mediaStreamLinkFactory?: () => Promise<unknown>;
+	previewLinkFactory?: () => Promise<unknown>;
+}
+
 const mockState = vi.hoisted(() => ({
 	downloadFolderFileUrl: vi.fn(
 		(token: string, fileId: number) =>
 			`https://download/${token}/files/${fileId}`,
 	),
-	factoryErrors: [] as string[],
+	previewFactories: null as CapturedPreviewFactories | null,
 	downloadFolderPath: vi.fn(
 		(token: string, fileId: number) => `/s/${token}/files/${fileId}/download`,
 	),
@@ -305,8 +312,15 @@ vi.mock("@/components/files/FilePreview", () => ({
 		mediaStreamLinkFactory?: () => Promise<unknown>;
 		onClose?: () => void;
 		previewLinkFactory?: () => Promise<unknown>;
-	}) =>
-		open ? (
+	}) => {
+		mockState.previewFactories = {
+			archivePreviewFactory,
+			loadMusicBackendMetadata,
+			mediaStreamLinkFactory,
+			previewLinkFactory,
+		};
+
+		return open ? (
 			<div>
 				<div
 					data-testid="file-preview"
@@ -325,12 +339,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 				<button
 					type="button"
 					onClick={() => {
-						const promise = previewLinkFactory?.();
-						if (promise) {
-							void promise.catch((error: Error) => {
-								mockState.factoryErrors.push(error.message);
-							});
-						}
+						void previewLinkFactory?.();
 					}}
 				>
 					call-preview-link
@@ -338,12 +347,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 				<button
 					type="button"
 					onClick={() => {
-						const promise = archivePreviewFactory?.();
-						if (promise) {
-							void promise.catch((error: Error) => {
-								mockState.factoryErrors.push(error.message);
-							});
-						}
+						void archivePreviewFactory?.();
 					}}
 				>
 					call-archive-preview
@@ -351,14 +355,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 				<button
 					type="button"
 					onClick={() => {
-						const promise = loadMusicBackendMetadata?.(
-							new AbortController().signal,
-						);
-						if (promise) {
-							void promise.catch((error: Error) => {
-								mockState.factoryErrors.push(error.message);
-							});
-						}
+						void loadMusicBackendMetadata?.(new AbortController().signal);
 					}}
 				>
 					call-music-metadata
@@ -366,12 +363,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 				<button
 					type="button"
 					onClick={() => {
-						const promise = mediaStreamLinkFactory?.();
-						if (promise) {
-							void promise.catch((error: Error) => {
-								mockState.factoryErrors.push(error.message);
-							});
-						}
+						void mediaStreamLinkFactory?.();
 					}}
 				>
 					call-stream-link
@@ -380,7 +372,8 @@ vi.mock("@/components/files/FilePreview", () => ({
 					close-preview
 				</button>
 			</div>
-		) : null,
+		) : null;
+	},
 }));
 
 vi.mock("@/components/files/FileThumbnail", () => ({
@@ -609,7 +602,7 @@ vi.mock("@/services/shareService", () => ({
 describe("ShareViewPage", () => {
 	beforeEach(() => {
 		mockState.downloadFolderFileUrl.mockClear();
-		mockState.factoryErrors = [];
+		mockState.previewFactories = null;
 		mockState.createFolderFilePreviewLink.mockClear();
 		mockState.downloadFolderPath.mockClear();
 		mockState.downloadPath.mockClear();
@@ -659,6 +652,29 @@ describe("ShareViewPage", () => {
 		});
 	});
 
+	async function collectPreviewFactoryErrors() {
+		const factories = mockState.previewFactories;
+		if (!factories) {
+			throw new Error("collectPreviewFactoryErrors: preview factories missing");
+		}
+
+		const errors: string[] = [];
+		const promises = [
+			factories.previewLinkFactory?.(),
+			factories.archivePreviewFactory?.(),
+			factories.loadMusicBackendMetadata?.(new AbortController().signal),
+			factories.mediaStreamLinkFactory?.(),
+		];
+		for (const promise of promises) {
+			if (promise) {
+				await promise.catch((error: Error) => {
+					errors.push(error.message);
+				});
+			}
+		}
+		return errors;
+	}
+
 	it("renders an unavailable panel for expired shares", async () => {
 		mockState.getInfo.mockRejectedValueOnce(
 			new ApiError(ErrorCode.ShareExpired, "expired"),
@@ -692,23 +708,12 @@ describe("ShareViewPage", () => {
 			"orphaned-preview.mp3",
 		);
 
-		fireEvent.click(screen.getByRole("button", { name: "call-preview-link" }));
-		fireEvent.click(
-			screen.getByRole("button", { name: "call-archive-preview" }),
-		);
-		fireEvent.click(
-			screen.getByRole("button", { name: "call-music-metadata" }),
-		);
-		fireEvent.click(screen.getByRole("button", { name: "call-stream-link" }));
-
-		await waitFor(() => {
-			expect(mockState.factoryErrors).toEqual([
-				"share preview link is unavailable",
-				"share archive preview is unavailable",
-				"share media metadata is unavailable",
-				"share media stream is unavailable",
-			]);
-		});
+		await expect(collectPreviewFactoryErrors()).resolves.toEqual([
+			"share preview link is unavailable",
+			"share archive preview is unavailable",
+			"share media metadata is unavailable",
+			"share media stream is unavailable",
+		]);
 	});
 
 	it("maps share load errors to the public unavailable panel", async () => {
@@ -996,7 +1001,7 @@ describe("ShareViewPage", () => {
 		);
 	});
 
-	it("renders file shares without preview actions when file metadata is incomplete", async () => {
+	it("renders file shares without preview when mime_type is missing", async () => {
 		mockState.getInfo.mockResolvedValueOnce({
 			download_count: 0,
 			has_password: false,
