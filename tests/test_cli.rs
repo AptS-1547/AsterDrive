@@ -1138,6 +1138,7 @@ async fn test_migration_backfills_storage_migration_result_renamed_opaque_count(
         result_json: Set(Some(aster_drive::types::StoredTaskResult::from(
             old_result.to_string(),
         ))),
+        runtime_json: Set(None),
         steps_json: Set(None),
         progress_current: Set(3),
         progress_total: Set(3),

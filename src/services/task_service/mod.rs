@@ -68,7 +68,9 @@ pub(crate) use archive::{
 pub(crate) use blob_maintenance::create_blob_maintenance_task_for_admin;
 pub use dispatch::{DispatchStats, cleanup_expired, dispatch_due, drain};
 pub(crate) use media_metadata::ensure_media_metadata_task;
-pub(crate) use offline_download::create_offline_download_task_in_scope;
+pub(crate) use offline_download::{
+    ProbeAria2RpcInput, create_offline_download_task_in_scope, probe_aria2_rpc,
+};
 use registry::{build_task_presentation, decode_task_payload, decode_task_result};
 pub(crate) use runtime::find_latest_system_runtime_by_task_name;
 pub use runtime::{RuntimeTaskRunOutcome, SystemRuntimeTaskKind, record_runtime_task_run};
@@ -320,7 +322,7 @@ async fn retry_task_record(state: &PrimaryAppState, task: &background_task::Mode
         ));
     }
 
-    cleanup_task_temp_dir_for_task(state, task.id).await?;
+    cleanup_task_temp_dir_for_task_kind(state, task.kind, task.id).await?;
     // 手动重试会复用同一条任务记录，而不是新建“子任务”。
     // 这样前端和审计侧只需要跟踪一个稳定 task_id。
     let steps_json = serialize_task_steps(&registry::initial_task_steps(task.kind))?;
@@ -443,7 +445,14 @@ fn build_task_info_with_creator(
     let result = decode_task_result_or_none(&task);
     let can_retry = task_can_retry(&task);
     let status_text = task.status_text;
-    let presentation = build_task_presentation(kind, &payload, result.as_ref(), task.status)?;
+    let presentation_context = task_presentation_context(kind, task.runtime_json.as_ref());
+    let presentation = build_task_presentation(
+        kind,
+        &payload,
+        result.as_ref(),
+        task.status,
+        presentation_context,
+    )?;
     let steps = parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), kind)?;
 
     Ok(TaskInfo {
@@ -482,7 +491,27 @@ pub(crate) fn build_task_presentation_for_model(
 ) -> Result<Option<TaskPresentation>> {
     let payload = decode_task_payload(task)?;
     let result = decode_task_result_or_none(task);
-    build_task_presentation(task.kind, &payload, result.as_ref(), task.status)
+    build_task_presentation(
+        task.kind,
+        &payload,
+        result.as_ref(),
+        task.status,
+        task_presentation_context(task.kind, task.runtime_json.as_ref()),
+    )
+}
+
+fn task_presentation_context(
+    kind: BackgroundTaskKind,
+    runtime_json: Option<&crate::types::StoredTaskRuntime>,
+) -> presentation::TaskPresentationContext {
+    match kind {
+        BackgroundTaskKind::OfflineDownload => presentation::TaskPresentationContext {
+            selected_offline_download_engine: offline_download::selected_engine_from_runtime_json(
+                runtime_json.map(|value| value.as_ref()),
+            ),
+        },
+        _ => presentation::TaskPresentationContext::default(),
+    }
 }
 
 fn decode_task_result_or_none(task: &background_task::Model) -> Option<TaskResult> {
@@ -684,6 +713,7 @@ impl<S: BackgroundTaskSpec> TypedTaskCreate<S> {
             display_name: Set(truncate_display_name(&self.display_name)),
             payload_json: Set(payload_json),
             result_json: Set(self.result_json),
+            runtime_json: Set(None),
             steps_json: Set(steps_json),
             progress_current: Set(self.progress_current),
             progress_total: Set(self.progress_total),
@@ -806,6 +836,53 @@ pub(super) async fn update_task_progress_db(
     }
 }
 
+pub(super) async fn set_task_runtime_json(
+    state: &PrimaryAppState,
+    lease_guard: &TaskLeaseGuard,
+    runtime_json: Option<&str>,
+) -> Result<()> {
+    let lease = lease_guard.lease();
+    let now = Utc::now();
+    if background_task_repo::set_runtime_json(
+        state.writer_db(),
+        lease.task_id,
+        lease.processing_token,
+        runtime_json,
+        now,
+    )
+    .await?
+    {
+        lease_guard.record_renewed();
+        Ok(())
+    } else {
+        Err(lease_guard.mark_lost())
+    }
+}
+
+pub(super) async fn set_task_display_name(
+    state: &PrimaryAppState,
+    lease_guard: &TaskLeaseGuard,
+    display_name: &str,
+) -> Result<()> {
+    let lease = lease_guard.lease();
+    let now = Utc::now();
+    let display_name = truncate_display_name(display_name);
+    if background_task_repo::set_display_name(
+        state.writer_db(),
+        lease.task_id,
+        lease.processing_token,
+        &display_name,
+        now,
+    )
+    .await?
+    {
+        lease_guard.record_renewed();
+        Ok(())
+    } else {
+        Err(lease_guard.mark_lost())
+    }
+}
+
 pub(super) async fn mark_task_succeeded(
     state: &PrimaryAppState,
     lease_guard: &TaskLeaseGuard,
@@ -846,17 +923,21 @@ pub(super) async fn prepare_task_temp_dir(
     state: &PrimaryAppState,
     lease: TaskLease,
 ) -> Result<String> {
+    prepare_task_temp_dir_in_root(&state.config.server.temp_dir, lease).await
+}
+
+pub(super) async fn prepare_task_temp_dir_in_root(
+    temp_root: &str,
+    lease: TaskLease,
+) -> Result<String> {
     // 临时目录按 task_id/token 隔离：
     // temp/tasks/{task_id}/{processing_token}
     //
     // 这样任务被 stale reclaim 后，新旧 worker 不会写进同一个目录。
     // 这里也只清当前 lease 的 token 目录，避免旧 worker 启动时把新 lease 的产物删掉。
-    cleanup_task_temp_dir_for_lease(state, lease).await?;
-    let task_temp_dir = crate::utils::paths::task_token_temp_dir(
-        &state.config.server.temp_dir,
-        lease.task_id,
-        lease.processing_token,
-    );
+    cleanup_task_temp_dir_for_lease_in_root(temp_root, lease).await?;
+    let task_temp_dir =
+        crate::utils::paths::task_token_temp_dir(temp_root, lease.task_id, lease.processing_token);
     tokio::fs::create_dir_all(&task_temp_dir)
         .await
         .map_err(|error| {
@@ -865,12 +946,12 @@ pub(super) async fn prepare_task_temp_dir(
     Ok(task_temp_dir)
 }
 
-pub(super) async fn cleanup_task_temp_dir_for_lease(
-    state: &PrimaryAppState,
+pub(super) async fn cleanup_task_temp_dir_for_lease_in_root(
+    temp_root: &str,
     lease: TaskLease,
 ) -> Result<()> {
     crate::utils::cleanup_temp_dir(&crate::utils::paths::task_token_temp_dir(
-        &state.config.server.temp_dir,
+        temp_root,
         lease.task_id,
         lease.processing_token,
     ))
@@ -882,13 +963,31 @@ pub(super) async fn cleanup_task_temp_dir_for_task(
     state: &PrimaryAppState,
     task_id: i64,
 ) -> Result<()> {
+    cleanup_task_temp_dir_for_task_in_root(&state.config.server.temp_dir, task_id).await
+}
+
+pub(super) async fn cleanup_task_temp_dir_for_task_kind(
+    state: &PrimaryAppState,
+    kind: BackgroundTaskKind,
+    task_id: i64,
+) -> Result<()> {
+    cleanup_task_temp_dir_for_task(state, task_id).await?;
+    if kind == BackgroundTaskKind::OfflineDownload
+        && let Some(temp_root) = operations::offline_download_temp_dir(&state.runtime_config)
+        && temp_root != state.config.server.temp_dir
+    {
+        cleanup_task_temp_dir_for_task_in_root(&temp_root, task_id).await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn cleanup_task_temp_dir_for_task_in_root(
+    temp_root: &str,
+    task_id: i64,
+) -> Result<()> {
     // 成功路径会删整个任务根目录，因为到这里说明已经没有活跃 lease 需要保留产物了。
     // 如果任务在失败/崩溃/重启中断时没走到这里，后续由 task-cleanup 周期任务兜底清理。
-    crate::utils::cleanup_temp_dir(&crate::utils::paths::task_temp_dir(
-        &state.config.server.temp_dir,
-        task_id,
-    ))
-    .await;
+    crate::utils::cleanup_temp_dir(&crate::utils::paths::task_temp_dir(temp_root, task_id)).await;
     Ok(())
 }
 
@@ -1007,15 +1106,17 @@ mod tests {
         truncate_error, validate_admin_task_cleanup_status,
     };
     use crate::api::subcode::ApiSubcode;
+    use crate::config::operations::OfflineDownloadEngine;
     use crate::entities::background_task;
     use crate::services::task_service::spec::{self, SystemRuntimeTask};
     use crate::services::task_service::{
         RuntimeSystemHealthComponent, RuntimeSystemHealthResult, RuntimeSystemHealthStatus,
-        RuntimeTaskResult, TaskPresentationCode,
+        RuntimeTaskResult, TaskPresentationCode, TaskResult,
     };
     use crate::services::workspace_storage_service::WorkspaceStorageScope;
     use crate::types::{
         BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult,
+        StoredTaskRuntime,
     };
     use chrono::{Duration, Utc};
 
@@ -1059,6 +1160,7 @@ mod tests {
                 .to_string(),
             ),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,
@@ -1119,6 +1221,7 @@ mod tests {
                 })
                 .to_string(),
             )),
+            runtime_json: None,
             steps_json: None,
             progress_current: 4,
             progress_total: 4,
@@ -1157,6 +1260,145 @@ mod tests {
     }
 
     #[test]
+    fn task_info_includes_offline_download_engine_presentation_from_runtime() {
+        let now = Utc::now();
+        let task = background_task::Model {
+            id: 46,
+            kind: BackgroundTaskKind::OfflineDownload,
+            status: BackgroundTaskStatus::Processing,
+            creator_user_id: Some(7),
+            team_id: None,
+            share_id: None,
+            display_name: "Import from https://example.com/file.bin via aria2".to_string(),
+            payload_json: StoredTaskPayload(
+                serde_json::json!({
+                    "url": "https://example.com/file.bin",
+                    "target_folder_id": 34,
+                    "source_display_url": "https://example.com/file.bin"
+                })
+                .to_string(),
+            ),
+            result_json: None,
+            runtime_json: Some(StoredTaskRuntime(
+                serde_json::json!({
+                    "engine": "aria2",
+                    "aria2": {
+                        "gid": "abc123",
+                        "processing_token": 9
+                    }
+                })
+                .to_string(),
+            )),
+            steps_json: None,
+            progress_current: 0,
+            progress_total: 0,
+            status_text: Some("Downloading source file".to_string()),
+            attempt_count: 1,
+            max_attempts: 3,
+            next_run_at: now,
+            processing_token: 9,
+            processing_started_at: Some(now),
+            last_heartbeat_at: Some(now),
+            lease_expires_at: Some(now + Duration::minutes(1)),
+            started_at: Some(now),
+            finished_at: None,
+            last_error: None,
+            failure_can_retry: None,
+            expires_at: now + Duration::hours(1),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let info = build_task_info_with_creator(task, None).expect("task info should build");
+        let title = info
+            .presentation
+            .as_ref()
+            .and_then(|presentation| presentation.title.as_ref())
+            .expect("title should exist");
+
+        assert_eq!(
+            title.code,
+            TaskPresentationCode::TaskNameOfflineDownloadTargetFolderWithEngine
+        );
+        assert_eq!(title.params["targetFolderId"], serde_json::json!(34));
+        assert_eq!(title.params["engine"], serde_json::json!("aria2"));
+    }
+
+    #[test]
+    fn task_info_includes_offline_download_engine_presentation_from_result() {
+        let now = Utc::now();
+        let task = background_task::Model {
+            id: 48,
+            kind: BackgroundTaskKind::OfflineDownload,
+            status: BackgroundTaskStatus::Succeeded,
+            creator_user_id: Some(7),
+            team_id: None,
+            share_id: None,
+            display_name: "Import report.html from link via AsterDrive built-in".to_string(),
+            payload_json: StoredTaskPayload(
+                serde_json::json!({
+                    "url": "https://example.com/report.html",
+                    "filename": "report.html",
+                    "source_display_url": "https://example.com/report.html"
+                })
+                .to_string(),
+            ),
+            result_json: Some(StoredTaskResult(
+                serde_json::json!({
+                    "file_id": 72,
+                    "file_name": "report.html",
+                    "folder_id": null,
+                    "file_path": "/report.html",
+                    "source_display_url": "https://example.com/report.html",
+                    "content_length": 128,
+                    "sha256": "0".repeat(64),
+                    "download_engine": "builtin"
+                })
+                .to_string(),
+            )),
+            runtime_json: None,
+            steps_json: None,
+            progress_current: 128,
+            progress_total: 128,
+            status_text: Some("Offline download imported".to_string()),
+            attempt_count: 1,
+            max_attempts: 3,
+            next_run_at: now,
+            processing_token: 0,
+            processing_started_at: Some(now),
+            last_heartbeat_at: Some(now),
+            lease_expires_at: None,
+            started_at: Some(now),
+            finished_at: Some(now),
+            last_error: None,
+            failure_can_retry: None,
+            expires_at: now + Duration::hours(1),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let info = build_task_info_with_creator(task, None).expect("task info should build");
+        let title = info
+            .presentation
+            .as_ref()
+            .and_then(|presentation| presentation.title.as_ref())
+            .expect("title should exist");
+
+        assert_eq!(
+            title.code,
+            TaskPresentationCode::TaskNameOfflineDownloadSourceWithEngine
+        );
+        assert_eq!(title.params["filename"], serde_json::json!("report.html"));
+        assert_eq!(title.params["engine"], serde_json::json!("builtin"));
+
+        let result = match info.result.expect("result should exist") {
+            TaskResult::OfflineDownload(result) => result,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        assert_eq!(result.download_engine, Some(OfflineDownloadEngine::Builtin));
+    }
+
+    #[test]
     fn task_info_leaves_runtime_summary_status_to_fallback() {
         let now = Utc::now();
         let task = background_task::Model {
@@ -1180,6 +1422,7 @@ mod tests {
                 })
                 .to_string(),
             )),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1241,6 +1484,7 @@ mod tests {
                 })
                 .to_string(),
             )),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1305,6 +1549,7 @@ mod tests {
                 })
                 .to_string(),
             )),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1377,6 +1622,7 @@ mod tests {
                 .to_string(),
             ),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,
@@ -1450,6 +1696,7 @@ mod tests {
                 ))
                 .expect("runtime result should serialize"),
             ),
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1513,6 +1760,7 @@ mod tests {
                 .to_string(),
             ),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 1,
             progress_total: 1,
@@ -1628,6 +1876,7 @@ mod tests {
             display_name: "missing creator".to_string(),
             payload_json: StoredTaskPayload("{}".to_string()),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,
@@ -1668,6 +1917,7 @@ mod tests {
             display_name: "team task".to_string(),
             payload_json: StoredTaskPayload("{}".to_string()),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,

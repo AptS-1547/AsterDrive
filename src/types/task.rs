@@ -47,6 +47,28 @@ impl From<StoredTaskResult> for String {
     }
 }
 
+/// Raw JSON runtime state stored in `background_tasks.runtime_json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredTaskRuntime(pub String);
+
+impl AsRef<str> for StoredTaskRuntime {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredTaskRuntime {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredTaskRuntime> for String {
+    fn from(value: StoredTaskRuntime) -> Self {
+        value.0
+    }
+}
+
 /// Raw JSON payload stored in `background_tasks.steps_json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
 pub struct StoredTaskSteps(pub String);
@@ -180,7 +202,7 @@ impl BackgroundTaskStatus {
 mod tests {
     use super::{
         BackgroundTaskKind, BackgroundTaskStatus, StoredLockOwnerInfo, StoredTaskPayload,
-        StoredTaskResult, StoredTaskSteps,
+        StoredTaskResult, StoredTaskRuntime, StoredTaskSteps,
     };
 
     #[test]
@@ -194,6 +216,11 @@ mod tests {
         assert_eq!(result.as_ref(), "{\"ok\":true}");
         let raw: String = result.into();
         assert_eq!(raw, "{\"ok\":true}");
+
+        let runtime = StoredTaskRuntime::from("{\"gid\":\"abc\"}".to_string());
+        assert_eq!(runtime.as_ref(), "{\"gid\":\"abc\"}");
+        let raw: String = runtime.into();
+        assert_eq!(raw, "{\"gid\":\"abc\"}");
 
         let steps = StoredTaskSteps::from("[{\"key\":\"prepare\"}]".to_string());
         assert_eq!(steps.as_ref(), "[{\"key\":\"prepare\"}]");

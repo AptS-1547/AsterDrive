@@ -137,6 +137,7 @@ async fn insert_task(
         display_name: Set(format!("{kind:?}-{status:?}")),
         payload_json: Set(StoredTaskPayload(payload_json.to_string())),
         result_json: Set(None),
+        runtime_json: Set(None),
         steps_json: Set(Some(StoredTaskSteps("[]".to_string()))),
         progress_current: Set(0),
         progress_total: Set(0),

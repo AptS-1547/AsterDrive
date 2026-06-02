@@ -13,6 +13,12 @@ use tokio::sync::broadcast;
 
 use aster_drive::config::operations::{
     BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY, BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY, OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY, OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY,
+    OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY, OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY,
+    OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
+    OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
 };
 use aster_drive::db::repository::{background_task_repo, file_repo};
 use aster_drive::entities::{background_task, file_blob};
@@ -24,6 +30,13 @@ use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPay
 
 const OLD_BACKGROUND_TASK_DISPLAY_NAME_LIMIT: usize = 255;
 const EXPANDED_BACKGROUND_TASK_DISPLAY_NAME_LIMIT: usize = 512;
+const ARIA2_TEST_IMAGE_TAG: &str = "latest";
+
+struct Aria2TestContext {
+    _container: testcontainers::ContainerAsync<testcontainers::GenericImage>,
+    rpc_url: String,
+    rpc_secret: String,
+}
 
 macro_rules! register_user {
     ($app:expr, $db:expr, $mail_sender:expr, $username:expr, $email:expr, $password:expr) => {{
@@ -201,6 +214,74 @@ fn assert_task_steps(body: &Value, expected: &[(&str, &str)]) {
         .map(|(key, status)| (key.to_string(), status.to_string()))
         .collect::<Vec<_>>();
     assert_eq!(actual, expected);
+}
+
+async fn start_aria2_context(temp_dir: &str) -> Aria2TestContext {
+    use testcontainers::{
+        GenericImage, ImageExt,
+        core::{IntoContainerPort, Mount},
+        runners::AsyncRunner,
+    };
+
+    let host_temp_dir = std::fs::canonicalize(temp_dir).unwrap_or_else(|_| temp_dir.into());
+    let rpc_secret = format!("asterdrive-{}", uuid::Uuid::new_v4().simple());
+    let container = GenericImage::new("p3terx/aria2-pro", ARIA2_TEST_IMAGE_TAG)
+        .with_exposed_port(IntoContainerPort::tcp(6800))
+        .with_env_var("PUID", "0")
+        .with_env_var("PGID", "0")
+        .with_env_var("RPC_SECRET", rpc_secret.as_str())
+        .with_mount(Mount::bind_mount(
+            host_temp_dir.to_string_lossy().to_string(),
+            temp_dir.to_string(),
+        ))
+        .start()
+        .await
+        .expect("failed to start aria2 test container");
+
+    let port = container
+        .get_host_port_ipv4(IntoContainerPort::tcp(6800))
+        .await
+        .expect("aria2 RPC port should resolve");
+    let rpc_url = format!("http://127.0.0.1:{port}/jsonrpc");
+    wait_for_aria2_rpc(&rpc_url, &rpc_secret).await;
+
+    Aria2TestContext {
+        _container: container,
+        rpc_url,
+        rpc_secret,
+    }
+}
+
+async fn wait_for_aria2_rpc(rpc_url: &str, rpc_secret: &str) {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .expect("aria2 wait client should build");
+
+    for _ in 0..60 {
+        let response = client
+            .post(rpc_url)
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": "asterdrive-test-wait",
+                "method": "aria2.getVersion",
+                "params": [format!("token:{rpc_secret}")]
+            }))
+            .send()
+            .await;
+
+        if let Ok(response) = response
+            && response.status().is_success()
+            && let Ok(body) = response.json::<Value>().await
+            && body.get("result").is_some()
+        {
+            return;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    panic!("aria2 RPC did not become ready at {rpc_url}");
 }
 
 async fn drain_storage_change_events(
@@ -732,6 +813,7 @@ async fn insert_pending_dispatch_task(
             display_name: Set(display_name.to_string()),
             payload_json: Set(StoredTaskPayload(payload_json)),
             result_json: Set(None),
+            runtime_json: Set(None),
             steps_json: Set(None),
             progress_current: Set(0),
             progress_total: Set(0),
@@ -774,6 +856,7 @@ async fn insert_pending_lane_task(
             display_name: Set(display_name.to_string()),
             payload_json: Set(StoredTaskPayload(payload_json.to_string())),
             result_json: Set(None),
+            runtime_json: Set(None),
             steps_json: Set(None),
             progress_current: Set(0),
             progress_total: Set(0),
@@ -814,6 +897,182 @@ async fn assert_response_status(
         );
     }
     resp
+}
+
+#[actix_web::test]
+async fn test_offline_download_disabled_registry_rejects_task_creation() {
+    let state = common::setup().await;
+    aster_drive::services::config_service::set(
+        &state,
+        OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
+        r#"{"version":1,"engines":[{"kind":"builtin","enabled":false},{"kind":"aria2","enabled":false}]}"#,
+        1,
+    )
+    .await
+    .expect("offline download registry should update");
+
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/tasks/offline-download")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "url": "https://example.com/",
+            "filename": "disabled.html"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let resp = assert_response_status(resp, actix_web::http::StatusCode::BAD_REQUEST).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body["msg"]
+            .as_str()
+            .is_some_and(|message| message.contains("no download engine is enabled")),
+        "disabled offline download should return a clear validation error: {body}"
+    );
+    assert_eq!(
+        background_task_repo::count_pending_or_retry(state.writer_db())
+            .await
+            .expect("background task count should load"),
+        0
+    );
+}
+
+#[actix_web::test]
+async fn test_offline_download_aria2_engine_imports_example_com_e2e() {
+    let state = common::setup().await;
+    let aria2 = start_aria2_context(&state.config.server.temp_dir).await;
+
+    for (key, value) in [
+        (
+            OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
+            r#"{"version":1,"engines":[{"kind":"aria2","enabled":true},{"kind":"builtin","enabled":false}]}"#,
+        ),
+        (OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY, aria2.rpc_url.as_str()),
+        (
+            OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+            aria2.rpc_secret.as_str(),
+        ),
+        (OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY, "5"),
+        (OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY, "1"),
+        (OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY, "1"),
+        (OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY, "1048576"),
+        (OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, "0"),
+        (OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY, "30"),
+    ] {
+        aster_drive::services::config_service::set(&state, key, value, 1)
+            .await
+            .expect("offline download aria2 config should update");
+    }
+
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/tasks/offline-download")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "url": "https://example.com/",
+            "filename": "aria2-example.html"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let created: Value = test::read_body_json(resp).await;
+    let task_id = created["data"]["id"]
+        .as_i64()
+        .expect("created task id should exist");
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("aria2 offline download task should drain");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(stats.failed, 0);
+    assert_eq!(stats.retried, 0);
+
+    let task = background_task_repo::find_by_id(state.writer_db(), task_id)
+        .await
+        .expect("aria2 offline download task should load");
+    assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+    assert_eq!(
+        task.display_name,
+        "Import aria2-example.html from link via aria2"
+    );
+    let runtime_json = task
+        .runtime_json
+        .as_ref()
+        .expect("aria2 task should persist runtime_json");
+    let runtime: Value =
+        serde_json::from_str(runtime_json.as_ref()).expect("runtime_json should parse");
+    assert!(
+        runtime["aria2"]["gid"]
+            .as_str()
+            .is_some_and(|gid| !gid.is_empty()),
+        "aria2 GID should be persisted in runtime_json"
+    );
+    assert!(
+        runtime["aria2"]["processing_token"]
+            .as_i64()
+            .is_some_and(|token| token > 0),
+        "aria2 runtime_json should include the processing token"
+    );
+
+    let result: Value = serde_json::from_str(
+        task.result_json
+            .as_ref()
+            .expect("aria2 task should persist result_json")
+            .as_ref(),
+    )
+    .expect("offline download result should parse");
+    assert_eq!(result["file_name"], "aria2-example.html");
+    assert!(
+        result["content_length"]
+            .as_i64()
+            .is_some_and(|length| length > 0)
+    );
+    assert!(
+        result["sha256"]
+            .as_str()
+            .is_some_and(|sha256| sha256.len() == 64)
+    );
+    assert_eq!(result["download_engine"], "aria2");
+    let file_id = result["file_id"]
+        .as_i64()
+        .expect("offline download result should include file_id");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let downloaded = test::read_body(resp).await;
+    let downloaded = String::from_utf8_lossy(&downloaded);
+    assert!(downloaded.contains("Example Domain"));
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/tasks/{task_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let task_info: Value = test::read_body_json(resp).await;
+    assert_eq!(task_info["data"]["status"], "succeeded");
+    assert_eq!(
+        task_info["data"]["presentation"]["title"]["code"],
+        "task_name_offline_download_source_with_engine"
+    );
+    assert_eq!(
+        task_info["data"]["presentation"]["title"]["params"]["engine"],
+        "aria2"
+    );
+    assert!(
+        task_info["data"].get("runtime_json").is_none(),
+        "runtime_json is internal state and should not leak through TaskInfo"
+    );
 }
 
 #[actix_web::test]
@@ -1542,6 +1801,69 @@ async fn test_cleanup_expired_keeps_terminal_task_records() {
         .await
         .expect("repeated task cleanup should still succeed");
     assert_eq!(cleaned_again, 0);
+}
+
+#[actix_web::test]
+async fn test_cleanup_expired_scans_offline_download_temp_dir() {
+    let state = common::setup().await;
+    let custom_temp_root = std::env::temp_dir().join(format!(
+        "aster-drive-offline-task-cleanup-{}",
+        aster_drive::utils::id::new_uuid()
+    ));
+    let custom_temp_root = custom_temp_root.to_string_lossy().to_string();
+    state.runtime_config.apply(common::system_config_model(
+        OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
+        &custom_temp_root,
+    ));
+
+    let now = Utc::now();
+    let task = background_task_repo::create(
+        state.writer_db(),
+        background_task::ActiveModel {
+            kind: Set(BackgroundTaskKind::OfflineDownload),
+            status: Set(BackgroundTaskStatus::Failed),
+            creator_user_id: Set(None),
+            team_id: Set(None),
+            share_id: Set(None),
+            display_name: Set("expired-offline-download".to_string()),
+            payload_json: Set(StoredTaskPayload("{}".to_string())),
+            result_json: Set(None),
+            steps_json: Set(None),
+            progress_current: Set(0),
+            progress_total: Set(0),
+            status_text: Set(Some("failed".to_string())),
+            attempt_count: Set(1),
+            max_attempts: Set(1),
+            next_run_at: Set(now - Duration::hours(2)),
+            processing_started_at: Set(None),
+            last_heartbeat_at: Set(None),
+            started_at: Set(Some(now - Duration::hours(2))),
+            finished_at: Set(Some(now - Duration::hours(2))),
+            last_error: Set(Some("failed".to_string())),
+            expires_at: Set(now - Duration::hours(1)),
+            created_at: Set(now - Duration::hours(2)),
+            updated_at: Set(now - Duration::hours(2)),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("expired offline download task should be inserted");
+
+    let task_temp_dir = aster_drive::utils::paths::task_temp_dir(&custom_temp_root, task.id);
+    std::fs::create_dir_all(&task_temp_dir).expect("offline download temp dir should be created");
+    std::fs::write(format!("{task_temp_dir}/source"), b"expired")
+        .expect("offline download temp artifact should be written");
+
+    let cleaned = task_service::cleanup_expired(&state)
+        .await
+        .expect("task cleanup should succeed");
+    assert_eq!(cleaned, 1);
+    assert!(
+        !std::path::Path::new(&task_temp_dir).exists(),
+        "offline download temp dir should be removed from custom root"
+    );
+
+    let _ = std::fs::remove_dir_all(&custom_temp_root);
 }
 
 #[actix_web::test]

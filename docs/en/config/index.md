@@ -54,6 +54,7 @@ Anything the service must know before startup usually belongs in `config.toml`. 
 | Public site URL, branding, registration, cookies, tokens, scheduling, share streaming playback, archive preview, trash, versions, quotas, WOPI, WebDAV, audit | [Runtime System Settings](/en/config/runtime) |
 | Connect OIDC / Generic OAuth2 / SSO external login and manage external identity providers | [External Authentication](/en/config/external-auth) / [Login and Sessions](/en/config/auth) |
 | Configure SMTP, send test mail, or edit mail templates | [Mail](/en/config/mail) |
+| Configure link import, the built-in downloader, or aria2 offline download | [Offline Download](/en/config/offline-download) |
 | Decide where files are stored and how uploads/downloads work | [Storage Policies](/en/config/storage) |
 | Follow a tutorial for S3 / MinIO / R2 backends | [Storage Policy Backends](/en/storage/) |
 | Decide which storage route different users/teams use | [Storage Policies](/en/config/storage) |

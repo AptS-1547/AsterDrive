@@ -60,6 +60,7 @@ async fn insert_dispatch_test_task(
         display_name: Set(format!("dispatch-claim-{created_offset_secs}")),
         payload_json: Set(StoredTaskPayload("{}".to_string())),
         result_json: Set(None),
+        runtime_json: Set(None),
         steps_json: Set(None),
         progress_current: Set(0),
         progress_total: Set(0),

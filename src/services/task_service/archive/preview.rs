@@ -8,7 +8,7 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     archive_preview_service,
     task_service::{
-        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
+        TaskLeaseGuard, cleanup_task_temp_dir_for_task_kind, create_typed_task_record,
         mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
         spec::{self, ArchivePreviewGenerateTask, decode_payload_as},
         steps::{
@@ -254,7 +254,7 @@ pub(super) async fn process_archive_preview_task(
             &manifest,
         )
         .await?;
-        cleanup_task_temp_dir_for_task(state, task.id).await?;
+        cleanup_task_temp_dir_for_task_kind(state, task.kind, task.id).await?;
         set_task_step_succeeded(
             &mut steps,
             TASK_STEP_PERSIST_MANIFEST,
@@ -286,7 +286,8 @@ pub(super) async fn process_archive_preview_task(
     .await;
 
     if result.is_err()
-        && let Err(cleanup_error) = cleanup_task_temp_dir_for_task(state, task.id).await
+        && let Err(cleanup_error) =
+            cleanup_task_temp_dir_for_task_kind(state, task.kind, task.id).await
     {
         tracing::warn!(
             task_id = task.id,

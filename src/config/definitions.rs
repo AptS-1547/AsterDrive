@@ -147,6 +147,18 @@ pub const OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY: &str = "offline_download_max
 pub const OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY: &str = "offline_download_max_mb_per_sec";
 pub const OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY: &str = "offline_download_max_concurrency";
 pub const OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY: &str = "offline_download_request_timeout_secs";
+pub const OFFLINE_DOWNLOAD_TEMP_DIR_KEY: &str = "offline_download_temp_dir";
+pub const OFFLINE_DOWNLOAD_ENGINE_KEY: &str = "offline_download_engine";
+pub const OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY: &str = "offline_download_engine_registry_json";
+pub const OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY: &str = "offline_download_aria2_rpc_url";
+pub const OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY: &str = "offline_download_aria2_rpc_secret";
+pub const OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY: &str =
+    "offline_download_aria2_request_timeout_secs";
+pub const OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY: &str = "offline_download_aria2_split";
+pub const OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY: &str =
+    "offline_download_aria2_max_connection_per_server";
+pub const OFFLINE_DOWNLOAD_ARIA2_LOWEST_SPEED_LIMIT_BYTES_PER_SEC_KEY: &str =
+    "offline_download_aria2_lowest_speed_limit_bytes_per_sec";
 
 // ── Mail keys ────────────────────────────────────────────────────────────────
 pub const MAIL_SMTP_HOST_KEY: &str = "mail_smtp_host";
@@ -711,6 +723,28 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Default storage quota for new users and teams in bytes (0 = unlimited)",
     },
     ConfigDef {
+        key: OFFLINE_DOWNLOAD_ENGINE_KEY,
+        label_i18n_key: "settings_item_offline_download_engine_label",
+        description_i18n_key: "settings_item_offline_download_engine_desc",
+        value_type: SystemConfigValueType::String,
+        default_fn: || crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_ENGINE.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Offline download engine: builtin or aria2. builtin remains the default self-contained engine.",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
+        label_i18n_key: "settings_item_offline_download_engine_registry_json_label",
+        description_i18n_key: "settings_item_offline_download_engine_registry_json_desc",
+        value_type: SystemConfigValueType::Multiline,
+        default_fn: crate::config::offline_download::default_offline_download_engine_registry_json,
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Ordered offline download engine registry. Enabled engines are tried in order; an empty enabled set disables link import.",
+    },
+    ConfigDef {
         key: OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY,
         label_i18n_key: "settings_item_offline_download_max_file_size_bytes_label",
         description_i18n_key: "settings_item_offline_download_max_file_size_bytes_desc",
@@ -761,6 +795,92 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
         description: "Timeout in seconds for offline download HTTP requests. Tune this with offline_download_max_file_size_bytes and offline_download_max_mb_per_sec; the 1 GiB / 600s defaults require roughly 1.7 MiB/s sustained throughput.",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
+        label_i18n_key: "settings_item_offline_download_temp_dir_label",
+        description_i18n_key: "settings_item_offline_download_temp_dir_desc",
+        value_type: SystemConfigValueType::String,
+        default_fn: || String::new(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Optional absolute staging directory for offline download files. AsterDrive and external downloaders such as aria2 must both be able to access the same path. Empty uses the normal server temp dir.",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY,
+        label_i18n_key: "settings_item_offline_download_aria2_rpc_url_label",
+        description_i18n_key: "settings_item_offline_download_aria2_rpc_url_desc",
+        value_type: SystemConfigValueType::String,
+        default_fn: || String::new(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "aria2 JSON-RPC endpoint used when offline_download_engine is aria2, for example http://127.0.0.1:6800/jsonrpc",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+        label_i18n_key: "settings_item_offline_download_aria2_rpc_secret_label",
+        description_i18n_key: "settings_item_offline_download_aria2_rpc_secret_desc",
+        value_type: SystemConfigValueType::String,
+        default_fn: || String::new(),
+        requires_restart: false,
+        is_sensitive: true,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "aria2 JSON-RPC secret. Stored separately from task payloads and sent as token:<secret>.",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY,
+        label_i18n_key: "settings_item_offline_download_aria2_request_timeout_secs_label",
+        description_i18n_key: "settings_item_offline_download_aria2_request_timeout_secs_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS
+                .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "Timeout in seconds for individual aria2 JSON-RPC requests. The full download duration is still controlled by offline_download_request_timeout_secs.",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY,
+        label_i18n_key: "settings_item_offline_download_aria2_split_label",
+        description_i18n_key: "settings_item_offline_download_aria2_split_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_ARIA2_SPLIT.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "aria2 split option for offline downloads. This is an administrator-controlled safe subset, not arbitrary aria2 option passthrough.",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY,
+        label_i18n_key: "settings_item_offline_download_aria2_max_connection_per_server_label",
+        description_i18n_key: "settings_item_offline_download_aria2_max_connection_per_server_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER
+                .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "aria2 max-connection-per-server option for offline downloads.",
+    },
+    ConfigDef {
+        key: OFFLINE_DOWNLOAD_ARIA2_LOWEST_SPEED_LIMIT_BYTES_PER_SEC_KEY,
+        label_i18n_key: "settings_item_offline_download_aria2_lowest_speed_limit_bytes_per_sec_label",
+        description_i18n_key: "settings_item_offline_download_aria2_lowest_speed_limit_bytes_per_sec_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_OFFLINE_DOWNLOAD_ARIA2_LOWEST_SPEED_LIMIT_BYTES_PER_SEC
+                .to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_FILE_PROCESSING_OFFLINE_DOWNLOAD,
+        description: "aria2 lowest-speed-limit option in bytes per second. Use 0 to disable this aria2-side abort threshold.",
     },
     ConfigDef {
         key: ARCHIVE_EXTRACT_MAX_SOURCE_BYTES_KEY,

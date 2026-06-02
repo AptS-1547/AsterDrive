@@ -18,3 +18,23 @@ services:
       start_period: 20s
     stop_grace_period: 45s
     restart: unless-stopped
+
+  aria2:
+    image: p3terx/aria2-pro:latest
+    profiles:
+      - aria2
+    expose:
+      - "6800"
+    volumes:
+      # AsterDrive passes absolute temp paths such as /data/.tmp/... to aria2.
+      # Keep this mount path identical to the asterdrive service.
+      - ./data:/data
+      - ./aria2-config:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - PUID=10001
+      - PGID=10001
+      - UMASK_SET=022
+      - RPC_PORT=6800
+      - RPC_SECRET=${ASTERDRIVE_ARIA2_RPC_SECRET}
+    restart: unless-stopped

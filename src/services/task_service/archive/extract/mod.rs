@@ -17,7 +17,7 @@ use crate::services::archive_service::format::{ArchiveFormat, detect_supported_a
 use crate::services::{
     storage_change_service,
     task_service::{
-        TaskInfo, TaskLease, TaskLeaseGuard, cleanup_task_temp_dir_for_task,
+        TaskInfo, TaskLease, TaskLeaseGuard, cleanup_task_temp_dir_for_task_kind,
         create_typed_task_record, get_task_in_scope, is_task_lease_lost,
         is_task_lease_renewal_timed_out, mark_task_progress, mark_task_succeeded,
         prepare_task_temp_dir,
@@ -229,7 +229,7 @@ pub(super) async fn process_archive_extract_task(
             )
             .with_storage_delta(import_summary.storage_delta),
         );
-        cleanup_task_temp_dir_for_task(state, task.id).await?;
+        cleanup_task_temp_dir_for_task_kind(state, task.kind, task.id).await?;
         set_task_step_succeeded(
             &mut steps,
             TASK_STEP_IMPORT_RESULT,
@@ -264,7 +264,8 @@ pub(super) async fn process_archive_extract_task(
         Err(error) => {
             if !is_task_lease_lost(&error)
                 && !is_task_lease_renewal_timed_out(&error)
-                && let Err(cleanup_error) = cleanup_task_temp_dir_for_task(state, task.id).await
+                && let Err(cleanup_error) =
+                    cleanup_task_temp_dir_for_task_kind(state, task.kind, task.id).await
             {
                 tracing::warn!(
                     task_id = task.id,
@@ -482,6 +483,7 @@ mod tests {
             display_name: "Extract archive.zip".to_string(),
             payload_json: StoredTaskPayload("{}".to_string()),
             result_json: None,
+            runtime_json: None,
             steps_json: None,
             progress_current: 0,
             progress_total: 0,

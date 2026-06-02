@@ -4,6 +4,7 @@ use crate::config::RuntimeConfig;
 use crate::config::bool_like::parse_bool_like;
 use crate::errors::{AsterError, Result};
 use crate::utils::numbers::{u64_to_i64, u64_to_usize, usize_to_u64};
+use serde::{Deserialize, Serialize};
 
 pub use crate::config::definitions::{
     ARCHIVE_BUILD_MAX_ENTRIES_KEY, ARCHIVE_BUILD_MAX_TEMP_BYTES_KEY,
@@ -24,11 +25,16 @@ pub use crate::config::definitions::{
     BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
     MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY, MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,
     MEDIA_METADATA_ENABLED_KEY, MEDIA_METADATA_MAX_SOURCE_BYTES_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_LOWEST_SPEED_LIMIT_BYTES_PER_SEC_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY, OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+    OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY, OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY,
+    OFFLINE_DOWNLOAD_ENGINE_KEY, OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
     OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES_KEY,
     OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
-    REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
-    SHARE_STREAM_SESSION_TTL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
-    THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+    OFFLINE_DOWNLOAD_TEMP_DIR_KEY, REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+    SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, SHARE_STREAM_SESSION_TTL_SECS_KEY,
+    TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, THUMBNAIL_MAX_SOURCE_BYTES_KEY,
 };
 
 pub const DEFAULT_MAIL_OUTBOX_DISPATCH_INTERVAL_SECS: u64 = 5;
@@ -62,6 +68,12 @@ pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_MB_PER_SEC: u64 = 5;
 pub const DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY: usize = 1;
 /// See the note above `DEFAULT_OFFLINE_DOWNLOAD_MAX_FILE_SIZE_BYTES`.
 pub const DEFAULT_OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS: u64 = 600;
+pub const DEFAULT_OFFLINE_DOWNLOAD_ENGINE: &str = "builtin";
+pub const DEFAULT_OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS: u64 = 10;
+pub const DEFAULT_OFFLINE_DOWNLOAD_ARIA2_SPLIT: u64 = 5;
+pub const DEFAULT_OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER: u64 = 5;
+pub const DEFAULT_OFFLINE_DOWNLOAD_ARIA2_LOWEST_SPEED_LIMIT_BYTES_PER_SEC: u64 = 0;
+const MAX_OFFLINE_DOWNLOAD_TEMP_DIR_LEN: usize = 4096;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_SOURCE_BYTES: u64 = 512 * 1024 * 1024;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub const DEFAULT_ARCHIVE_EXTRACT_MAX_UNCOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
@@ -86,6 +98,45 @@ pub const DEFAULT_ARCHIVE_BUILD_MAX_TEMP_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 pub const MAX_LIST_PAGE_LIMIT: u64 = 1000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OfflineDownloadEngine {
+    Builtin,
+    Aria2,
+}
+
+impl OfflineDownloadEngine {
+    pub const ALL: [Self; 2] = [Self::Builtin, Self::Aria2];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Builtin => "builtin",
+            Self::Aria2 => "aria2",
+        }
+    }
+
+    pub const fn default_enabled(self) -> bool {
+        match self {
+            Self::Builtin => true,
+            Self::Aria2 => false,
+        }
+    }
+
+    pub const fn display_name(self) -> &'static str {
+        match self {
+            Self::Builtin => "AsterDrive built-in",
+            Self::Aria2 => "aria2",
+        }
+    }
+}
+
+pub fn parse_offline_download_engine(value: &str) -> Option<OfflineDownloadEngine> {
+    let value = value.trim().to_ascii_lowercase();
+    OfflineDownloadEngine::ALL
+        .into_iter()
+        .find(|engine| engine.as_str() == value)
+}
+
 pub fn normalize_interval_config_value(key: &str, value: &str) -> Result<String> {
     normalize_positive_u64_config_value(key, value)
 }
@@ -107,6 +158,68 @@ pub fn normalize_non_negative_u64_config_value(key: &str, value: &str) -> Result
         AsterError::validation_error(format!("{key} must be a non-negative integer"))
     })?;
     Ok(parsed.to_string())
+}
+
+pub fn normalize_offline_download_engine_config_value(value: &str) -> Result<String> {
+    parse_offline_download_engine(value)
+        .map(|engine| engine.as_str().to_string())
+        .ok_or_else(|| {
+            AsterError::validation_error("offline_download_engine must be 'builtin' or 'aria2'")
+        })
+}
+
+pub fn normalize_offline_download_aria2_rpc_url_config_value(value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    let url = url::Url::parse(trimmed).map_err(|error| {
+        AsterError::validation_error(format!(
+            "offline_download_aria2_rpc_url is invalid: {error}"
+        ))
+    })?;
+    match url.scheme() {
+        "http" | "https" => {}
+        _ => {
+            return Err(AsterError::validation_error(
+                "offline_download_aria2_rpc_url must use http or https",
+            ));
+        }
+    }
+    if url.host_str().is_none() {
+        return Err(AsterError::validation_error(
+            "offline_download_aria2_rpc_url must include a host",
+        ));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(AsterError::validation_error(
+            "offline_download_aria2_rpc_url must not include credentials",
+        ));
+    }
+    Ok(url.to_string())
+}
+
+pub fn normalize_offline_download_temp_dir_config_value(value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    if trimmed.len() > MAX_OFFLINE_DOWNLOAD_TEMP_DIR_LEN {
+        return Err(AsterError::validation_error(format!(
+            "offline_download_temp_dir exceeds {MAX_OFFLINE_DOWNLOAD_TEMP_DIR_LEN} characters"
+        )));
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err(AsterError::validation_error(
+            "offline_download_temp_dir cannot contain control characters",
+        ));
+    }
+    if !std::path::Path::new(trimmed).is_absolute() {
+        return Err(AsterError::validation_error(
+            "offline_download_temp_dir must be an absolute path, or blank to use server.temp_dir",
+        ));
+    }
+    Ok(trimmed.to_string())
 }
 
 pub fn normalize_bool_config_value(key: &str, value: &str) -> Result<String> {
@@ -361,6 +474,33 @@ pub fn offline_download_max_file_size_bytes(runtime_config: &RuntimeConfig) -> i
     )
 }
 
+pub fn offline_download_engine(runtime_config: &RuntimeConfig) -> OfflineDownloadEngine {
+    runtime_config
+        .get(OFFLINE_DOWNLOAD_ENGINE_KEY)
+        .as_deref()
+        .and_then(parse_offline_download_engine)
+        .unwrap_or(OfflineDownloadEngine::Builtin)
+}
+
+pub fn offline_download_enabled_engines(
+    runtime_config: &RuntimeConfig,
+) -> Vec<OfflineDownloadEngine> {
+    if let Some(registry) = runtime_config.get(OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY) {
+        match crate::config::offline_download::enabled_offline_download_engines_from_registry_value(
+            &registry,
+        ) {
+            Ok(engines) => return engines,
+            Err(error) => {
+                tracing::warn!(
+                    "invalid offline_download_engine_registry_json runtime config; falling back to offline_download_engine: {error}"
+                );
+            }
+        }
+    }
+
+    vec![offline_download_engine(runtime_config)]
+}
+
 pub fn offline_download_max_bytes_per_sec(runtime_config: &RuntimeConfig) -> Option<u64> {
     let max_mb_per_sec = read_non_negative_u64(
         runtime_config,
@@ -386,6 +526,62 @@ pub fn offline_download_request_timeout_secs(runtime_config: &RuntimeConfig) -> 
         OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
         DEFAULT_OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS,
     )
+}
+
+pub fn offline_download_aria2_rpc_url(runtime_config: &RuntimeConfig) -> Option<String> {
+    runtime_config
+        .get(OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn offline_download_aria2_rpc_secret(runtime_config: &RuntimeConfig) -> Option<String> {
+    runtime_config
+        .get(OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn offline_download_temp_dir(runtime_config: &RuntimeConfig) -> Option<String> {
+    runtime_config
+        .get(OFFLINE_DOWNLOAD_TEMP_DIR_KEY)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn offline_download_aria2_request_timeout_secs(runtime_config: &RuntimeConfig) -> u64 {
+    read_positive_u64(
+        runtime_config,
+        OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY,
+        DEFAULT_OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS,
+    )
+}
+
+pub fn offline_download_aria2_split(runtime_config: &RuntimeConfig) -> u64 {
+    read_positive_u64(
+        runtime_config,
+        OFFLINE_DOWNLOAD_ARIA2_SPLIT_KEY,
+        DEFAULT_OFFLINE_DOWNLOAD_ARIA2_SPLIT,
+    )
+}
+
+pub fn offline_download_aria2_max_connection_per_server(runtime_config: &RuntimeConfig) -> u64 {
+    read_positive_u64(
+        runtime_config,
+        OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY,
+        DEFAULT_OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER,
+    )
+}
+
+pub fn offline_download_aria2_lowest_speed_limit_bytes_per_sec(
+    runtime_config: &RuntimeConfig,
+) -> Option<u64> {
+    let value = read_non_negative_u64(
+        runtime_config,
+        OFFLINE_DOWNLOAD_ARIA2_LOWEST_SPEED_LIMIT_BYTES_PER_SEC_KEY,
+        DEFAULT_OFFLINE_DOWNLOAD_ARIA2_LOWEST_SPEED_LIMIT_BYTES_PER_SEC,
+    );
+    (value > 0).then_some(value)
 }
 
 pub fn archive_extract_max_staging_bytes(runtime_config: &RuntimeConfig) -> i64 {
@@ -705,19 +901,22 @@ mod tests {
         DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY, DEFAULT_SHARE_STREAM_SESSION_TTL_SECS,
         DEFAULT_TASK_LIST_MAX_LIMIT, DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT,
         MAX_SHARE_STREAM_SESSION_TTL_SECS, MIN_SHARE_STREAM_SESSION_TTL_SECS,
+        OFFLINE_DOWNLOAD_ENGINE_KEY, OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
         OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
-        REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
-        SHARE_STREAM_SESSION_TTL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
-        archive_extract_max_staging_bytes, avatar_max_upload_size_bytes,
-        background_task_archive_max_concurrency, background_task_dispatch_idle_max_interval_secs,
-        background_task_max_attempts, background_task_max_concurrency,
-        background_task_storage_migration_max_concurrency,
+        OFFLINE_DOWNLOAD_TEMP_DIR_KEY, REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+        SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, SHARE_STREAM_SESSION_TTL_SECS_KEY,
+        TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, archive_extract_max_staging_bytes,
+        avatar_max_upload_size_bytes, background_task_archive_max_concurrency,
+        background_task_dispatch_idle_max_interval_secs, background_task_max_attempts,
+        background_task_max_concurrency, background_task_storage_migration_max_concurrency,
         background_task_thumbnail_max_concurrency, blob_reconcile_interval_secs,
         normalize_attempts_config_value, normalize_bool_config_value, normalize_bytes_config_value,
         normalize_concurrency_config_value, normalize_interval_config_value,
         normalize_list_max_limit_config_value, normalize_non_negative_u64_config_value,
-        normalize_share_stream_session_ttl_config_value, offline_download_max_bytes_per_sec,
-        offline_download_max_concurrency, remote_node_health_test_interval_secs,
+        normalize_offline_download_temp_dir_config_value,
+        normalize_share_stream_session_ttl_config_value, offline_download_enabled_engines,
+        offline_download_max_bytes_per_sec, offline_download_max_concurrency,
+        offline_download_temp_dir, remote_node_health_test_interval_secs,
         share_download_rollback_queue_capacity, share_stream_session_ttl_secs, task_list_max_limit,
         team_member_list_max_limit,
     };
@@ -1187,6 +1386,76 @@ mod tests {
                 &(MAX_SHARE_STREAM_SESSION_TTL_SECS + 1).to_string(),
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn offline_download_temp_dir_normalizes_absolute_path_or_blank() {
+        assert_eq!(
+            normalize_offline_download_temp_dir_config_value("   ").unwrap(),
+            ""
+        );
+        assert_eq!(
+            normalize_offline_download_temp_dir_config_value(" /tmp/asterdrive-offline ").unwrap(),
+            "/tmp/asterdrive-offline"
+        );
+        assert!(normalize_offline_download_temp_dir_config_value("data/offline").is_err());
+        assert!(normalize_offline_download_temp_dir_config_value("/tmp/offline\nbad").is_err());
+        assert!(
+            normalize_offline_download_temp_dir_config_value(&format!("/{}", "a".repeat(4095)))
+                .is_ok()
+        );
+        assert!(
+            normalize_offline_download_temp_dir_config_value(&format!("/{}", "a".repeat(4096)))
+                .is_err()
+        );
+
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(offline_download_temp_dir(&runtime_config), None);
+        runtime_config.apply(config_model(
+            OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
+            " /tmp/asterdrive-offline ",
+        ));
+        assert_eq!(
+            offline_download_temp_dir(&runtime_config),
+            Some("/tmp/asterdrive-offline".to_string())
+        );
+    }
+
+    #[test]
+    fn offline_download_enabled_engines_reads_registry_order_and_all_disabled() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
+            r#"{"version":1,"engines":[{"kind":"aria2","enabled":true},{"kind":"builtin","enabled":true}]}"#,
+        ));
+        assert_eq!(
+            offline_download_enabled_engines(&runtime_config),
+            vec![
+                super::OfflineDownloadEngine::Aria2,
+                super::OfflineDownloadEngine::Builtin
+            ]
+        );
+
+        runtime_config.apply(config_model(
+            OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
+            r#"{"version":1,"engines":[{"kind":"aria2","enabled":false},{"kind":"builtin","enabled":false}]}"#,
+        ));
+        assert!(offline_download_enabled_engines(&runtime_config).is_empty());
+    }
+
+    #[test]
+    fn offline_download_enabled_engines_falls_back_to_legacy_engine_on_invalid_registry() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(OFFLINE_DOWNLOAD_ENGINE_KEY, "aria2"));
+        runtime_config.apply(config_model(
+            OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
+            r#"{"version":999,"engines":[]}"#,
+        ));
+
+        assert_eq!(
+            offline_download_enabled_engines(&runtime_config),
+            vec![super::OfflineDownloadEngine::Aria2]
         );
     }
 

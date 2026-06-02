@@ -5,6 +5,8 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::types::BackgroundTaskStatus;
 
+use crate::config::operations;
+
 use super::{DispatchStats, TASK_DRAIN_MAX_ROUNDS, dispatch_due};
 
 pub async fn drain(state: &PrimaryAppState) -> Result<DispatchStats> {
@@ -32,8 +34,18 @@ pub async fn drain(state: &PrimaryAppState) -> Result<DispatchStats> {
 }
 
 pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
+    let mut cleaned = cleanup_expired_in_root(state, &state.config.server.temp_dir).await?;
+    if let Some(temp_root) = operations::offline_download_temp_dir(&state.runtime_config)
+        && temp_root != state.config.server.temp_dir
+    {
+        cleaned += cleanup_expired_in_root(state, &temp_root).await?;
+    }
+    Ok(cleaned)
+}
+
+async fn cleanup_expired_in_root(state: &PrimaryAppState, temp_root: &str) -> Result<u64> {
     let now = Utc::now();
-    let tasks_root = crate::utils::paths::temp_file_path(&state.config.server.temp_dir, "tasks");
+    let tasks_root = crate::utils::paths::temp_file_path(temp_root, "tasks");
     let mut entries = match tokio::fs::read_dir(&tasks_root).await {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),

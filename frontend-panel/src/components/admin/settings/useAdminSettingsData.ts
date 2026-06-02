@@ -5,21 +5,28 @@ import {
 	MEDIA_PROCESSING_CONFIG_KEY,
 } from "@/components/admin/mediaProcessingConfigEditorShared";
 import {
+	getOfflineDownloadEngineConfigIssuesFromString,
+	OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
+} from "@/components/admin/offlineDownloadEngineRegistryShared";
+import {
 	getPreviewAppsConfigIssuesFromString,
 	PREVIEW_APPS_CONFIG_KEY,
 } from "@/components/admin/previewAppsConfigEditorShared";
 import {
 	buildDraftValues,
+	configDraftValueChanged,
 	configDraftValuesEqual,
 	configValueToString,
 	configValueToStringArray,
 	type DraftValues,
 	formatSubcategoryLabel,
 	getConfigDescription,
+	getConfigIsSensitive,
 	getConfigValueType,
 	getMailTemplateGroupId,
 	getMailTemplateGroupOrderIndex,
 	getSubcategoryGroupKey,
+	isRedactedConfigValue,
 	isStringEnumSetType,
 	isSystemConfigSource,
 	type NewCustomDraft,
@@ -59,6 +66,18 @@ const PUBLIC_SITE_URL_KEY = "public_site_url";
 const CORS_ALLOWED_ORIGINS_KEY = "cors_allowed_origins";
 const CORS_ALLOW_CREDENTIALS_KEY = "cors_allow_credentials";
 const AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY = "auth_email_code_login_enabled";
+const LEGACY_OFFLINE_DOWNLOAD_ENGINE_KEY = "offline_download_engine";
+const OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY = "offline_download_aria2_rpc_url";
+const OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY =
+	"offline_download_aria2_rpc_secret";
+const OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY =
+	"offline_download_aria2_request_timeout_secs";
+const OFFLINE_DOWNLOAD_ACTION_DRAFT_KEYS = [
+	OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
+	OFFLINE_DOWNLOAD_ARIA2_RPC_URL_KEY,
+	OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
+	OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY,
+];
 const PUBLIC_BRANDING_CONFIG_KEYS = new Set([
 	PUBLIC_SITE_URL_KEY,
 	"allow_user_registration",
@@ -73,6 +92,33 @@ const MEDIA_DATA_SUPPORT_CONFIG_KEYS = new Set([
 	"media_metadata_enabled",
 	"media_metadata_max_source_bytes",
 ]);
+
+function draftValueChangedForKey(
+	configsByKey: Map<string, SystemConfig>,
+	key: string,
+	value: DraftValues[string] | undefined,
+) {
+	const config = configsByKey.get(key);
+	if (!config) {
+		return !configDraftValuesEqual(value, undefined);
+	}
+	return configDraftValueChanged(config, value);
+}
+
+function effectiveDraftValueForConfig(
+	config: SystemConfig | undefined,
+	value: DraftValues[string] | undefined,
+) {
+	if (
+		config &&
+		getConfigIsSensitive(config) &&
+		isRedactedConfigValue(config.value) &&
+		configValueToString(value).trim() === ""
+	) {
+		return config.value as DraftValues[string];
+	}
+	return value;
+}
 
 type TranslationFn = (key: string, options?: Record<string, unknown>) => string;
 
@@ -142,6 +188,14 @@ export function useAdminSettingsData({
 		useState<string | null>(null);
 	const [testEmailTarget, setTestEmailTarget] = useState("");
 	const [sendingTestEmail, setSendingTestEmail] = useState(false);
+
+	const resetEditableState = useCallback((nextConfigs: SystemConfig[]) => {
+		setDraftValues(buildDraftValues(nextConfigs));
+		setCustomVisibilityDrafts({});
+		setDisplayUnits({});
+		setDeletedCustomKeys([]);
+		setNewCustomRows([]);
+	}, []);
 
 	const openTestEmailDialog = useCallback(() => {
 		setTestEmailTarget(currentUserEmail);
@@ -241,44 +295,79 @@ export function useAdminSettingsData({
 		}
 	}, []);
 
-	const load = useCallback(async (options?: { showLoading?: boolean }) => {
-		const showLoading = options?.showLoading ?? true;
+	const handleTestAria2Rpc = useCallback(
+		async (value: string) => {
+			try {
+				const draftConfigMap = new Map(
+					configs.map((config) => [config.key, config] as const),
+				);
+				const draftValuesForAction = Object.fromEntries(
+					OFFLINE_DOWNLOAD_ACTION_DRAFT_KEYS.flatMap((key) => {
+						const draftValue =
+							key === OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY
+								? value
+								: draftValues[key];
+						if (
+							draftValue == null ||
+							!draftValueChangedForKey(draftConfigMap, key, draftValue)
+						) {
+							return [];
+						}
+						return [[key, configValueToString(draftValue)]];
+					}),
+				);
+				const response = await adminConfigService.action(
+					OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
+					{
+						action: "test_aria2_rpc" satisfies ConfigActionType,
+						draft_values: draftValuesForAction,
+						value,
+					},
+				);
+				toast.success(response.message);
+			} catch (error) {
+				handleApiError(error);
+				throw error;
+			}
+		},
+		[configs, draftValues],
+	);
 
-		try {
-			if (showLoading) {
-				setLoading(true);
+	const load = useCallback(
+		async (options?: { showLoading?: boolean }) => {
+			const showLoading = options?.showLoading ?? true;
+
+			try {
+				if (showLoading) {
+					setLoading(true);
+				}
+				const [cfgs, schemaList, nextTemplateVariableGroups] =
+					await Promise.all([
+						loadAllSystemConfigs(),
+						loadAdminConfigSchema(),
+						loadAdminTemplateVariables().catch((error) => {
+							handleApiError(error);
+							return [];
+						}),
+					]);
+				setConfigs(cfgs);
+				resetEditableState(cfgs);
+				setSchemas(schemaList);
+				setTemplateVariableGroups(nextTemplateVariableGroups);
+			} catch (error) {
+				handleApiError(error);
+			} finally {
+				if (showLoading) {
+					setLoading(false);
+				}
 			}
-			const [cfgs, schemaList, nextTemplateVariableGroups] = await Promise.all([
-				loadAllSystemConfigs(),
-				loadAdminConfigSchema(),
-				loadAdminTemplateVariables().catch((error) => {
-					handleApiError(error);
-					return [];
-				}),
-			]);
-			setConfigs(cfgs);
-			setSchemas(schemaList);
-			setTemplateVariableGroups(nextTemplateVariableGroups);
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			if (showLoading) {
-				setLoading(false);
-			}
-		}
-	}, []);
+		},
+		[resetEditableState],
+	);
 
 	useEffect(() => {
 		void load();
 	}, [load]);
-
-	useEffect(() => {
-		setDraftValues(buildDraftValues(configs));
-		setCustomVisibilityDrafts({});
-		setDisplayUnits({});
-		setDeletedCustomKeys([]);
-		setNewCustomRows([]);
-	}, [configs]);
 
 	const schemaMap = useMemo(() => {
 		const map = new Map<string, ConfigSchemaItem>();
@@ -374,13 +463,24 @@ export function useAdminSettingsData({
 		setActiveTemplateVariableGroupCode(getMailTemplateGroupId(config.key));
 	}, []);
 
-	const systemConfigs = useMemo(
-		() =>
-			configs
-				.filter((config) => isSystemConfigSource(config.source))
-				.sort(sortConfigsByKey),
-		[configs],
-	);
+	const systemConfigs = useMemo(() => {
+		const hasOfflineDownloadRegistry = configs.some(
+			(config) =>
+				isSystemConfigSource(config.source) &&
+				config.key === OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
+		);
+
+		return configs
+			.filter(
+				(config) =>
+					isSystemConfigSource(config.source) &&
+					!(
+						hasOfflineDownloadRegistry &&
+						config.key === LEGACY_OFFLINE_DOWNLOAD_ENGINE_KEY
+					),
+			)
+			.sort(sortConfigsByKey);
+	}, [configs]);
 
 	const customConfigs = useMemo(
 		() =>
@@ -508,9 +608,9 @@ export function useAdminSettingsData({
 				if (deletedCustomKeySet.has(config.key)) {
 					return false;
 				}
-				const valueChanged = !configDraftValuesEqual(
+				const valueChanged = configDraftValueChanged(
+					config,
 					draftValues[config.key] ?? (config.value as DraftValues[string]),
-					config.value as DraftValues[string],
 				);
 				const visibilityChanged =
 					!isSystemConfigSource(config.source) &&
@@ -551,20 +651,44 @@ export function useAdminSettingsData({
 		);
 	}, [configs, draftValues]);
 
+	const offlineDownloadEngineValidationIssues = useMemo(() => {
+		const config = configs.find(
+			(item) => item.key === OFFLINE_DOWNLOAD_ENGINE_REGISTRY_KEY,
+		);
+		if (!config) {
+			return [];
+		}
+
+		return getOfflineDownloadEngineConfigIssuesFromString(
+			configValueToString(
+				draftValues[config.key] ?? (config.value as DraftValues[string]),
+			),
+		);
+	}, [configs, draftValues]);
+
+	const getDraftValueForKey = useCallback(
+		(key: string) => {
+			const config = configsByKey.get(key);
+			return effectiveDraftValueForConfig(
+				config,
+				draftValues[key] ?? (config?.value as DraftValues[string]),
+			);
+		},
+		[configsByKey, draftValues],
+	);
+
 	const configValidationErrors = useMemo(() => {
 		const errors = new Map<string, string>();
-		const draftValueByKey = (key: string) =>
-			draftValues[key] ?? (configsByKey.get(key)?.value as DraftValues[string]);
 		const allowedOrigins = configValueToString(
-			draftValueByKey(CORS_ALLOWED_ORIGINS_KEY),
+			getDraftValueForKey(CORS_ALLOWED_ORIGINS_KEY),
 		).trim();
 		const allowCredentials =
 			configValueToString(
-				draftValueByKey(CORS_ALLOW_CREDENTIALS_KEY),
+				getDraftValueForKey(CORS_ALLOW_CREDENTIALS_KEY),
 			).trim() === "true";
 		const emailCodeLoginEnabled =
 			configValueToString(
-				draftValueByKey(AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY),
+				getDraftValueForKey(AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY),
 			).trim() === "true";
 
 		if (allowCredentials && allowedOrigins === "*") {
@@ -573,7 +697,10 @@ export function useAdminSettingsData({
 			errors.set(CORS_ALLOW_CREDENTIALS_KEY, message);
 		}
 
-		if (emailCodeLoginEnabled && !isMailDeliveryConfigReady(draftValueByKey)) {
+		if (
+			emailCodeLoginEnabled &&
+			!isMailDeliveryConfigReady(getDraftValueForKey)
+		) {
 			errors.set(
 				AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY,
 				t("email_code_mfa_mail_config_required"),
@@ -588,7 +715,7 @@ export function useAdminSettingsData({
 			const options = schema?.options ?? [];
 			const allowedValues = new Set(options.map((option) => option.value));
 			const selectedValues = configValueToStringArray(
-				draftValueByKey(config.key),
+				getDraftValueForKey(config.key),
 			);
 			const seen = new Set<string>();
 			const invalidValue = selectedValues.find((value) => {
@@ -607,7 +734,7 @@ export function useAdminSettingsData({
 		}
 
 		return errors;
-	}, [configs, configsByKey, draftValues, schemaMap, t]);
+	}, [configs, getDraftValueForKey, schemaMap, t]);
 
 	const changedCount =
 		changedExistingConfigs.length +
@@ -617,6 +744,7 @@ export function useAdminSettingsData({
 		newCustomRowErrors.size > 0 ||
 		previewAppsValidationIssues.length > 0 ||
 		mediaProcessingValidationIssues.length > 0 ||
+		offlineDownloadEngineValidationIssues.length > 0 ||
 		configValidationErrors.size > 0;
 	const hasUnsavedChanges = changedCount > 0;
 	const hasAnyConfig = configs.length > 0;
@@ -624,11 +752,13 @@ export function useAdminSettingsData({
 		configValidationErrors.values().next().value ??
 		(mediaProcessingValidationIssues.length > 0
 			? t("media_processing_validation_error")
-			: previewAppsValidationIssues.length > 0
-				? t("preview_apps_validation_error")
-				: newCustomRowErrors.size > 0
-					? t("custom_config_validation_error")
-					: undefined);
+			: offlineDownloadEngineValidationIssues.length > 0
+				? t("offline_download_engine_validation_error")
+				: previewAppsValidationIssues.length > 0
+					? t("preview_apps_validation_error")
+					: newCustomRowErrors.size > 0
+						? t("custom_config_validation_error")
+						: undefined);
 
 	const getDraftValue = useCallback(
 		(config: SystemConfig) =>
@@ -659,12 +789,11 @@ export function useAdminSettingsData({
 			setDraftValues((previous) => {
 				const next = { ...previous, [key]: value };
 				const readNextValue = (lookupKey: string) => {
+					const config = configsByKey.get(lookupKey);
 					if (Object.hasOwn(next, lookupKey)) {
-						return next[lookupKey];
+						return effectiveDraftValueForConfig(config, next[lookupKey]);
 					}
-					return configsByKey.get(lookupKey)?.value as
-						| DraftValues[string]
-						| undefined;
+					return config?.value as DraftValues[string] | undefined;
 				};
 
 				if (
@@ -712,12 +841,8 @@ export function useAdminSettingsData({
 	);
 
 	const discardChanges = useCallback(() => {
-		setDraftValues(buildDraftValues(configs));
-		setCustomVisibilityDrafts({});
-		setDisplayUnits({});
-		setDeletedCustomKeys([]);
-		setNewCustomRows([]);
-	}, [configs]);
+		resetEditableState(configs);
+	}, [configs, resetEditableState]);
 
 	const appendCustomDraftRow = useCallback(() => {
 		customDraftIdRef.current += 1;
@@ -825,7 +950,7 @@ export function useAdminSettingsData({
 
 			const nextConfigs = Array.from(nextConfigsByKey.values());
 			setConfigs(nextConfigs);
-			setCustomVisibilityDrafts({});
+			resetEditableState(nextConfigs);
 			const nextPublicSiteUrl =
 				nextConfigsByKey.get(PUBLIC_SITE_URL_KEY)?.value;
 			if (Array.isArray(nextPublicSiteUrl)) {
@@ -869,6 +994,7 @@ export function useAdminSettingsData({
 		hasValidationError,
 		load,
 		onPublicSiteUrlChanged,
+		resetEditableState,
 		saving,
 		t,
 	]);
@@ -895,6 +1021,7 @@ export function useAdminSettingsData({
 		getTemplateVariableGroupLabel,
 		getTemplateVariableLabel,
 		handleBuildWopiDiscoveryPreviewConfig,
+		handleTestAria2Rpc,
 		handleTestFfmpegCliCommand,
 		handleTestFfprobeCliCommand,
 		handleSaveAll,

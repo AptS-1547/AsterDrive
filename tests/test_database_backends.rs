@@ -236,6 +236,7 @@ async fn assert_background_task_display_name_accepts_expanded_len(db: &DatabaseC
             result_json: Set(Some(StoredTaskResult(
                 r#"{"duration_ms":0,"summary":"expanded display name accepted"}"#.to_string(),
             ))),
+            runtime_json: Set(None),
             steps_json: Set(None),
             progress_current: Set(1),
             progress_total: Set(1),

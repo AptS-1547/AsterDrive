@@ -260,11 +260,17 @@ pub struct SetConfigReq {
 }
 
 /// Execute a config action (e.g., send test email).
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ExecuteConfigActionReq {
     pub action: crate::services::config_service::ConfigActionType,
     pub discovery_url: Option<String>,
+    /// Optional transient config values for test actions such as
+    /// [`ConfigActionType::TestAria2Rpc`](crate::services::config_service::ConfigActionType::TestAria2Rpc).
+    /// These override persisted config for the action without writing to the DB.
+    /// Runtime action handlers validate the accepted keys for their action.
+    #[validate(length(max = 50, message = "draft_values cannot exceed 50 entries"))]
+    pub draft_values: Option<std::collections::BTreeMap<String, String>>,
     pub target_email: Option<String>,
     pub value: Option<String>,
 }

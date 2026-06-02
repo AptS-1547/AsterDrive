@@ -46,7 +46,7 @@ pub use storage_policy::{
 };
 pub use task::{
     BackgroundTaskKind, BackgroundTaskStatus, StoredLockOwnerInfo, StoredTaskPayload,
-    StoredTaskResult, StoredTaskSteps,
+    StoredTaskResult, StoredTaskRuntime, StoredTaskSteps,
 };
 pub use team::TeamMemberRole;
 pub use user::{AvatarSource, UserRole, UserStatus};

@@ -54,6 +54,7 @@ AsterDrive 的配置分得很清楚。先把这些层分开，后续就能更容
 | 公开站点地址、品牌、注册、Cookie、Token、调度、分享流播放、压缩包预览、回收站、版本、配额、WOPI、WebDAV、审计 | [系统设置](/config/runtime) |
 | 接 OIDC / 通用 OAuth2 / SSO 外部登录，管理外部身份提供商 | [外部认证](/config/external-auth) / [登录与会话](/config/auth) |
 | 配 SMTP、发测试邮件、改邮件模版 | [邮件](/config/mail) |
+| 配链接导入、内置下载器或 aria2 离线下载 | [离线下载](/config/offline-download) |
 | 文件存哪里、上传/下载怎么走 | [存储策略](/config/storage) |
 | 按教程接 S3 / MinIO / R2 这类后端 | [存储策略后端](/storage/) |
 | 不同用户/团队走哪条存储路线 | [存储策略](/config/storage) |
