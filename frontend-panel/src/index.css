@@ -216,8 +216,12 @@
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
-		scrollbar-color: var(--scrollbar-thumb) transparent;
-		scrollbar-width: thin;
+	}
+	@supports not selector(::-webkit-scrollbar) {
+		* {
+			scrollbar-color: var(--scrollbar-thumb) transparent;
+			scrollbar-width: thin;
+		}
 	}
 	*::-webkit-scrollbar {
 		width: 0.625rem;

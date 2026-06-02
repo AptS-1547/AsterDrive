@@ -43,7 +43,7 @@ export function GlobalSearchHeader({
 				<div className="relative min-w-0 flex-1">
 					<Icon
 						name="MagnifyingGlass"
-						className="-translate-y-1/2 absolute top-1/2 left-3 size-4 text-muted-foreground"
+						className="-translate-y-1/2 absolute top-1/2 left-3 size-4 text-foreground/55"
 					/>
 					<Input
 						ref={inputRef}
