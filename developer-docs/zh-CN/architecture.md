@@ -293,6 +293,8 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
 
 前三条 lane 分别有自己的运行时并发配置；Fallback 使用通用 `background_task_max_concurrency`。
 
+dispatcher 认领任务后会为业务执行创建 `TaskExecutionContext`。它同时携带 processing-token lease 和 graceful-shutdown token；这个 token 也由 `main.rs` 注入 HTTP server、SSE 和后台任务，所以 SIGINT / SIGTERM 到来时，几条链路会一起开始收尾。任务代码、下载轮询、压缩 / 解压的阻塞 worker 都应该通过这个 context 做活跃检查；只有进度写库、runtime metadata 写库和最终状态写库这类底层 helper 直接使用 `TaskLeaseGuard`。服务关闭时，context 会让执行流协作退出，dispatcher 再把仍匹配当前 processing token 的任务释放回 `Retry`，不消耗重试次数。
+
 ## CLI 与离线运维入口
 
 `Cargo.toml` 里默认 feature 包含 `cli`，所以默认构建出来的 `aster_drive` 既能直接启动服务，也能执行离线运维子命令。`src/main.rs` 会在 HTTP 服务启动前先解析这些子命令：

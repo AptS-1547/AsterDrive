@@ -4,7 +4,7 @@ use crate::config::operations;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 
-use super::super::{TaskLeaseGuard, set_task_runtime_json};
+use super::super::{TaskExecutionContext, set_task_runtime_json};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(super) struct OfflineDownloadRuntimeState {
@@ -46,11 +46,11 @@ pub(super) fn serialize_offline_download_runtime_state(
 
 pub(super) async fn persist_offline_download_runtime_state(
     state: &PrimaryAppState,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     runtime_state: &OfflineDownloadRuntimeState,
 ) -> Result<String> {
     let runtime_json = serialize_offline_download_runtime_state(runtime_state)?;
-    set_task_runtime_json(state, lease_guard, Some(&runtime_json)).await?;
+    set_task_runtime_json(state, context.lease_guard(), Some(&runtime_json)).await?;
     Ok(runtime_json)
 }
 

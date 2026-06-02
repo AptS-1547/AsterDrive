@@ -16,7 +16,7 @@ use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::{
-    registry,
+    TaskExecutionContext, registry,
     retry::TaskRetryClass,
     steps::{mark_active_step_failed, parse_task_steps_json, serialize_task_steps},
 };
@@ -68,7 +68,8 @@ async fn process_claimed_task(
         tokio::time::interval(std::time::Duration::from_secs(TASK_HEARTBEAT_INTERVAL_SECS));
     heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
     heartbeat.tick().await;
-    let lease_guard = TaskLeaseGuard::with_shutdown_token(lease, shutdown_token);
+    let context = TaskExecutionContext::new(lease, shutdown_token);
+    let lease_guard = context.lease_guard().clone();
 
     // 外层 select! 同时盯两件事：
     // 1. 真实业务流程是否完成；
@@ -76,7 +77,7 @@ async fn process_claimed_task(
     //
     // 注意这里只能取消 async 外壳。真正耗时的压缩/解压是在 spawn_blocking 里，
     // 所以业务代码内部也必须周期性检查 lease guard，才能把旧 worker 真正停下来。
-    let process_future = registry::process_task(state, &task, lease_guard.clone());
+    let process_future = registry::process_task(state, &task, context);
     tokio::pin!(process_future);
 
     let task_result = loop {
@@ -227,6 +228,9 @@ async fn release_task_for_shutdown(
     task_id: i64,
     processing_token: i64,
 ) -> Result<()> {
+    // Graceful shutdown is neither task success nor task failure. Release the
+    // current processing lease back into Retry so the next dispatcher round can
+    // resume it with a fresh processing token.
     let released = background_task_repo::release_processing(
         state.writer_db(),
         task_id,

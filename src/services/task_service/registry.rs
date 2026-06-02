@@ -22,7 +22,7 @@ use super::spec::{
 };
 use super::steps::initial_task_steps_from_specs;
 use super::types::{TaskPayload, TaskPresentation, TaskResult, TaskStepInfo};
-use super::{TaskLeaseGuard, dispatch::TaskLane};
+use super::{TaskExecutionContext, dispatch::TaskLane};
 
 static ARCHIVE_COMPRESS: TaskSpecAdapter<ArchiveCompressTask> = TaskSpecAdapter::new();
 static ARCHIVE_EXTRACT: TaskSpecAdapter<ArchiveExtractTask> = TaskSpecAdapter::new();
@@ -80,9 +80,9 @@ pub(super) fn task_retry_class(kind: BackgroundTaskKind, error: &AsterError) -> 
 pub(super) fn process_task<'a>(
     state: &'a PrimaryAppState,
     task: &'a background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> TaskProcessFuture<'a> {
-    spec_for_kind(task.kind).process(state, task, lease_guard)
+    spec_for_kind(task.kind).process(state, task, context)
 }
 
 pub(super) fn initial_task_steps(kind: BackgroundTaskKind) -> Vec<TaskStepInfo> {

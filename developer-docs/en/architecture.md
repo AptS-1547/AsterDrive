@@ -293,6 +293,8 @@ User-visible `background_tasks` records are dispatched by `background-task-dispa
 
 The first three lanes have their own runtime concurrency settings. Fallback uses the generic `background_task_max_concurrency`.
 
+After claiming a task, the dispatcher creates a `TaskExecutionContext` for business execution. The context carries both the processing-token lease and the graceful-shutdown token; `main.rs` injects the same token into the HTTP server, SSE, and background-task stack, so SIGINT / SIGTERM starts all of them winding down together. Task code, download polling, and blocking archive compression / extraction workers should use this context for activity checks. Only lower-level helpers that write progress, runtime metadata, or final state should receive `TaskLeaseGuard` directly. During service shutdown, the context makes execution exit cooperatively; the dispatcher then releases a still-matching processing token back to `Retry` without spending retry budget.
+
 ## CLI and Offline Operations
 
 The default features in `Cargo.toml` include `cli`, so the default `aster_drive` binary can either start the service or run offline operational subcommands. `src/main.rs` parses these before HTTP startup:

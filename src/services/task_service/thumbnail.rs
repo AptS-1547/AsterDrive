@@ -17,7 +17,7 @@ use super::steps::{
 };
 use super::types::{ThumbnailGenerateTaskPayload, ThumbnailGenerateTaskResult};
 use super::{
-    TaskLeaseGuard, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
+    TaskExecutionContext, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
     mark_task_succeeded,
 };
 
@@ -114,8 +114,9 @@ pub(crate) async fn ensure_thumbnail_task(
 pub(super) async fn process_thumbnail_generate_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let payload = decode_payload_as::<ThumbnailGenerateTask>(task)?;
     tracing::debug!(
         task_id = task.id,
@@ -152,7 +153,7 @@ pub(super) async fn process_thumbnail_generate_task(
     let blob =
         crate::db::repository::file_repo::find_blob_by_id(state.writer_db(), payload.blob_id)
             .await?;
-    lease_guard.ensure_active()?;
+    context.ensure_active()?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_INSPECT_SOURCE,
@@ -193,7 +194,7 @@ pub(super) async fn process_thumbnail_generate_task(
         thumbnail_path = stored.thumbnail_path,
         "thumbnail background task completed render phase"
     );
-    lease_guard.ensure_active()?;
+    context.ensure_active()?;
 
     if stored.reused_existing_thumbnail {
         set_task_step_succeeded(

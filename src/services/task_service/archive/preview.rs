@@ -8,7 +8,7 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     archive_preview_service,
     task_service::{
-        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
+        TaskExecutionContext, cleanup_task_temp_dir_for_task, create_typed_task_record,
         mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
         spec::{self, ArchivePreviewGenerateTask, decode_payload_as},
         steps::{
@@ -105,8 +105,9 @@ fn archive_preview_task_display_name(
 pub(super) async fn process_archive_preview_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let result = async {
         let payload = decode_payload_as::<ArchivePreviewGenerateTask>(task)?;
         let mut steps =

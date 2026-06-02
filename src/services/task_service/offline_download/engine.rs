@@ -10,7 +10,7 @@ use crate::runtime::PrimaryAppState;
 
 use super::super::steps::{TASK_STEP_DOWNLOAD_SOURCE, set_task_step_active};
 use super::super::{
-    TaskLeaseGuard, mark_task_progress, set_task_display_name, set_task_runtime_json,
+    TaskExecutionContext, mark_task_progress, set_task_display_name, set_task_runtime_json,
 };
 use super::naming::offline_download_task_display_name_with_engine;
 use super::runtime::{
@@ -80,7 +80,7 @@ pub(in crate::services::task_service) trait OfflineDownloadEngine {
     async fn download(
         &mut self,
         state: &PrimaryAppState,
-        lease_guard: &TaskLeaseGuard,
+        context: &TaskExecutionContext,
         request: OfflineDownloadStartRequest,
         steps: &mut [super::super::TaskStepInfo],
     ) -> Result<OfflineDownloadComplete>;
@@ -88,7 +88,7 @@ pub(in crate::services::task_service) trait OfflineDownloadEngine {
 
 pub(super) async fn download_with_enabled_engines(
     state: &PrimaryAppState,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     steps: &mut [super::super::TaskStepInfo],
     selection: OfflineDownloadEngineSelection<'_>,
     request: OfflineDownloadStartRequest,
@@ -96,7 +96,8 @@ pub(super) async fn download_with_enabled_engines(
     let mut last_error = None;
     let mut request = request;
     for (index, engine_kind) in selection.engine_kinds.iter().copied().enumerate() {
-        lease_guard.ensure_active()?;
+        context.ensure_active()?;
+        let lease_guard = context.lease_guard();
         set_task_display_name(
             state,
             lease_guard,
@@ -113,7 +114,7 @@ pub(super) async fn download_with_enabled_engines(
             runtime_state.aria2 = None;
         }
         request.runtime_json =
-            Some(persist_offline_download_runtime_state(state, lease_guard, &runtime_state).await?);
+            Some(persist_offline_download_runtime_state(state, context, &runtime_state).await?);
         let mut engine = offline_download_engine_for_kind(
             state,
             engine_kind,
@@ -121,7 +122,7 @@ pub(super) async fn download_with_enabled_engines(
             selection.timeout,
         )?;
         match engine
-            .download(state, lease_guard, request.clone(), steps)
+            .download(state, context, request.clone(), steps)
             .await
         {
             Ok(downloaded) => return Ok(downloaded.with_engine(engine_kind)),

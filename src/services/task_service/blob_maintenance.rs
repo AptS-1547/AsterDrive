@@ -24,7 +24,8 @@ use super::types::{
     BlobMaintenanceAction, BlobMaintenanceTaskPayload, BlobMaintenanceTaskResult, TaskInfo,
 };
 use super::{
-    TaskLeaseGuard, create_typed_task_record, mark_task_progress, mark_task_succeeded, task_scope,
+    TaskExecutionContext, create_typed_task_record, mark_task_progress, mark_task_succeeded,
+    task_scope,
 };
 
 pub(crate) async fn create_blob_maintenance_task_for_admin(
@@ -64,8 +65,9 @@ pub(crate) async fn create_blob_maintenance_task_for_admin(
 pub(super) async fn process_blob_maintenance_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let _scope = task_scope(task)?;
     let payload = decode_payload_as::<BlobMaintenanceTask>(task)?;
     let mut steps =
@@ -117,7 +119,7 @@ pub(super) async fn process_blob_maintenance_task(
         BlobMaintenanceAction::IntegrityCheck => {
             run_integrity_check(
                 state,
-                &lease_guard,
+                &context,
                 &mut steps,
                 &target_scope,
                 total,
@@ -134,7 +136,7 @@ pub(super) async fn process_blob_maintenance_task(
             )?;
             run_ref_count_reconcile(
                 state,
-                &lease_guard,
+                &context,
                 &mut steps,
                 &target_scope,
                 total,
@@ -155,7 +157,7 @@ pub(super) async fn process_blob_maintenance_task(
             )?;
             run_ref_count_reconcile(
                 state,
-                &lease_guard,
+                &context,
                 &mut steps,
                 &target_scope,
                 total,
@@ -164,7 +166,7 @@ pub(super) async fn process_blob_maintenance_task(
             .await?;
             run_orphan_cleanup(
                 state,
-                &lease_guard,
+                &context,
                 &mut steps,
                 &target_scope,
                 total,
@@ -195,12 +197,13 @@ pub(super) async fn process_blob_maintenance_task(
 
 async fn run_integrity_check(
     state: &PrimaryAppState,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     steps: &mut [super::TaskStepInfo],
     target_scope: &BlobTargetScope<'_>,
     total: i64,
     result: &mut BlobMaintenanceTaskResult,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard();
     set_task_step_active(
         steps,
         TASK_STEP_CHECK_BLOBS,
@@ -219,7 +222,7 @@ async fn run_integrity_check(
         }
 
         for blob in blobs {
-            lease_guard.ensure_active()?;
+            context.ensure_active()?;
             progress += 1;
             match check_blob_object(state, &blob).await {
                 Ok(BlobObjectCheck::Present) => {
@@ -267,12 +270,13 @@ async fn run_integrity_check(
 
 async fn run_ref_count_reconcile(
     state: &PrimaryAppState,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     steps: &mut [super::TaskStepInfo],
     target_scope: &BlobTargetScope<'_>,
     total: i64,
     result: &mut BlobMaintenanceTaskResult,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard();
     set_task_step_active(
         steps,
         TASK_STEP_RECONCILE_REFS,
@@ -301,7 +305,7 @@ async fn run_ref_count_reconcile(
         let actual_ref_counts = current_blob_ref_counts(state, &batch_blob_ids).await?;
 
         for blob in blobs {
-            lease_guard.ensure_active()?;
+            context.ensure_active()?;
             progress += 1;
             let actual_refs = actual_ref_counts.get(&blob.id).copied().unwrap_or(0);
             if blob.ref_count == actual_refs
@@ -363,12 +367,13 @@ async fn run_ref_count_reconcile(
 
 async fn run_orphan_cleanup(
     state: &PrimaryAppState,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     steps: &mut [super::TaskStepInfo],
     target_scope: &BlobTargetScope<'_>,
     total: i64,
     result: &mut BlobMaintenanceTaskResult,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard();
     set_task_step_active(
         steps,
         TASK_STEP_CLEANUP_OBJECTS,
@@ -397,7 +402,7 @@ async fn run_orphan_cleanup(
         let actual_ref_counts = current_blob_ref_counts(state, &batch_blob_ids).await?;
 
         for blob in blobs {
-            lease_guard.ensure_active()?;
+            context.ensure_active()?;
             progress += 1;
             let actual_refs = actual_ref_counts.get(&blob.id).copied().unwrap_or(0);
             if actual_refs != 0 {

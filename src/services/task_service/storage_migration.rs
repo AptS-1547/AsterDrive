@@ -28,7 +28,7 @@ use super::types::{
     StoragePolicyMigrationTaskResult,
 };
 use super::{
-    TaskLeaseGuard, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
+    TaskExecutionContext, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
     mark_task_succeeded, task_scope,
 };
 
@@ -335,8 +335,9 @@ async fn probe_storage_migration_target(driver: &dyn StorageDriver) -> Result<()
 pub(super) async fn process_storage_policy_migration_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let payload = decode_payload_as::<StoragePolicyMigrationTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
@@ -408,7 +409,7 @@ pub(super) async fn process_storage_policy_migration_task(
     .await?;
 
     loop {
-        lease_guard.ensure_active()?;
+        context.ensure_active()?;
         let blobs = file_repo::find_blobs_by_policy_paginated(
             state.writer_db(),
             payload.source_policy_id,
@@ -434,7 +435,7 @@ pub(super) async fn process_storage_policy_migration_task(
         )?;
 
         for blob in blobs {
-            lease_guard.ensure_active()?;
+            context.ensure_active()?;
             let outcome = migrate_one_blob(
                 state,
                 task.id,

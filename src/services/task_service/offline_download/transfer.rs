@@ -4,7 +4,7 @@ use governor::{Quota, RateLimiter};
 use reqwest::header::CONTENT_LENGTH;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::services::task_service::TaskLeaseGuard;
+use crate::services::task_service::TaskExecutionContext;
 use crate::utils::numbers::{u64_to_i64, usize_to_u32};
 
 pub(in crate::services::task_service) struct OfflineDownloadRateLimiter {
@@ -26,21 +26,21 @@ impl OfflineDownloadRateLimiter {
     pub(in crate::services::task_service) async fn throttle(
         limiter: Option<&Self>,
         chunk_len: usize,
-        lease_guard: &TaskLeaseGuard,
+        context: &TaskExecutionContext,
     ) -> Result<()> {
         let Some(limiter) = limiter else {
             return Ok(());
         };
         let mut remaining = usize_to_u32(chunk_len, "offline download throttle chunk size")?;
         while remaining > 0 {
-            lease_guard.ensure_active()?;
+            context.ensure_active()?;
             let batch = remaining.min(limiter.max_batch_bytes);
             let batch = NonZeroU32::new(batch).ok_or_else(|| {
                 AsterError::internal_error("offline download throttle batch cannot be zero")
             })?;
             tokio::select! {
                 biased;
-                shutdown = lease_guard.shutdown_requested() => shutdown?,
+                shutdown = context.shutdown_requested() => shutdown?,
                 result = limiter.limiter.until_n_ready(batch) => {
                     result.map_aster_err_ctx(
                         "reserve offline download throttle capacity",

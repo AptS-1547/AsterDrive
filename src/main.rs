@@ -212,12 +212,12 @@ async fn run_primary_http_server(
 
     let configure_db = state.writer_db().clone();
     let shutdown_db = state.writer_db().clone();
-    let http_shutdown_token = CancellationToken::new();
+    let app_shutdown_token = CancellationToken::new();
     let state = web::Data::new(state);
     let task_state = state.clone();
     let server_state = state.clone();
     let app_state = state.clone();
-    let app_shutdown_token = web::Data::new(http_shutdown_token.clone());
+    let app_shutdown_data = web::Data::new(app_shutdown_token.clone());
     let metrics = web::Data::new(state.metrics.clone());
     let server = HttpServer::new(move || {
         let db = configure_db.clone();
@@ -231,7 +231,7 @@ async fn run_primary_http_server(
             .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))
             .app_data(app_state.clone())
             .app_data(metrics.clone())
-            .app_data(app_shutdown_token.clone())
+            .app_data(app_shutdown_data.clone())
             .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db))
     })
     .keep_alive(std::time::Duration::from_secs(30))
@@ -247,11 +247,12 @@ async fn run_primary_http_server(
     let background_tasks = aster_drive::runtime::tasks::spawn_primary_background_tasks(
         task_state,
         share_download_rollback_worker,
+        app_shutdown_token.clone(),
     );
     aster_drive::runtime::startup::record_server_start(server_state.as_ref()).await;
     tokio::spawn(async move {
         aster_drive::runtime::shutdown::wait_for_signal().await;
-        http_shutdown_token.cancel();
+        app_shutdown_token.cancel();
         server_handle.stop(true).await;
     });
 
@@ -281,9 +282,10 @@ async fn run_follower_http_server(
 
     let shutdown_db = state.writer_db().clone();
     let state = web::Data::new(state);
-    let http_shutdown_token = CancellationToken::new();
+    let app_shutdown_token = CancellationToken::new();
     let metrics = web::Data::new(state.metrics.clone());
     let app_state = state.clone();
+    let app_shutdown_data = web::Data::new(app_shutdown_token.clone());
     let server = HttpServer::new(move || {
         App::new()
             .wrap(actix_web::middleware::Compress::default())
@@ -294,6 +296,7 @@ async fn run_follower_http_server(
             .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))
             .app_data(app_state.clone())
             .app_data(metrics.clone())
+            .app_data(app_shutdown_data.clone())
             .configure(aster_drive::api::configure_follower)
     })
     .keep_alive(std::time::Duration::from_secs(30))
@@ -306,12 +309,14 @@ async fn run_follower_http_server(
     .run();
 
     let server_handle = server.handle();
-    let background_tasks =
-        aster_drive::runtime::tasks::spawn_follower_background_tasks(state.clone());
+    let background_tasks = aster_drive::runtime::tasks::spawn_follower_background_tasks(
+        state.clone(),
+        app_shutdown_token.clone(),
+    );
     aster_drive::runtime::startup::record_server_start(state.as_ref()).await;
     tokio::spawn(async move {
         aster_drive::runtime::shutdown::wait_for_signal().await;
-        http_shutdown_token.cancel();
+        app_shutdown_token.cancel();
         server_handle.stop(true).await;
     });
 

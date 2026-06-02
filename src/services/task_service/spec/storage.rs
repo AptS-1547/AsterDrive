@@ -1,7 +1,8 @@
-use super::{BackgroundTaskSpec, TaskLeaseGuard, TaskProcessFuture};
+use super::{BackgroundTaskSpec, TaskProcessFuture};
 use crate::entities::background_task;
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::{
+    TaskExecutionContext,
     dispatch::TaskLane,
     steps::{
         TASK_STEP_CLEANUP_OBJECTS, TASK_STEP_FINISH, TASK_STEP_MIGRATE_BLOBS,
@@ -83,14 +84,10 @@ impl BackgroundTaskSpec for StoragePolicyTempCleanupTask {
     fn process<'a>(
         state: &'a PrimaryAppState,
         task: &'a background_task::Model,
-        lease_guard: TaskLeaseGuard,
+        context: TaskExecutionContext,
     ) -> TaskProcessFuture<'a> {
         Box::pin(
-            storage_policy_cleanup::process_storage_policy_temp_cleanup_task(
-                state,
-                task,
-                lease_guard,
-            ),
+            storage_policy_cleanup::process_storage_policy_temp_cleanup_task(state, task, context),
         )
     }
 }

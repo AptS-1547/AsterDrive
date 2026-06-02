@@ -12,7 +12,8 @@ use super::steps::{
 };
 use super::types::{TaskInfo, TrashPurgeAllTaskPayload, TrashPurgeAllTaskResult};
 use super::{
-    TaskLeaseGuard, create_typed_task_record, mark_task_progress, mark_task_succeeded, task_scope,
+    TaskExecutionContext, create_typed_task_record, mark_task_progress, mark_task_succeeded,
+    task_scope,
 };
 
 pub(crate) async fn create_trash_purge_all_task_in_scope(
@@ -30,8 +31,9 @@ pub(crate) async fn create_trash_purge_all_task_in_scope(
 pub(super) async fn process_trash_purge_all_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let scope = task_scope(task)?;
     let _payload = decode_payload_as::<TrashPurgeAllTask>(task)?;
     let mut steps =

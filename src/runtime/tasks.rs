@@ -115,9 +115,14 @@ pub struct BackgroundTasks {
 }
 
 impl BackgroundTasks {
+    #[cfg(test)]
     fn new() -> Self {
+        Self::with_shutdown_token(CancellationToken::new())
+    }
+
+    fn with_shutdown_token(shutdown_token: CancellationToken) -> Self {
         Self {
-            shutdown_token: CancellationToken::new(),
+            shutdown_token,
             handles: JoinSet::new(),
         }
     }
@@ -434,8 +439,9 @@ fn effective_dispatch_max_interval(base_interval: Duration, max_interval: Durati
 
 fn build_background_tasks_base(
     metrics: &crate::metrics_core::SharedMetricsRecorder,
+    shutdown_token: CancellationToken,
 ) -> BackgroundTasks {
-    let mut tasks = BackgroundTasks::new();
+    let mut tasks = BackgroundTasks::with_shutdown_token(shutdown_token);
     if let Some(task) = metrics.system_metrics_updater_task(tasks.shutdown_token()) {
         tasks.push(task);
     }
@@ -446,8 +452,9 @@ fn build_background_tasks_base(
 pub fn spawn_primary_background_tasks(
     state: web::Data<PrimaryAppState>,
     share_download_rollback_worker: ShareDownloadRollbackWorker,
+    shutdown_token: CancellationToken,
 ) -> BackgroundTasks {
-    let mut tasks = build_background_tasks_base(&state.metrics);
+    let mut tasks = build_background_tasks_base(&state.metrics, shutdown_token);
     let shutdown_token = tasks.shutdown_token();
 
     tasks.push(
@@ -855,9 +862,12 @@ pub fn spawn_primary_background_tasks(
 }
 
 /// Spawn only follower-safe background tasks.
-pub fn spawn_follower_background_tasks(state: web::Data<FollowerAppState>) -> BackgroundTasks {
+pub fn spawn_follower_background_tasks(
+    state: web::Data<FollowerAppState>,
+    shutdown_token: CancellationToken,
+) -> BackgroundTasks {
     tracing::info!("follower mode enabled; skipping primary-only background tasks");
-    let mut tasks = build_background_tasks_base(&state.metrics);
+    let mut tasks = build_background_tasks_base(&state.metrics, shutdown_token);
     let shutdown_token = tasks.shutdown_token();
     tasks.push(
         crate::storage::remote_protocol::tunnel::client::run_follower_tunnel_worker(
@@ -1032,9 +1042,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn external_shutdown_token_stops_background_worker_before_shutdown_join() {
+        let shutdown_token = CancellationToken::new();
+        let mut tasks = BackgroundTasks::with_shutdown_token(shutdown_token.clone());
+        let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel();
+
+        tasks.push({
+            let shutdown_token = shutdown_token.clone();
+            async move {
+                shutdown_token.cancelled().await;
+                let _ = stopped_tx.send(());
+            }
+        });
+
+        shutdown_token.cancel();
+        tokio::time::timeout(Duration::from_millis(50), stopped_rx)
+            .await
+            .expect("background worker should observe external shutdown")
+            .expect("background worker should report shutdown");
+
+        tasks.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn follower_background_tasks_can_shutdown_without_primary_workers() {
         let state = setup_state().await;
-        let tasks = spawn_follower_background_tasks(web::Data::new(state.follower_view()));
+        let tasks = spawn_follower_background_tasks(
+            web::Data::new(state.follower_view()),
+            CancellationToken::new(),
+        );
 
         tasks.shutdown().await;
     }

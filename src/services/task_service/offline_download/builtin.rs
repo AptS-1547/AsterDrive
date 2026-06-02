@@ -10,7 +10,7 @@ use crate::runtime::PrimaryAppState;
 use crate::utils::numbers::usize_to_i64;
 
 use super::super::steps::{TASK_STEP_DOWNLOAD_SOURCE, set_task_step_active};
-use super::super::{TaskLeaseGuard, mark_task_progress};
+use super::super::{TaskExecutionContext, mark_task_progress};
 use super::{
     OfflineDownloadComplete, OfflineDownloadEngine, OfflineDownloadRateLimiter,
     OfflineDownloadStartRequest, PROGRESS_UPDATE_INTERVAL, declared_content_length,
@@ -37,10 +37,11 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
     async fn download(
         &mut self,
         state: &PrimaryAppState,
-        lease_guard: &TaskLeaseGuard,
+        context: &TaskExecutionContext,
         request: OfflineDownloadStartRequest,
         steps: &mut [super::super::TaskStepInfo],
     ) -> Result<OfflineDownloadComplete> {
+        let lease_guard = context.lease_guard();
         let resolved = resolve_source_host(&request.url).await?;
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -54,7 +55,7 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
             )?;
         let response = tokio::select! {
             biased;
-            shutdown = lease_guard.shutdown_requested() => {
+            shutdown = context.shutdown_requested() => {
                 shutdown?;
                 unreachable!("shutdown_requested only resolves when shutdown is requested");
             }
@@ -97,7 +98,7 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
         loop {
             let chunk = tokio::select! {
                 biased;
-                shutdown = lease_guard.shutdown_requested() => {
+                shutdown = context.shutdown_requested() => {
                     shutdown?;
                     unreachable!("shutdown_requested only resolves when shutdown is requested");
                 }
@@ -106,7 +107,7 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
             let Some(chunk) = chunk else {
                 break;
             };
-            lease_guard.ensure_active()?;
+            context.ensure_active()?;
             let chunk =
                 chunk.map_aster_err_ctx("read offline download body", transient_storage_error)?;
             let chunk_len = usize_to_i64(chunk.len(), "offline download chunk size")?;
@@ -119,7 +120,7 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
                 AsterError::storage_driver_error,
             )?;
             hasher.update(&chunk);
-            OfflineDownloadRateLimiter::throttle(rate_limiter.as_ref(), chunk.len(), lease_guard)
+            OfflineDownloadRateLimiter::throttle(rate_limiter.as_ref(), chunk.len(), context)
                 .await?;
 
             if last_progress.elapsed() >= PROGRESS_UPDATE_INTERVAL {

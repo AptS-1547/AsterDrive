@@ -14,7 +14,7 @@ use crate::storage::error::{StorageErrorKind, storage_driver_error_with_subcode}
 use crate::utils::numbers::u64_to_i64;
 
 use super::super::steps::{TASK_STEP_DOWNLOAD_SOURCE, set_task_step_active};
-use super::super::{TaskLeaseGuard, mark_task_progress};
+use super::super::{TaskExecutionContext, mark_task_progress};
 use super::runtime::{
     Aria2TaskRuntime, decode_offline_download_runtime_state, persist_offline_download_runtime_state,
 };
@@ -105,10 +105,11 @@ impl OfflineDownloadEngine for Aria2OfflineDownloadEngine {
     async fn download(
         &mut self,
         state: &PrimaryAppState,
-        lease_guard: &TaskLeaseGuard,
+        context: &TaskExecutionContext,
         request: OfflineDownloadStartRequest,
         steps: &mut [super::super::TaskStepInfo],
     ) -> Result<OfflineDownloadComplete> {
+        let lease_guard = context.lease_guard();
         resolve_source_host(&request.url).await?;
         let mut runtime_state =
             decode_offline_download_runtime_state(request.runtime_json.as_deref());
@@ -133,10 +134,10 @@ impl OfflineDownloadEngine for Aria2OfflineDownloadEngine {
             gid: gid.clone(),
             processing_token: lease_guard.lease().processing_token,
         });
-        persist_offline_download_runtime_state(state, lease_guard, &runtime_state).await?;
+        persist_offline_download_runtime_state(state, context, &runtime_state).await?;
 
         let result = self
-            .poll_until_complete(state, lease_guard, &request, steps, &gid)
+            .poll_until_complete(state, context, &request, steps, &gid)
             .await;
         if result.is_err()
             && let Err(cleanup_error) = self.client.force_remove(&gid).await
@@ -194,11 +195,12 @@ impl Aria2OfflineDownloadEngine {
     async fn poll_until_complete(
         &self,
         state: &PrimaryAppState,
-        lease_guard: &TaskLeaseGuard,
+        context: &TaskExecutionContext,
         request: &OfflineDownloadStartRequest,
         steps: &mut [super::super::TaskStepInfo],
         gid: &str,
     ) -> Result<OfflineDownloadComplete> {
+        let lease_guard = context.lease_guard();
         let started_at = Instant::now();
         let mut last_progress = Instant::now()
             .checked_sub(ARIA2_STATUS_POLL_INTERVAL)
@@ -206,7 +208,7 @@ impl Aria2OfflineDownloadEngine {
         let mut declared_content_length = None;
 
         loop {
-            lease_guard.ensure_active()?;
+            context.ensure_active()?;
             if started_at.elapsed() > self.download_timeout {
                 return Err(AsterError::storage_driver_error(
                     "transient: aria2 offline download timed out",
@@ -215,7 +217,7 @@ impl Aria2OfflineDownloadEngine {
 
             let status = tokio::select! {
                 biased;
-                shutdown = lease_guard.shutdown_requested() => {
+                shutdown = context.shutdown_requested() => {
                     shutdown?;
                     unreachable!("shutdown_requested only resolves when shutdown is requested");
                 }
@@ -275,7 +277,7 @@ impl Aria2OfflineDownloadEngine {
                 }
             }
 
-            lease_guard
+            context
                 .sleep_or_shutdown(ARIA2_STATUS_POLL_INTERVAL)
                 .await?;
         }

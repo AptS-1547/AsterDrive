@@ -10,9 +10,10 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     folder_service,
     task_service::{
-        TaskInfo, TaskLeaseGuard, cleanup_task_temp_dir_for_task_in_root, create_typed_task_record,
-        get_task_in_scope, is_task_lease_lost, is_task_lease_renewal_timed_out, mark_task_progress,
-        mark_task_succeeded, prepare_task_temp_dir_in_root,
+        TaskExecutionContext, TaskInfo, cleanup_task_temp_dir_for_task_in_root,
+        create_typed_task_record, get_task_in_scope, is_task_lease_lost,
+        is_task_lease_renewal_timed_out, mark_task_progress, mark_task_succeeded,
+        prepare_task_temp_dir_in_root,
         spec::{self, OfflineDownloadTask, decode_payload_as},
         steps::{
             TASK_STEP_DOWNLOAD_SOURCE, TASK_STEP_STORE_RESULT, TASK_STEP_VALIDATE_SOURCE,
@@ -94,8 +95,9 @@ pub(crate) async fn create_offline_download_task_in_scope(
 pub(super) async fn process_offline_download_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let result = async {
         let scope = task_scope(task)?;
         let payload = decode_payload_as::<OfflineDownloadTask>(task)?;
@@ -184,7 +186,7 @@ pub(super) async fn process_offline_download_task(
         };
         let downloaded = download_with_enabled_engines(
             state,
-            &lease_guard,
+            &context,
             &mut steps,
             OfflineDownloadEngineSelection {
                 engine_kinds: &engine_kinds,

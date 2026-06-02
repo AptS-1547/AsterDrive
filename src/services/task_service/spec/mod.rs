@@ -26,7 +26,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
-use super::TaskLeaseGuard;
+use super::TaskExecutionContext;
 use super::dispatch::TaskLane;
 use super::presentation;
 use super::retry::{TaskRetryClass, default_retry_class};
@@ -57,7 +57,7 @@ pub(super) trait BackgroundTaskSpec {
     fn process<'a>(
         state: &'a PrimaryAppState,
         task: &'a background_task::Model,
-        lease_guard: TaskLeaseGuard,
+        context: TaskExecutionContext,
     ) -> TaskProcessFuture<'a>;
 
     fn retry_class(error: &AsterError) -> TaskRetryClass {
@@ -164,7 +164,7 @@ pub(super) trait ErasedBackgroundTaskSpec: Sync {
         &self,
         state: &'a PrimaryAppState,
         task: &'a background_task::Model,
-        lease_guard: TaskLeaseGuard,
+        context: TaskExecutionContext,
     ) -> TaskProcessFuture<'a>;
 }
 
@@ -222,9 +222,9 @@ where
         &self,
         state: &'a PrimaryAppState,
         task: &'a background_task::Model,
-        lease_guard: TaskLeaseGuard,
+        context: TaskExecutionContext,
     ) -> TaskProcessFuture<'a> {
-        S::process(state, task, lease_guard)
+        S::process(state, task, context)
     }
 }
 
@@ -275,9 +275,9 @@ macro_rules! define_task_spec {
             fn process<'a>(
                 state: &'a $crate::runtime::PrimaryAppState,
                 task: &'a $crate::entities::background_task::Model,
-                lease_guard: $crate::services::task_service::TaskLeaseGuard,
+                context: $crate::services::task_service::TaskExecutionContext,
             ) -> $crate::services::task_service::spec::TaskProcessFuture<'a> {
-                Box::pin($process(state, task, lease_guard))
+                Box::pin($process(state, task, context))
             }
 
             $(

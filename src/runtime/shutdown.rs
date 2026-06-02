@@ -31,7 +31,7 @@ async fn wait_for_termination_signal() {
     tracing::info!("received Ctrl+C, shutting down gracefully...");
 }
 
-/// 执行关闭流程：先停止后台任务，再关闭数据库连接并记录日志
+/// 执行关闭收尾：确认后台任务停止，再关闭审计和数据库连接。
 pub async fn perform_shutdown(background_tasks: BackgroundTasks, db: DatabaseConnection) {
     tracing::info!("stopping background tasks...");
     background_tasks.shutdown().await;
@@ -72,6 +72,7 @@ mod tests {
     use migration::Migrator;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
     use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
 
     async fn follower_state() -> (FollowerAppState, sea_orm::DatabaseConnection) {
         let db = crate::db::connect_with_metrics(
@@ -138,6 +139,10 @@ mod tests {
         let (state, db) = follower_state().await;
         let state = web::Data::new(state);
 
-        perform_shutdown(spawn_follower_background_tasks(state), db).await;
+        perform_shutdown(
+            spawn_follower_background_tasks(state, CancellationToken::new()),
+            db,
+        )
+        .await;
     }
 }

@@ -311,6 +311,19 @@ REST 创建分享时使用 `target: { type, id }` 描述目标；服务层会把
 - `processing_token` 负责防止旧 worker 回写数据库
 - `TaskLeaseGuard` 负责让旧 worker 尽快停下本地执行
 
+### 执行上下文和关闭语义
+
+业务任务入口不直接接收 `TaskLeaseGuard`，而是接收 `TaskExecutionContext`。这个上下文把两件事绑在一起：
+
+- 当前 processing token 对应的 lease guard
+- 进程 graceful shutdown 的 cancellation token
+
+任务实现和长耗时 helper 应该调用 `context.ensure_active()`、`context.sleep_or_shutdown()` 或 `context.shutdown_requested()`。这样无论任务是在普通 async 流程、下载轮询，还是 `spawn_blocking` 里的压缩 / 解压循环中运行，只要服务开始关闭，执行流都能主动停下来。
+
+`TaskLeaseGuard` 仍然存在，但它是较底层的 fencing / 心跳实现细节。进度写库、runtime metadata 写库、完成写库这类需要 processing token 的 helper 可以继续接收 guard；新业务任务和会等待 I/O、sleep、长循环的 helper 不应该把裸 guard 当作执行上下文。
+
+graceful shutdown 不是业务失败。worker 因 `TaskExecutionContext` 收到 shutdown 而退出时，dispatcher 会用当前 processing token 把任务从 `Processing` 释放回 `Retry`，同时清空本次 lease 字段并唤醒 dispatcher。这个释放不会增加 `attempt_count`，也不会写入 `last_error`。如果 token 已经不匹配，释放会被 fencing 条件挡住，旧 worker 不会覆盖新 worker 的状态。
+
 ### 心跳和 stale reclaim
 
 dispatcher 会定期续心跳，数据库里同时记录：

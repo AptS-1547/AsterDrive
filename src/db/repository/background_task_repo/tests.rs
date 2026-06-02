@@ -296,6 +296,39 @@ async fn release_processing_uses_processing_token_fence() {
 }
 
 #[tokio::test]
+async fn release_processing_does_not_release_non_processing_task() {
+    let db = build_test_db().await;
+    let now = Utc::now();
+    let task = insert_task(
+        &db,
+        BackgroundTaskKind::OfflineDownload,
+        BackgroundTaskStatus::Retry,
+        None,
+        now,
+    )
+    .await;
+
+    let released = release_processing(
+        &db,
+        task.id,
+        task.processing_token,
+        now + Duration::seconds(5),
+        BackgroundTaskStatus::Retry,
+    )
+    .await
+    .expect("non-processing release should not fail DB execution");
+
+    assert!(!released);
+    let stored = background_task::Entity::find_by_id(task.id)
+        .one(&db)
+        .await
+        .expect("task should load")
+        .expect("task should exist");
+    assert_eq!(stored.status, BackgroundTaskStatus::Retry);
+    assert_eq!(stored.next_run_at, task.next_run_at);
+}
+
+#[tokio::test]
 async fn find_paginated_all_filtered_applies_kind_and_status() {
     let db = build_test_db().await;
     let now = Utc::now();

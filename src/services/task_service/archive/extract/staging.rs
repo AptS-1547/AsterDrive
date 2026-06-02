@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Instant;
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::config::operations;
 use crate::db::repository::file_repo;
@@ -13,7 +13,6 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     archive_service::{
-        io::copy_async_reader_to_writer_with_expected_size,
         scan::{
             ArchiveScanEntry, ArchiveScanLimits, ArchiveScanNamePolicy,
             ensure_archive_scan_deadline,
@@ -21,8 +20,8 @@ use crate::services::{
         zip_scan::scan_zip_archive,
     },
     task_service::{
-        TaskLeaseGuard, TaskStepInfo,
-        archive::common::copy_reader_to_writer_with_lease_and_expected_size,
+        TaskExecutionContext, TaskStepInfo,
+        archive::common::copy_reader_to_writer_with_execution_and_expected_size,
         steps::{TASK_STEP_EXTRACT_ARCHIVE, set_task_step_active, set_task_step_succeeded},
         update_task_progress_db,
     },
@@ -51,7 +50,7 @@ struct ArchiveStagingProgress {
 struct ArchiveStagingRuntime<'a> {
     handle: &'a tokio::runtime::Handle,
     db: &'a sea_orm::DatabaseConnection,
-    lease_guard: &'a TaskLeaseGuard,
+    context: &'a TaskExecutionContext,
 }
 
 struct ArchiveStagingProgressSink<'a, 'b> {
@@ -97,7 +96,7 @@ impl ArchiveStagingProgressSink<'_, '_> {
         self.runtime.handle.block_on(async {
             update_task_progress_db(
                 self.runtime.db,
-                self.runtime.lease_guard,
+                self.runtime.context.lease_guard(),
                 self.progress.processed_bytes,
                 self.progress.total_progress,
                 Some(&status_text),
@@ -207,7 +206,7 @@ pub(super) struct StageArchiveForExtractParams<'a> {
     pub(super) handle: &'a tokio::runtime::Handle,
     pub(super) db: &'a sea_orm::DatabaseConnection,
     pub(super) policy_snapshot: &'a PolicySnapshot,
-    pub(super) lease_guard: &'a TaskLeaseGuard,
+    pub(super) context: &'a TaskExecutionContext,
     pub(super) archive_path: &'a Path,
     pub(super) stage_root: &'a Path,
     pub(super) options: ArchiveExtractStageOptions,
@@ -215,6 +214,7 @@ pub(super) struct StageArchiveForExtractParams<'a> {
 
 pub(super) async fn download_file_to_temp(
     state: &PrimaryAppState,
+    context: &TaskExecutionContext,
     source_file: &file::Model,
     temp_path: &Path,
 ) -> Result<()> {
@@ -226,12 +226,12 @@ pub(super) async fn download_file_to_temp(
         "create source archive temp file",
         AsterError::storage_driver_error,
     )?;
-    copy_async_reader_to_writer_with_expected_size(
+    copy_async_reader_to_writer_with_execution_and_expected_size(
+        context,
         &mut stream,
         &mut output,
         crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
         "source archive",
-        AsterError::validation_error,
     )
     .await?;
     output.flush().await.map_aster_err_ctx(
@@ -239,6 +239,71 @@ pub(super) async fn download_file_to_temp(
         AsterError::storage_driver_error,
     )?;
     Ok(())
+}
+
+async fn copy_async_reader_to_writer_with_execution_and_expected_size<R, W>(
+    context: &TaskExecutionContext,
+    reader: &mut R,
+    writer: &mut W,
+    expected_bytes: u64,
+    copy_context: &str,
+) -> Result<u64>
+where
+    R: tokio::io::AsyncRead + Unpin + ?Sized,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let mut copied = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        context.ensure_active()?;
+        let read = tokio::select! {
+            biased;
+            shutdown = context.shutdown_requested() => {
+                shutdown?;
+                unreachable!("shutdown_requested only resolves when shutdown is requested");
+            }
+            read = reader.read(&mut buffer) => read.map_aster_err_ctx(
+                "read source archive stream chunk",
+                AsterError::storage_driver_error,
+            )?,
+        };
+        if read == 0 {
+            break;
+        }
+
+        let read_u64 =
+            crate::utils::numbers::usize_to_u64(read, "source archive stream chunk size")?;
+        let next_copied = copied
+            .checked_add(read_u64)
+            .ok_or_else(|| AsterError::internal_error("source archive byte counter overflow"))?;
+        if next_copied > expected_bytes {
+            return Err(AsterError::validation_error(format!(
+                "{copy_context} expands beyond declared size: declared {expected_bytes} bytes"
+            )));
+        }
+
+        tokio::select! {
+            biased;
+            shutdown = context.shutdown_requested() => {
+                shutdown?;
+                unreachable!("shutdown_requested only resolves when shutdown is requested");
+            }
+            write = writer.write_all(&buffer[..read]) => write.map_aster_err_ctx(
+                "write source archive stream chunk",
+                AsterError::storage_driver_error,
+            )?,
+        };
+        copied = next_copied;
+    }
+
+    if copied != expected_bytes {
+        return Err(AsterError::validation_error(format!(
+            "{copy_context} size mismatch: declared {expected_bytes} bytes, downloaded {copied} bytes"
+        )));
+    }
+
+    Ok(copied)
 }
 
 pub(super) fn stage_zip_archive_for_extract(
@@ -249,7 +314,7 @@ pub(super) fn stage_zip_archive_for_extract(
         handle,
         db,
         policy_snapshot,
-        lease_guard,
+        context,
         archive_path,
         stage_root,
         options,
@@ -259,7 +324,7 @@ pub(super) fn stage_zip_archive_for_extract(
     let mut archive = zip::ZipArchive::new(file)
         .map_aster_err_with(|| AsterError::validation_error("invalid zip archive"))?;
     let deadline = options.limits.deadline();
-    set_archive_staging_reading_step(handle, db, lease_guard, steps, None, 0)?;
+    set_archive_staging_reading_step(handle, db, context, steps, None, 0)?;
     let preflight = scan_zip_archive(
         &mut archive,
         options.limits.scan_limits(),
@@ -275,7 +340,7 @@ pub(super) fn stage_zip_archive_for_extract(
     let mut progress = prepare_archive_staging_after_preflight(
         handle,
         db,
-        lease_guard,
+        context,
         steps,
         options,
         preflight.total_uncompressed_bytes,
@@ -294,7 +359,7 @@ pub(super) fn stage_zip_archive_for_extract(
         let runtime = ArchiveStagingRuntime {
             handle,
             db,
-            lease_guard,
+            context,
         };
         let mut progress_sink = ArchiveStagingProgressSink {
             runtime,
@@ -304,7 +369,7 @@ pub(super) fn stage_zip_archive_for_extract(
         };
 
         for manifest_entry in &preflight.entries {
-            lease_guard.ensure_active()?;
+            context.ensure_active()?;
             ensure_archive_scan_deadline(deadline)?;
             let mut entry = archive
                 .by_index(manifest_entry.index)
@@ -320,8 +385,8 @@ pub(super) fn stage_zip_archive_for_extract(
                 return Err(AsterError::validation_error("invalid zip archive entry"));
             };
             let entry_context = format!("archive entry '{}'", relative_path.display());
-            let copied = copy_reader_to_writer_with_lease_and_expected_size(
-                Some(lease_guard),
+            let copied = copy_reader_to_writer_with_execution_and_expected_size(
+                Some(context),
                 &mut entry,
                 &mut output,
                 crate::utils::numbers::i64_to_u64(manifest_entry.size, "archive entry size")?,
@@ -353,7 +418,7 @@ pub(super) fn stage_zip_archive_for_extract(
 fn set_archive_staging_reading_step(
     handle: &tokio::runtime::Handle,
     db: &sea_orm::DatabaseConnection,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     steps: &mut [TaskStepInfo],
     step_progress: Option<(i64, i64)>,
     total_progress: i64,
@@ -367,7 +432,7 @@ fn set_archive_staging_reading_step(
     handle.block_on(async {
         update_task_progress_db(
             db,
-            lease_guard,
+            context.lease_guard(),
             0,
             total_progress,
             Some("Reading archive"),
@@ -380,7 +445,7 @@ fn set_archive_staging_reading_step(
 fn prepare_archive_staging_after_preflight(
     handle: &tokio::runtime::Handle,
     db: &sea_orm::DatabaseConnection,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     steps: &mut [TaskStepInfo],
     options: ArchiveExtractStageOptions,
     total_bytes: i64,
@@ -409,7 +474,7 @@ fn prepare_archive_staging_after_preflight(
     set_archive_staging_reading_step(
         handle,
         db,
-        lease_guard,
+        context,
         steps,
         Some((0, total_bytes)),
         total_progress,
@@ -469,4 +534,37 @@ fn ensure_archive_entry_matches_preflight<R: Read>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio_util::sync::CancellationToken;
+
+    use crate::services::task_service::{
+        TaskExecutionContext, TaskLease, is_task_worker_shutdown_requested,
+    };
+
+    use super::copy_async_reader_to_writer_with_execution_and_expected_size;
+
+    #[tokio::test]
+    async fn source_archive_copy_stops_on_shutdown_before_reading() {
+        let shutdown_token = CancellationToken::new();
+        let context = TaskExecutionContext::new(TaskLease::new(42, 7), shutdown_token.clone());
+        let mut reader = tokio::io::repeat(1);
+        let mut writer = tokio::io::sink();
+
+        shutdown_token.cancel();
+
+        let error = copy_async_reader_to_writer_with_execution_and_expected_size(
+            &context,
+            &mut reader,
+            &mut writer,
+            1,
+            "source archive",
+        )
+        .await
+        .expect_err("shutdown should stop async copy before reading");
+
+        assert!(is_task_worker_shutdown_requested(&error));
+    }
 }

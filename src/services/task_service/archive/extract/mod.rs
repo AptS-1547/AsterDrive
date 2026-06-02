@@ -17,7 +17,7 @@ use crate::services::archive_service::format::{ArchiveFormat, detect_supported_a
 use crate::services::{
     storage_change_service,
     task_service::{
-        TaskInfo, TaskLease, TaskLeaseGuard, cleanup_task_temp_dir_for_task,
+        TaskExecutionContext, TaskInfo, TaskLease, cleanup_task_temp_dir_for_task,
         create_typed_task_record, get_task_in_scope, is_task_lease_lost,
         is_task_lease_renewal_timed_out, mark_task_progress, mark_task_succeeded,
         prepare_task_temp_dir,
@@ -76,8 +76,9 @@ pub(crate) async fn create_archive_extract_task_in_scope(
 pub(super) async fn process_archive_extract_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let result = async {
         let scope = task_scope(task)?;
         let payload = decode_payload_as::<ArchiveExtractTask>(task)?;
@@ -127,7 +128,7 @@ pub(super) async fn process_archive_extract_task(
                 "create archive extract staging dir",
                 AsterError::storage_driver_error,
             )?;
-        download_file_to_temp(state, &source_file, &source_archive_path).await?;
+        download_file_to_temp(state, &context, &source_file, &source_archive_path).await?;
         set_task_step_succeeded(
             &mut steps,
             TASK_STEP_DOWNLOAD_SOURCE,
@@ -139,7 +140,7 @@ pub(super) async fn process_archive_extract_task(
         let db = state.writer_db().clone();
         let policy_snapshot = state.policy_snapshot.clone();
         let handle = tokio::runtime::Handle::current();
-        let lease_guard_for_worker = lease_guard.clone();
+        let context_for_worker = context.clone();
         let source_archive_path_for_worker = source_archive_path;
         let stage_root_for_worker = stage_root.clone();
         let stage_options = ArchiveExtractStageOptions {
@@ -156,7 +157,7 @@ pub(super) async fn process_archive_extract_task(
                 handle: &handle,
                 db: &db,
                 policy_snapshot: policy_snapshot.as_ref(),
-                lease_guard: &lease_guard_for_worker,
+                context: &context_for_worker,
                 archive_path: &source_archive_path_for_worker,
                 stage_root: &stage_root_for_worker,
                 options: stage_options,
@@ -196,7 +197,7 @@ pub(super) async fn process_archive_extract_task(
         .await?;
         let import_summary = match materialize_archive_extract_stage(
             state,
-            &lease_guard,
+            &context,
             scope,
             &stage_root,
             staged.total_bytes,
@@ -211,7 +212,7 @@ pub(super) async fn process_archive_extract_task(
                     state,
                     scope,
                     created_root.id,
-                    &lease_guard,
+                    &context,
                     &error,
                 )
                 .await;
@@ -280,7 +281,7 @@ async fn cleanup_created_extract_root_after_import_error(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
     root_folder_id: i64,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     error: &AsterError,
 ) {
     if !is_task_lease_lost(error) && !is_task_lease_renewal_timed_out(error) {
@@ -288,7 +289,7 @@ async fn cleanup_created_extract_root_after_import_error(
         return;
     }
 
-    let lease = lease_guard.lease();
+    let lease = context.lease_guard().lease();
     match background_task_repo::find_by_id(state.writer_db(), lease.task_id).await {
         Ok(current_task)
             if should_cleanup_created_extract_root_for_lease_error(&current_task, lease) =>

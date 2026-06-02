@@ -10,7 +10,7 @@ use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::task_service::TaskLeaseGuard;
+use crate::services::task_service::TaskExecutionContext;
 use crate::services::{
     folder_service,
     workspace_storage_service::{WorkspaceStorageScope, load_scope_actor_username},
@@ -204,7 +204,7 @@ pub(super) struct ArchiveSinkContext<'a> {
     pub db: &'a DatabaseConnection,
     pub driver_registry: &'a DriverRegistry,
     pub policy_snapshot: &'a PolicySnapshot,
-    pub lease_guard: Option<&'a TaskLeaseGuard>,
+    pub execution: Option<&'a TaskExecutionContext>,
 }
 
 pub(super) fn write_archive_to_sink<W, F>(
@@ -226,7 +226,7 @@ where
     let mut written_bytes = 0_i64;
 
     for entry in entries {
-        ensure_task_lease_active(ctx.lease_guard)?;
+        ensure_task_execution_active(ctx.execution)?;
         match entry {
             ArchiveEntry::Directory { entry_path } => {
                 written_bytes = checked_archive_output_progress(written_bytes, 256, limits)?;
@@ -248,7 +248,7 @@ where
 
                 let mut reader = tokio_util::io::SyncIoBridge::new(stream);
                 let copied =
-                    copy_reader_to_writer_with_lease(ctx.lease_guard, &mut reader, &mut zip)?;
+                    copy_reader_to_writer_with_execution(ctx.execution, &mut reader, &mut zip)?;
                 processed_bytes = processed_bytes
                     .checked_add(i64::try_from(copied).map_err(|_| {
                         AsterError::internal_error(format!(
@@ -357,16 +357,16 @@ pub(super) fn is_client_disconnect_error_text(error_text: &str) -> bool {
         || error_text.contains("connection closed")
 }
 
-pub(super) fn copy_reader_to_writer_with_lease<R: Read, W: Write>(
-    lease_guard: Option<&TaskLeaseGuard>,
+pub(super) fn copy_reader_to_writer_with_execution<R: Read, W: Write>(
+    execution: Option<&TaskExecutionContext>,
     reader: &mut R,
     writer: &mut W,
 ) -> Result<u64> {
-    copy_reader_to_writer_internal(lease_guard, reader, writer, None, None)
+    copy_reader_to_writer_internal(execution, reader, writer, None, None)
 }
 
-pub(super) fn copy_reader_to_writer_with_lease_and_expected_size<R: Read, W: Write>(
-    lease_guard: Option<&TaskLeaseGuard>,
+pub(super) fn copy_reader_to_writer_with_execution_and_expected_size<R: Read, W: Write>(
+    execution: Option<&TaskExecutionContext>,
     reader: &mut R,
     writer: &mut W,
     expected_bytes: u64,
@@ -374,7 +374,7 @@ pub(super) fn copy_reader_to_writer_with_lease_and_expected_size<R: Read, W: Wri
     deadline: Option<Instant>,
 ) -> Result<u64> {
     copy_reader_to_writer_internal(
-        lease_guard,
+        execution,
         reader,
         writer,
         Some((expected_bytes, context)),
@@ -383,7 +383,7 @@ pub(super) fn copy_reader_to_writer_with_lease_and_expected_size<R: Read, W: Wri
 }
 
 fn copy_reader_to_writer_internal<R: Read, W: Write>(
-    lease_guard: Option<&TaskLeaseGuard>,
+    execution: Option<&TaskExecutionContext>,
     reader: &mut R,
     writer: &mut W,
     expected: Option<(u64, &str)>,
@@ -393,7 +393,7 @@ fn copy_reader_to_writer_internal<R: Read, W: Write>(
     let mut buffer = [0_u8; 64 * 1024];
 
     loop {
-        ensure_task_lease_active(lease_guard)?;
+        ensure_task_execution_active(execution)?;
         ensure_deadline_active(deadline)?;
         let read = reader.read(&mut buffer).map_aster_err_ctx(
             "read archive stream chunk",
@@ -431,9 +431,9 @@ fn copy_reader_to_writer_internal<R: Read, W: Write>(
     Ok(copied)
 }
 
-fn ensure_task_lease_active(lease_guard: Option<&TaskLeaseGuard>) -> Result<()> {
-    if let Some(lease_guard) = lease_guard {
-        lease_guard.ensure_active()?;
+fn ensure_task_execution_active(execution: Option<&TaskExecutionContext>) -> Result<()> {
+    if let Some(execution) = execution {
+        execution.ensure_active()?;
     }
     Ok(())
 }
@@ -455,12 +455,16 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    use tokio_util::sync::CancellationToken;
+
     use crate::services::task_service::{
-        TaskLease, TaskLeaseGuard, is_task_lease_renewal_timed_out,
+        TaskExecutionContext, TaskLease, TaskLeaseGuard, is_task_lease_renewal_timed_out,
+        is_task_worker_shutdown_requested,
     };
 
     use super::{
-        copy_reader_to_writer_with_lease, copy_reader_to_writer_with_lease_and_expected_size,
+        copy_reader_to_writer_with_execution,
+        copy_reader_to_writer_with_execution_and_expected_size,
     };
 
     struct SlowSingleChunkReader {
@@ -486,6 +490,7 @@ mod tests {
     fn copy_reader_to_writer_with_lease_stops_after_renewal_timeout() {
         let lease_guard =
             TaskLeaseGuard::with_renewal_timeout(TaskLease::new(42, 7), Duration::from_millis(20));
+        let context = TaskExecutionContext::with_lease_guard(lease_guard, CancellationToken::new());
         let mut reader = SlowSingleChunkReader {
             chunk: b"chunk".to_vec(),
             delay: Duration::from_millis(30),
@@ -493,7 +498,7 @@ mod tests {
         };
         let mut writer = Vec::new();
 
-        let error = copy_reader_to_writer_with_lease(Some(&lease_guard), &mut reader, &mut writer)
+        let error = copy_reader_to_writer_with_execution(Some(&context), &mut reader, &mut writer)
             .expect_err("expired lease should stop blocking copy loop");
 
         assert!(is_task_lease_renewal_timed_out(&error));
@@ -501,11 +506,27 @@ mod tests {
     }
 
     #[test]
+    fn copy_reader_to_writer_with_execution_stops_on_shutdown_before_reading() {
+        let shutdown_token = CancellationToken::new();
+        let context = TaskExecutionContext::new(TaskLease::new(42, 7), shutdown_token.clone());
+        let mut reader = Cursor::new(b"abcdef".to_vec());
+        let mut writer = Vec::new();
+
+        shutdown_token.cancel();
+
+        let error = copy_reader_to_writer_with_execution(Some(&context), &mut reader, &mut writer)
+            .expect_err("shutdown should stop blocking copy before reading");
+
+        assert!(is_task_worker_shutdown_requested(&error));
+        assert!(writer.is_empty());
+    }
+
+    #[test]
     fn copy_reader_to_writer_with_expected_size_rejects_oversized_stream() {
         let mut reader = Cursor::new(b"abcdef".to_vec());
         let mut writer = Vec::new();
 
-        let error = copy_reader_to_writer_with_lease_and_expected_size(
+        let error = copy_reader_to_writer_with_execution_and_expected_size(
             None,
             &mut reader,
             &mut writer,
@@ -525,7 +546,7 @@ mod tests {
         let mut reader = Cursor::new(b"abc".to_vec());
         let mut writer = Vec::new();
 
-        let error = copy_reader_to_writer_with_lease_and_expected_size(
+        let error = copy_reader_to_writer_with_execution_and_expected_size(
             None,
             &mut reader,
             &mut writer,

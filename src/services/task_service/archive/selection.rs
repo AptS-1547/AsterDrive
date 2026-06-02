@@ -115,7 +115,7 @@ pub(crate) async fn stream_archive_download_in_scope(
                 db: &db,
                 driver_registry: driver_registry.as_ref(),
                 policy_snapshot: policy_snapshot.as_ref(),
-                lease_guard: None,
+                execution: None,
             },
             collected.into_entries(),
             total_bytes,

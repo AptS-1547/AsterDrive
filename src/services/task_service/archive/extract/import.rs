@@ -8,7 +8,7 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     task_service::{
-        TaskLeaseGuard, TaskStepInfo,
+        TaskExecutionContext, TaskStepInfo,
         archive::common::create_folder_exact_in_scope,
         mark_task_progress,
         steps::{TASK_STEP_IMPORT_RESULT, set_task_step_active},
@@ -33,14 +33,15 @@ pub(super) struct ArchiveExtractImportSummary {
 
 pub(super) async fn materialize_archive_extract_stage(
     state: &PrimaryAppState,
-    lease_guard: &TaskLeaseGuard,
+    context: &TaskExecutionContext,
     scope: WorkspaceStorageScope,
     stage_root: &Path,
     extracted_bytes: i64,
     root_folder: &folder::Model,
     steps: &mut [TaskStepInfo],
 ) -> Result<ArchiveExtractImportSummary> {
-    lease_guard.ensure_active()?;
+    let lease_guard = context.lease_guard();
+    context.ensure_active()?;
     let tree = collect_staged_archive_tree(stage_root)?;
     let mut folder_ids = HashMap::new();
     folder_ids.insert(PathBuf::new(), root_folder.id);
@@ -55,7 +56,7 @@ pub(super) async fn materialize_archive_extract_stage(
         .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
 
     for relative_dir in &tree.directories {
-        lease_guard.ensure_active()?;
+        context.ensure_active()?;
         let parent_relative = relative_dir.parent().unwrap_or_else(|| Path::new(""));
         let parent_id = *folder_ids.get(parent_relative).ok_or_else(|| {
             AsterError::internal_error(format!(
@@ -76,7 +77,7 @@ pub(super) async fn materialize_archive_extract_stage(
     }
 
     for relative_file in &tree.files {
-        lease_guard.ensure_active()?;
+        context.ensure_active()?;
         let parent_relative = relative_file.parent().unwrap_or_else(|| Path::new(""));
         let parent_id = *folder_ids.get(parent_relative).ok_or_else(|| {
             AsterError::internal_error(format!(

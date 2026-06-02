@@ -18,7 +18,7 @@ use super::steps::{
 };
 use super::types::{MediaMetadataExtractTaskPayload, MediaMetadataExtractTaskResult};
 use super::{
-    TaskLeaseGuard, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
+    TaskExecutionContext, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
     mark_task_succeeded,
 };
 
@@ -90,8 +90,9 @@ pub(crate) async fn ensure_media_metadata_task(
 pub(super) async fn process_media_metadata_extract_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let payload = decode_payload_as::<MediaMetadataExtractTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
@@ -123,7 +124,7 @@ pub(super) async fn process_media_metadata_extract_task(
     if blob.hash != payload.blob_hash {
         return Err(AsterError::validation_error("source blob hash changed"));
     }
-    lease_guard.ensure_active()?;
+    context.ensure_active()?;
 
     set_task_step_succeeded(
         &mut steps,
@@ -166,7 +167,7 @@ pub(super) async fn process_media_metadata_extract_task(
             parser_version: "1".to_string(),
         },
     };
-    lease_guard.ensure_active()?;
+    context.ensure_active()?;
 
     set_task_step_succeeded(
         &mut steps,
@@ -191,7 +192,7 @@ pub(super) async fn process_media_metadata_extract_task(
     .await?;
 
     let record = media_metadata_service::persist_extracted(state, &blob, extracted).await?;
-    lease_guard.ensure_active()?;
+    context.ensure_active()?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_PERSIST_METADATA,

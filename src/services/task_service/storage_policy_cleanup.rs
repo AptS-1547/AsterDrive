@@ -24,7 +24,7 @@ use super::types::{
     StoragePolicyTempCleanupTaskResult,
 };
 use super::{
-    TaskLeaseGuard, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
+    TaskExecutionContext, TypedTaskCreate, insert_typed_task_record, mark_task_progress,
     mark_task_succeeded,
 };
 
@@ -82,8 +82,9 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
 pub(super) async fn process_storage_policy_temp_cleanup_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let payload = decode_payload_as::<StoragePolicyTempCleanupTask>(task)?;
     let mut steps =
         parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;

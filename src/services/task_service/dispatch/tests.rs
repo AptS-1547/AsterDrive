@@ -13,8 +13,8 @@ use crate::db::{self, repository::config_repo};
 use crate::entities::background_task;
 use crate::errors::AsterError;
 use crate::services::task_service::{
-    TaskLease, TaskLeaseGuard, is_task_lease_lost, is_task_lease_renewal_timed_out,
-    is_task_worker_shutdown_requested,
+    TaskExecutionContext, TaskLease, TaskLeaseGuard, is_task_lease_lost,
+    is_task_lease_renewal_timed_out, is_task_worker_shutdown_requested,
 };
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload};
@@ -385,33 +385,73 @@ async fn evaluate_heartbeat_result_stops_worker_after_renewal_timeout() {
 }
 
 #[tokio::test]
-async fn task_lease_guard_reports_shutdown_request() {
+async fn task_execution_context_reports_shutdown_request() {
     let lease = TaskLease::new(42, 7);
     let shutdown_token = CancellationToken::new();
-    let lease_guard = TaskLeaseGuard::with_shutdown_token(lease, shutdown_token.clone());
+    let context = TaskExecutionContext::new(lease, shutdown_token.clone());
 
     shutdown_token.cancel();
 
-    let error = lease_guard
+    let error = context
         .ensure_active()
         .expect_err("cancelled shutdown token should stop the worker");
     assert!(is_task_worker_shutdown_requested(&error));
 
-    let error = lease_guard
+    let error = context
         .ensure_active()
         .expect_err("shutdown termination should remain sticky");
     assert!(is_task_worker_shutdown_requested(&error));
 }
 
 #[tokio::test]
-async fn task_lease_guard_sleep_wakes_on_shutdown() {
+async fn task_execution_context_shutdown_is_visible_through_cloned_lease_guard() {
     let lease = TaskLease::new(42, 7);
     let shutdown_token = CancellationToken::new();
-    let lease_guard = TaskLeaseGuard::with_shutdown_token(lease, shutdown_token.clone());
+    let context = TaskExecutionContext::new(lease, shutdown_token.clone());
+    let lease_guard = context.lease_guard().clone();
 
     shutdown_token.cancel();
 
     let error = lease_guard
+        .ensure_active()
+        .expect_err("cloned lease guard should inherit shutdown cancellation");
+    assert!(is_task_worker_shutdown_requested(&error));
+
+    let error = context
+        .ensure_active()
+        .expect_err("shutdown observed through a clone should remain sticky");
+    assert!(is_task_worker_shutdown_requested(&error));
+}
+
+#[tokio::test]
+async fn task_execution_context_shutdown_requested_waits_until_cancelled() {
+    let lease = TaskLease::new(42, 7);
+    let shutdown_token = CancellationToken::new();
+    let context = TaskExecutionContext::new(lease, shutdown_token.clone());
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(10), context.shutdown_requested())
+            .await
+            .is_err()
+    );
+
+    shutdown_token.cancel();
+    let error = context
+        .shutdown_requested()
+        .await
+        .expect_err("cancelled token should resolve as a shutdown request");
+    assert!(is_task_worker_shutdown_requested(&error));
+}
+
+#[tokio::test]
+async fn task_execution_context_sleep_wakes_on_shutdown() {
+    let lease = TaskLease::new(42, 7);
+    let shutdown_token = CancellationToken::new();
+    let context = TaskExecutionContext::new(lease, shutdown_token.clone());
+
+    shutdown_token.cancel();
+
+    let error = context
         .sleep_or_shutdown(Duration::from_secs(60))
         .await
         .expect_err("cancelled shutdown token should interrupt sleeps");
@@ -419,13 +459,14 @@ async fn task_lease_guard_sleep_wakes_on_shutdown() {
 }
 
 #[tokio::test]
-async fn task_lease_guard_sleep_without_shutdown_token_completes_normally() {
+async fn task_execution_context_sleep_without_shutdown_completes_normally() {
     let lease = TaskLease::new(42, 7);
     let lease_guard = TaskLeaseGuard::with_renewal_timeout(lease, Duration::from_secs(60));
+    let context = TaskExecutionContext::with_lease_guard(lease_guard, CancellationToken::new());
 
     tokio::time::timeout(
         Duration::from_millis(50),
-        lease_guard.sleep_or_shutdown(Duration::from_millis(1)),
+        context.sleep_or_shutdown(Duration::from_millis(1)),
     )
     .await
     .expect("sleep without shutdown token should complete")

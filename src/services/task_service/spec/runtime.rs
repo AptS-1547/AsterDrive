@@ -1,8 +1,9 @@
-use super::{BackgroundTaskSpec, TaskLeaseGuard, TaskProcessFuture};
+use super::{BackgroundTaskSpec, TaskProcessFuture};
 use crate::entities::background_task;
 use crate::errors::AsterError;
 use crate::runtime::PrimaryAppState;
 use crate::services::task_service::{
+    TaskExecutionContext,
     dispatch::TaskLane,
     retry::TaskRetryClass,
     steps::TaskStepSpec,
@@ -43,7 +44,7 @@ impl BackgroundTaskSpec for SystemRuntimeTask {
     fn process<'a>(
         _state: &'a PrimaryAppState,
         task: &'a background_task::Model,
-        _lease_guard: TaskLeaseGuard,
+        _context: TaskExecutionContext,
     ) -> TaskProcessFuture<'a> {
         Box::pin(async move {
             Err(AsterError::internal_error(format!(

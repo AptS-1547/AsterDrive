@@ -189,7 +189,7 @@ impl TaskLeaseGuard {
         }
     }
 
-    pub(super) fn with_shutdown_token(lease: TaskLease, shutdown_token: CancellationToken) -> Self {
+    fn with_shutdown_token(lease: TaskLease, shutdown_token: CancellationToken) -> Self {
         Self {
             shutdown_token: Some(shutdown_token),
             ..Self::new(lease)
@@ -211,6 +211,12 @@ impl TaskLeaseGuard {
         let mut state = self.state.lock();
         state.termination = Some(TaskLeaseTermination::Lost);
         task_lease_lost(self.lease)
+    }
+
+    fn mark_shutdown_requested(&self) -> AsterError {
+        let mut state = self.state.lock();
+        state.termination = Some(TaskLeaseTermination::ShutdownRequested);
+        task_worker_shutdown_requested(self.lease)
     }
 
     pub(super) fn ensure_active(&self) -> Result<()> {
@@ -239,28 +245,58 @@ impl TaskLeaseGuard {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TaskExecutionContext {
+    // Public task implementations should depend on this context, not on a bare
+    // lease guard. The context keeps shutdown cancellation and lease fencing
+    // together, so deep helper code cannot accidentally keep running after the
+    // dispatcher has started graceful shutdown.
+    lease_guard: TaskLeaseGuard,
+    shutdown_token: CancellationToken,
+}
+
+impl TaskExecutionContext {
+    pub(super) fn new(lease: TaskLease, shutdown_token: CancellationToken) -> Self {
+        Self {
+            lease_guard: TaskLeaseGuard::with_shutdown_token(lease, shutdown_token.clone()),
+            shutdown_token,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_lease_guard(
+        lease_guard: TaskLeaseGuard,
+        shutdown_token: CancellationToken,
+    ) -> Self {
+        Self {
+            lease_guard,
+            shutdown_token,
+        }
+    }
+
+    pub(super) fn lease_guard(&self) -> &TaskLeaseGuard {
+        &self.lease_guard
+    }
+
+    pub(super) fn ensure_active(&self) -> Result<()> {
+        self.lease_guard.ensure_active()
+    }
 
     pub(super) async fn sleep_or_shutdown(&self, duration: StdDuration) -> Result<()> {
-        let Some(shutdown_token) = self.shutdown_token.as_ref() else {
-            tokio::time::sleep(duration).await;
-            return Ok(());
-        };
+        self.lease_guard.ensure_active()?;
 
         tokio::select! {
             biased;
-            _ = shutdown_token.cancelled() => self.ensure_active(),
+            _ = self.shutdown_token.cancelled() => Err(self.lease_guard.mark_shutdown_requested()),
             _ = tokio::time::sleep(duration) => Ok(()),
         }
     }
 
     pub(super) async fn shutdown_requested(&self) -> Result<()> {
-        let Some(shutdown_token) = self.shutdown_token.as_ref() else {
-            std::future::pending::<()>().await;
-            return Ok(());
-        };
-
-        shutdown_token.cancelled().await;
-        self.ensure_active()
+        self.shutdown_token.cancelled().await;
+        Err(self.lease_guard.mark_shutdown_requested())
     }
 }
 

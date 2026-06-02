@@ -15,7 +15,7 @@ use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 
-use super::TaskLeaseGuard;
+use super::TaskExecutionContext;
 use super::retry::{TaskRetryClass, TaskRetryPolicy, default_retry_class};
 
 pub(super) struct ArchiveCompressRetryPolicy;
@@ -62,23 +62,23 @@ impl TaskRetryPolicy for ArchivePreviewRetryPolicy {
 pub(super) async fn process_archive_compress_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
-    compress::process_archive_compress_task(state, task, lease_guard).await
+    compress::process_archive_compress_task(state, task, context).await
 }
 
 pub(super) async fn process_archive_extract_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
-    extract::process_archive_extract_task(state, task, lease_guard).await
+    extract::process_archive_extract_task(state, task, context).await
 }
 
 pub(super) async fn process_archive_preview_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
-    preview::process_archive_preview_task(state, task, lease_guard).await
+    preview::process_archive_preview_task(state, task, context).await
 }

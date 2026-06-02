@@ -309,6 +309,19 @@ So the two protections are:
 - `processing_token` prevents stale database writes
 - `TaskLeaseGuard` makes stale workers stop local execution quickly
 
+### Execution context and shutdown semantics
+
+Business task entry points receive `TaskExecutionContext`, not a bare `TaskLeaseGuard`. The context ties together:
+
+- the lease guard for the current processing token
+- the cancellation token for process graceful shutdown
+
+Task implementations and long-running helpers should call `context.ensure_active()`, `context.sleep_or_shutdown()`, or `context.shutdown_requested()`. This keeps regular async flow, download polling, and `spawn_blocking` archive compression / extraction loops under the same cooperative shutdown contract.
+
+`TaskLeaseGuard` still exists, but it is a lower-level fencing and heartbeat implementation detail. Helpers that write progress, runtime metadata, or final state still need the guard because those writes include the processing token. New business task code and helpers that wait on I/O, sleep, or run long loops should not treat a bare guard as their execution context.
+
+Graceful shutdown is not a business failure. When a worker exits because `TaskExecutionContext` observes shutdown, the dispatcher releases the row from `Processing` back to `Retry` with the current processing token, clears the lease fields, and wakes the dispatcher. This does not increment `attempt_count` and does not write `last_error`. If the token no longer matches, the release is blocked by the normal fencing condition so an old worker cannot overwrite a newer worker state.
+
 ### Heartbeats and stale reclaim
 
 The dispatcher renews heartbeats periodically. The database tracks:

@@ -1117,49 +1117,61 @@ async fn test_migration_backfills_storage_migration_result_renamed_opaque_count(
         "migrated_bytes": 4096
     });
     let now = Utc::now();
-    aster_drive::entities::background_task::ActiveModel {
-        kind: Set(aster_drive::types::BackgroundTaskKind::StoragePolicyMigration),
-        status: Set(aster_drive::types::BackgroundTaskStatus::Succeeded),
-        creator_user_id: Set(None),
-        team_id: Set(None),
-        share_id: Set(None),
-        display_name: Set("legacy storage migration".to_string()),
-        payload_json: Set(aster_drive::types::StoredTaskPayload::from(
-            serde_json::json!({
-                "source_policy_id": 1,
-                "target_policy_id": 2,
-                "delete_source_after_success": false,
-                "plan_hash": "0".repeat(64),
-                "source_policy_updated_at": now,
-                "target_policy_updated_at": now
-            })
-            .to_string(),
-        )),
-        result_json: Set(Some(aster_drive::types::StoredTaskResult::from(
-            old_result.to_string(),
-        ))),
-        runtime_json: Set(None),
-        steps_json: Set(None),
-        progress_current: Set(3),
-        progress_total: Set(3),
-        status_text: Set(None),
-        attempt_count: Set(1),
-        max_attempts: Set(3),
-        next_run_at: Set(now),
-        processing_token: Set(0),
-        processing_started_at: Set(None),
-        last_heartbeat_at: Set(None),
-        lease_expires_at: Set(None),
-        started_at: Set(Some(now)),
-        finished_at: Set(Some(now)),
-        last_error: Set(None),
-        failure_can_retry: Set(None),
-        expires_at: Set(now + Duration::hours(24)),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    }
-    .insert(&db)
+    let payload_json = serde_json::json!({
+        "source_policy_id": 1,
+        "target_policy_id": 2,
+        "delete_source_after_success": false,
+        "plan_hash": "0".repeat(64),
+        "source_policy_updated_at": now,
+        "target_policy_updated_at": now
+    })
+    .to_string();
+    // This fixture intentionally targets the historical schema before
+    // `runtime_json` existed, so it must not use the current ActiveModel.
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Sqlite,
+        "INSERT INTO background_tasks (
+            kind, status, creator_user_id, team_id, share_id, display_name,
+            payload_json, result_json, steps_json, progress_current, progress_total,
+            status_text, attempt_count, max_attempts, next_run_at, processing_token,
+            processing_started_at, last_heartbeat_at, lease_expires_at, started_at,
+            finished_at, last_error, failure_can_retry, expires_at, created_at, updated_at
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )",
+        vec![
+            aster_drive::types::BackgroundTaskKind::StoragePolicyMigration
+                .as_str()
+                .into(),
+            aster_drive::types::BackgroundTaskStatus::Succeeded
+                .as_str()
+                .into(),
+            Option::<i64>::None.into(),
+            Option::<i64>::None.into(),
+            Option::<i64>::None.into(),
+            "legacy storage migration".into(),
+            payload_json.into(),
+            Some(old_result.to_string()).into(),
+            Option::<String>::None.into(),
+            3_i64.into(),
+            3_i64.into(),
+            Option::<String>::None.into(),
+            1_i64.into(),
+            3_i64.into(),
+            now.into(),
+            0_i64.into(),
+            Option::<chrono::DateTime<Utc>>::None.into(),
+            Option::<chrono::DateTime<Utc>>::None.into(),
+            Option::<chrono::DateTime<Utc>>::None.into(),
+            Some(now).into(),
+            Some(now).into(),
+            Option::<String>::None.into(),
+            Option::<bool>::None.into(),
+            (now + Duration::hours(24)).into(),
+            now.into(),
+            now.into(),
+        ],
+    ))
     .await
     .unwrap();
 

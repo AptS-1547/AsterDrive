@@ -14,7 +14,7 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{
     batch_service,
     task_service::{
-        TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_typed_task_record,
+        TaskExecutionContext, cleanup_task_temp_dir_for_task, create_typed_task_record,
         get_task_in_scope, mark_task_progress, mark_task_succeeded, prepare_task_temp_dir,
         spec::{self, ArchiveCompressTask, decode_payload_as},
         steps::{
@@ -77,8 +77,9 @@ pub(crate) async fn create_archive_compress_task_in_scope(
 pub(super) async fn process_archive_compress_task(
     state: &PrimaryAppState,
     task: &background_task::Model,
-    lease_guard: TaskLeaseGuard,
+    context: TaskExecutionContext,
 ) -> Result<()> {
+    let lease_guard = context.lease_guard().clone();
     let scope = task_scope(task)?;
     let payload = decode_payload_as::<ArchiveCompressTask>(task)?;
     let mut steps =
@@ -157,7 +158,7 @@ pub(super) async fn process_archive_compress_task(
     let db = state.writer_db().clone();
     let driver_registry = state.driver_registry.clone();
     let policy_snapshot = state.policy_snapshot.clone();
-    let lease_guard_for_worker = lease_guard.clone();
+    let context_for_worker = context.clone();
     let steps_for_worker = steps.clone();
 
     let (archive_size, mut steps) =
@@ -172,7 +173,7 @@ pub(super) async fn process_archive_compress_task(
                     db: &db,
                     driver_registry: driver_registry.as_ref(),
                     policy_snapshot: policy_snapshot.as_ref(),
-                    lease_guard: Some(&lease_guard_for_worker),
+                    execution: Some(&context_for_worker),
                 },
                 entries,
                 progress_total,
@@ -189,7 +190,7 @@ pub(super) async fn process_archive_compress_task(
                     handle.block_on(async {
                         update_task_progress_db(
                             &db,
-                            &lease_guard_for_worker,
+                            context_for_worker.lease_guard(),
                             current,
                             progress_total,
                             Some(&status_text),

@@ -322,6 +322,10 @@ pub async fn release_processing<C: ConnectionTrait>(
     now: DateTime<Utc>,
     status: BackgroundTaskStatus,
 ) -> Result<bool> {
+    // This is only for cooperative shutdown. It gives the exact leased worker
+    // row back to the dispatcher without spending retry budget or recording a
+    // business failure. Crashes and stale workers are still handled by normal
+    // lease expiry and reclaim.
     if !matches!(
         status,
         BackgroundTaskStatus::Pending | BackgroundTaskStatus::Retry
