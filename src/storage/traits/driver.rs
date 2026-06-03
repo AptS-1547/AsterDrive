@@ -34,6 +34,7 @@ pub fn driver_type_supports_native_media_metadata(driver_type: DriverType) -> bo
         DriverType::S3 => false,
         DriverType::TencentCos => true,
         DriverType::Remote => false,
+        DriverType::GoogleDrive => false,
     }
 }
 
@@ -266,6 +267,9 @@ mod tests {
         ));
         assert!(!driver_type_supports_native_media_metadata(
             DriverType::Remote
+        ));
+        assert!(!driver_type_supports_native_media_metadata(
+            DriverType::GoogleDrive
         ));
     }
 
