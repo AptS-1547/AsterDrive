@@ -32,8 +32,8 @@ pub(crate) use content::{
 };
 pub(crate) use deletion::{
     BatchPurgeSummary, batch_purge_in_resource_scope, batch_purge_in_resource_scope_silent,
-    batch_purge_in_scope, cleanup_unreferenced_blob, delete_in_scope,
-    ensure_blob_cleanup_if_unreferenced,
+    batch_purge_in_scope, cleanup_unreferenced_blob, cleanup_unreferenced_blob_with_driver,
+    delete_in_scope, ensure_blob_cleanup_if_unreferenced,
 };
 pub use deletion::{batch_purge, delete, purge};
 pub use download::range::ResolvedDownloadRange;

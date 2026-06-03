@@ -4,68 +4,60 @@
 mod common;
 
 use actix_web::test;
-use async_trait::async_trait;
 use sea_orm::Set;
 use serde_json::{Value, json};
-use tokio::io::AsyncRead;
-
-use aster_drive::errors::Result;
-use aster_drive::storage::{
-    BlobMetadata, NativeMediaMetadataRequest, NativeMediaMetadataResult,
-    NativeMediaMetadataStorageDriver, StorageDriver,
-};
-
-struct NativeMediaMetadataSupportDriver;
-
-#[async_trait]
-impl StorageDriver for NativeMediaMetadataSupportDriver {
-    async fn put(&self, path: &str, _data: &[u8]) -> Result<String> {
-        Ok(path.to_string())
-    }
-
-    async fn get(&self, _path: &str) -> Result<Vec<u8>> {
-        Ok(Vec::new())
-    }
-
-    async fn get_stream(&self, _path: &str) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
-        Ok(Box::new(std::io::Cursor::new(Vec::new())))
-    }
-
-    async fn delete(&self, _path: &str) -> Result<()> {
-        Ok(())
-    }
-
-    async fn exists(&self, _path: &str) -> Result<bool> {
-        Ok(true)
-    }
-
-    async fn metadata(&self, _path: &str) -> Result<BlobMetadata> {
-        Ok(BlobMetadata {
-            size: 0,
-            content_type: None,
-        })
-    }
-
-    fn as_native_media_metadata(&self) -> Option<&dyn NativeMediaMetadataStorageDriver> {
-        Some(self)
-    }
-}
-
-#[async_trait]
-impl NativeMediaMetadataStorageDriver for NativeMediaMetadataSupportDriver {
-    async fn get_native_media_metadata(
-        &self,
-        _request: &NativeMediaMetadataRequest,
-    ) -> Result<Option<NativeMediaMetadataResult>> {
-        Ok(None)
-    }
-}
 
 fn available_test_command() -> String {
     std::env::current_exe()
         .expect("current test executable path should be available")
         .to_string_lossy()
         .into_owned()
+}
+
+async fn create_storage_native_media_metadata_policy(
+    state: &aster_drive::runtime::PrimaryAppState,
+    driver_type: aster_drive::types::DriverType,
+    name: &str,
+    extensions: Vec<String>,
+) -> aster_drive::entities::storage_policy::Model {
+    let now = chrono::Utc::now();
+    let options = aster_drive::types::serialize_storage_policy_options(
+        &aster_drive::types::StoragePolicyOptions {
+            storage_native_processing_enabled: Some(true),
+            storage_native_media_metadata_enabled: Some(true),
+            media_metadata_extensions: extensions,
+            ..Default::default()
+        },
+    )
+    .expect("storage policy options should serialize");
+    let policy = aster_drive::db::repository::policy_repo::create(
+        state.writer_db(),
+        aster_drive::entities::storage_policy::ActiveModel {
+            name: Set(name.to_string()),
+            driver_type: Set(driver_type),
+            endpoint: Set("https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com".to_string()),
+            bucket: Set("bucket-1250000000".to_string()),
+            access_key: Set("AKID".to_string()),
+            secret_key: Set("SECRET".to_string()),
+            base_path: Set(String::new()),
+            max_file_size: Set(0),
+            allowed_types: Set(aster_drive::types::StoredStoragePolicyAllowedTypes::empty()),
+            options: Set(options),
+            is_default: Set(false),
+            chunk_size: Set(5_242_880),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("policy should be created");
+    state
+        .policy_snapshot
+        .reload(state.reader_db())
+        .await
+        .expect("policy snapshot should reload");
+    policy
 }
 
 #[actix_web::test]
@@ -206,52 +198,13 @@ async fn test_public_media_data_support_cache_is_invalidated_after_config_update
 async fn test_public_media_data_support_includes_storage_native_policy_extensions() {
     let state = common::setup().await;
     let app = create_test_app!(state.clone());
-
-    let now = chrono::Utc::now();
-    let options = aster_drive::types::serialize_storage_policy_options(
-        &aster_drive::types::StoragePolicyOptions {
-            storage_native_processing_enabled: Some(true),
-            storage_native_media_metadata_enabled: Some(true),
-            media_metadata_extensions: vec![
-                " .MP4 ".to_string(),
-                "mp4".to_string(),
-                ".m4a".to_string(),
-            ],
-            ..Default::default()
-        },
+    let policy = create_storage_native_media_metadata_policy(
+        &state,
+        aster_drive::types::DriverType::TencentCos,
+        "Native Metadata",
+        vec![" .MP4 ".to_string(), "mp4".to_string(), ".m4a".to_string()],
     )
-    .expect("storage policy options should serialize");
-    let policy = aster_drive::db::repository::policy_repo::create(
-        state.writer_db(),
-        aster_drive::entities::storage_policy::ActiveModel {
-            name: Set("Native Metadata".to_string()),
-            driver_type: Set(aster_drive::types::DriverType::TencentCos),
-            endpoint: Set("https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com".to_string()),
-            bucket: Set("bucket-1250000000".to_string()),
-            access_key: Set("AKID".to_string()),
-            secret_key: Set("SECRET".to_string()),
-            base_path: Set(String::new()),
-            max_file_size: Set(0),
-            allowed_types: Set(aster_drive::types::StoredStoragePolicyAllowedTypes::empty()),
-            options: Set(options),
-            is_default: Set(false),
-            chunk_size: Set(5_242_880),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await
-    .expect("policy should be created");
-    state
-        .policy_snapshot
-        .reload(state.reader_db())
-        .await
-        .expect("policy snapshot should reload");
-    state.driver_registry.insert_for_test(
-        policy.id,
-        std::sync::Arc::new(NativeMediaMetadataSupportDriver),
-    );
+    .await;
 
     let req = test::TestRequest::get()
         .uri("/api/v1/public/media-data-support")
@@ -272,5 +225,42 @@ async fn test_public_media_data_support_includes_storage_native_policy_extension
             .expect("audio extensions should be an array")
             .iter()
             .any(|value| value == "m4a")
+    );
+    assert!(
+        !state.driver_registry.has_cached_driver_for_test(policy.id),
+        "public media support must not instantiate a cold storage-native policy driver"
+    );
+}
+
+#[actix_web::test]
+async fn test_public_media_data_support_ignores_storage_native_options_for_unsupported_driver() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let policy = create_storage_native_media_metadata_policy(
+        &state,
+        aster_drive::types::DriverType::S3,
+        "Unsupported Native Metadata",
+        vec!["zzrawmedia".to_string()],
+    )
+    .await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/public/media-data-support")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    let video_extensions = body["data"]["kinds"]["video"]["extensions"]
+        .as_array()
+        .expect("video extensions should be an array");
+    let audio_extensions = body["data"]["kinds"]["audio"]["extensions"]
+        .as_array()
+        .expect("audio extensions should be an array");
+    assert!(!video_extensions.iter().any(|value| value == "zzrawmedia"));
+    assert!(!audio_extensions.iter().any(|value| value == "zzrawmedia"));
+    assert!(
+        !state.driver_registry.has_cached_driver_for_test(policy.id),
+        "unsupported public media policy must not be instantiated just to reject capability"
     );
 }

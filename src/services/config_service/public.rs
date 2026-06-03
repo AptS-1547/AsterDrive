@@ -5,6 +5,9 @@ use crate::db::repository::config_repo;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::preview_app_service;
+use crate::storage::{
+    driver_type_supports_native_media_metadata, driver_type_supports_native_thumbnail,
+};
 use crate::types::parse_storage_policy_options;
 use moka::future::Cache;
 use serde::Serialize;
@@ -139,17 +142,10 @@ fn build_public_thumbnail_support(
             continue;
         }
 
-        match state.driver_registry.get_driver(&policy) {
-            Ok(driver) if driver.as_native_thumbnail().is_some() => {
-                extensions.extend(options.thumbnail_extensions);
-            }
-            Ok(_) => {}
-            Err(error) => {
-                tracing::debug!(
-                    policy_id = policy.id,
-                    "skip storage-native thumbnail public support for policy: {error}"
-                );
-            }
+        // 这里是 public capability 聚合，不能实例化 driver：前端正常加载该接口时
+        // 可能遍历所有策略，若调用 get_driver() 会把冷 COS/S3 client 常驻进全局缓存。
+        if driver_type_supports_native_thumbnail(policy.driver_type) {
+            extensions.extend(options.thumbnail_extensions);
         }
     }
 
@@ -174,17 +170,9 @@ fn build_public_media_data_support(
             continue;
         }
 
-        match state.driver_registry.get_driver(&policy) {
-            Ok(driver) if driver.as_native_media_metadata().is_some() => {
-                storage_native_extensions.extend(options.media_metadata_extensions);
-            }
-            Ok(_) => {}
-            Err(error) => {
-                tracing::warn!(
-                    policy_id = policy.id,
-                    "skip storage-native media metadata public support for policy: {error}"
-                );
-            }
+        // 同上，public support 只需要静态能力并集；不要为了能力判断创建远端 driver。
+        if driver_type_supports_native_media_metadata(policy.driver_type) {
+            storage_native_extensions.extend(options.media_metadata_extensions);
         }
     }
 

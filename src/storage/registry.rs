@@ -75,6 +75,12 @@ impl DriverRegistry {
         Ok(self.get_entry(policy)?.storage_driver())
     }
 
+    pub(crate) fn get_cached_driver(&self, policy_id: i64) -> Option<Arc<dyn StorageDriver>> {
+        self.drivers
+            .get(&policy_id)
+            .map(|entry| entry.storage_driver())
+    }
+
     /// 获取支持 multipart upload 的 driver。
     ///
     /// 如果策略对应的 driver 不支持 multipart（如 LocalDriver），返回 `Err`。
@@ -91,6 +97,17 @@ impl DriverRegistry {
                 ),
             )
         })
+    }
+
+    pub(crate) fn build_uncached_driver(
+        &self,
+        policy: &storage_policy::Model,
+    ) -> Result<Arc<dyn StorageDriver>> {
+        // Long-running maintenance jobs may touch cold object-storage policies once
+        // and then go idle for hours. Build a driver for that job without inserting
+        // it into the shared registry, so SDK clients and HTTP pools do not become
+        // process-lifetime cache entries just because maintenance scanned them.
+        Ok(self.create_entry(policy)?.storage_driver())
     }
 
     /// 策略更新后使缓存的 driver 失效
@@ -187,6 +204,11 @@ impl DriverRegistry {
                 multipart: Some(multipart),
             },
         );
+    }
+
+    #[cfg(any(test, debug_assertions))]
+    pub fn has_cached_driver_for_test(&self, policy_id: i64) -> bool {
+        self.drivers.contains_key(&policy_id)
     }
 
     fn get_entry(&self, policy: &storage_policy::Model) -> Result<DriverEntry> {
@@ -505,6 +527,56 @@ mod tests {
             Arc::ptr_eq(&driver1, &driver2),
             "metrics wrapper should be cached with the driver entry"
         );
+    }
+
+    #[test]
+    fn uncached_driver_build_does_not_populate_shared_cache() {
+        let registry = DriverRegistry::new(Arc::new(CapturingMetrics::default()));
+        let policy = local_policy();
+
+        let uncached = registry
+            .build_uncached_driver(&policy)
+            .expect("uncached local driver should be created");
+
+        assert!(
+            !registry.has_cached_driver_for_test(policy.id),
+            "uncached construction must not insert a shared registry entry"
+        );
+
+        let cached = registry
+            .get_driver(&policy)
+            .expect("cached local driver should be created separately");
+        assert!(
+            !Arc::ptr_eq(&uncached, &cached),
+            "the later shared-cache lookup should not reuse the task-local driver"
+        );
+        assert!(
+            registry.has_cached_driver_for_test(policy.id),
+            "normal get_driver should still populate the shared cache"
+        );
+    }
+
+    #[test]
+    fn cached_driver_lookup_is_read_only() {
+        let registry = DriverRegistry::new(Arc::new(CapturingMetrics::default()));
+        let policy = local_policy();
+
+        assert!(
+            registry.get_cached_driver(policy.id).is_none(),
+            "cold cache lookup must not construct a driver"
+        );
+        assert!(
+            !registry.has_cached_driver_for_test(policy.id),
+            "cold cache lookup must leave the shared cache empty"
+        );
+
+        let cached = registry
+            .get_driver(&policy)
+            .expect("driver should be cached by normal lookup");
+        let cached_lookup = registry
+            .get_cached_driver(policy.id)
+            .expect("cached lookup should return the existing driver");
+        assert!(Arc::ptr_eq(&cached, &cached_lookup));
     }
 
     #[tokio::test]

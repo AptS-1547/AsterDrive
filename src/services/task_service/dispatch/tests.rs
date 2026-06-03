@@ -9,7 +9,7 @@ use tokio::time::{Duration, sleep};
 
 use crate::config::DatabaseConfig;
 use crate::db::repository::background_task_repo;
-use crate::db::{self, repository::config_repo};
+use crate::db::{self, repository::config_repo, transaction};
 use crate::entities::background_task;
 use crate::errors::AsterError;
 use crate::services::task_service::{
@@ -23,7 +23,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::claim::{TaskClaimCandidate, available_lane_capacity, claim_candidates_for_lane};
 use super::execute::{
-    evaluate_heartbeat_result, run_claimed_tasks, run_with_concurrency_limit, task_retry_class,
+    evaluate_heartbeat_result, run_claimed_tasks, run_with_concurrency_limit,
+    spawn_task_heartbeat_with_interval, task_retry_class,
 };
 use super::lane::{TaskLane, TaskLaneConfig, task_lane};
 
@@ -288,6 +289,41 @@ async fn run_claimed_tasks_releases_pre_cancelled_task_without_running_handler()
     assert_eq!(stored.last_error, None);
     assert_eq!(stored.failure_can_retry, None);
     assert_eq!(stored.finished_at, None);
+}
+
+#[tokio::test]
+async fn task_heartbeat_can_stop_while_sqlite_writer_pool_is_busy() {
+    let state = build_dispatch_test_state().await;
+    let task = insert_processing_system_runtime_task(state.writer_db()).await;
+    let lease = TaskLease::new(task.id, task.processing_token);
+    let lease_guard = TaskLeaseGuard::with_renewal_timeout(lease, Duration::from_secs(60));
+    let stop_token = CancellationToken::new();
+    let writer_txn = transaction::begin(state.writer_db())
+        .await
+        .expect("test should acquire the only SQLite writer connection");
+
+    // Regression guard for SQLite single-writer deployments: heartbeat may be
+    // waiting in pool acquire while task code holds the only writer connection,
+    // but cancelling the heartbeat must still let task completion proceed.
+    let heartbeat = spawn_task_heartbeat_with_interval(
+        state.clone(),
+        task.id,
+        task.processing_token,
+        lease_guard,
+        stop_token.clone(),
+        Duration::from_millis(10),
+    );
+    sleep(Duration::from_millis(30)).await;
+
+    stop_token.cancel();
+    tokio::time::timeout(Duration::from_millis(200), heartbeat)
+        .await
+        .expect("heartbeat should stop without waiting for the busy SQLite writer pool")
+        .expect("heartbeat task should not panic");
+
+    transaction::rollback(writer_txn)
+        .await
+        .expect("test writer transaction should roll back");
 }
 
 #[test]

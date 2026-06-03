@@ -15,7 +15,14 @@ use crate::services::media_processing_service::shared::{
 pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<()> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
+    delete_thumbnail_with_driver(state, blob, driver).await
+}
 
+pub(crate) async fn delete_thumbnail_with_driver(
+    state: &PrimaryAppState,
+    blob: &file_blob::Model,
+    driver: Arc<dyn StorageDriver>,
+) -> Result<()> {
     let mut paths = BTreeSet::new();
     if let Some(path) = blob.thumbnail_path.as_ref() {
         paths.insert(path.clone());

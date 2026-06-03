@@ -28,6 +28,15 @@ pub fn driver_type_supports_native_thumbnail(driver_type: DriverType) -> bool {
     }
 }
 
+pub fn driver_type_supports_native_media_metadata(driver_type: DriverType) -> bool {
+    match driver_type {
+        DriverType::Local => false,
+        DriverType::S3 => false,
+        DriverType::TencentCos => true,
+        DriverType::Remote => false,
+    }
+}
+
 pub trait StoragePathVisitor: Send {
     fn visit_path(&mut self, path: String) -> Result<()>;
 }
@@ -243,6 +252,20 @@ mod tests {
         assert!(!driver_type_supports_native_thumbnail(DriverType::Remote));
         assert!(!driver_type_supports_native_thumbnail(
             DriverType::GoogleDrive
+        ));
+    }
+
+    #[test]
+    fn only_vendor_drivers_with_native_processors_support_native_media_metadata() {
+        assert!(!driver_type_supports_native_media_metadata(
+            DriverType::Local
+        ));
+        assert!(!driver_type_supports_native_media_metadata(DriverType::S3));
+        assert!(driver_type_supports_native_media_metadata(
+            DriverType::TencentCos
+        ));
+        assert!(!driver_type_supports_native_media_metadata(
+            DriverType::Remote
         ));
     }
 

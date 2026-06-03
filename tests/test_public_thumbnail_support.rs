@@ -4,6 +4,7 @@
 mod common;
 
 use actix_web::test;
+use sea_orm::Set;
 use serde_json::{Value, json};
 
 fn available_test_command() -> String {
@@ -11,6 +12,52 @@ fn available_test_command() -> String {
         .expect("current test executable path should be available")
         .to_string_lossy()
         .into_owned()
+}
+
+async fn create_storage_native_thumbnail_policy(
+    state: &aster_drive::runtime::PrimaryAppState,
+    driver_type: aster_drive::types::DriverType,
+    name: &str,
+    extensions: Vec<String>,
+) -> aster_drive::entities::storage_policy::Model {
+    let now = chrono::Utc::now();
+    let options = aster_drive::types::serialize_storage_policy_options(
+        &aster_drive::types::StoragePolicyOptions {
+            storage_native_processing_enabled: Some(true),
+            thumbnail_processor: Some(aster_drive::types::MediaProcessorKind::StorageNative),
+            thumbnail_extensions: extensions,
+            ..Default::default()
+        },
+    )
+    .expect("storage policy options should serialize");
+    let policy = aster_drive::db::repository::policy_repo::create(
+        state.writer_db(),
+        aster_drive::entities::storage_policy::ActiveModel {
+            name: Set(name.to_string()),
+            driver_type: Set(driver_type),
+            endpoint: Set("https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com".to_string()),
+            bucket: Set("bucket-1250000000".to_string()),
+            access_key: Set("AKID".to_string()),
+            secret_key: Set("SECRET".to_string()),
+            base_path: Set(String::new()),
+            max_file_size: Set(0),
+            allowed_types: Set(aster_drive::types::StoredStoragePolicyAllowedTypes::empty()),
+            options: Set(options),
+            is_default: Set(false),
+            chunk_size: Set(5_242_880),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("policy should be created");
+    state
+        .policy_snapshot
+        .reload(state.reader_db())
+        .await
+        .expect("policy snapshot should reload");
+    policy
 }
 
 #[actix_web::test]
@@ -200,4 +247,62 @@ async fn test_public_thumbnail_support_cache_is_invalidated_after_config_update(
         .as_array()
         .expect("extensions should be an array");
     assert!(extensions.iter().any(|value| value == "heic"));
+}
+
+#[actix_web::test]
+async fn test_public_thumbnail_support_includes_storage_native_policy_without_caching_driver() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let policy = create_storage_native_thumbnail_policy(
+        &state,
+        aster_drive::types::DriverType::TencentCos,
+        "Native Thumbnail",
+        vec![" .HEIF ".to_string(), ".heif".to_string()],
+    )
+    .await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/public/thumbnail-support")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    let extensions = body["data"]["extensions"]
+        .as_array()
+        .expect("extensions should be an array");
+    assert!(extensions.iter().any(|value| value == "heif"));
+    assert!(
+        !state.driver_registry.has_cached_driver_for_test(policy.id),
+        "public thumbnail support must not instantiate a cold storage-native policy driver"
+    );
+}
+
+#[actix_web::test]
+async fn test_public_thumbnail_support_ignores_storage_native_options_for_unsupported_driver() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let policy = create_storage_native_thumbnail_policy(
+        &state,
+        aster_drive::types::DriverType::S3,
+        "Unsupported Native Thumbnail",
+        vec!["zzrawthumb".to_string()],
+    )
+    .await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/public/thumbnail-support")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    let extensions = body["data"]["extensions"]
+        .as_array()
+        .expect("extensions should be an array");
+    assert!(!extensions.iter().any(|value| value == "zzrawthumb"));
+    assert!(
+        !state.driver_registry.has_cached_driver_for_test(policy.id),
+        "unsupported public thumbnail policy must not be instantiated just to reject capability"
+    );
 }

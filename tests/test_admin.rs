@@ -2486,6 +2486,55 @@ async fn test_admin_overview_rejects_invalid_timezone() {
 }
 
 #[actix_web::test]
+async fn test_admin_overview_batches_large_audit_daily_reports() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let target_day = Utc::now().date_naive() - Duration::days(1);
+    let target_at = target_day
+        .and_hms_opt(12, 0, 0)
+        .expect("midday should be valid")
+        .and_utc();
+    let marker = uuid::Uuid::new_v4();
+    let inserted_events = 1_005_u64;
+    let mut models = Vec::new();
+    for index in 0..inserted_events {
+        models.push(audit_log::ActiveModel {
+            user_id: Set(1),
+            action: Set(AuditAction::FileUpload),
+            entity_type: Set("file".to_string()),
+            entity_id: Set(Some(
+                i64::try_from(index).expect("test index should fit i64"),
+            )),
+            entity_name: Set(Some(format!("Overview batch {marker} #{index}"))),
+            details: Set(None),
+            ip_address: Set(None),
+            user_agent: Set(None),
+            created_at: Set(target_at),
+            ..Default::default()
+        });
+    }
+    for chunk in models.chunks(100) {
+        audit_log_repo::create_many(state.writer_db(), chunk.to_vec())
+            .await
+            .expect("audit log batch should be inserted");
+    }
+
+    let body: Value = admin_get_json!(
+        app,
+        token,
+        "/api/v1/admin/overview?days=3&timezone=UTC&event_limit=1"
+    );
+    let reports = body["data"]["daily_reports"].as_array().unwrap();
+    let target_report = reports
+        .iter()
+        .find(|report| report["date"] == target_day.to_string())
+        .expect("target day report should be present");
+    assert_eq!(target_report["uploads"], inserted_events);
+    assert_eq!(target_report["total_events"], inserted_events);
+}
+
+#[actix_web::test]
 async fn test_admin_tasks_lists_all_recorded_tasks() {
     let state = common::setup().await;
     let app = create_test_app!(state.clone());

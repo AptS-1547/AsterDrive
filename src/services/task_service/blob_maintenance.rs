@@ -1,6 +1,7 @@
 //! Admin-triggered file blob maintenance tasks.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 
@@ -10,6 +11,7 @@ use crate::entities::{background_task, file_blob};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::storage::StorageDriver;
 
 const BLOB_MAINTENANCE_BATCH_SIZE: u64 = 1_000;
 const BLOB_MAINTENANCE_PROGRESS_INTERVAL: i64 = 1_000;
@@ -115,6 +117,7 @@ pub(super) async fn process_blob_maintenance_task(
         orphan_blobs_deleted: 0,
         skipped_blobs: 0,
     };
+    let mut driver_cache = MaintenanceDriverCache::default();
 
     match payload.action {
         BlobMaintenanceAction::IntegrityCheck => {
@@ -125,6 +128,7 @@ pub(super) async fn process_blob_maintenance_task(
                 &target_scope,
                 total,
                 &mut result,
+                &mut driver_cache,
             )
             .await?;
             skip_reconcile_and_cleanup_steps(&mut steps)?;
@@ -142,6 +146,7 @@ pub(super) async fn process_blob_maintenance_task(
                 &target_scope,
                 total,
                 &mut result,
+                &mut driver_cache,
             )
             .await?;
             set_task_step_skipped(
@@ -163,6 +168,7 @@ pub(super) async fn process_blob_maintenance_task(
                 &target_scope,
                 total,
                 &mut result,
+                &mut driver_cache,
             )
             .await?;
             run_orphan_cleanup(
@@ -172,6 +178,7 @@ pub(super) async fn process_blob_maintenance_task(
                 &target_scope,
                 total,
                 &mut result,
+                &mut driver_cache,
             )
             .await?;
         }
@@ -203,6 +210,7 @@ async fn run_integrity_check(
     target_scope: &BlobTargetScope<'_>,
     total: i64,
     result: &mut BlobMaintenanceTaskResult,
+    driver_cache: &mut MaintenanceDriverCache,
 ) -> Result<()> {
     let lease_guard = context.lease_guard();
     context.ensure_active()?;
@@ -226,7 +234,7 @@ async fn run_integrity_check(
         for blob in blobs {
             context.ensure_active()?;
             progress += 1;
-            match check_blob_object(state, &blob).await {
+            match check_blob_object(state, driver_cache, &blob).await {
                 Ok(BlobObjectCheck::Present) => {
                     result.checked_objects += 1;
                 }
@@ -277,6 +285,7 @@ async fn run_ref_count_reconcile(
     target_scope: &BlobTargetScope<'_>,
     total: i64,
     result: &mut BlobMaintenanceTaskResult,
+    _driver_cache: &mut MaintenanceDriverCache,
 ) -> Result<()> {
     let lease_guard = context.lease_guard();
     context.ensure_active()?;
@@ -375,6 +384,7 @@ async fn run_orphan_cleanup(
     target_scope: &BlobTargetScope<'_>,
     total: i64,
     result: &mut BlobMaintenanceTaskResult,
+    driver_cache: &mut MaintenanceDriverCache,
 ) -> Result<()> {
     let lease_guard = context.lease_guard();
     context.ensure_active()?;
@@ -429,9 +439,10 @@ async fn run_orphan_cleanup(
                 Some(reconciled)
                     if reconciled.actual_refs == 0
                         && reconciled.blob.ref_count == 0
-                        && crate::services::file_service::cleanup_unreferenced_blob(
+                        && crate::services::file_service::cleanup_unreferenced_blob_with_driver(
                             state,
                             &reconciled.blob,
+                            &mut |policy| driver_cache.driver_for_policy(state, policy),
                         )
                         .await =>
                 {
@@ -479,12 +490,42 @@ enum BlobObjectCheck {
     SizeMismatch,
 }
 
+#[derive(Default)]
+struct MaintenanceDriverCache {
+    drivers: HashMap<i64, Arc<dyn StorageDriver>>,
+}
+
+impl MaintenanceDriverCache {
+    fn driver_for_policy(
+        &mut self,
+        state: &PrimaryAppState,
+        policy: &crate::entities::storage_policy::Model,
+    ) -> Result<Arc<dyn StorageDriver>> {
+        if let Some(driver) = state.driver_registry.get_cached_driver(policy.id) {
+            return Ok(driver);
+        }
+
+        if let Some(driver) = self.drivers.get(&policy.id) {
+            return Ok(driver.clone());
+        }
+
+        // Blob maintenance may scan every object on a cold COS/S3 policy. If
+        // normal traffic has already warmed the shared registry, reuse that
+        // Arc; otherwise keep the driver only for this task so maintenance does
+        // not turn a cold policy into a process-lifetime HTTP client cache.
+        let driver = state.driver_registry.build_uncached_driver(policy)?;
+        self.drivers.insert(policy.id, driver.clone());
+        Ok(driver)
+    }
+}
+
 async fn check_blob_object(
     state: &PrimaryAppState,
+    driver_cache: &mut MaintenanceDriverCache,
     blob: &file_blob::Model,
 ) -> Result<BlobObjectCheck> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let driver = driver_cache.driver_for_policy(state, &policy)?;
     let metadata = match driver.metadata(&blob.storage_path).await {
         Ok(metadata) => metadata,
         Err(error) => {
