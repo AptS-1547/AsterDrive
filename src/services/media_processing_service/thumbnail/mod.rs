@@ -16,6 +16,7 @@ use super::resolve::{build_thumbnail_context, build_thumbnail_context_with_proce
 use super::shared::{StoredThumbnail, ThumbnailContext, ThumbnailData};
 
 pub use cache::delete_thumbnail;
+pub(crate) use cache::delete_thumbnail_with_driver;
 pub use preview::generate_and_store_image_preview;
 pub use probe::probe_ffmpeg_cli_command;
 

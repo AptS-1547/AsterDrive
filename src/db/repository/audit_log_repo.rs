@@ -2,8 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QuerySelect, Select,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Select,
 };
 
 use crate::api::pagination::{AdminAuditLogSortBy, SortOrder};
@@ -151,6 +151,49 @@ pub async fn find_actions_in_range<C: ConnectionTrait>(
         .filter(audit_log::Column::CreatedAt.gte(start))
         .filter(audit_log::Column::CreatedAt.lt(end))
         .into_tuple::<(String, DateTime<Utc>)>()
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// Cursor page for admin overview daily aggregation.
+///
+/// Overview only needs `action` and `created_at`, but the cursor also carries
+/// `id` so rows sharing the same timestamp are scanned exactly once without
+/// offset pagination. This keeps memory bounded even when the audit retention
+/// window contains a large number of events.
+pub async fn find_action_page_in_range<C: ConnectionTrait>(
+    db: &C,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    after: Option<(DateTime<Utc>, i64)>,
+    limit: u64,
+) -> Result<Vec<(i64, String, DateTime<Utc>)>> {
+    let mut query = AuditLog::find()
+        .select_only()
+        .column(audit_log::Column::Id)
+        .column(audit_log::Column::Action)
+        .column(audit_log::Column::CreatedAt)
+        .filter(audit_log::Column::CreatedAt.gte(start))
+        .filter(audit_log::Column::CreatedAt.lt(end))
+        .order_by_asc(audit_log::Column::CreatedAt)
+        .order_by_asc(audit_log::Column::Id)
+        .limit(limit);
+
+    if let Some((created_at, id)) = after {
+        query = query.filter(
+            Condition::any()
+                .add(audit_log::Column::CreatedAt.gt(created_at))
+                .add(
+                    Condition::all()
+                        .add(audit_log::Column::CreatedAt.eq(created_at))
+                        .add(audit_log::Column::Id.gt(id)),
+                ),
+        );
+    }
+
+    query
+        .into_tuple::<(i64, String, DateTime<Utc>)>()
         .all(db)
         .await
         .map_err(AsterError::from)

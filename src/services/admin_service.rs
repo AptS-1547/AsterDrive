@@ -29,6 +29,7 @@ const DEFAULT_EVENT_LIMIT: u64 = 8;
 const MAX_EVENT_LIMIT: u64 = 50;
 const DEFAULT_TIMEZONE: &str = "UTC";
 const ADMIN_OVERVIEW_CACHE_TTL: u64 = 15;
+const ADMIN_OVERVIEW_AUDIT_ACTION_BATCH_SIZE: u64 = 1_000;
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(
@@ -491,16 +492,30 @@ async fn build_daily_reports(
     let end = start_of_local_day(today + Duration::days(1), timezone)?;
 
     audit_service::flush_global_audit_log_manager().await;
-    let events = audit_log_repo::find_actions_in_range(state.reader_db(), start, end).await?;
+    let mut cursor = None;
+    loop {
+        let events = audit_log_repo::find_action_page_in_range(
+            state.reader_db(),
+            start,
+            end,
+            cursor,
+            ADMIN_OVERVIEW_AUDIT_ACTION_BATCH_SIZE,
+        )
+        .await?;
+        if events.is_empty() {
+            break;
+        }
 
-    for (action, created_at) in events {
-        let date = created_at.with_timezone(&timezone).date_naive();
-        let Some(report_index) = report_indexes.get(&date).copied() else {
-            continue;
-        };
-        let report = &mut reports[report_index];
-        let action = audit_service::AuditAction::from_str_name(&action);
-        record_audit_action(report, action);
+        for (_id, action, created_at) in &events {
+            let date = created_at.with_timezone(&timezone).date_naive();
+            let Some(report_index) = report_indexes.get(&date).copied() else {
+                continue;
+            };
+            let report = &mut reports[report_index];
+            let action = audit_service::AuditAction::from_str_name(action);
+            record_audit_action(report, action);
+        }
+        cursor = events.last().map(|(id, _, created_at)| (*created_at, *id));
     }
 
     Ok(reports)
