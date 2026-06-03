@@ -420,7 +420,7 @@ export interface paths {
         patch: operations["update_policy_group"];
         trace?: never;
     };
-    "/api/v1/admin/policy-groups/{id}/migrate-users": {
+    "/api/v1/admin/policy-groups/{id}/migrate-assignments": {
         parameters: {
             query?: never;
             header?: never;
@@ -429,7 +429,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["migrate_policy_group_users"];
+        post: operations["migrate_policy_group_assignments"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5377,8 +5377,8 @@ export interface components {
             /** Format: int64 */
             recovery_codes_remaining: number;
         };
-        /** @description Migrate all users from one policy group to another. */
-        MigratePolicyGroupUsersReq: {
+        /** @description Migrate all user and team assignments from one policy group to another. */
+        MigratePolicyGroupAssignmentsReq: {
             /** Format: int64 */
             target_group_id: number;
         };
@@ -6014,7 +6014,9 @@ export interface components {
             /** Format: int32 */
             priority: number;
         };
-        PolicyGroupUserMigrationResult: {
+        PolicyGroupAssignmentMigrationResult: {
+            /** Format: int64 */
+            affected_teams: number;
             /** Format: int64 */
             affected_users: number;
             /** Format: int64 */
@@ -9574,7 +9576,7 @@ export interface operations {
             };
         };
     };
-    migrate_policy_group_users: {
+    migrate_policy_group_assignments: {
         parameters: {
             query?: never;
             header?: never;
@@ -9586,7 +9588,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MigratePolicyGroupUsersReq"];
+                "application/json": components["schemas"]["MigratePolicyGroupAssignmentsReq"];
             };
         };
         responses: {
@@ -9599,6 +9601,8 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            /** Format: int64 */
+                            affected_teams: number;
                             /** Format: int64 */
                             affected_users: number;
                             /** Format: int64 */
