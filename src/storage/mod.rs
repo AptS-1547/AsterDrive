@@ -18,7 +18,7 @@ pub use policy_snapshot::PolicySnapshot;
 pub use registry::DriverRegistry;
 pub use traits::driver::{
     BlobMetadata, PresignedDownloadOptions, StorageDriver, StoragePathVisitor,
-    driver_type_supports_native_thumbnail,
+    driver_type_supports_native_media_metadata, driver_type_supports_native_thumbnail,
 };
 pub use traits::{
     ListStorageDriver, LocalPathStorageDriver, MultipartStorageDriver, NativeMediaMetadataRequest,

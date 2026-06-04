@@ -11,11 +11,13 @@ use crate::entities::file_blob;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::types::MediaProcessorKind;
+use bytes::Bytes;
 
 use super::resolve::{build_thumbnail_context, build_thumbnail_context_with_processor};
 use super::shared::{StoredThumbnail, ThumbnailContext, ThumbnailData};
 
 pub use cache::delete_thumbnail;
+pub(crate) use cache::delete_thumbnail_with_driver;
 pub use preview::generate_and_store_image_preview;
 pub use probe::probe_ffmpeg_cli_command;
 
@@ -72,7 +74,7 @@ pub async fn get_or_generate_thumbnail(
     }
 
     Ok(ThumbnailData {
-        data: webp_bytes,
+        data: Bytes::from(webp_bytes),
         thumbnail_processor,
         thumbnail_version,
     })

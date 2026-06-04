@@ -1,21 +1,34 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use bytes::Bytes;
+use tokio::io::AsyncReadExt;
+
 use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::file_blob;
-use crate::errors::Result;
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::storage::{StorageDriver, StorageErrorKind};
+use crate::utils::numbers::u64_to_usize;
 
 use crate::services::media_processing_service::shared::{
     ThumbnailContext, ThumbnailData, requires_server_side_source_limit,
 };
 
+const MAX_CACHED_THUMBNAIL_BYTES: u64 = 16 * 1024 * 1024;
+
 pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<()> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
+    delete_thumbnail_with_driver(state, blob, driver).await
+}
 
+pub(crate) async fn delete_thumbnail_with_driver(
+    state: &PrimaryAppState,
+    blob: &file_blob::Model,
+    driver: Arc<dyn StorageDriver>,
+) -> Result<()> {
     let mut paths = BTreeSet::new();
     if let Some(path) = blob.thumbnail_path.as_ref() {
         paths.insert(path.clone());
@@ -136,7 +149,7 @@ pub(super) async fn load_thumbnail_from_path(
     driver: &Arc<dyn StorageDriver>,
     path: &str,
     clear_metadata_on_missing: bool,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<Option<Bytes>> {
     let thumbnail = read_thumbnail_from_path(blob.id, driver, path).await?;
     if thumbnail.is_none() && clear_metadata_on_missing {
         clear_thumbnail_metadata(state, blob).await;
@@ -148,23 +161,53 @@ async fn read_thumbnail_from_path(
     blob_id: i64,
     driver: &Arc<dyn StorageDriver>,
     path: &str,
-) -> Result<Option<Vec<u8>>> {
-    match driver.get(path).await {
-        Ok(data) => Ok(Some(data)),
-        Err(error) if error.storage_error_kind() == Some(StorageErrorKind::NotFound) => Ok(None),
+) -> Result<Option<Bytes>> {
+    let max_cached_thumbnail_bytes =
+        u64_to_usize(MAX_CACHED_THUMBNAIL_BYTES, "cached thumbnail size limit")?;
+    let range_limit = MAX_CACHED_THUMBNAIL_BYTES
+        .checked_add(1)
+        .ok_or_else(|| AsterError::internal_error("cached thumbnail range limit overflow"))?;
+
+    let stream = match driver.get_range(path, 0, Some(range_limit)).await {
+        Ok(stream) => stream,
+        Err(error) if error.storage_error_kind() == Some(StorageErrorKind::NotFound) => {
+            return Ok(None);
+        }
         Err(error) => match driver.exists(path).await {
-            Ok(false) => Ok(None),
-            Ok(true) => Err(error),
+            Ok(false) => return Ok(None),
+            Ok(true) => return Err(error),
             Err(exists_error) => {
                 tracing::warn!(
                     blob_id,
                     path,
-                    "thumbnail get failed and existence recheck also failed: {exists_error}"
+                    "thumbnail range read failed and existence recheck also failed: {exists_error}"
                 );
-                Err(error)
+                return Err(error);
             }
         },
+    };
+
+    let mut data = Vec::new();
+    stream
+        .take(range_limit)
+        .read_to_end(&mut data)
+        .await
+        .map_aster_err_ctx(
+            "read cached thumbnail range",
+            AsterError::storage_driver_error,
+        )?;
+
+    if data.len() > max_cached_thumbnail_bytes {
+        tracing::warn!(
+            blob_id,
+            path,
+            size = data.len(),
+            max_size = MAX_CACHED_THUMBNAIL_BYTES,
+            "ignoring oversized cached thumbnail"
+        );
+        return Ok(None);
     }
+    Ok(Some(Bytes::from(data)))
 }
 
 async fn clear_thumbnail_metadata(state: &PrimaryAppState, blob: &file_blob::Model) {
@@ -197,65 +240,309 @@ pub(super) async fn persist_thumbnail_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::read_thumbnail_from_path;
-    use crate::errors::Result;
-    use crate::storage::StorageErrorKind;
+    use super::{MAX_CACHED_THUMBNAIL_BYTES, read_thumbnail_from_path};
+    use crate::errors::{AsterError, Result};
     use crate::storage::error::storage_driver_error;
-    use crate::storage::{BlobMetadata, StorageDriver};
+    use crate::storage::{BlobMetadata, StorageDriver, StorageErrorKind};
+    use crate::utils::numbers::u64_to_usize;
     use async_trait::async_trait;
+    use bytes::Bytes;
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
-    use tokio::io::AsyncRead;
+    use tokio::io::{AsyncRead, AsyncReadExt};
 
-    struct MissingThumbnailDriver {
+    struct ThumbnailCacheDriver {
+        range_error_kind: Option<StorageErrorKind>,
+        data_len: usize,
+        expected_offset: u64,
+        expected_length: Option<u64>,
+        exists_result: std::result::Result<bool, StorageErrorKind>,
         exists_calls: AtomicUsize,
+        get_calls: AtomicUsize,
+        range_calls: AtomicUsize,
+        metadata_calls: AtomicUsize,
+    }
+
+    impl ThumbnailCacheDriver {
+        fn new(data_len: usize) -> Self {
+            Self {
+                range_error_kind: None,
+                data_len,
+                expected_offset: 0,
+                expected_length: Some(
+                    MAX_CACHED_THUMBNAIL_BYTES
+                        .checked_add(1)
+                        .expect("thumbnail range limit should not overflow"),
+                ),
+                exists_result: Ok(false),
+                exists_calls: AtomicUsize::new(0),
+                get_calls: AtomicUsize::new(0),
+                range_calls: AtomicUsize::new(0),
+                metadata_calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn not_found() -> Self {
+            Self {
+                range_error_kind: Some(StorageErrorKind::NotFound),
+                ..Self::new(0)
+            }
+        }
+
+        fn with_range_error(kind: StorageErrorKind, exists_result: bool) -> Self {
+            Self {
+                range_error_kind: Some(kind),
+                exists_result: Ok(exists_result),
+                ..Self::new(0)
+            }
+        }
+
+        fn with_range_error_and_exists_error(
+            kind: StorageErrorKind,
+            exists_error_kind: StorageErrorKind,
+        ) -> Self {
+            Self {
+                range_error_kind: Some(kind),
+                exists_result: Err(exists_error_kind),
+                ..Self::new(0)
+            }
+        }
+
+        fn with_expected_range(
+            data_len: usize,
+            expected_offset: u64,
+            expected_length: Option<u64>,
+        ) -> Self {
+            Self {
+                expected_offset,
+                expected_length,
+                ..Self::new(data_len)
+            }
+        }
+    }
+
+    fn unsupported_test_call(method: &str) -> AsterError {
+        storage_driver_error(
+            StorageErrorKind::Unsupported,
+            format!("thumbnail cache test driver does not support {method}"),
+        )
     }
 
     #[async_trait]
-    impl StorageDriver for MissingThumbnailDriver {
+    impl StorageDriver for ThumbnailCacheDriver {
         async fn put(&self, _path: &str, _data: &[u8]) -> Result<String> {
-            unreachable!()
+            Err(unsupported_test_call("put"))
         }
 
         async fn get(&self, _path: &str) -> Result<Vec<u8>> {
-            Err(storage_driver_error(
-                StorageErrorKind::NotFound,
-                "thumbnail not found",
-            ))
+            self.get_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![b'x'; self.data_len])
         }
 
         async fn get_stream(&self, _path: &str) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
-            unreachable!()
+            Err(unsupported_test_call("get_stream"))
+        }
+
+        async fn get_range(
+            &self,
+            _path: &str,
+            offset: u64,
+            length: Option<u64>,
+        ) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
+            self.range_calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(kind) = self.range_error_kind {
+                return Err(storage_driver_error(kind, "thumbnail range read failed"));
+            }
+            assert_eq!(offset, self.expected_offset);
+            assert_eq!(length, self.expected_length);
+            let offset = u64_to_usize(offset, "test thumbnail range offset")
+                .expect("thumbnail range offset should fit usize");
+            let length = length
+                .map(|value| {
+                    u64_to_usize(value, "test thumbnail range length")
+                        .expect("thumbnail range length should fit usize")
+                })
+                .unwrap_or(self.data_len);
+            let end = offset.saturating_add(length).min(self.data_len);
+            let returned_len = end.saturating_sub(offset);
+            Ok(Box::new(std::io::Cursor::new(vec![b'x'; returned_len])))
         }
 
         async fn delete(&self, _path: &str) -> Result<()> {
-            unreachable!()
+            Err(unsupported_test_call("delete"))
         }
 
         async fn exists(&self, _path: &str) -> Result<bool> {
             self.exists_calls.fetch_add(1, Ordering::SeqCst);
-            Ok(false)
+            self.exists_result
+                .map_err(|kind| storage_driver_error(kind, "thumbnail existence check failed"))
         }
 
         async fn metadata(&self, _path: &str) -> Result<BlobMetadata> {
-            unreachable!()
+            self.metadata_calls.fetch_add(1, Ordering::SeqCst);
+            Err(unsupported_test_call("metadata"))
         }
     }
 
-    #[tokio::test]
-    async fn read_thumbnail_from_path_treats_not_found_get_as_miss_without_exists_probe() {
-        let driver = Arc::new(MissingThumbnailDriver {
-            exists_calls: AtomicUsize::new(0),
-        });
+    async fn read_cache_with_driver(driver: &Arc<ThumbnailCacheDriver>) -> Option<Bytes> {
+        read_thumbnail_from_path(1, &(driver.clone() as Arc<dyn StorageDriver>), "thumb.webp")
+            .await
+            .expect("thumbnail cache read should not fail")
+    }
 
-        let loaded =
-            read_thumbnail_from_path(1, &(driver.clone() as Arc<dyn StorageDriver>), "thumb.webp")
-                .await
-                .expect("not found should be a cache miss");
+    fn assert_no_metadata_or_full_get(driver: &ThumbnailCacheDriver) {
+        assert_eq!(driver.metadata_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(driver.get_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_treats_not_found_range_as_miss_without_exists_probe() {
+        let driver = Arc::new(ThumbnailCacheDriver::not_found());
+
+        let loaded = read_cache_with_driver(&driver).await;
 
         assert!(loaded.is_none());
         assert_eq!(driver.exists_calls.load(Ordering::SeqCst), 0);
+        assert_no_metadata_or_full_get(&driver);
+        assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_treats_range_error_as_miss_when_exists_probe_is_false() {
+        let driver = Arc::new(ThumbnailCacheDriver::with_range_error(
+            StorageErrorKind::Transient,
+            false,
+        ));
+
+        let loaded = read_cache_with_driver(&driver).await;
+
+        assert!(loaded.is_none());
+        assert_eq!(driver.exists_calls.load(Ordering::SeqCst), 1);
+        assert_no_metadata_or_full_get(&driver);
+        assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_returns_range_error_when_exists_probe_is_true() {
+        let driver = Arc::new(ThumbnailCacheDriver::with_range_error(
+            StorageErrorKind::Transient,
+            true,
+        ));
+
+        let error =
+            read_thumbnail_from_path(1, &(driver.clone() as Arc<dyn StorageDriver>), "thumb.webp")
+                .await
+                .expect_err("range error should be preserved when object still exists");
+
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Transient)
+        );
+        assert_eq!(driver.exists_calls.load(Ordering::SeqCst), 1);
+        assert_no_metadata_or_full_get(&driver);
+        assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_preserves_range_error_when_exists_probe_fails() {
+        let driver = Arc::new(ThumbnailCacheDriver::with_range_error_and_exists_error(
+            StorageErrorKind::Transient,
+            StorageErrorKind::Permission,
+        ));
+
+        let error =
+            read_thumbnail_from_path(1, &(driver.clone() as Arc<dyn StorageDriver>), "thumb.webp")
+                .await
+                .expect_err("range error should be preserved when existence probe fails");
+
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Transient)
+        );
+        assert_eq!(driver.exists_calls.load(Ordering::SeqCst), 1);
+        assert_no_metadata_or_full_get(&driver);
+        assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_accepts_empty_cache_entry() {
+        let driver = Arc::new(ThumbnailCacheDriver::new(0));
+
+        let loaded = read_cache_with_driver(&driver).await;
+
+        assert_eq!(loaded.expect("cache hit expected").len(), 0);
+        assert_no_metadata_or_full_get(&driver);
+        assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_accepts_cache_entry_below_size_limit() {
+        let max_size = u64_to_usize(MAX_CACHED_THUMBNAIL_BYTES, "test thumbnail limit")
+            .expect("thumbnail limit should fit usize");
+        let driver = Arc::new(ThumbnailCacheDriver::new(max_size - 1));
+
+        let loaded = read_cache_with_driver(&driver).await;
+
+        assert_eq!(loaded.expect("cache hit expected").len(), max_size - 1);
+        assert_no_metadata_or_full_get(&driver);
+        assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_accepts_cache_entry_at_size_limit() {
+        let max_size = u64_to_usize(MAX_CACHED_THUMBNAIL_BYTES, "test thumbnail limit")
+            .expect("thumbnail limit should fit usize");
+        let driver = Arc::new(ThumbnailCacheDriver::new(max_size));
+
+        let loaded = read_cache_with_driver(&driver).await;
+
+        assert_eq!(loaded.expect("cache hit expected").len(), max_size);
+        assert_no_metadata_or_full_get(&driver);
+        assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn read_thumbnail_from_path_rejects_cache_entry_above_read_limit() {
+        let max_size = u64_to_usize(MAX_CACHED_THUMBNAIL_BYTES, "test thumbnail limit")
+            .expect("thumbnail limit should fit usize");
+        let driver = Arc::new(ThumbnailCacheDriver::new(max_size + 1));
+
+        let loaded = read_cache_with_driver(&driver).await;
+
+        assert!(loaded.is_none());
+        assert_no_metadata_or_full_get(&driver);
+        assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn thumbnail_cache_driver_range_respects_offset_and_length_boundaries() {
+        let cases = [
+            (10, 0, Some(0), 0),
+            (10, 0, Some(4), 4),
+            (10, 6, Some(4), 4),
+            (10, 6, Some(99), 4),
+            (10, 10, Some(4), 0),
+            (10, 12, Some(4), 0),
+            (10, 3, None, 7),
+        ];
+
+        for (data_len, offset, length, expected_len) in cases {
+            let driver = ThumbnailCacheDriver::with_expected_range(data_len, offset, length);
+            let mut stream = driver
+                .get_range("thumb.webp", offset, length)
+                .await
+                .expect("range read should succeed");
+            let mut data = Vec::new();
+            stream
+                .read_to_end(&mut data)
+                .await
+                .expect("range stream should read");
+
+            assert_eq!(data.len(), expected_len);
+            assert_eq!(driver.range_calls.load(Ordering::SeqCst), 1);
+            assert_eq!(driver.metadata_calls.load(Ordering::SeqCst), 0);
+        }
     }
 }

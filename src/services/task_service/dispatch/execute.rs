@@ -1,8 +1,10 @@
 use std::future::Future;
+use std::time::Duration as StdDuration;
 
 use chrono::{Duration, Utc};
 use futures::stream::{self, StreamExt};
 use sea_orm::ActiveEnum;
+use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 
@@ -64,54 +66,28 @@ async fn process_claimed_task(
     lease: TaskLease,
     shutdown_token: CancellationToken,
 ) -> Result<TaskDispatchOutcome> {
-    let mut heartbeat =
-        tokio::time::interval(std::time::Duration::from_secs(TASK_HEARTBEAT_INTERVAL_SECS));
-    heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    heartbeat.tick().await;
     let context = TaskExecutionContext::new(lease, shutdown_token);
     let lease_guard = context.lease_guard().clone();
+    let heartbeat_stop = CancellationToken::new();
+    // Heartbeat must run in its own task. With SQLite the writer pool has one
+    // connection; keeping heartbeat in a select! with the business future can
+    // pause a future that already acquired that connection, then wait forever
+    // for a second writer connection.
+    let heartbeat_handle = spawn_task_heartbeat(
+        state.clone(),
+        task.id,
+        lease.processing_token,
+        lease_guard.clone(),
+        heartbeat_stop.clone(),
+    );
+    let heartbeat_cancel_guard = heartbeat_stop.clone().drop_guard();
 
-    // 外层 select! 同时盯两件事：
-    // 1. 真实业务流程是否完成；
-    // 2. heartbeat 是否还能继续证明“我还是当前合法 worker”。
-    //
-    // 注意这里只能取消 async 外壳。真正耗时的压缩/解压是在 spawn_blocking 里，
-    // 所以业务代码内部也必须周期性检查 lease guard，才能把旧 worker 真正停下来。
     let task_result = match context.ensure_active() {
-        Ok(()) => {
-            let process_future = registry::process_task(state, &task, context);
-            tokio::pin!(process_future);
-
-            loop {
-                tokio::select! {
-                    biased;
-                    result = &mut process_future => break result,
-                    _ = heartbeat.tick() => {
-                        // 心跳写入返回 Err 时不能直接把 worker 判死，否则一次瞬时 DB 抖动
-                        // 就会在 60 秒后把长任务误判成 stale 并触发二次认领。
-                        match evaluate_heartbeat_result(
-                            &lease_guard,
-                            {
-                                let now = Utc::now();
-                                background_task_repo::touch_heartbeat(
-                                    state.writer_db(),
-                                    task.id,
-                                    lease.processing_token,
-                                    now,
-                                    task_lease_expires_at(now),
-                                )
-                                .await
-                            },
-                        ) {
-                            Ok(()) => {}
-                            Err(error) => break Err(error),
-                        }
-                    }
-                }
-            }
-        }
+        Ok(()) => registry::process_task(state, &task, context).await,
         Err(error) => Err(error),
     };
+    drop(heartbeat_cancel_guard);
+    stop_task_heartbeat(heartbeat_stop, heartbeat_handle).await;
 
     match task_result {
         Ok(()) => {
@@ -225,6 +201,90 @@ async fn process_claimed_task(
                 })
             }
         }
+    }
+}
+
+fn spawn_task_heartbeat(
+    state: PrimaryAppState,
+    task_id: i64,
+    processing_token: i64,
+    lease_guard: TaskLeaseGuard,
+    stop_token: CancellationToken,
+) -> JoinHandle<()> {
+    spawn_task_heartbeat_with_interval(
+        state,
+        task_id,
+        processing_token,
+        lease_guard,
+        stop_token,
+        StdDuration::from_secs(TASK_HEARTBEAT_INTERVAL_SECS),
+    )
+}
+
+pub(super) fn spawn_task_heartbeat_with_interval(
+    state: PrimaryAppState,
+    task_id: i64,
+    processing_token: i64,
+    lease_guard: TaskLeaseGuard,
+    stop_token: CancellationToken,
+    interval: StdDuration,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        run_task_heartbeat_loop(
+            state,
+            task_id,
+            processing_token,
+            lease_guard,
+            stop_token,
+            interval,
+        )
+        .await;
+    })
+}
+
+async fn run_task_heartbeat_loop(
+    state: PrimaryAppState,
+    task_id: i64,
+    processing_token: i64,
+    lease_guard: TaskLeaseGuard,
+    stop_token: CancellationToken,
+    interval: StdDuration,
+) {
+    let mut heartbeat = tokio::time::interval(interval);
+    heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    heartbeat.tick().await;
+
+    loop {
+        tokio::select! {
+            _ = stop_token.cancelled() => return,
+            _ = heartbeat.tick() => {
+                let now = Utc::now();
+                // Let task completion cancel an in-flight pool acquire quickly.
+                // This keeps shutdown/finish paths from waiting on a heartbeat
+                // write that is no longer useful.
+                let result = tokio::select! {
+                    _ = stop_token.cancelled() => return,
+                    result = background_task_repo::touch_heartbeat(
+                        state.writer_db(),
+                        task_id,
+                        processing_token,
+                        now,
+                        task_lease_expires_at(now),
+                    ) => result,
+                };
+
+                if evaluate_heartbeat_result(&lease_guard, result).is_err() {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+async fn stop_task_heartbeat(stop_token: CancellationToken, heartbeat_handle: JoinHandle<()>) {
+    stop_token.cancel();
+    if let Err(error) = heartbeat_handle.await {
+        tracing::warn!(error = %error, "background task heartbeat worker stopped unexpectedly");
     }
 }
 

@@ -369,6 +369,46 @@ async fn test_webdav_mkcol_and_list() {
 }
 
 #[actix_web::test]
+async fn test_webdav_mkcol_body_boundaries() {
+    let app = setup_with_webdav!();
+
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::with_uri("/webdav/body-empty/")
+        .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload(Vec::<u8>::new())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201, "empty MKCOL body should be accepted");
+
+    let req = test::TestRequest::with_uri("/webdav/body-non-empty/")
+        .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("x")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        415,
+        "non-empty MKCOL body should be rejected"
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/body-large/")
+        .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload(vec![b'x'; 2 * 1024 * 1024])
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        415,
+        "large non-empty MKCOL body should be rejected without requiring full body collection"
+    );
+}
+
+#[actix_web::test]
 async fn test_webdav_propfind_rejects_xml_body_over_limit() {
     let webdav_config = WebDavConfig {
         xml_payload_limit: 8,

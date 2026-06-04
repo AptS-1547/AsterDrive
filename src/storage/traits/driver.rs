@@ -27,6 +27,15 @@ pub fn driver_type_supports_native_thumbnail(driver_type: DriverType) -> bool {
     }
 }
 
+pub fn driver_type_supports_native_media_metadata(driver_type: DriverType) -> bool {
+    match driver_type {
+        DriverType::Local => false,
+        DriverType::S3 => false,
+        DriverType::TencentCos => true,
+        DriverType::Remote => false,
+    }
+}
+
 pub trait StoragePathVisitor: Send {
     fn visit_path(&mut self, path: String) -> Result<()>;
 }
@@ -42,7 +51,12 @@ pub trait StorageDriver: Send + Sync {
     /// 写入文件，返回最终存储路径
     async fn put(&self, path: &str, data: &[u8]) -> Result<String>;
 
-    /// 读取文件全部内容
+    /// 读取文件全部内容。
+    ///
+    /// 这个方法只适合缩略图、manifest、探测数据等有明确大小上限的小对象，
+    /// 或作为不支持 seek/read 优化的驱动兼容兜底。用户文件传输、复制、预览
+    /// 和后台任务处理大对象时应优先使用 `get_stream()` / `get_range()`，避免把
+    /// 整个 blob 读入内存。
     async fn get(&self, path: &str) -> Result<Vec<u8>>;
 
     /// 获取文件流（大文件下载）
@@ -240,6 +254,20 @@ mod tests {
             DriverType::TencentCos
         ));
         assert!(!driver_type_supports_native_thumbnail(DriverType::Remote));
+    }
+
+    #[test]
+    fn only_vendor_drivers_with_native_processors_support_native_media_metadata() {
+        assert!(!driver_type_supports_native_media_metadata(
+            DriverType::Local
+        ));
+        assert!(!driver_type_supports_native_media_metadata(DriverType::S3));
+        assert!(driver_type_supports_native_media_metadata(
+            DriverType::TencentCos
+        ));
+        assert!(!driver_type_supports_native_media_metadata(
+            DriverType::Remote
+        ));
     }
 
     #[tokio::test]

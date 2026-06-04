@@ -4,11 +4,17 @@
 mod common;
 
 use actix_web::{App, test, web};
+use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+use tokio::io::{AsyncRead, empty};
 use tokio::sync::broadcast;
 
 use aster_drive::config::operations::{
@@ -20,8 +26,8 @@ use aster_drive::config::operations::{
     OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, OFFLINE_DOWNLOAD_REQUEST_TIMEOUT_SECS_KEY,
     OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
 };
-use aster_drive::db::repository::{background_task_repo, file_repo};
-use aster_drive::entities::{background_task, file_blob};
+use aster_drive::db::repository::{background_task_repo, file_repo, policy_repo};
+use aster_drive::entities::{background_task, file_blob, storage_policy};
 use aster_drive::services::task_service::{
     self, RuntimeTaskRunOutcome, SystemRuntimeTaskKind,
     types::{
@@ -29,6 +35,7 @@ use aster_drive::services::task_service::{
         RuntimeTaskName, RuntimeTaskPayload,
     },
 };
+use aster_drive::storage::{BlobMetadata, StorageDriver};
 use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload};
 
 const OLD_BACKGROUND_TASK_DISPLAY_NAME_LIMIT: usize = 255;
@@ -39,6 +46,51 @@ struct Aria2TestContext {
     _container: testcontainers::ContainerAsync<testcontainers::GenericImage>,
     rpc_url: String,
     rpc_secret: String,
+}
+
+#[derive(Default)]
+struct MetadataCountingDriver {
+    metadata_calls: AtomicUsize,
+}
+
+impl MetadataCountingDriver {
+    fn metadata_calls(&self) -> usize {
+        self.metadata_calls.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl StorageDriver for MetadataCountingDriver {
+    async fn put(&self, path: &str, _data: &[u8]) -> aster_drive::errors::Result<String> {
+        Ok(path.to_string())
+    }
+
+    async fn get(&self, _path: &str) -> aster_drive::errors::Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    async fn get_stream(
+        &self,
+        _path: &str,
+    ) -> aster_drive::errors::Result<Box<dyn AsyncRead + Unpin + Send>> {
+        Ok(Box::new(empty()))
+    }
+
+    async fn delete(&self, _path: &str) -> aster_drive::errors::Result<()> {
+        Ok(())
+    }
+
+    async fn exists(&self, _path: &str) -> aster_drive::errors::Result<bool> {
+        Ok(true)
+    }
+
+    async fn metadata(&self, _path: &str) -> aster_drive::errors::Result<BlobMetadata> {
+        self.metadata_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(BlobMetadata {
+            size: 11,
+            content_type: Some("application/octet-stream".to_string()),
+        })
+    }
 }
 
 macro_rules! register_user {
@@ -1530,6 +1582,370 @@ async fn test_blob_maintenance_integrity_check_reports_missing_and_size_mismatch
     assert_eq!(result["size_mismatches"], 1);
     assert_eq!(result["ref_counts_fixed"], 0);
     assert_eq!(result["orphan_blobs_deleted"], 0);
+}
+
+#[actix_web::test]
+async fn test_blob_maintenance_uses_uncached_driver_without_replacing_existing_handles() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "blob-driver-release.txt");
+    let file = file_repo::find_by_id(state.writer_db(), file_id)
+        .await
+        .expect("uploaded file should load");
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
+        .await
+        .expect("uploaded blob should load");
+    let policy = policy_repo::find_by_id(state.writer_db(), blob.policy_id)
+        .await
+        .expect("blob policy should load");
+    let driver_before = state
+        .driver_registry
+        .get_driver(&policy)
+        .expect("driver should resolve before maintenance");
+    assert!(
+        driver_before
+            .exists(&blob.storage_path)
+            .await
+            .expect("old driver should read object before maintenance")
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/file-blobs/maintenance")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "action": "integrity_check",
+            "blob_ids": [blob.id]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("blob maintenance task should drain");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(stats.failed, 0);
+
+    let driver_after = state
+        .driver_registry
+        .get_driver(&policy)
+        .expect("driver should resolve after maintenance");
+    assert!(
+        std::sync::Arc::ptr_eq(&driver_before, &driver_after),
+        "blob maintenance must not evict or replace an existing cached driver"
+    );
+    assert!(
+        driver_before
+            .exists(&blob.storage_path)
+            .await
+            .expect("old Arc handle should remain usable after registry invalidation"),
+        "registry invalidation must not break in-flight users that already cloned the driver"
+    );
+    assert!(
+        driver_after
+            .exists(&blob.storage_path)
+            .await
+            .expect("cached driver should read object after maintenance"),
+        "cached driver should keep working after maintenance"
+    );
+}
+
+#[actix_web::test]
+async fn test_blob_maintenance_reuses_existing_shared_driver_cache() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "blob-driver-cache-hit.txt");
+    let file = file_repo::find_by_id(state.writer_db(), file_id)
+        .await
+        .expect("uploaded file should load");
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
+        .await
+        .expect("uploaded blob should load");
+    let counting_driver = Arc::new(MetadataCountingDriver::default());
+    state
+        .driver_registry
+        .insert_for_test(blob.policy_id, counting_driver.clone());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/file-blobs/maintenance")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "action": "integrity_check",
+            "blob_ids": [blob.id]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("blob maintenance task should drain");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(stats.failed, 0);
+    assert_eq!(
+        counting_driver.metadata_calls(),
+        1,
+        "maintenance should reuse an already-cached shared driver Arc"
+    );
+}
+
+#[actix_web::test]
+async fn test_blob_maintenance_keeps_cached_policy_drivers_stable() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "blob-driver-release-one-policy.txt");
+    let file = file_repo::find_by_id(state.writer_db(), file_id)
+        .await
+        .expect("uploaded file should load");
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
+        .await
+        .expect("uploaded blob should load");
+    let touched_policy = policy_repo::find_by_id(state.writer_db(), blob.policy_id)
+        .await
+        .expect("blob policy should load");
+    let untouched_policy_root = std::env::temp_dir().join(format!(
+        "asterdrive-untouched-policy-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&untouched_policy_root)
+        .expect("untouched policy root should be created");
+    let now = Utc::now();
+    let untouched_policy = storage_policy::ActiveModel {
+        name: Set("Untouched maintenance policy".to_string()),
+        driver_type: Set(aster_drive::types::DriverType::Local),
+        endpoint: Set(String::new()),
+        bucket: Set(String::new()),
+        access_key: Set(String::new()),
+        secret_key: Set(String::new()),
+        base_path: Set(untouched_policy_root.to_string_lossy().into_owned()),
+        remote_node_id: Set(None),
+        max_file_size: Set(0),
+        allowed_types: Set(aster_drive::types::StoredStoragePolicyAllowedTypes::empty()),
+        options: Set(aster_drive::types::StoredStoragePolicyOptions::empty()),
+        is_default: Set(false),
+        chunk_size: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("untouched policy should insert");
+
+    let touched_driver_before = state
+        .driver_registry
+        .get_driver(&touched_policy)
+        .expect("touched driver should resolve before maintenance");
+    let untouched_driver_before = state
+        .driver_registry
+        .get_driver(&untouched_policy)
+        .expect("untouched driver should resolve before maintenance");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/file-blobs/maintenance")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "action": "integrity_check",
+            "blob_ids": [blob.id]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("blob maintenance task should drain");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(stats.failed, 0);
+
+    let touched_driver_after = state
+        .driver_registry
+        .get_driver(&touched_policy)
+        .expect("touched driver should be recreated after maintenance");
+    let untouched_driver_after = state
+        .driver_registry
+        .get_driver(&untouched_policy)
+        .expect("untouched driver should still resolve after maintenance");
+
+    assert!(
+        std::sync::Arc::ptr_eq(&touched_driver_before, &touched_driver_after),
+        "maintenance should leave existing cached drivers in place"
+    );
+    assert!(
+        std::sync::Arc::ptr_eq(&untouched_driver_before, &untouched_driver_after),
+        "maintenance must not evict drivers for policies it did not touch"
+    );
+}
+
+#[actix_web::test]
+async fn test_blob_maintenance_integrity_check_does_not_warm_shared_driver_cache() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "blob-driver-cache-cold.txt");
+    let file = file_repo::find_by_id(state.writer_db(), file_id)
+        .await
+        .expect("uploaded file should load");
+    let blob = file_repo::find_blob_by_id(state.writer_db(), file.blob_id)
+        .await
+        .expect("uploaded blob should load");
+    let policy = policy_repo::find_by_id(state.writer_db(), blob.policy_id)
+        .await
+        .expect("blob policy should load");
+    state.driver_registry.invalidate(policy.id);
+    assert!(
+        !state.driver_registry.has_cached_driver_for_test(policy.id),
+        "test must start with a cold shared driver cache"
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/file-blobs/maintenance")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "action": "integrity_check",
+            "blob_ids": [blob.id]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("blob maintenance task should drain");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(stats.failed, 0);
+    assert!(
+        !state.driver_registry.has_cached_driver_for_test(policy.id),
+        "blob maintenance should use task-local drivers instead of warming the shared driver cache"
+    );
+
+    let driver_after = state
+        .driver_registry
+        .get_driver(&policy)
+        .expect("driver should be built on demand after maintenance");
+    let driver_again = state
+        .driver_registry
+        .get_driver(&policy)
+        .expect("driver should be cached after explicit registry access");
+    assert!(
+        std::sync::Arc::ptr_eq(&driver_after, &driver_again),
+        "maintenance should not pre-warm the shared cache; explicit access should create the first cached driver"
+    );
+}
+
+#[actix_web::test]
+async fn test_blob_maintenance_orphan_cleanup_does_not_warm_shared_driver_cache() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let policy = policy_repo::find_default(state.writer_db())
+        .await
+        .expect("default policy query should succeed")
+        .expect("default policy should exist");
+    let blob_path = format!("admin-maintenance/cache-cold-{}.txt", uuid::Uuid::new_v4());
+    let driver = state
+        .driver_registry
+        .get_driver(&policy)
+        .expect("driver should resolve for fixture setup");
+    driver
+        .put(&blob_path, b"orphan")
+        .await
+        .expect("orphan object should be written");
+    let now = Utc::now();
+    let blob = file_blob::ActiveModel {
+        hash: Set(format!("orphan-cache-cold-{}", uuid::Uuid::new_v4())),
+        size: Set(6),
+        policy_id: Set(policy.id),
+        storage_path: Set(blob_path),
+        ref_count: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(state.writer_db())
+    .await
+    .expect("orphan blob should insert");
+    state.driver_registry.invalidate(policy.id);
+    assert!(
+        !state.driver_registry.has_cached_driver_for_test(policy.id),
+        "test must start with a cold shared driver cache"
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/file-blobs/maintenance")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "action": "orphan_cleanup",
+            "blob_ids": [blob.id]
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("blob maintenance task should drain");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(stats.failed, 0);
+    assert!(
+        !state.driver_registry.has_cached_driver_for_test(policy.id),
+        "orphan cleanup should delete through task-local drivers, not the shared cache"
+    );
+    assert!(
+        file_repo::find_blob_by_id(state.writer_db(), blob.id)
+            .await
+            .is_err(),
+        "orphan blob row should be deleted"
+    );
+}
+
+#[actix_web::test]
+async fn test_blob_maintenance_empty_scan_keeps_untouched_cached_driver() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let policy = policy_repo::find_default(state.writer_db())
+        .await
+        .expect("default policy query should succeed")
+        .expect("default policy should exist");
+    let driver_before = state
+        .driver_registry
+        .get_driver(&policy)
+        .expect("driver should resolve before empty maintenance");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/file-blobs/maintenance")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "action": "ref_count_reconcile"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let stats = task_service::drain(&state)
+        .await
+        .expect("empty blob maintenance task should drain");
+    assert_eq!(stats.succeeded, 1);
+    assert_eq!(stats.failed, 0);
+
+    let driver_after = state
+        .driver_registry
+        .get_driver(&policy)
+        .expect("driver should still resolve after empty maintenance");
+    assert!(
+        std::sync::Arc::ptr_eq(&driver_before, &driver_after),
+        "empty maintenance should not evict storage drivers it did not touch"
+    );
 }
 
 #[actix_web::test]

@@ -195,18 +195,6 @@ pub async fn webdav_handler(
     }
 }
 
-async fn collect_payload(payload: &mut web::Payload) -> Result<Vec<u8>, HttpResponse> {
-    let mut data = Vec::new();
-    while let Some(chunk) = payload.next().await {
-        let chunk = match chunk {
-            Ok(chunk) => chunk,
-            Err(_) => return Err(HttpResponse::BadRequest().body("Failed to read request body")),
-        };
-        data.extend_from_slice(&chunk);
-    }
-    Ok(data)
-}
-
 async fn collect_xml_payload(
     payload: &mut web::Payload,
     max_len: usize,

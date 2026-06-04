@@ -44,6 +44,7 @@ pub const DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY: usize = 1;
 pub const DEFAULT_BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY: usize = 2;
 pub const DEFAULT_BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY: usize = 1;
 pub const DEFAULT_BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY: usize = 1;
+const MAX_BACKGROUND_TASK_CONCURRENCY: usize = 16;
 pub const DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS: i32 = 3;
 pub const DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY: usize = 1024;
 pub const DEFAULT_SHARE_STREAM_SESSION_TTL_SECS: u64 = 3 * 60 * 60;
@@ -142,6 +143,17 @@ pub fn normalize_interval_config_value(key: &str, value: &str) -> Result<String>
 }
 
 pub fn normalize_concurrency_config_value(key: &str, value: &str) -> Result<String> {
+    let parsed = parse_positive_u64(value)
+        .ok_or_else(|| AsterError::validation_error(format!("{key} must be a positive integer")))?;
+    if parsed > usize_to_u64(MAX_BACKGROUND_TASK_CONCURRENCY, key).unwrap_or(u64::MAX) {
+        return Err(AsterError::validation_error(format!(
+            "{key} cannot exceed {MAX_BACKGROUND_TASK_CONCURRENCY}"
+        )));
+    }
+    Ok(parsed.to_string())
+}
+
+pub fn normalize_queue_capacity_config_value(key: &str, value: &str) -> Result<String> {
     normalize_positive_u64_config_value(key, value)
 }
 
@@ -851,10 +863,20 @@ fn read_bool(runtime_config: &RuntimeConfig, key: &str, default: bool) -> bool {
 
 fn read_concurrency(runtime_config: &RuntimeConfig, key: &str, default: usize) -> usize {
     let default_value = usize_to_u64(default, key).unwrap_or(u64::MAX);
-    usize::try_from(read_positive_u64(runtime_config, key, default_value)).unwrap_or_else(|_| {
-        tracing::warn!(key, "{key} exceeds usize; using default");
-        default
-    })
+    let value = usize::try_from(read_positive_u64(runtime_config, key, default_value))
+        .unwrap_or_else(|_| {
+            tracing::warn!(key, "{key} exceeds usize; using default");
+            default
+        });
+    if value > MAX_BACKGROUND_TASK_CONCURRENCY {
+        tracing::warn!(
+            key,
+            value,
+            max = MAX_BACKGROUND_TASK_CONCURRENCY,
+            "runtime concurrency config exceeds maximum; clamping"
+        );
+    }
+    value.min(MAX_BACKGROUND_TASK_CONCURRENCY)
 }
 
 fn read_bounded_u64(
@@ -900,23 +922,24 @@ mod tests {
         DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS,
         DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY, DEFAULT_SHARE_STREAM_SESSION_TTL_SECS,
         DEFAULT_TASK_LIST_MAX_LIMIT, DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT,
-        MAX_SHARE_STREAM_SESSION_TTL_SECS, MIN_SHARE_STREAM_SESSION_TTL_SECS,
-        OFFLINE_DOWNLOAD_ENGINE_KEY, OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
-        OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
-        OFFLINE_DOWNLOAD_TEMP_DIR_KEY, REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
-        SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, SHARE_STREAM_SESSION_TTL_SECS_KEY,
-        TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, archive_extract_max_staging_bytes,
-        avatar_max_upload_size_bytes, background_task_archive_max_concurrency,
-        background_task_dispatch_idle_max_interval_secs, background_task_max_attempts,
-        background_task_max_concurrency, background_task_storage_migration_max_concurrency,
+        MAX_BACKGROUND_TASK_CONCURRENCY, MAX_SHARE_STREAM_SESSION_TTL_SECS,
+        MIN_SHARE_STREAM_SESSION_TTL_SECS, OFFLINE_DOWNLOAD_ENGINE_KEY,
+        OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY, OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY,
+        OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
+        REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+        SHARE_STREAM_SESSION_TTL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
+        archive_extract_max_staging_bytes, avatar_max_upload_size_bytes,
+        background_task_archive_max_concurrency, background_task_dispatch_idle_max_interval_secs,
+        background_task_max_attempts, background_task_max_concurrency,
+        background_task_storage_migration_max_concurrency,
         background_task_thumbnail_max_concurrency, blob_reconcile_interval_secs,
         normalize_attempts_config_value, normalize_bool_config_value, normalize_bytes_config_value,
         normalize_concurrency_config_value, normalize_interval_config_value,
         normalize_list_max_limit_config_value, normalize_non_negative_u64_config_value,
-        normalize_offline_download_temp_dir_config_value,
+        normalize_offline_download_temp_dir_config_value, normalize_queue_capacity_config_value,
         normalize_share_stream_session_ttl_config_value, offline_download_enabled_engines,
         offline_download_max_bytes_per_sec, offline_download_max_concurrency,
-        offline_download_temp_dir, remote_node_health_test_interval_secs,
+        offline_download_temp_dir, read_concurrency, remote_node_health_test_interval_secs,
         share_download_rollback_queue_capacity, share_stream_session_ttl_secs, task_list_max_limit,
         team_member_list_max_limit,
     };
@@ -1118,6 +1141,95 @@ mod tests {
         assert_eq!(
             offline_download_max_concurrency(&runtime_config),
             DEFAULT_OFFLINE_DOWNLOAD_MAX_CONCURRENCY
+        );
+
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+            &(MAX_BACKGROUND_TASK_CONCURRENCY + 1).to_string(),
+        ));
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_ARCHIVE_MAX_CONCURRENCY_KEY,
+            "999",
+        ));
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY,
+            "18446744073709551615",
+        ));
+        runtime_config.apply(config_model(OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, "100"));
+        assert_eq!(
+            background_task_max_concurrency(&runtime_config),
+            MAX_BACKGROUND_TASK_CONCURRENCY
+        );
+        assert_eq!(
+            background_task_archive_max_concurrency(&runtime_config),
+            MAX_BACKGROUND_TASK_CONCURRENCY
+        );
+        assert_eq!(
+            background_task_thumbnail_max_concurrency(&runtime_config),
+            MAX_BACKGROUND_TASK_CONCURRENCY
+        );
+        assert_eq!(
+            offline_download_max_concurrency(&runtime_config),
+            MAX_BACKGROUND_TASK_CONCURRENCY
+        );
+    }
+
+    #[test]
+    fn read_concurrency_applies_min_max_and_fallback_boundaries() {
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(
+            read_concurrency(&runtime_config, BACKGROUND_TASK_MAX_CONCURRENCY_KEY, 3),
+            3
+        );
+
+        runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "1"));
+        assert_eq!(
+            read_concurrency(&runtime_config, BACKGROUND_TASK_MAX_CONCURRENCY_KEY, 3),
+            1
+        );
+
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+            &MAX_BACKGROUND_TASK_CONCURRENCY.to_string(),
+        ));
+        assert_eq!(
+            read_concurrency(&runtime_config, BACKGROUND_TASK_MAX_CONCURRENCY_KEY, 3),
+            MAX_BACKGROUND_TASK_CONCURRENCY
+        );
+
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+            &(MAX_BACKGROUND_TASK_CONCURRENCY + 1).to_string(),
+        ));
+        assert_eq!(
+            read_concurrency(&runtime_config, BACKGROUND_TASK_MAX_CONCURRENCY_KEY, 3),
+            MAX_BACKGROUND_TASK_CONCURRENCY
+        );
+
+        runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "0"));
+        assert_eq!(
+            read_concurrency(&runtime_config, BACKGROUND_TASK_MAX_CONCURRENCY_KEY, 3),
+            3
+        );
+
+        runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "abc"));
+        assert_eq!(
+            read_concurrency(&runtime_config, BACKGROUND_TASK_MAX_CONCURRENCY_KEY, 3),
+            3
+        );
+
+        runtime_config.apply(config_model(
+            BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+            "18446744073709551615",
+        ));
+        let expected = if usize::try_from(u64::MAX).is_ok() {
+            MAX_BACKGROUND_TASK_CONCURRENCY
+        } else {
+            3
+        };
+        assert_eq!(
+            read_concurrency(&runtime_config, BACKGROUND_TASK_MAX_CONCURRENCY_KEY, 3),
+            expected
         );
     }
 
@@ -1333,6 +1445,29 @@ mod tests {
             "4"
         );
         assert_eq!(
+            normalize_concurrency_config_value(
+                "test_concurrency",
+                &MAX_BACKGROUND_TASK_CONCURRENCY.to_string()
+            )
+            .unwrap(),
+            MAX_BACKGROUND_TASK_CONCURRENCY.to_string()
+        );
+        assert!(
+            normalize_concurrency_config_value(
+                "test_concurrency",
+                &(MAX_BACKGROUND_TASK_CONCURRENCY + 1).to_string()
+            )
+            .is_err()
+        );
+        assert_eq!(
+            normalize_queue_capacity_config_value(
+                SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+                &DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY.to_string()
+            )
+            .unwrap(),
+            DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY.to_string()
+        );
+        assert_eq!(
             normalize_attempts_config_value("test_attempts", "3").unwrap(),
             "3"
         );
@@ -1362,6 +1497,10 @@ mod tests {
         );
         assert!(normalize_interval_config_value("test_interval", "0").is_err());
         assert!(normalize_concurrency_config_value("test_concurrency", "0").is_err());
+        assert!(
+            normalize_queue_capacity_config_value(SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, "0")
+                .is_err()
+        );
         assert!(normalize_attempts_config_value("test_attempts", "0").is_err());
         assert!(normalize_bytes_config_value("test_bytes", "-1").is_err());
         assert!(normalize_list_max_limit_config_value("test_limit", "1001").is_err());
