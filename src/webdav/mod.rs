@@ -242,9 +242,11 @@ pub(crate) async fn ensure_unlocked(
     lock_system: &dyn DavLockSystem,
     path: &DavPath,
     deep: bool,
+    prefix: &str,
     headers: &header::HeaderMap,
 ) -> Result<(), HttpResponse> {
-    let tokens = protocol::submitted_lock_tokens(headers);
+    let request_href = href_for_dav_path(prefix, path);
+    let tokens = protocol::submitted_lock_tokens_for_path(headers, &request_href);
     match lock_system.check(path, None, false, deep, &tokens).await {
         Ok(()) => Ok(()),
         Err(_) => Err(HttpResponse::Locked().finish()),

@@ -3,7 +3,7 @@
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, Select, Set, TryInsertResult,
+    QueryOrder, Select, Set,
     sea_query::{Expr, Query, SelectStatement},
 };
 
@@ -30,36 +30,14 @@ pub async fn create_if_unlocked<C: ConnectionTrait>(
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<Option<resource_lock::Model>> {
-    let inserted = match ResourceLock::insert(model)
-        .on_conflict_do_nothing_on([
-            resource_lock::Column::EntityType,
-            resource_lock::Column::EntityId,
-        ])
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?
+    if find_active_by_entity(db, entity_type, entity_id)
+        .await?
+        .is_some()
     {
-        TryInsertResult::Inserted(_) => true,
-        TryInsertResult::Conflicted => false,
-        TryInsertResult::Empty => {
-            return Err(AsterError::internal_error(
-                "resource lock insert produced empty result",
-            ));
-        }
-    };
-
-    if !inserted {
         return Ok(None);
     }
 
-    find_by_entity(db, entity_type, entity_id)
-        .await?
-        .map(Some)
-        .ok_or_else(|| {
-            AsterError::internal_error(format!(
-                "resource lock insert could not reload entity lock for {entity_type:?}#{entity_id}"
-            ))
-        })
+    create(db, model).await.map(Some)
 }
 
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<resource_lock::Model>> {
@@ -159,7 +137,10 @@ pub async fn find_by_token<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
-/// 查询单个资源的锁
+/// 查询单个资源的第一把锁。
+///
+/// WebDAV shared lock 允许同一资源存在多把锁；新代码需要完整判断锁集合时，
+/// 应优先使用 `find_all_by_entity` / `find_active_by_entity`。
 pub async fn find_by_entity<C: ConnectionTrait>(
     db: &C,
     entity_type: EntityType,
@@ -168,9 +149,36 @@ pub async fn find_by_entity<C: ConnectionTrait>(
     ResourceLock::find()
         .filter(resource_lock::Column::EntityType.eq(entity_type))
         .filter(resource_lock::Column::EntityId.eq(entity_id))
+        .order_by_asc(resource_lock::Column::Id)
         .one(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn find_all_by_entity<C: ConnectionTrait>(
+    db: &C,
+    entity_type: EntityType,
+    entity_id: i64,
+) -> Result<Vec<resource_lock::Model>> {
+    ResourceLock::find()
+        .filter(resource_lock::Column::EntityType.eq(entity_type))
+        .filter(resource_lock::Column::EntityId.eq(entity_id))
+        .order_by_asc(resource_lock::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_active_by_entity<C: ConnectionTrait>(
+    db: &C,
+    entity_type: EntityType,
+    entity_id: i64,
+) -> Result<Option<resource_lock::Model>> {
+    let now = Utc::now();
+    Ok(find_all_by_entity(db, entity_type, entity_id)
+        .await?
+        .into_iter()
+        .find(|lock| lock.timeout_at.is_none_or(|timeout_at| timeout_at >= now)))
 }
 
 /// 路径前缀查询（WebDAV deep lock 用）
@@ -392,37 +400,7 @@ pub async fn delete_all_by_owner<C: ConnectionTrait>(db: &C, owner_id: i64) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use sea_orm::{DbBackend, QueryTrait};
-
-    #[test]
-    fn postgres_create_if_unlocked_sql_uses_entity_conflict_target() {
-        let sql = ResourceLock::insert(resource_lock::ActiveModel {
-            token: Set("urn:uuid:test".to_string()),
-            entity_type: Set(EntityType::File),
-            entity_id: Set(7),
-            path: Set("/docs/report.txt".to_string()),
-            owner_id: Set(Some(9)),
-            owner_info: Set(None),
-            timeout_at: Set(None),
-            shared: Set(false),
-            deep: Set(false),
-            created_at: Set(Utc::now()),
-            ..Default::default()
-        })
-        .on_conflict_do_nothing_on([
-            resource_lock::Column::EntityType,
-            resource_lock::Column::EntityId,
-        ])
-        .build(DbBackend::Postgres)
-        .to_string();
-
-        assert!(
-            sql.contains(r#"ON CONFLICT ("entity_type", "entity_id") DO NOTHING"#),
-            "{sql}"
-        );
-        assert!(!sql.contains(" WHERE "), "{sql}");
-    }
 
     #[test]
     fn postgres_clear_file_locked_flags_sql_requires_absent_replacement_lock() {

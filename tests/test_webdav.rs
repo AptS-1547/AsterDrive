@@ -2811,6 +2811,70 @@ async fn test_webdav_lock_missing_file_creates_locked_empty_resource() {
 }
 
 #[actix_web::test]
+async fn test_webdav_tagged_if_token_only_unlocks_matching_resource() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/if-scope.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("initial")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+  <D:owner><D:href>testuser</D:href></D:owner>
+</D:lockinfo>"#;
+    let req = test::TestRequest::with_uri("/webdav/if-scope.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let lock_token = resp
+        .headers()
+        .get("Lock-Token")
+        .and_then(|value| value.to_str().ok())
+        .expect("LOCK response should include Lock-Token")
+        .trim_matches(|c| c == '<' || c == '>')
+        .to_string();
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/if-scope.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("If", format!("</webdav/other.txt> (<{lock_token}>)")))
+        .set_payload("wrong resource")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        423,
+        "tagged If token for a different resource must not unlock the request path"
+    );
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/if-scope.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("If", format!("</webdav/if-scope.txt> (<{lock_token}>)")))
+        .set_payload("matching resource")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "tagged If token for the request resource should unlock it, got {}",
+        resp.status()
+    );
+}
+
+#[actix_web::test]
 async fn test_webdav_unauthorized() {
     let app = setup_with_webdav!();
 

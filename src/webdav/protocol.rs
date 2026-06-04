@@ -110,7 +110,8 @@ pub(crate) fn destination_relative_path(
     decode_relative_path(relative).map(|(_, relative)| relative)
 }
 
-pub(crate) fn submitted_lock_tokens(headers: &header::HeaderMap) -> Vec<String> {
+#[cfg(test)]
+fn submitted_lock_tokens(headers: &header::HeaderMap) -> Vec<String> {
     let mut tokens = Vec::new();
 
     if let Some(token) = headers
@@ -124,6 +125,36 @@ pub(crate) fn submitted_lock_tokens(headers: &header::HeaderMap) -> Vec<String> 
 
     for condition in parse_if_conditions(headers) {
         tokens.extend(condition.tokens);
+    }
+
+    tokens.sort();
+    tokens.dedup();
+    tokens
+}
+
+pub(crate) fn submitted_lock_tokens_for_path(
+    headers: &header::HeaderMap,
+    request_path: &str,
+) -> Vec<String> {
+    let mut tokens = Vec::new();
+
+    if let Some(token) = headers
+        .get("Lock-Token")
+        .and_then(|value| value.to_str().ok())
+        .map(normalize_lock_token)
+        .filter(|token| !token.is_empty())
+    {
+        tokens.push(token);
+    }
+
+    for condition in parse_if_conditions(headers) {
+        match condition.tagged_path.as_deref() {
+            None => tokens.extend(condition.tokens),
+            Some(tagged_path) if if_tag_matches_path(tagged_path, request_path) => {
+                tokens.extend(condition.tokens);
+            }
+            Some(_) => {}
+        }
     }
 
     tokens.sort();
@@ -194,13 +225,38 @@ fn normalize_lock_token(value: &str) -> String {
         .to_string()
 }
 
+fn if_tag_matches_path(tagged_path: &str, request_path: &str) -> bool {
+    if path_equivalent(tagged_path, request_path) {
+        return true;
+    }
+    let parsed = tagged_path.parse::<http::Uri>();
+    let Ok(uri) = parsed else {
+        return false;
+    };
+    path_equivalent(uri.path(), request_path)
+}
+
+fn path_equivalent(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    let left_decoded = urlencoding::decode(left).ok();
+    let right_decoded = urlencoding::decode(right).ok();
+    match (left_decoded.as_deref(), right_decoded.as_deref()) {
+        (Some(left), Some(right)) => left == right,
+        (Some(left), None) => left == right,
+        (None, Some(right)) => left == right,
+        (None, None) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use actix_web::http::header::{HeaderMap, HeaderName, HeaderValue};
 
     use super::{
         Depth, parse_copy_depth, parse_delete_depth, parse_if_conditions, parse_move_depth,
-        parse_propfind_depth, submitted_lock_tokens,
+        parse_propfind_depth, submitted_lock_tokens, submitted_lock_tokens_for_path,
     };
 
     fn headers(name: &'static str, value: &'static str) -> HeaderMap {
@@ -273,6 +329,27 @@ mod tests {
         assert_eq!(
             submitted_lock_tokens(&headers),
             ["urn:uuid:one".to_string(), "urn:uuid:two".to_string()]
+        );
+    }
+
+    #[test]
+    fn submitted_tokens_for_path_ignore_other_tagged_resources() {
+        let mut headers = headers(
+            "If",
+            r#"</webdav/other.txt> (<urn:uuid:other>) </webdav/current.txt> (<urn:uuid:current>) (<urn:uuid:untagged>)"#,
+        );
+        headers.insert(
+            HeaderName::from_static("lock-token"),
+            HeaderValue::from_static("<urn:uuid:header>"),
+        );
+
+        assert_eq!(
+            submitted_lock_tokens_for_path(&headers, "/webdav/current.txt"),
+            [
+                "urn:uuid:current".to_string(),
+                "urn:uuid:header".to_string(),
+                "urn:uuid:untagged".to_string()
+            ]
         );
     }
 }

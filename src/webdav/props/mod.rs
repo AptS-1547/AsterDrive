@@ -135,7 +135,7 @@ pub(crate) async fn handle_proppatch(
         Ok(v) => v,
         Err(resp) => return resp,
     };
-    if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
+    if let Err(resp) = ensure_unlocked(lock_system, &path, false, prefix, req.headers()).await {
         return resp;
     }
 

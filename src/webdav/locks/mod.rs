@@ -11,7 +11,7 @@ use crate::webdav::dav::{DavFileSystem, DavLock, DavLockSystem, FsError, OpenOpt
 use crate::webdav::protocol::{self, Depth};
 use crate::webdav::{
     XML_CONTENT_TYPE, child_elements, dav_element, encode_href, fs, fs_error_response,
-    request_path, text_element, xml_bytes,
+    href_for_dav_path, request_path, text_element, xml_bytes,
 };
 
 pub(crate) async fn handle_lock(
@@ -27,7 +27,8 @@ pub(crate) async fn handle_lock(
     };
 
     if body.is_empty() {
-        let tokens = protocol::submitted_lock_tokens(req.headers());
+        let request_href = href_for_dav_path(prefix, &path);
+        let tokens = protocol::submitted_lock_tokens_for_path(req.headers(), &request_href);
         if tokens.len() != 1 {
             return HttpResponse::BadRequest().finish();
         }

@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 use sea_orm::Set;
 
 use crate::api::subcode::ApiSubcode;
-use crate::db::repository::lock_repo;
+use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
 use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
 use crate::runtime::PrimaryAppState;
@@ -31,20 +31,24 @@ pub async fn lock(
     let txn = crate::db::transaction::begin(state.writer_db()).await?;
 
     let result = async {
-        if let Some(existing) = lock_repo::find_by_entity(&txn, entity_type, entity_id).await? {
-            match existing.timeout_at {
-                Some(timeout_at) if timeout_at < now => {
-                    tracing::debug!(
-                        lock_id = existing.id,
-                        entity_type = ?entity_type,
-                        entity_id,
-                        timeout_at = %timeout_at,
-                        "removing expired lock before acquiring replacement"
-                    );
-                    lock_repo::delete_by_id(&txn, existing.id).await?;
-                }
-                _ => return Err(AsterError::resource_locked("resource is already locked")),
+        lock_target_entity(&txn, entity_type, entity_id).await?;
+
+        for existing in lock_repo::find_all_by_entity(&txn, entity_type, entity_id).await? {
+            if existing
+                .timeout_at
+                .is_some_and(|timeout_at| timeout_at < now)
+            {
+                tracing::debug!(
+                    lock_id = existing.id,
+                    entity_type = ?entity_type,
+                    entity_id,
+                    "removing expired lock before acquiring replacement"
+                );
+                lock_repo::delete_by_id(&txn, existing.id).await?;
+                continue;
             }
+
+            return Err(AsterError::resource_locked("resource is already locked"));
         }
 
         let path = resolve_entity_path(&txn, entity_type, entity_id).await?;
@@ -62,9 +66,7 @@ pub async fn lock(
             ..Default::default()
         };
 
-        let lock = lock_repo::create_if_unlocked(&txn, model, entity_type, entity_id)
-            .await?
-            .ok_or_else(|| AsterError::resource_locked("resource is already locked"))?;
+        let lock = lock_repo::create(&txn, model).await?;
         set_entity_locked(&txn, entity_type, entity_id, true).await?;
         Ok(lock)
     }
@@ -107,11 +109,16 @@ pub async fn unlock(
 ) -> Result<()> {
     let db = state.writer_db();
 
-    // 校验归属：只有锁持有者或文件所有者可以解锁
-    if let Some(existing) = lock_repo::find_by_entity(db, entity_type, entity_id).await? {
-        let is_owner = existing.owner_id == Some(user_id);
+    // 校验归属：文件所有者可解全部；否则只能解自己持有的全部活跃锁。
+    let now = Utc::now();
+    let locks = lock_repo::find_all_by_entity(db, entity_type, entity_id).await?;
+    if !locks.is_empty() {
         let is_entity_owner = check_entity_ownership(db, entity_type, entity_id, user_id).await?;
-        if !is_owner && !is_entity_owner {
+        let has_foreign_active_lock = locks.iter().any(|lock| {
+            lock.timeout_at.is_none_or(|timeout_at| timeout_at >= now)
+                && lock.owner_id != Some(user_id)
+        });
+        if !is_entity_owner && has_foreign_active_lock {
             return Err(auth_forbidden_with_subcode(
                 ApiSubcode::LockNotOwner,
                 "not the lock owner",
@@ -199,5 +206,21 @@ async fn do_unlock_by_entity(
 ) -> Result<()> {
     lock_repo::delete_by_entity(state.writer_db(), entity_type, entity_id).await?;
     clear_entity_locked_if_unlocked(state.writer_db(), entity_type, entity_id).await?;
+    Ok(())
+}
+
+async fn lock_target_entity<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    entity_type: EntityType,
+    entity_id: i64,
+) -> Result<()> {
+    match entity_type {
+        EntityType::File => {
+            file_repo::lock_by_id(db, entity_id).await?;
+        }
+        EntityType::Folder => {
+            folder_repo::lock_by_id(db, entity_id).await?;
+        }
+    }
     Ok(())
 }

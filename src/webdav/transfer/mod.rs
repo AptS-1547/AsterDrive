@@ -105,7 +105,7 @@ pub(crate) async fn handle_put(
         Err(err) => return fs_error_response(err),
     };
 
-    if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
+    if let Err(resp) = ensure_unlocked(lock_system, &path, false, prefix, req.headers()).await {
         return resp;
     }
 

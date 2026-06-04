@@ -233,3 +233,155 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
         .unwrap();
     assert!(!unlocked_file.is_locked);
 }
+
+#[actix_web::test]
+async fn test_db_lock_system_allows_shared_locks_and_keeps_locked_until_last_unlock() {
+    use aster_drive::db::repository::{file_repo, lock_repo};
+    use aster_drive::services::{auth_service, file_service};
+    use aster_drive::types::EntityType;
+    use aster_drive::webdav::dav::{DavLockSystem, DavPath};
+    use aster_drive::webdav::db_lock_system::DbLockSystem;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "davshared", "davshared@example.com", "pass1234")
+        .await
+        .unwrap();
+
+    let temp_path = write_temp_fixture("shared.txt", "shared lock content");
+    let file = file_service::store_from_temp(
+        &state,
+        user.id,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "shared.txt",
+            &temp_path,
+            "shared lock content".len() as i64,
+        ),
+    )
+    .await
+    .unwrap();
+
+    let lock_system = DbLockSystem::new(state.writer_db().clone(), user.id, None);
+    let file_path = DavPath::new("/shared.txt").unwrap();
+
+    let first = lock_system
+        .lock(
+            &file_path,
+            Some("tester-a"),
+            None,
+            Some(Duration::from_secs(60)),
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+    let second = lock_system
+        .lock(
+            &file_path,
+            Some("tester-b"),
+            None,
+            Some(Duration::from_secs(60)),
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+    assert_ne!(first.token, second.token);
+
+    let discovered = lock_system.discover(&file_path).await;
+    assert_eq!(discovered.len(), 2);
+    assert!(discovered.iter().any(|lock| lock.token == first.token));
+    assert!(discovered.iter().any(|lock| lock.token == second.token));
+
+    let exclusive_conflict = lock_system
+        .lock(
+            &file_path,
+            Some("tester-c"),
+            None,
+            Some(Duration::from_secs(60)),
+            false,
+            false,
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        [first.token.as_str(), second.token.as_str()].contains(&exclusive_conflict.token.as_str())
+    );
+
+    lock_system.unlock(&file_path, &first.token).await.unwrap();
+    let still_locked = file_repo::find_by_id(state.writer_db(), file.id)
+        .await
+        .unwrap();
+    assert!(still_locked.is_locked);
+    assert_eq!(
+        lock_repo::find_all_by_entity(state.writer_db(), EntityType::File, file.id)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+
+    lock_system.unlock(&file_path, &second.token).await.unwrap();
+    let unlocked = file_repo::find_by_id(state.writer_db(), file.id)
+        .await
+        .unwrap();
+    assert!(!unlocked.is_locked);
+}
+
+#[actix_web::test]
+async fn test_db_lock_system_exclusive_lock_blocks_shared_lock() {
+    use aster_drive::services::{auth_service, file_service};
+    use aster_drive::webdav::dav::{DavLockSystem, DavPath};
+    use aster_drive::webdav::db_lock_system::DbLockSystem;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davexclusive",
+        "davexclusive@example.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
+
+    let temp_path = write_temp_fixture("exclusive.txt", "exclusive lock content");
+    file_service::store_from_temp(
+        &state,
+        user.id,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "exclusive.txt",
+            &temp_path,
+            "exclusive lock content".len() as i64,
+        ),
+    )
+    .await
+    .unwrap();
+
+    let lock_system = DbLockSystem::new(state.writer_db().clone(), user.id, None);
+    let file_path = DavPath::new("/exclusive.txt").unwrap();
+
+    let exclusive = lock_system
+        .lock(
+            &file_path,
+            Some("tester-a"),
+            None,
+            Some(Duration::from_secs(60)),
+            false,
+            false,
+        )
+        .await
+        .unwrap();
+    let shared_conflict = lock_system
+        .lock(
+            &file_path,
+            Some("tester-b"),
+            None,
+            Some(Duration::from_secs(60)),
+            true,
+            false,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(shared_conflict.token, exclusive.token);
+}

@@ -37,7 +37,7 @@ pub(crate) async fn handle_mkcol(
     if let Err(resp) = ensure_parent_exists(dav_fs, &relative).await {
         return resp;
     }
-    if let Err(resp) = ensure_unlocked(lock_system, &path, false, req.headers()).await {
+    if let Err(resp) = ensure_unlocked(lock_system, &path, false, prefix, req.headers()).await {
         return resp;
     }
 
@@ -73,7 +73,7 @@ pub(crate) async fn handle_delete(
         Ok(meta) => meta,
         Err(err) => return fs_error_response(err),
     };
-    if let Err(resp) = ensure_unlocked(lock_system, &path, true, req.headers()).await {
+    if let Err(resp) = ensure_unlocked(lock_system, &path, true, prefix, req.headers()).await {
         return resp;
     }
 
@@ -139,10 +139,13 @@ pub(crate) async fn handle_copy_move(
         Ok(path) => path,
         Err(_) => return HttpResponse::BadRequest().body("Invalid destination path"),
     };
-    if is_move && let Err(resp) = ensure_unlocked(lock_system, &source, true, req.headers()).await {
+    if is_move
+        && let Err(resp) = ensure_unlocked(lock_system, &source, true, prefix, req.headers()).await
+    {
         return resp;
     }
-    if let Err(resp) = ensure_unlocked(lock_system, &destination, true, req.headers()).await {
+    if let Err(resp) = ensure_unlocked(lock_system, &destination, true, prefix, req.headers()).await
+    {
         return resp;
     }
 
