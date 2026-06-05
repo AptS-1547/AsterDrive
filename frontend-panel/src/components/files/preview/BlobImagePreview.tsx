@@ -1,6 +1,10 @@
+import type { CSSProperties, Ref } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
+import { useFrontendConfigStore } from "@/stores/frontendConfigStore";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import type { PreviewableFileLike } from "./types";
@@ -9,7 +13,16 @@ interface BlobImagePreviewProps {
 	file: PreviewableFileLike;
 	fallbackPath?: string;
 	fillContainer?: boolean;
+	imageClassName?: string;
+	imageRef?: Ref<HTMLImageElement>;
+	imageStyle?: CSSProperties;
+	onImageLoad?: (source: ImagePreviewSource) => void;
+	onImageRenderError?: (source: ImagePreviewSource) => void;
 	path: string;
+	source?: ImagePreviewSource;
+	showOriginalButtonPlacement?: "inline" | "none";
+	viewportClassName?: string;
+	viewportRef?: Ref<HTMLDivElement>;
 }
 
 function isSvgPreview(file: PreviewableFileLike) {
@@ -19,38 +32,130 @@ function isSvgPreview(file: PreviewableFileLike) {
 	);
 }
 
-function isHeifPreview(file: PreviewableFileLike) {
-	const lowerName = file.name.trim().toLowerCase();
-	const mime = file.mime_type.trim().toLowerCase();
-	return (
-		mime === "image/heic" ||
-		mime === "image/heif" ||
-		lowerName.endsWith(".heic") ||
-		lowerName.endsWith(".heif")
-	);
-}
+export type ImagePreviewSource = "original" | "backend_preview";
+export type ShowOriginalState = "hidden" | "available" | "loading" | "success";
 
 export function BlobImagePreview({
 	file,
 	fallbackPath,
 	fillContainer = false,
+	imageClassName: imageClassNameProp,
+	imageRef,
+	imageStyle,
+	onImageLoad,
+	onImageRenderError,
 	path,
+	source,
+	showOriginalButtonPlacement = "inline",
+	viewportClassName,
+	viewportRef,
 }: BlobImagePreviewProps) {
 	const { t } = useTranslation("files");
+	const imagePreviewPreference = useFrontendConfigStore(
+		(state) => state.imagePreviewPreference,
+	);
 	const previewKey = `${file.name}\u0000${file.mime_type}\u0000${path}\u0000${
 		fallbackPath ?? ""
-	}`;
+	}\u0000${imagePreviewPreference}`;
+	const [requestedOriginalKey, setRequestedOriginalKey] = useState<
+		string | null
+	>(null);
+	const [renderedOriginalKey, setRenderedOriginalKey] = useState<string | null>(
+		null,
+	);
+	const [failedOriginalKey, setFailedOriginalKey] = useState<string | null>(
+		null,
+	);
+	const requestedOriginal = requestedOriginalKey === previewKey;
+	const originalRenderedSuccessfully = renderedOriginalKey === previewKey;
+	const originalRenderFailed = failedOriginalKey === previewKey;
+	const canShowOriginal =
+		imagePreviewPreference === "preview_first" && fallbackPath != null;
+	const baseSource: ImagePreviewSource =
+		source ?? (canShowOriginal ? "backend_preview" : "original");
+	const isControlledSource = source != null;
+	const shouldLoadOriginal =
+		!isControlledSource &&
+		canShowOriginal &&
+		baseSource === "backend_preview" &&
+		requestedOriginal;
+	const {
+		blobUrl: originalBlobUrl,
+		error: originalError,
+		loading: originalLoading,
+		retry: retryOriginal,
+	} = useBlobUrl(shouldLoadOriginal ? path : null, {
+		lane: "default",
+	});
+	const originalReady =
+		shouldLoadOriginal && originalBlobUrl && !originalLoading && !originalError;
+	const displaySource: ImagePreviewSource =
+		!isControlledSource &&
+		baseSource === "backend_preview" &&
+		originalReady &&
+		!originalRenderFailed
+			? "original"
+			: baseSource;
+	const displayPath: string | null =
+		displaySource === "backend_preview" ? (fallbackPath ?? null) : path;
+	const { blobUrl, error, loading, retry } = useBlobUrl(displayPath, {
+		lane: displaySource === "backend_preview" ? "preview" : "default",
+	});
 	const [imageRenderFailedKey, setImageRenderFailedKey] = useState<
 		string | null
 	>(null);
-	const shouldPreferBackendPreview =
-		Boolean(fallbackPath) && isHeifPreview(file);
-	const imageRenderFailed = imageRenderFailedKey === previewKey;
-	const activePath = shouldPreferBackendPreview ? (fallbackPath ?? path) : path;
-	const { blobUrl, error, loading, retry } = useBlobUrl(activePath);
+	const imageRenderKey = `${previewKey}\u0000${displaySource}`;
+	const imageRenderFailed = imageRenderFailedKey === imageRenderKey;
+	const canRequestOriginal =
+		!isControlledSource &&
+		canShowOriginal &&
+		baseSource === "backend_preview" &&
+		!originalRenderedSuccessfully;
+	const showOriginalState: ShowOriginalState = canRequestOriginal
+		? originalRenderedSuccessfully
+			? "success"
+			: requestedOriginal && !originalError
+				? "loading"
+				: "available"
+		: canShowOriginal &&
+				displaySource === "original" &&
+				originalRenderedSuccessfully
+			? "success"
+			: "hidden";
+	const imageContainerClass =
+		viewportClassName ??
+		(fillContainer
+			? "flex h-full min-h-0 w-full items-center justify-center p-4"
+			: isSvgPreview(file)
+				? "flex w-full items-center justify-center p-4"
+				: "mx-auto flex w-fit max-w-full min-w-0 items-center justify-center p-4");
+	const imageClass =
+		imageClassNameProp ??
+		(fillContainer
+			? "block h-full w-full min-w-0 object-contain"
+			: isSvgPreview(file)
+				? "block h-auto w-full max-h-[min(70vh,48rem)] max-w-[min(70vw,48rem)] min-w-0 object-contain"
+				: "block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain");
 
 	const handleImageError = () => {
-		setImageRenderFailedKey(previewKey);
+		onImageRenderError?.(displaySource);
+		if (
+			!isControlledSource &&
+			displaySource === "original" &&
+			canShowOriginal
+		) {
+			setFailedOriginalKey(previewKey);
+			setRequestedOriginalKey(null);
+			return;
+		}
+		setImageRenderFailedKey(imageRenderKey);
+	};
+
+	const handleImageLoad = () => {
+		onImageLoad?.(displaySource);
+		if (!isControlledSource && displaySource === "original") {
+			setRenderedOriginalKey(previewKey);
+		}
 	};
 
 	const handleRetry = () => {
@@ -58,40 +163,69 @@ export function BlobImagePreview({
 		retry();
 	};
 
-	if (loading) {
-		return (
-			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
-		);
-	}
+	const handleShowOriginal = () => {
+		setImageRenderFailedKey(null);
+		setFailedOriginalKey(null);
+		if (requestedOriginal && originalError) {
+			retryOriginal();
+			return;
+		}
+		setRequestedOriginalKey(previewKey);
+	};
 
-	if (error || !blobUrl || imageRenderFailed) {
-		return <PreviewError onRetry={handleRetry} />;
-	}
+	const originalButton =
+		canRequestOriginal && showOriginalButtonPlacement === "inline" ? (
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				className="shrink-0"
+				onClick={handleShowOriginal}
+				disabled={showOriginalState === "loading"}
+			>
+				<Icon
+					name={showOriginalState === "loading" ? "Spinner" : "Eye"}
+					className={`mr-1.5 size-4 ${showOriginalState === "loading" ? "animate-spin" : ""}`}
+				/>
+				{t("preview_show_original")}
+			</Button>
+		) : null;
 
-	const isSvg = isSvgPreview(file);
+	const content = loading ? (
+		<PreviewLoadingState text={t("loading_preview")} className="h-full" />
+	) : error || !blobUrl || imageRenderFailed ? (
+		<PreviewError onRetry={handleRetry} />
+	) : (
+		<div ref={viewportRef} className={imageContainerClass}>
+			<img
+				ref={imageRef}
+				src={blobUrl}
+				alt={file.name}
+				draggable={false}
+				onError={handleImageError}
+				onLoad={handleImageLoad}
+				className={imageClass}
+				style={imageStyle}
+			/>
+		</div>
+	);
+
+	if (!originalButton) {
+		return content;
+	}
 
 	return (
 		<div
 			className={
 				fillContainer
-					? "flex h-full min-h-0 w-full items-center justify-center p-4"
-					: isSvg
-						? "flex w-full items-center justify-center p-4"
-						: "mx-auto flex w-fit max-w-full min-w-0 items-center justify-center p-4"
+					? "flex h-full min-h-0 w-full flex-col"
+					: "flex w-full flex-col"
 			}
 		>
-			<img
-				src={blobUrl}
-				alt={file.name}
-				onError={handleImageError}
-				className={
-					fillContainer
-						? "block h-full w-full min-w-0 object-contain"
-						: isSvg
-							? "block h-auto w-full max-h-[min(70vh,48rem)] max-w-[min(70vw,48rem)] min-w-0 object-contain"
-							: "block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain"
-				}
-			/>
+			<div className="flex justify-end px-4 pt-4">{originalButton}</div>
+			<div className={fillContainer ? "min-h-0 flex-1" : undefined}>
+				{content}
+			</div>
 		</div>
 	);
 }
