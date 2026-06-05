@@ -14,6 +14,8 @@ pub struct FileInfo {
     pub team_id: Option<i64>,
     pub blob_id: i64,
     pub size: i64,
+    /// Total quota bytes for the file detail view: current `size` plus all
+    /// historical version sizes. `size` is only the current version size.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_used: Option<i64>,
     pub owner_user_id: Option<i64>,
@@ -59,6 +61,8 @@ impl From<crate::entities::file::Model> for FileInfo {
 }
 
 impl FileInfo {
+    /// Builds a detail `FileInfo` from a file model and attaches explicit
+    /// quota bytes (`storage_used`) for the current file plus its versions.
     pub fn from_model_with_storage_used(
         model: crate::entities::file::Model,
         storage_used: i64,
@@ -80,6 +84,8 @@ pub struct FolderInfo {
     pub created_by_user_id: Option<i64>,
     pub created_by_username: String,
     pub policy_id: Option<i64>,
+    /// Recursive quota bytes for the folder detail view: all live files in the
+    /// folder tree, including current file sizes plus historical versions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_used: Option<i64>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -113,6 +119,8 @@ impl From<crate::entities::folder::Model> for FolderInfo {
 }
 
 impl FolderInfo {
+    /// Builds a detail `FolderInfo` via `FolderInfo::from` and sets recursive
+    /// quota bytes (`storage_used`) for the details endpoint.
     pub fn from_model_with_storage_used(
         model: crate::entities::folder::Model,
         storage_used: i64,

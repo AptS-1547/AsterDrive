@@ -13,7 +13,14 @@ fn sum_version_size_as_i64_expr(backend: DbBackend) -> sea_orm::sea_query::Simpl
     let type_name = match backend {
         DbBackend::Postgres => "bigint",
         DbBackend::MySql => "signed",
-        _ => "integer",
+        DbBackend::Sqlite => "integer",
+        other => {
+            tracing::warn!(
+                backend = ?other,
+                "unknown database backend for file version size sum cast; using integer"
+            );
+            "integer"
+        }
     };
     Expr::col(file_version::Column::Size)
         .sum()

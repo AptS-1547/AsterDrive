@@ -5,7 +5,11 @@ mod common;
 
 use actix_web::http::{StatusCode, header};
 use actix_web::test;
-use aster_drive::db::repository::{file_repo, user_repo};
+use aster_drive::db::repository::{file_repo, policy_repo, user_repo};
+use aster_drive::entities::{file, file_blob};
+use aster_drive::types::FileCategory;
+use chrono::Utc;
+use sea_orm::{ActiveModelTrait, Set};
 use serde_json::Value;
 
 macro_rules! upload_test_file_with_name_and_mime {
@@ -41,8 +45,8 @@ macro_rules! upload_test_file_with_name_and_mime {
     }};
 }
 
-macro_rules! upload_test_file_to_folder_with_content {
-    ($app:expr, $token:expr, $folder_id:expr, $name:expr, $content:expr) => {{
+macro_rules! upload_test_file_to_uri_with_content {
+    ($app:expr, $token:expr, $uri:expr, $name:expr, $content:expr, $message:expr) => {{
         use actix_web::test;
         use serde_json::Value;
 
@@ -57,7 +61,7 @@ macro_rules! upload_test_file_to_folder_with_content {
             content = $content
         );
         let req = test::TestRequest::post()
-            .uri(&format!("/api/v1/files/upload?folder_id={}", $folder_id))
+            .uri($uri)
             .insert_header(("Cookie", common::access_cookie_header(&$token)))
             .insert_header(common::csrf_header_for(&$token))
             .insert_header((
@@ -67,41 +71,35 @@ macro_rules! upload_test_file_to_folder_with_content {
             .set_payload(payload)
             .to_request();
         let resp = test::call_service(&$app, req).await;
-        assert_eq!(resp.status(), 201, "upload to folder should return 201");
+        assert_eq!(resp.status(), 201, $message);
         let body: Value = test::read_body_json(resp).await;
         body["data"]["id"].as_i64().unwrap()
     }};
 }
 
+macro_rules! upload_test_file_to_folder_with_content {
+    ($app:expr, $token:expr, $folder_id:expr, $name:expr, $content:expr) => {{
+        upload_test_file_to_uri_with_content!(
+            $app,
+            $token,
+            &format!("/api/v1/files/upload?folder_id={}", $folder_id),
+            $name,
+            $content,
+            "upload to folder should return 201"
+        )
+    }};
+}
+
 macro_rules! upload_test_file_with_content {
     ($app:expr, $token:expr, $name:expr, $content:expr) => {{
-        use actix_web::test;
-        use serde_json::Value;
-
-        let boundary = "----StorageUsedRootBoundary";
-        let payload = format!(
-            "------StorageUsedRootBoundary\r\n\
-             Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n\
-             Content-Type: text/plain\r\n\r\n\
-             {content}\r\n\
-             ------StorageUsedRootBoundary--\r\n",
-            name = $name,
-            content = $content
-        );
-        let req = test::TestRequest::post()
-            .uri("/api/v1/files/upload")
-            .insert_header(("Cookie", common::access_cookie_header(&$token)))
-            .insert_header(common::csrf_header_for(&$token))
-            .insert_header((
-                "Content-Type",
-                format!("multipart/form-data; boundary={boundary}"),
-            ))
-            .set_payload(payload)
-            .to_request();
-        let resp = test::call_service(&$app, req).await;
-        assert_eq!(resp.status(), 201, "upload should return 201");
-        let body: Value = test::read_body_json(resp).await;
-        body["data"]["id"].as_i64().unwrap()
+        upload_test_file_to_uri_with_content!(
+            $app,
+            $token,
+            "/api/v1/files/upload",
+            $name,
+            $content,
+            "upload should return 201"
+        )
     }};
 }
 
@@ -1305,7 +1303,7 @@ async fn test_folder_detail_storage_used_is_recursive_and_excludes_trashed_files
 #[actix_web::test]
 async fn test_folder_detail_storage_used_handles_paginated_file_batches() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
 
     let req = test::TestRequest::post()
@@ -1319,13 +1317,58 @@ async fn test_folder_detail_storage_used_handles_paginated_file_batches() {
     let body: Value = test::read_body_json(resp).await;
     let folder_id = body["data"]["id"].as_i64().unwrap();
 
-    let mut expected = 0i64;
-    for index in 0..501 {
-        let name = format!("wide-{index}.txt");
-        let content = if index % 2 == 0 { "aa" } else { "bbb" };
-        upload_test_file_to_folder_with_content!(app, token, folder_id, &name, content);
-        expected += content.len() as i64;
+    let user = user_repo::find_by_username(state.writer_db(), "testuser")
+        .await
+        .unwrap()
+        .expect("registered test user should exist");
+    let policy = policy_repo::find_default(state.writer_db())
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+    let now = Utc::now();
+    let blob = file_blob::ActiveModel {
+        hash: Set("storage-used-pagination-blob".to_string()),
+        size: Set(3),
+        policy_id: Set(policy.id),
+        storage_path: Set("storage-used-pagination-blob".to_string()),
+        ref_count: Set(501),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
     }
+    .insert(state.writer_db())
+    .await
+    .expect("pagination test blob should insert");
+
+    let mut expected = 0i64;
+    let files = (0..501)
+        .map(|index| {
+            let size = if index % 2 == 0 { 2 } else { 3 };
+            expected += size;
+            file::ActiveModel {
+                name: Set(format!("wide-{index}.txt")),
+                folder_id: Set(Some(folder_id)),
+                team_id: Set(None),
+                blob_id: Set(blob.id),
+                size: Set(size),
+                owner_user_id: Set(Some(user.id)),
+                created_by_user_id: Set(Some(user.id)),
+                created_by_username: Set(user.username.clone()),
+                mime_type: Set("text/plain".to_string()),
+                extension: Set("txt".to_string()),
+                compound_extension: Set(None),
+                file_category: Set(FileCategory::Document),
+                created_at: Set(now),
+                updated_at: Set(now),
+                deleted_at: Set(None),
+                is_locked: Set(false),
+                ..Default::default()
+            }
+        })
+        .collect();
+    file_repo::create_many(state.writer_db(), files)
+        .await
+        .expect("pagination test files should insert");
 
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/folders/{folder_id}/info"))
