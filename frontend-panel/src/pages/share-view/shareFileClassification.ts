@@ -1,3 +1,4 @@
+import { supportsImagePreviewExtension } from "@/lib/thumbnailSupport";
 import type { FileCategory } from "@/types/api";
 
 const COMPOUND_EXTENSIONS = [
@@ -10,25 +11,16 @@ const COMPOUND_EXTENSIONS = [
 	"tar.lzma",
 	"tar.lzo",
 ] as const;
-const IMAGE_EXTENSIONS = new Set([
+const BROWSER_IMAGE_EXTENSIONS = new Set([
 	"jpg",
 	"jpeg",
 	"png",
 	"gif",
 	"webp",
 	"bmp",
-	"tif",
-	"tiff",
 	"svg",
 	"ico",
 	"avif",
-	"heic",
-	"heif",
-	"raw",
-	"cr2",
-	"nef",
-	"orf",
-	"rw2",
 ]);
 const VIDEO_EXTENSIONS = new Set([
 	"mp4",
@@ -178,6 +170,7 @@ export function classifySharedFile(
 	name: string,
 	mimeType: string,
 	compoundExtension: string | null,
+	imagePreviewExtensions?: string[],
 ): FileCategory {
 	const extension = extensionFromName(name);
 	const mime = mimeType.trim().toLowerCase();
@@ -185,9 +178,14 @@ export function classifySharedFile(
 	if (SPREADSHEET_EXTENSIONS.has(extension)) return "spreadsheet";
 	if (PRESENTATION_EXTENSIONS.has(extension)) return "presentation";
 	if (CODE_EXTENSIONS.has(extension)) return "code";
-	if (IMAGE_EXTENSIONS.has(extension)) return "image";
 	if (VIDEO_EXTENSIONS.has(extension)) return "video";
 	if (AUDIO_EXTENSIONS.has(extension)) return "audio";
+	if (
+		BROWSER_IMAGE_EXTENSIONS.has(extension) ||
+		supportsImagePreviewExtension(name, imagePreviewExtensions)
+	) {
+		return "image";
+	}
 	if (DOCUMENT_EXTENSIONS.has(extension)) return "document";
 	if (mime.startsWith("image/")) return "image";
 	if (mime.startsWith("video/")) return "video";

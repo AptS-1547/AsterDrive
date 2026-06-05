@@ -137,6 +137,12 @@ fn build_public_thumbnail_support(
 ) -> media_processing::PublicThumbnailSupport {
     let mut support = media_processing::public_thumbnail_support(&state.runtime_config);
     let mut extensions = support.extensions.iter().cloned().collect::<BTreeSet<_>>();
+    let mut image_thumbnail_extensions = support
+        .image_thumbnail
+        .extensions
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
 
     for policy in state.policy_snapshot.all_policies() {
         let options = parse_storage_policy_options(policy.options.as_ref());
@@ -147,10 +153,15 @@ fn build_public_thumbnail_support(
         // 这里是 public capability 聚合，不能实例化 driver：前端正常加载该接口时
         // 可能遍历所有策略，若调用 get_driver() 会把冷 COS/S3 client 常驻进全局缓存。
         if driver_type_supports_native_thumbnail(policy.driver_type) {
-            extensions.extend(options.thumbnail_extensions);
+            let policy_extensions = options.thumbnail_extensions;
+            image_thumbnail_extensions.extend(policy_extensions.iter().cloned());
+            extensions.extend(policy_extensions);
         }
     }
 
+    support.image_thumbnail.enabled = !image_thumbnail_extensions.is_empty();
+    support.image_thumbnail.extensions = image_thumbnail_extensions.into_iter().collect();
+    support.image_preview = support.image_thumbnail.clone();
     support.extensions = extensions.into_iter().collect();
     support
 }

@@ -32,6 +32,17 @@ function isStringArray(value: unknown): value is string[] {
 	);
 }
 
+function isExtensionSupport(value: unknown) {
+	if (!isRecord(value)) {
+		return false;
+	}
+
+	return (
+		typeof value.enabled === "boolean" &&
+		(value.extensions === undefined || isStringArray(value.extensions))
+	);
+}
+
 function isThumbnailSupportConfig(
 	value: unknown,
 ): value is PublicThumbnailSupport {
@@ -42,7 +53,15 @@ function isThumbnailSupportConfig(
 	return (
 		typeof value.version === "number" &&
 		Number.isFinite(value.version) &&
-		(value.extensions === undefined || isStringArray(value.extensions))
+		(value.extensions === undefined || isStringArray(value.extensions)) &&
+		(value.image_preview === undefined ||
+			isExtensionSupport(value.image_preview)) &&
+		(value.image_thumbnail === undefined ||
+			isExtensionSupport(value.image_thumbnail)) &&
+		(value.audio_thumbnail === undefined ||
+			isExtensionSupport(value.audio_thumbnail)) &&
+		(value.video_thumbnail === undefined ||
+			isExtensionSupport(value.video_thumbnail))
 	);
 }
 

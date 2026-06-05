@@ -17,8 +17,9 @@ use super::types::{
     MatchedMediaProcessor, MediaProcessingMatchKind, MediaProcessingProcessorConfig,
     MediaProcessingProcessorRuntimeConfig, MediaProcessingRegistryConfig, MediaProcessingUse,
     PUBLIC_MEDIA_DATA_MAX_SAFE_SOURCE_BYTES, PUBLIC_MEDIA_DATA_SUPPORT_VERSION,
-    PUBLIC_THUMBNAIL_SUPPORT_VERSION, PublicMediaDataKindSupport, PublicMediaDataKindsSupport,
-    PublicMediaDataSupport, PublicMediaDataSupportMatch, PublicThumbnailSupport,
+    PUBLIC_THUMBNAIL_SUPPORT_VERSION, PublicExtensionSupport, PublicMediaDataKindSupport,
+    PublicMediaDataKindsSupport, PublicMediaDataSupport, PublicMediaDataSupportMatch,
+    PublicThumbnailSupport,
 };
 use crate::config::definitions::MEDIA_PROCESSING_REGISTRY_JSON_KEY;
 
@@ -120,7 +121,9 @@ pub fn ffprobe_command_from_registry(config: &MediaProcessingRegistryConfig) -> 
 
 pub fn public_thumbnail_support(runtime_config: &RuntimeConfig) -> PublicThumbnailSupport {
     let registry = media_processing_registry(runtime_config);
-    let mut extensions = BTreeSet::new();
+    let mut image_thumbnail_extensions = BTreeSet::new();
+    let mut audio_thumbnail_extensions = BTreeSet::new();
+    let mut video_thumbnail_extensions = BTreeSet::new();
 
     for processor in registry
         .processors
@@ -131,7 +134,7 @@ pub fn public_thumbnail_support(runtime_config: &RuntimeConfig) -> PublicThumbna
             MediaProcessorKind::Images
                 if processor_supports_use(processor, MediaProcessingUse::ThumbnailImage) =>
             {
-                extensions.extend(
+                image_thumbnail_extensions.extend(
                     BUILTIN_IMAGES_SUPPORTED_EXTENSIONS
                         .iter()
                         .map(|extension| (*extension).to_string()),
@@ -146,7 +149,7 @@ pub fn public_thumbnail_support(runtime_config: &RuntimeConfig) -> PublicThumbna
                     .as_deref()
                     .unwrap_or(DEFAULT_VIPS_COMMAND);
                 if command_is_available(command) {
-                    extensions.extend(processor.extensions.iter().cloned());
+                    image_thumbnail_extensions.extend(processor.extensions.iter().cloned());
                 }
             }
             MediaProcessorKind::FfmpegCli
@@ -158,13 +161,13 @@ pub fn public_thumbnail_support(runtime_config: &RuntimeConfig) -> PublicThumbna
                     .as_deref()
                     .unwrap_or(DEFAULT_FFMPEG_COMMAND);
                 if command_is_available(command) {
-                    extensions.extend(processor.extensions.iter().cloned());
+                    video_thumbnail_extensions.extend(processor.extensions.iter().cloned());
                 }
             }
             MediaProcessorKind::Lofty
                 if processor_supports_use(processor, MediaProcessingUse::ThumbnailAudio) =>
             {
-                extensions.extend(
+                audio_thumbnail_extensions.extend(
                     processor
                         .extensions
                         .iter()
@@ -183,8 +186,27 @@ pub fn public_thumbnail_support(runtime_config: &RuntimeConfig) -> PublicThumbna
         }
     }
 
+    let image_preview_extensions = image_thumbnail_extensions.clone();
+    let extensions = image_thumbnail_extensions
+        .iter()
+        .chain(audio_thumbnail_extensions.iter())
+        .chain(video_thumbnail_extensions.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
     PublicThumbnailSupport {
         version: PUBLIC_THUMBNAIL_SUPPORT_VERSION,
+        image_preview: public_extension_support(image_preview_extensions),
+        image_thumbnail: public_extension_support(image_thumbnail_extensions),
+        audio_thumbnail: public_extension_support(audio_thumbnail_extensions),
+        video_thumbnail: public_extension_support(video_thumbnail_extensions),
+        extensions: extensions.into_iter().collect(),
+    }
+}
+
+fn public_extension_support(extensions: BTreeSet<String>) -> PublicExtensionSupport {
+    PublicExtensionSupport {
+        enabled: !extensions.is_empty(),
         extensions: extensions.into_iter().collect(),
     }
 }

@@ -118,11 +118,10 @@ export const TEXT_EXTENSIONS = new Set([
 ]);
 
 export const IMAGE_EXTENSIONS = new Set([
+	"apng",
 	"avif",
 	"bmp",
 	"gif",
-	"heic",
-	"heif",
 	"ico",
 	"jfif",
 	"jpe",
@@ -130,8 +129,6 @@ export const IMAGE_EXTENSIONS = new Set([
 	"jpg",
 	"png",
 	"svg",
-	"tif",
-	"tiff",
 	"webp",
 ]);
 
@@ -302,7 +299,6 @@ export const PREFIX_TYPE_INFO: Array<
 			color: "text-orange-500",
 		},
 	],
-	["image/", { category: "image", icon: "FileImage", color: "text-sky-500" }],
 	[
 		"video/",
 		{ category: "video", icon: "FileVideo", color: "text-purple-500" },

@@ -67,6 +67,17 @@ const mockState = vi.hoisted(() => ({
 		isLoaded: true,
 		load: vi.fn(async () => {}),
 	},
+	thumbnailSupportStore: {
+		config: {
+			audio_thumbnail: { enabled: false, extensions: [] },
+			image_preview: { enabled: true, extensions: ["heic", "nef", "raw"] },
+			image_thumbnail: { enabled: true, extensions: ["heic", "nef", "raw"] },
+			video_thumbnail: { enabled: false, extensions: [] },
+			version: 1,
+		},
+		isLoaded: true,
+		load: vi.fn(async () => {}),
+	},
 	thumbnailPath: vi.fn((fileId: number) => `/files/${fileId}/thumbnail`),
 	videoBrowserOption: null as OpenWithOption | null,
 }));
@@ -92,6 +103,12 @@ vi.mock("@/stores/previewAppStore", () => ({
 	usePreviewAppStore: (
 		selector: (state: typeof mockState.previewAppStore) => unknown,
 	) => selector(mockState.previewAppStore),
+}));
+
+vi.mock("@/stores/thumbnailSupportStore", () => ({
+	useThumbnailSupportStore: (
+		selector: (state: typeof mockState.thumbnailSupportStore) => unknown,
+	) => selector(mockState.thumbnailSupportStore),
 }));
 
 vi.mock("@/lib/musicPlayer", () => ({
@@ -182,6 +199,16 @@ describe("useFilePreviewDialogModel", () => {
 		mockState.previewAppStore.isLoaded = true;
 		mockState.previewAppStore.load.mockReset();
 		mockState.previewAppStore.load.mockResolvedValue(undefined);
+		mockState.thumbnailSupportStore.config = {
+			audio_thumbnail: { enabled: false, extensions: [] },
+			image_preview: { enabled: true, extensions: ["heic", "nef", "raw"] },
+			image_thumbnail: { enabled: true, extensions: ["heic", "nef", "raw"] },
+			video_thumbnail: { enabled: false, extensions: [] },
+			version: 1,
+		};
+		mockState.thumbnailSupportStore.isLoaded = true;
+		mockState.thumbnailSupportStore.load.mockReset();
+		mockState.thumbnailSupportStore.load.mockResolvedValue(undefined);
 		mockState.thumbnailPath.mockClear();
 		mockState.videoBrowserOption = null;
 		vi.useRealTimers();
@@ -190,11 +217,13 @@ describe("useFilePreviewDialogModel", () => {
 	it("loads bootstrap stores and hides profile-dependent UI until preview apps load", () => {
 		mockState.mediaDataSupportStore.isLoaded = false;
 		mockState.previewAppStore.isLoaded = false;
+		mockState.thumbnailSupportStore.isLoaded = false;
 
 		const { result } = renderModel();
 
 		expect(mockState.mediaDataSupportStore.load).toHaveBeenCalledTimes(1);
 		expect(mockState.previewAppStore.load).toHaveBeenCalledTimes(1);
+		expect(mockState.thumbnailSupportStore.load).toHaveBeenCalledTimes(1);
 		expect(result.current.profile).toBeNull();
 		expect(result.current.activeMode).toBeNull();
 		expect(result.current.showOpenMethodChooser).toBe(false);

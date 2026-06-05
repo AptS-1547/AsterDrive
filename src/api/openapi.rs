@@ -587,6 +587,7 @@ use utoipa::{Modify, OpenApi};
             crate::services::config_service::TemplateVariableGroup,
             crate::services::config_service::ConfigActionType,
             crate::services::config_service::PublicBranding,
+            crate::config::media_processing::PublicExtensionSupport,
             crate::config::media_processing::PublicMediaDataKindSupport,
             crate::config::media_processing::PublicMediaDataKindsSupport,
             crate::config::media_processing::PublicMediaDataSupport,

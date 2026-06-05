@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
+import {
+	getThumbnailExtension,
+	supportsImagePreviewExtension,
+} from "@/lib/thumbnailSupport";
+import { useThumbnailSupportStore } from "@/stores/thumbnailSupportStore";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import type { PreviewableFileLike } from "./types";
@@ -12,6 +17,21 @@ interface BlobImagePreviewProps {
 	path: string;
 }
 
+const BROWSER_NATIVE_IMAGE_EXTENSIONS = new Set([
+	"apng",
+	"avif",
+	"bmp",
+	"gif",
+	"ico",
+	"jfif",
+	"jpe",
+	"jpeg",
+	"jpg",
+	"png",
+	"svg",
+	"webp",
+]);
+
 function isSvgPreview(file: PreviewableFileLike) {
 	return (
 		file.mime_type.toLowerCase() === "image/svg+xml" ||
@@ -19,14 +39,25 @@ function isSvgPreview(file: PreviewableFileLike) {
 	);
 }
 
-function isHeifPreview(file: PreviewableFileLike) {
-	const lowerName = file.name.trim().toLowerCase();
+function shouldUseBackendImagePreview(
+	file: PreviewableFileLike,
+	extensions: string[] | undefined,
+) {
+	const extensionCandidates = [getThumbnailExtension(file.name)].filter(
+		Boolean,
+	);
 	const mime = file.mime_type.trim().toLowerCase();
-	return (
-		mime === "image/heic" ||
-		mime === "image/heif" ||
-		lowerName.endsWith(".heic") ||
-		lowerName.endsWith(".heif")
+	if (mime === "image/heic") {
+		extensionCandidates.push("heic");
+	}
+	if (mime === "image/heif") {
+		extensionCandidates.push("heif");
+	}
+
+	return extensionCandidates.some(
+		(extension) =>
+			!BROWSER_NATIVE_IMAGE_EXTENSIONS.has(extension) &&
+			supportsImagePreviewExtension(`preview.${extension}`, extensions),
 	);
 }
 
@@ -37,6 +68,9 @@ export function BlobImagePreview({
 	path,
 }: BlobImagePreviewProps) {
 	const { t } = useTranslation("files");
+	const imagePreviewExtensions = useThumbnailSupportStore(
+		(state) => state.config?.image_preview?.extensions,
+	);
 	const previewKey = `${file.name}\u0000${file.mime_type}\u0000${path}\u0000${
 		fallbackPath ?? ""
 	}`;
@@ -44,7 +78,8 @@ export function BlobImagePreview({
 		string | null
 	>(null);
 	const shouldPreferBackendPreview =
-		Boolean(fallbackPath) && isHeifPreview(file);
+		Boolean(fallbackPath) &&
+		shouldUseBackendImagePreview(file, imagePreviewExtensions);
 	const imageRenderFailed = imageRenderFailedKey === previewKey;
 	const activePath = shouldPreferBackendPreview ? (fallbackPath ?? path) : path;
 	const { blobUrl, error, loading, retry } = useBlobUrl(activePath);

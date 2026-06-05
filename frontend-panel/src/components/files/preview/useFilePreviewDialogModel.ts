@@ -4,6 +4,7 @@ import { fileService } from "@/services/fileService";
 import { useMediaDataSupportStore } from "@/stores/mediaDataSupportStore";
 import type { MusicPlayerTrack } from "@/stores/musicPlayerStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
+import { useThumbnailSupportStore } from "@/stores/thumbnailSupportStore";
 import type {
 	ArchivePreviewManifest,
 	FileInfo,
@@ -190,6 +191,11 @@ export function useFilePreviewDialogModel({
 	const previewApps = usePreviewAppStore((state) => state.config);
 	const previewAppsLoaded = usePreviewAppStore((state) => state.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((state) => state.load);
+	const thumbnailSupport = useThumbnailSupportStore((state) => state.config);
+	const thumbnailSupportLoaded = useThumbnailSupportStore(
+		(state) => state.isLoaded,
+	);
+	const loadThumbnailSupport = useThumbnailSupportStore((state) => state.load);
 	const mediaDataSupport = useMediaDataSupportStore((state) => state.config);
 	const mediaDataSupportLoaded = useMediaDataSupportStore(
 		(state) => state.isLoaded,
@@ -228,10 +234,21 @@ export function useFilePreviewDialogModel({
 		void loadPreviewApps();
 	}, [loadPreviewApps, previewAppsLoaded]);
 
+	useEffect(() => {
+		if (thumbnailSupportLoaded) return;
+		void loadThumbnailSupport();
+	}, [loadThumbnailSupport, thumbnailSupportLoaded]);
+
 	const baseProfile = useMemo(() => {
-		if (!previewAppsLoaded) return null;
-		return detectFilePreviewProfile(file, previewApps);
-	}, [file, previewApps, previewAppsLoaded]);
+		if (!previewAppsLoaded || !thumbnailSupportLoaded) return null;
+		return detectFilePreviewProfile(file, previewApps, thumbnailSupport);
+	}, [
+		file,
+		previewApps,
+		previewAppsLoaded,
+		thumbnailSupport,
+		thumbnailSupportLoaded,
+	]);
 
 	const customVideoBrowserOption = useMemo(
 		() => getVideoBrowserOpenWithOption(),

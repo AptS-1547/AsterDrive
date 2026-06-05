@@ -97,8 +97,22 @@ impl MediaProcessingUse {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PublicExtensionSupport {
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PublicThumbnailSupport {
     pub version: i32,
+    pub image_preview: PublicExtensionSupport,
+    pub image_thumbnail: PublicExtensionSupport,
+    pub audio_thumbnail: PublicExtensionSupport,
+    pub video_thumbnail: PublicExtensionSupport,
+    // TODO(0.3.0): remove this flattened compatibility field after clients
+    // consume the per-use capability fields above.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extensions: Vec<String>,
 }

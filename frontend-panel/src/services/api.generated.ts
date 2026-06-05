@@ -6163,10 +6163,18 @@ export interface components {
             /** Format: int32 */
             version?: number;
         };
-        PublicThumbnailSupport: {
+        PublicExtensionSupport: {
+            enabled: boolean;
             extensions?: string[];
+        };
+        PublicThumbnailSupport: {
+            audio_thumbnail: components["schemas"]["PublicExtensionSupport"];
+            extensions?: string[];
+            image_preview: components["schemas"]["PublicExtensionSupport"];
+            image_thumbnail: components["schemas"]["PublicExtensionSupport"];
             /** Format: int32 */
             version: number;
+            video_thumbnail: components["schemas"]["PublicExtensionSupport"];
         };
         PurgedCountResponse: {
             /** Format: int32 */

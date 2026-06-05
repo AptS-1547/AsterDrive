@@ -80,15 +80,30 @@ async fn test_public_thumbnail_support_returns_default_builtin_extensions() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["version"], 1);
     assert!(body["data"].get("mime_types").is_none());
+    assert_eq!(body["data"]["image_preview"]["enabled"], true);
+    assert_eq!(body["data"]["image_thumbnail"]["enabled"], true);
+    assert_eq!(body["data"]["audio_thumbnail"]["enabled"], true);
+    assert_eq!(body["data"]["video_thumbnail"]["enabled"], false);
 
     let extensions = body["data"]["extensions"]
         .as_array()
         .expect("extensions should be an array");
+    let image_preview_extensions = body["data"]["image_preview"]["extensions"]
+        .as_array()
+        .expect("image preview extensions should be an array");
+    let audio_thumbnail_extensions = body["data"]["audio_thumbnail"]["extensions"]
+        .as_array()
+        .expect("audio thumbnail extensions should be an array");
     assert!(extensions.iter().any(|value| value == "png"));
     assert!(extensions.iter().any(|value| value == "jpg"));
     assert!(extensions.iter().any(|value| value == "tiff"));
     assert!(extensions.iter().any(|value| value == "mp3"));
     assert!(extensions.iter().any(|value| value == "flac"));
+    assert!(image_preview_extensions.iter().any(|value| value == "png"));
+    assert!(!image_preview_extensions.iter().any(|value| value == "mp3"));
+    assert!(audio_thumbnail_extensions.iter().any(|value| value == "mp3"));
+    assert!(audio_thumbnail_extensions.iter().any(|value| value == "flac"));
+    assert!(body["data"]["video_thumbnail"].get("extensions").is_none());
     assert!(!extensions.iter().any(|value| value == "mp4"));
     assert!(!extensions.iter().any(|value| value == "m4v"));
     assert!(!extensions.iter().any(|value| value == "3gp"));
@@ -112,7 +127,16 @@ async fn test_public_thumbnail_support_merges_builtin_and_enabled_vips_extension
                     {
                         "kind": "vips_cli",
                         "enabled": true,
-                        "extensions": ["HEIC", ".avif"],
+                        "extensions": ["HEIC", ".avif", "NEF", "raw", ".custom-vips"],
+                        "config": {
+                            "command": command
+                        }
+                    },
+                    {
+                        "kind": "ffmpeg_cli",
+                        "enabled": true,
+                        "uses": ["thumbnail:video"],
+                        "extensions": ["mp4"],
                         "config": {
                             "command": command
                         }
@@ -142,6 +166,28 @@ async fn test_public_thumbnail_support_merges_builtin_and_enabled_vips_extension
     assert!(extensions.iter().any(|value| value == "png"));
     assert!(extensions.iter().any(|value| value == "heic"));
     assert!(extensions.iter().any(|value| value == "avif"));
+    assert!(extensions.iter().any(|value| value == "nef"));
+    assert!(extensions.iter().any(|value| value == "raw"));
+    assert!(extensions.iter().any(|value| value == "custom-vips"));
+    assert!(extensions.iter().any(|value| value == "mp4"));
+
+    let image_preview_extensions = body["data"]["image_preview"]["extensions"]
+        .as_array()
+        .expect("image preview extensions should be an array");
+    let video_thumbnail_extensions = body["data"]["video_thumbnail"]["extensions"]
+        .as_array()
+        .expect("video thumbnail extensions should be an array");
+    assert!(image_preview_extensions.iter().any(|value| value == "heic"));
+    assert!(image_preview_extensions.iter().any(|value| value == "avif"));
+    assert!(image_preview_extensions.iter().any(|value| value == "nef"));
+    assert!(image_preview_extensions.iter().any(|value| value == "raw"));
+    assert!(
+        image_preview_extensions
+            .iter()
+            .any(|value| value == "custom-vips")
+    );
+    assert!(!image_preview_extensions.iter().any(|value| value == "mp4"));
+    assert!(video_thumbnail_extensions.iter().any(|value| value == "mp4"));
 }
 
 #[actix_web::test]

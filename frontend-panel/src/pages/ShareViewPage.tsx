@@ -7,6 +7,7 @@ import { supportsAudioMediaData } from "@/lib/mediaDataSupport";
 import { backendAudioMetadataToTrackMetadata } from "@/lib/musicPlayer";
 import { shareService } from "@/services/shareService";
 import { useMediaDataSupportStore } from "@/stores/mediaDataSupportStore";
+import { useThumbnailSupportStore } from "@/stores/thumbnailSupportStore";
 import type { FileInfo } from "@/types/api";
 import { ShareFileView } from "./share-view/ShareFileView";
 import { ShareLoadingSkeleton } from "./share-view/ShareFolderSkeleton";
@@ -161,10 +162,20 @@ export default function ShareViewPage() {
 	const { t } = useTranslation(["core", "share", "files", "errors"]);
 	const { token } = useParams<{ token: string }>();
 	const controller = useShareViewPageController({ token, t });
+	const thumbnailSupport = useThumbnailSupportStore((state) => state.config);
+	const thumbnailSupportLoaded = useThumbnailSupportStore(
+		(state) => state.isLoaded,
+	);
+	const loadThumbnailSupport = useThumbnailSupportStore((state) => state.load);
 	usePageTitle(controller.info?.name ?? t("share:share_mode_page"));
 	const closePreview = useCallback(() => {
 		controller.setPreviewFile(null);
 	}, [controller]);
+
+	useEffect(() => {
+		if (thumbnailSupportLoaded) return;
+		void loadThumbnailSupport();
+	}, [loadThumbnailSupport, thumbnailSupportLoaded]);
 
 	if (controller.loading) {
 		return <ShareLoadingSkeleton />;
@@ -226,6 +237,7 @@ export default function ShareViewPage() {
 							controller.info.name,
 							controller.info.mime_type,
 							compoundExtension,
+							thumbnailSupport?.image_preview?.extensions,
 						),
 						owner_user_id: null,
 						created_by_user_id: null,

@@ -379,6 +379,8 @@ export type PublicPreviewAppDefinition =
 	components["schemas"]["PublicPreviewAppDefinition"];
 export type PublicPreviewAppsConfig =
 	components["schemas"]["PublicPreviewAppsConfig"];
+export type PublicExtensionSupport =
+	components["schemas"]["PublicExtensionSupport"];
 export type PublicThumbnailSupport =
 	components["schemas"]["PublicThumbnailSupport"];
 export type PublicMediaDataKindSupport =

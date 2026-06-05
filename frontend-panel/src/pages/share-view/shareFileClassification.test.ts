@@ -33,8 +33,46 @@ describe("shareFileClassification", () => {
 			classifySharedFile("slides.key", "application/octet-stream", null),
 		).toBe("presentation");
 		expect(
-			classifySharedFile("photo.heic", "application/octet-stream", null),
+			classifySharedFile("photo.heic", "application/octet-stream", null, [
+				"heic",
+				"nef",
+				"raw",
+				"custom-vips",
+			]),
 		).toBe("image");
+		expect(
+			classifySharedFile("camera.NEF", "application/octet-stream", null, [
+				"heic",
+				"nef",
+				"raw",
+				"custom-vips",
+			]),
+		).toBe("image");
+		expect(
+			classifySharedFile("sensor.raw", "application/octet-stream", null, [
+				"heic",
+				"nef",
+				"raw",
+				"custom-vips",
+			]),
+		).toBe("image");
+		expect(
+			classifySharedFile("scan.custom-vips", "application/octet-stream", null, [
+				"heic",
+				"nef",
+				"raw",
+				"custom-vips",
+			]),
+		).toBe("image");
+		expect(
+			classifySharedFile("photo.heic", "application/octet-stream", null),
+		).toBe("other");
+		expect(
+			classifySharedFile("track.mp3", "application/octet-stream", null, [
+				"heic",
+				"mp3",
+			]),
+		).toBe("audio");
 		expect(
 			classifySharedFile("movie.m2ts", "application/octet-stream", null),
 		).toBe("video");

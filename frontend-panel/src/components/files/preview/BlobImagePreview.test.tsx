@@ -4,6 +4,21 @@ import { BlobImagePreview } from "@/components/files/preview/BlobImagePreview";
 
 const mockState = vi.hoisted(() => ({
 	retry: vi.fn(),
+	thumbnailSupportStore: {
+		config: {
+			image_preview: {
+				enabled: true,
+				extensions: ["heic", "heif", "nef", "raw", "zimg"],
+			},
+			image_thumbnail: {
+				enabled: true,
+				extensions: ["heic", "heif", "nef", "raw", "zimg"],
+			},
+			audio_thumbnail: { enabled: false, extensions: [] },
+			video_thumbnail: { enabled: false, extensions: [] },
+			version: 1,
+		},
+	},
 	useBlobUrl: vi.fn(),
 }));
 
@@ -15,6 +30,12 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/hooks/useBlobUrl", () => ({
 	useBlobUrl: (...args: unknown[]) => mockState.useBlobUrl(...args),
+}));
+
+vi.mock("@/stores/thumbnailSupportStore", () => ({
+	useThumbnailSupportStore: (
+		selector: (state: typeof mockState.thumbnailSupportStore) => unknown,
+	) => selector(mockState.thumbnailSupportStore),
 }));
 
 const file = { name: "preview.png", mime_type: "image/png" };
@@ -123,7 +144,7 @@ describe("BlobImagePreview", () => {
 		expect(image.parentElement).not.toHaveClass("w-fit");
 	});
 
-	it("uses the backend preview directly for HEIC images", () => {
+	it("uses the backend preview directly for server-renderable HEIC images", () => {
 		mockState.useBlobUrl.mockReturnValue({
 			blobUrl: "blob:fallback",
 			error: false,
@@ -165,6 +186,25 @@ describe("BlobImagePreview", () => {
 		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/2/image-preview");
 	});
 
+	it("uses the backend preview directly for configured RAW-family files", () => {
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: "blob:fallback",
+			error: false,
+			loading: false,
+			retry: mockState.retry,
+		});
+
+		render(
+			<BlobImagePreview
+				file={{ name: "camera.NEF", mime_type: "application/octet-stream" }}
+				path="/files/3/download"
+				fallbackPath="/files/3/image-preview"
+			/>,
+		);
+
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/3/image-preview");
+	});
+
 	it("does not switch ordinary images to the backend preview on render errors", () => {
 		render(
 			<BlobImagePreview
@@ -178,6 +218,24 @@ describe("BlobImagePreview", () => {
 
 		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith("/files/1/download");
 		expect(screen.getByText("preview_load_failed")).toBeInTheDocument();
+	});
+
+	it("keeps browser-native images on the direct download path even when the backend also supports them", () => {
+		mockState.thumbnailSupportStore.config.image_preview.extensions = [
+			"png",
+			"heic",
+			"nef",
+		];
+
+		render(
+			<BlobImagePreview
+				file={file}
+				path="/files/1/download"
+				fallbackPath="/files/1/image-preview"
+			/>,
+		);
+
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/download");
 	});
 
 	it("shows the retry state when the HEIC backend preview cannot render", () => {

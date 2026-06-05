@@ -21,3 +21,10 @@ export function supportsThumbnailExtension(
 			candidate.trim().replace(/^\./, "").toLowerCase() === extension,
 	);
 }
+
+export function supportsImagePreviewExtension(
+	fileName: string,
+	extensions: string[] | undefined,
+) {
+	return supportsThumbnailExtension(fileName, extensions);
+}

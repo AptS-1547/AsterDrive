@@ -10,6 +10,21 @@ import {
 } from "@/components/files/preview/file-capabilities";
 
 describe("file preview capabilities", () => {
+	const thumbnailSupport = {
+		audio_thumbnail: { enabled: true, extensions: ["mp3"] },
+		extensions: ["heic", "nef", "raw", "custom-vips", "mp3"],
+		image_preview: {
+			enabled: true,
+			extensions: ["heic", "nef", "raw", "custom-vips"],
+		},
+		image_thumbnail: {
+			enabled: true,
+			extensions: ["heic", "nef", "raw", "custom-vips"],
+		},
+		video_thumbnail: { enabled: true, extensions: ["mp4"] },
+		version: 1,
+	};
+
 	it("detects file extensions and editor languages", () => {
 		expect(
 			getFileExtension({ name: "README.MD", mime_type: "text/markdown" }),
@@ -102,6 +117,53 @@ describe("file preview capabilities", () => {
 		).toMatchObject({
 			category: "image",
 			icon: "FileImage",
+		});
+		expect(
+			getFileTypeInfo(
+				{
+					name: "camera.NEF",
+					mime_type: "application/octet-stream",
+				},
+				thumbnailSupport,
+			),
+		).toMatchObject({
+			category: "image",
+			icon: "FileImage",
+		});
+		expect(
+			getFileTypeInfo(
+				{
+					name: "sensor.raw",
+					mime_type: "application/octet-stream",
+				},
+				thumbnailSupport,
+			),
+		).toMatchObject({
+			category: "image",
+			icon: "FileImage",
+		});
+		expect(
+			getFileTypeInfo(
+				{
+					name: "scan.custom-vips",
+					mime_type: "application/octet-stream",
+				},
+				thumbnailSupport,
+			),
+		).toMatchObject({
+			category: "image",
+			icon: "FileImage",
+		});
+		expect(
+			getFileTypeInfo(
+				{
+					name: "cover.mp3",
+					mime_type: "application/octet-stream",
+				},
+				thumbnailSupport,
+			),
+		).not.toMatchObject({
+			category: "image",
 		});
 		expect(
 			getFileTypeInfo({ name: "notes.txt", mime_type: "text/xml" }),

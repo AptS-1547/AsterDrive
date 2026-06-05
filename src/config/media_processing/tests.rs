@@ -17,8 +17,9 @@ use super::{
     MediaProcessingProcessorConfig, MediaProcessingProcessorRuntimeConfig,
     MediaProcessingRegistryConfig, MediaProcessingUse, PUBLIC_MEDIA_DATA_MAX_SAFE_SOURCE_BYTES,
     PUBLIC_MEDIA_DATA_SUPPORT_VERSION, PublicMediaDataKindSupport, PublicMediaDataSupport,
-    PublicMediaDataSupportMatch, PublicThumbnailSupport, builtin_audio_metadata_supports_extension,
-    builtin_image_metadata_supports_extension, command_is_available,
+    PublicExtensionSupport, PublicMediaDataSupportMatch, PublicThumbnailSupport,
+    builtin_audio_metadata_supports_extension, builtin_image_metadata_supports_extension,
+    command_is_available,
     default_media_processing_registry, default_media_processing_registry_json,
     default_uses_for_kind, ffmpeg_command_from_registry_value, ffprobe_command_from_registry_value,
     file_extension, media_processing_registry, normalize_ffmpeg_command, normalize_ffprobe_command,
@@ -436,6 +437,18 @@ fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
         .to_string(),
     ));
 
+    let expected_image = ["avif", "heic"]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let expected_audio = ["flac", "mp3"]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let expected_video = ["mp4", "webm"]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
     let expected = ["avif", "flac", "heic", "mp3", "mp4", "webm"]
         .into_iter()
         .map(str::to_string)
@@ -445,6 +458,22 @@ fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
         public_thumbnail_support(&runtime_config),
         PublicThumbnailSupport {
             version: 1,
+            image_preview: PublicExtensionSupport {
+                enabled: true,
+                extensions: expected_image.clone(),
+            },
+            image_thumbnail: PublicExtensionSupport {
+                enabled: true,
+                extensions: expected_image,
+            },
+            audio_thumbnail: PublicExtensionSupport {
+                enabled: true,
+                extensions: expected_audio,
+            },
+            video_thumbnail: PublicExtensionSupport {
+                enabled: true,
+                extensions: expected_video,
+            },
             extensions: expected.into_iter().collect(),
         }
     );
@@ -463,6 +492,31 @@ fn public_thumbnail_support_keeps_builtin_extensions_when_images_are_enabled() {
 
     assert_eq!(support.version, 1);
     assert_eq!(support.extensions, expected);
+    assert_eq!(support.image_preview, support.image_thumbnail);
+    assert!(support.image_preview.enabled);
+    assert!(
+        support
+            .image_preview
+            .extensions
+            .iter()
+            .any(|extension| extension == "png")
+    );
+    assert!(
+        support
+            .audio_thumbnail
+            .extensions
+            .iter()
+            .any(|extension| extension == "mp3")
+    );
+    assert!(!support.video_thumbnail.enabled);
+    assert!(support.video_thumbnail.extensions.is_empty());
+    assert!(
+        !support
+            .image_preview
+            .extensions
+            .iter()
+            .any(|extension| extension == "mp3")
+    );
     assert!(
         !support
             .extensions
@@ -750,6 +804,12 @@ fn normalize_media_processing_registry_backfills_new_default_uses() {
     ));
     assert!(
         public_thumbnail_support(&runtime_config)
+            .extensions
+            .contains(&"mp3".to_string())
+    );
+    assert!(
+        public_thumbnail_support(&runtime_config)
+            .audio_thumbnail
             .extensions
             .contains(&"mp3".to_string())
     );
