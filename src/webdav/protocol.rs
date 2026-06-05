@@ -175,10 +175,7 @@ pub(crate) fn submitted_lock_tokens_for_path(
 }
 
 fn parsed_if_header_for_token_submission(headers: &header::HeaderMap) -> Option<IfHeader> {
-    match parse_if_header(headers) {
-        Ok(parsed) => parsed,
-        Err(_) => None,
-    }
+    parse_if_header(headers).unwrap_or_default()
 }
 
 fn submitted_lock_tokens_from_if_header<F>(if_header: &IfHeader, mut tag_matches: F) -> Vec<String>

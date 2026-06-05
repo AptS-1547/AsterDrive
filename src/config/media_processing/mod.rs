@@ -28,7 +28,6 @@ pub use types::{
     MediaProcessingProcessorRuntimeConfig, MediaProcessingRegistryConfig, MediaProcessingUse,
     PUBLIC_MEDIA_DATA_MAX_SAFE_SOURCE_BYTES, PUBLIC_MEDIA_DATA_SUPPORT_VERSION,
     PUBLIC_THUMBNAIL_SUPPORT_VERSION, PublicExtensionSupport, PublicImagePreviewPreference,
-    PublicMediaDataKindSupport,
-    PublicMediaDataKindsSupport, PublicMediaDataSupport, PublicMediaDataSupportMatch,
-    PublicThumbnailSupport,
+    PublicMediaDataKindSupport, PublicMediaDataKindsSupport, PublicMediaDataSupport,
+    PublicMediaDataSupportMatch, PublicThumbnailSupport,
 };

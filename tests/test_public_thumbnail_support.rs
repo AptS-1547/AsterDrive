@@ -101,8 +101,16 @@ async fn test_public_thumbnail_support_returns_default_builtin_extensions() {
     assert!(extensions.iter().any(|value| value == "flac"));
     assert!(image_preview_extensions.iter().any(|value| value == "png"));
     assert!(!image_preview_extensions.iter().any(|value| value == "mp3"));
-    assert!(audio_thumbnail_extensions.iter().any(|value| value == "mp3"));
-    assert!(audio_thumbnail_extensions.iter().any(|value| value == "flac"));
+    assert!(
+        audio_thumbnail_extensions
+            .iter()
+            .any(|value| value == "mp3")
+    );
+    assert!(
+        audio_thumbnail_extensions
+            .iter()
+            .any(|value| value == "flac")
+    );
     assert!(body["data"]["video_thumbnail"].get("extensions").is_none());
     assert!(!extensions.iter().any(|value| value == "mp4"));
     assert!(!extensions.iter().any(|value| value == "m4v"));
@@ -187,7 +195,11 @@ async fn test_public_thumbnail_support_merges_builtin_and_enabled_vips_extension
             .any(|value| value == "custom-vips")
     );
     assert!(!image_preview_extensions.iter().any(|value| value == "mp4"));
-    assert!(video_thumbnail_extensions.iter().any(|value| value == "mp4"));
+    assert!(
+        video_thumbnail_extensions
+            .iter()
+            .any(|value| value == "mp4")
+    );
 }
 
 #[actix_web::test]

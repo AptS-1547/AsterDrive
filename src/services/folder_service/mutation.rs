@@ -20,6 +20,7 @@ use crate::services::{
     workspace_storage_service::{self, WorkspaceStorageScope, load_scope_actor_username},
 };
 use crate::types::NullablePatch;
+use crate::utils::numbers::u64_to_usize;
 
 use super::{collect_folder_tree_in_scope, ensure_folder_model_in_scope};
 
@@ -101,6 +102,10 @@ async fn compute_folder_storage_used(
 ) -> Result<i64> {
     let mut total = 0i64;
     let mut frontier = vec![folder_id];
+    let file_page_size = u64_to_usize(
+        STORAGE_USED_FILE_PAGE_SIZE,
+        "folder storage_used file page size",
+    )?;
 
     while !frontier.is_empty() {
         frontier.sort_unstable();
@@ -134,7 +139,7 @@ async fn compute_folder_storage_used(
                     })?;
                 }
 
-                if files.len() < STORAGE_USED_FILE_PAGE_SIZE as usize {
+                if files.len() < file_page_size {
                     break;
                 }
             }
