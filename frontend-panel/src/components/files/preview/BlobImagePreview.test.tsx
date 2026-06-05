@@ -228,10 +228,9 @@ describe("BlobImagePreview", () => {
 			screen.getByRole("button", { name: "preview_show_original" }),
 		);
 		await waitFor(() =>
-			expect(mockState.useBlobUrl).toHaveBeenLastCalledWith(
-				"/files/1/download",
-				{ lane: "default" },
-			),
+			expect(mockState.useBlobUrl).toHaveBeenCalledWith("/files/1/download", {
+				lane: "default",
+			}),
 		);
 		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
 			"src",
@@ -304,11 +303,8 @@ describe("BlobImagePreview", () => {
 		).not.toBeInTheDocument();
 	});
 
-	it("exposes loading and success states when original loading is requested externally", async () => {
+	it("uses a controlled source without starting the inline original request flow", () => {
 		mockState.imagePreviewPreference = "preview_first";
-		const onSourceChange = vi.fn();
-		const onShowOriginalStateChange = vi.fn();
-		let originalReady = false;
 		mockState.useBlobUrl.mockImplementation((path: string | null) => {
 			if (path === null) {
 				return {
@@ -321,58 +317,34 @@ describe("BlobImagePreview", () => {
 			return {
 				blobUrl: path.includes("image-preview")
 					? "blob:medium"
-					: originalReady
-						? "blob:original"
-						: null,
+					: "blob:original",
 				error: false,
-				loading: path.includes("image-preview") ? false : !originalReady,
+				loading: false,
 				retry: mockState.retry,
 			};
 		});
 
-		const { rerender } = render(
+		render(
 			<BlobImagePreview
 				file={file}
 				path="/files/1/download"
 				fallbackPath="/files/1/image-preview"
-				onSourceChange={onSourceChange}
-				onShowOriginalStateChange={onShowOriginalStateChange}
+				source="backend_preview"
 				showOriginalButtonPlacement="none"
-				showOriginalRequestId={1}
 			/>,
 		);
 
-		await waitFor(() =>
-			expect(onShowOriginalStateChange).toHaveBeenLastCalledWith("loading"),
-		);
-		expect(onSourceChange).toHaveBeenLastCalledWith("backend_preview");
 		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
 			"src",
 			"blob:medium",
 		);
-
-		originalReady = true;
-		rerender(
-			<BlobImagePreview
-				file={file}
-				path="/files/1/download"
-				fallbackPath="/files/1/image-preview"
-				onSourceChange={onSourceChange}
-				onShowOriginalStateChange={onShowOriginalStateChange}
-				showOriginalButtonPlacement="none"
-				showOriginalRequestId={1}
-			/>,
-		);
-
-		await waitFor(() =>
-			expect(onShowOriginalStateChange).toHaveBeenLastCalledWith("success"),
-		);
-		expect(onSourceChange).toHaveBeenLastCalledWith("original");
+		expect(mockState.useBlobUrl).not.toHaveBeenCalledWith("/files/1/download", {
+			lane: "default",
+		});
 	});
 
-	it("returns to the available state when original loading fails", async () => {
+	it("keeps inline preview available when original loading fails", () => {
 		mockState.imagePreviewPreference = "preview_first";
-		const onShowOriginalStateChange = vi.fn();
 		mockState.useBlobUrl.mockImplementation((path: string | null) => {
 			if (path === null) {
 				return {
@@ -395,19 +367,20 @@ describe("BlobImagePreview", () => {
 				file={file}
 				path="/files/1/download"
 				fallbackPath="/files/1/image-preview"
-				onShowOriginalStateChange={onShowOriginalStateChange}
-				showOriginalButtonPlacement="none"
-				showOriginalRequestId={1}
 			/>,
 		);
 
-		await waitFor(() =>
-			expect(onShowOriginalStateChange).toHaveBeenLastCalledWith("available"),
+		fireEvent.click(
+			screen.getByRole("button", { name: "preview_show_original" }),
 		);
+
 		expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
 			"src",
 			"blob:medium",
 		);
+		expect(
+			screen.getByRole("button", { name: "preview_show_original" }),
+		).toBeEnabled();
 	});
 
 	it("does not download the original automatically when the backend preview loading fails", () => {

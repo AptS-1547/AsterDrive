@@ -1,38 +1,36 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ImagePreviewPanel } from "@/components/files/preview/ImagePreviewPanel";
-import type { ImagePreviewSource, ShowOriginalState } from "./BlobImagePreview";
+import type { ImagePreviewSource } from "./BlobImagePreview";
 
 const mockState = vi.hoisted(() => ({
 	blobProps: null as null | {
 		imageStyle?: React.CSSProperties;
-		onShowOriginalStateChange?: (state: ShowOriginalState) => void;
-		onSourceChange?: (source: ImagePreviewSource) => void;
-		showOriginalRequestId?: number;
+		source?: ImagePreviewSource;
 	},
+	imagePreviewPreference: "preview_first",
+	originalBlobUrl: null as string | null,
+	originalError: false,
+	originalLoading: false,
+	retry: vi.fn(),
+	useBlobUrl: vi.fn(),
 }));
 
 vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 	BlobImagePreview: ({
 		imageRef,
 		imageStyle,
-		onShowOriginalStateChange,
-		onSourceChange,
-		showOriginalRequestId,
+		source,
 		viewportRef,
 	}: {
 		imageRef?: React.Ref<HTMLImageElement>;
 		imageStyle?: React.CSSProperties;
-		onShowOriginalStateChange?: (state: ShowOriginalState) => void;
-		onSourceChange?: (source: ImagePreviewSource) => void;
-		showOriginalRequestId?: number;
+		source?: ImagePreviewSource;
 		viewportRef?: React.Ref<HTMLDivElement>;
 	}) => {
 		mockState.blobProps = {
 			imageStyle,
-			onShowOriginalStateChange,
-			onSourceChange,
-			showOriginalRequestId,
+			source,
 		};
 		return (
 			<div data-testid="panel-preview-viewport" ref={viewportRef}>
@@ -46,6 +44,19 @@ vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 			</div>
 		);
 	},
+}));
+
+vi.mock("@/hooks/useBlobUrl", () => ({
+	useBlobUrl: (...args: unknown[]) => mockState.useBlobUrl(...args),
+}));
+
+vi.mock("@/stores/frontendConfigStore", () => ({
+	useFrontendConfigStore: (
+		selector: (state: { imagePreviewPreference: string }) => unknown,
+	) =>
+		selector({
+			imagePreviewPreference: mockState.imagePreviewPreference,
+		}),
 }));
 
 vi.mock("@/lib/format", () => ({
@@ -91,6 +102,21 @@ function renderPanel(
 describe("ImagePreviewPanel", () => {
 	beforeEach(() => {
 		mockState.blobProps = null;
+		mockState.imagePreviewPreference = "preview_first";
+		mockState.originalBlobUrl = null;
+		mockState.originalError = false;
+		mockState.originalLoading = false;
+		mockState.retry.mockReset();
+		mockState.useBlobUrl.mockReset();
+		mockState.useBlobUrl.mockImplementation((path: string | null) => ({
+			blobUrl:
+				path === "/files/7/download"
+					? mockState.originalBlobUrl
+					: "blob:preview",
+			error: path === "/files/7/download" ? mockState.originalError : false,
+			loading: path === "/files/7/download" ? mockState.originalLoading : false,
+			retry: mockState.retry,
+		}));
 		Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
 			configurable: true,
 			value: vi.fn(),
@@ -116,7 +142,7 @@ describe("ImagePreviewPanel", () => {
 		expect(
 			screen.getByRole("button", { name: "Restore window" }),
 		).toBeInTheDocument();
-		expect(mockState.blobProps?.showOriginalRequestId).toBeUndefined();
+		expect(mockState.blobProps?.source).toBe("backend_preview");
 	});
 
 	it("keeps the top and bottom chrome position stable during close fade", () => {
@@ -159,14 +185,13 @@ describe("ImagePreviewPanel", () => {
 		expect(props.onClose).toHaveBeenCalledTimes(1);
 	});
 
-	it("updates the source badge when the image source changes", () => {
+	it("uses the original source immediately when preview-first is disabled", () => {
+		mockState.imagePreviewPreference = "original_first";
+
 		renderPanel();
 
-		act(() => {
-			mockState.blobProps?.onSourceChange?.("backend_preview");
-		});
-
-		expect(screen.getByText("Preview")).toBeInTheDocument();
+		expect(screen.getByText("Original")).toBeInTheDocument();
+		expect(mockState.blobProps?.source).toBe("original");
 	});
 
 	it("zooms in, zooms out, and resets to fit", () => {
@@ -193,12 +218,12 @@ describe("ImagePreviewPanel", () => {
 	it("clamps zoom controls at the min and max edges", () => {
 		renderPanel();
 
-		for (let index = 0; index < 12; index += 1) {
+		for (let index = 0; index < 20; index += 1) {
 			fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
 		}
 		expect(
 			screen.getByRole("button", { name: "Fit to window" }),
-		).toHaveTextContent("300%");
+		).toHaveTextContent("500%");
 		expect(screen.getByRole("button", { name: "Zoom in" })).toBeDisabled();
 
 		for (let index = 0; index < 20; index += 1) {
@@ -220,6 +245,47 @@ describe("ImagePreviewPanel", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "Fit to window" }));
 		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"rotate(0deg)",
+		);
+	});
+
+	it("resets rotated images through the shortest visual path to an upright angle", () => {
+		renderPanel();
+
+		for (let index = 0; index < 3; index += 1) {
+			fireEvent.click(screen.getByRole("button", { name: "Rotate right" }));
+		}
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"rotate(270deg)",
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Fit to window" }));
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"rotate(360deg)",
+		);
+
+		for (let index = 0; index < 3; index += 1) {
+			fireEvent.click(screen.getByRole("button", { name: "Rotate right" }));
+		}
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"rotate(630deg)",
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Fit to window" }));
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"rotate(720deg)",
+		);
+	});
+
+	it("keeps right rotation moving forward when wrapping past 270 degrees", () => {
+		renderPanel();
+
+		for (let index = 0; index < 4; index += 1) {
+			fireEvent.click(screen.getByRole("button", { name: "Rotate right" }));
+		}
+
+		expect(mockState.blobProps?.imageStyle?.transform).toContain(
+			"rotate(360deg)",
+		);
+		expect(mockState.blobProps?.imageStyle?.transform).not.toContain(
 			"rotate(0deg)",
 		);
 	});
@@ -275,12 +341,12 @@ describe("ImagePreviewPanel", () => {
 	it("clamps drag movement to the visible zoomed image bounds", () => {
 		renderPanel();
 		mockImageGeometry();
-		for (let index = 0; index < 8; index += 1) {
+		for (let index = 0; index < 16; index += 1) {
 			fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
 		}
 		expect(
 			screen.getByRole("button", { name: "Fit to window" }),
-		).toHaveTextContent("300%");
+		).toHaveTextContent("500%");
 
 		const surface = getGestureSurface();
 		fireEvent.pointerDown(surface, {
@@ -295,7 +361,7 @@ describe("ImagePreviewPanel", () => {
 		});
 
 		expect(mockState.blobProps?.imageStyle?.transform).toContain(
-			"translate3d(250px, 150px, 0)",
+			"translate3d(550px, 350px, 0)",
 		);
 
 		fireEvent.pointerMove(surface, {
@@ -305,7 +371,7 @@ describe("ImagePreviewPanel", () => {
 		});
 
 		expect(mockState.blobProps?.imageStyle?.transform).toContain(
-			"translate3d(-250px, -150px, 0)",
+			"translate3d(-550px, -350px, 0)",
 		);
 	});
 
@@ -337,30 +403,69 @@ describe("ImagePreviewPanel", () => {
 
 		expect(
 			screen.getByRole("button", { name: "Fit to window" }),
-		).toHaveTextContent("300%");
-		expect(mockState.blobProps?.imageStyle?.transform).toContain("scale(3)");
+		).toHaveTextContent("500%");
+		expect(mockState.blobProps?.imageStyle?.transform).toContain("scale(5)");
 	});
 
 	it("requests the original and renders loading and success states with collapse animation classes", () => {
 		vi.useFakeTimers();
-		renderPanel();
+		const { rerender } = render(
+			<ImagePreviewPanel
+				file={file}
+				allOptionsCount={1}
+				downloadPath="/files/7/download"
+				imagePreviewPath="/files/7/image-preview"
+				isExpanded
+				onChooseOpenMethod={vi.fn()}
+				onClose={vi.fn()}
+				onToggleExpand={vi.fn()}
+				chooseOpenMethodLabel="Choose open method"
+				enterFullscreenLabel="Fill window"
+				exitFullscreenLabel="Restore window"
+				closeLabel="Close"
+				fitToWindowLabel="Fit to window"
+				previewSourceLabel="Preview"
+				originalSourceLabel="Original"
+				rotateRightLabel="Rotate right"
+				zoomInLabel="Zoom in"
+				zoomOutLabel="Zoom out"
+			/>,
+		);
 
-		act(() => {
-			mockState.blobProps?.onShowOriginalStateChange?.("available");
-		});
+		expect(screen.getByText("Preview")).toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "Original" }));
-		expect(mockState.blobProps?.showOriginalRequestId).toBe(1);
-
-		act(() => {
-			mockState.blobProps?.onShowOriginalStateChange?.("loading");
+		expect(mockState.useBlobUrl).toHaveBeenLastCalledWith("/files/7/download", {
+			lane: "default",
 		});
+
 		const loadingButton = screen.getByRole("button", { name: "Original" });
 		expect(loadingButton).toBeDisabled();
 		expect(loadingButton.querySelector("svg")).toHaveClass("animate-spin");
 
-		act(() => {
-			mockState.blobProps?.onShowOriginalStateChange?.("success");
-		});
+		mockState.originalBlobUrl = "blob:original";
+		rerender(
+			<ImagePreviewPanel
+				file={file}
+				allOptionsCount={1}
+				downloadPath="/files/7/download"
+				imagePreviewPath="/files/7/image-preview"
+				isExpanded
+				onChooseOpenMethod={vi.fn()}
+				onClose={vi.fn()}
+				onToggleExpand={vi.fn()}
+				chooseOpenMethodLabel="Choose open method"
+				enterFullscreenLabel="Fill window"
+				exitFullscreenLabel="Restore window"
+				closeLabel="Close"
+				fitToWindowLabel="Fit to window"
+				previewSourceLabel="Preview"
+				originalSourceLabel="Original"
+				rotateRightLabel="Rotate right"
+				zoomInLabel="Zoom in"
+				zoomOutLabel="Zoom out"
+			/>,
+		);
+		expect(mockState.blobProps?.source).toBe("original");
 		expect(screen.getByRole("button", { name: "Original" })).toBeDisabled();
 
 		act(() => {
@@ -381,19 +486,66 @@ describe("ImagePreviewPanel", () => {
 		expect(
 			screen.queryByRole("button", { name: "Original" }),
 		).not.toBeInTheDocument();
-	});
-
-	it("keeps the original button visible again when success is followed by availability", () => {
-		vi.useFakeTimers();
-		renderPanel();
 
 		act(() => {
-			mockState.blobProps?.onShowOriginalStateChange?.("success");
-			vi.advanceTimersByTime(650);
-			mockState.blobProps?.onShowOriginalStateChange?.("available");
+			vi.advanceTimersByTime(650 + 220);
 		});
+		expect(
+			screen.queryByRole("button", { name: "Original" }),
+		).not.toBeInTheDocument();
+	});
+
+	it("returns the original button to available when original loading fails", () => {
+		const { rerender } = render(
+			<ImagePreviewPanel
+				file={file}
+				allOptionsCount={1}
+				downloadPath="/files/7/download"
+				imagePreviewPath="/files/7/image-preview"
+				isExpanded
+				onChooseOpenMethod={vi.fn()}
+				onClose={vi.fn()}
+				onToggleExpand={vi.fn()}
+				chooseOpenMethodLabel="Choose open method"
+				enterFullscreenLabel="Fill window"
+				exitFullscreenLabel="Restore window"
+				closeLabel="Close"
+				fitToWindowLabel="Fit to window"
+				previewSourceLabel="Preview"
+				originalSourceLabel="Original"
+				rotateRightLabel="Rotate right"
+				zoomInLabel="Zoom in"
+				zoomOutLabel="Zoom out"
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Original" }));
+		mockState.originalError = true;
+		rerender(
+			<ImagePreviewPanel
+				file={file}
+				allOptionsCount={1}
+				downloadPath="/files/7/download"
+				imagePreviewPath="/files/7/image-preview"
+				isExpanded
+				onChooseOpenMethod={vi.fn()}
+				onClose={vi.fn()}
+				onToggleExpand={vi.fn()}
+				chooseOpenMethodLabel="Choose open method"
+				enterFullscreenLabel="Fill window"
+				exitFullscreenLabel="Restore window"
+				closeLabel="Close"
+				fitToWindowLabel="Fit to window"
+				previewSourceLabel="Preview"
+				originalSourceLabel="Original"
+				rotateRightLabel="Rotate right"
+				zoomInLabel="Zoom in"
+				zoomOutLabel="Zoom out"
+			/>,
+		);
 
 		expect(screen.getByRole("button", { name: "Original" })).toBeEnabled();
+		expect(mockState.blobProps?.source).toBe("backend_preview");
 	});
 });
 

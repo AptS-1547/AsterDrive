@@ -1,5 +1,5 @@
 import type { CSSProperties, Ref } from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -16,10 +16,8 @@ interface BlobImagePreviewProps {
 	imageClassName?: string;
 	imageRef?: Ref<HTMLImageElement>;
 	imageStyle?: CSSProperties;
-	onShowOriginalStateChange?: (state: ShowOriginalState) => void;
-	onSourceChange?: (source: ImagePreviewSource) => void;
 	path: string;
-	showOriginalRequestId?: number;
+	source?: ImagePreviewSource;
 	showOriginalButtonPlacement?: "inline" | "none";
 	viewportClassName?: string;
 	viewportRef?: Ref<HTMLDivElement>;
@@ -42,11 +40,9 @@ export function BlobImagePreview({
 	imageClassName: imageClassNameProp,
 	imageRef,
 	imageStyle,
-	onShowOriginalStateChange,
-	onSourceChange,
 	path,
+	source,
 	showOriginalButtonPlacement = "inline",
-	showOriginalRequestId,
 	viewportClassName,
 	viewportRef,
 }: BlobImagePreviewProps) {
@@ -60,43 +56,53 @@ export function BlobImagePreview({
 	const [requestedOriginalKey, setRequestedOriginalKey] = useState<
 		string | null
 	>(null);
-	const [displayOriginalKey, setDisplayOriginalKey] = useState<string | null>(
-		null,
-	);
+	const requestedOriginal = requestedOriginalKey === previewKey;
 	const canShowOriginal =
 		imagePreviewPreference === "preview_first" && fallbackPath != null;
-	const activeSource: ImagePreviewSource =
-		canShowOriginal && displayOriginalKey !== previewKey
-			? "backend_preview"
-			: "original";
-	const activePath: string | null =
-		activeSource === "backend_preview" ? (fallbackPath ?? null) : path;
-	const { blobUrl, error, loading, retry } = useBlobUrl(activePath, {
-		lane: activeSource === "backend_preview" ? "preview" : "default",
-	});
-	const isLoadingOriginal =
+	const baseSource: ImagePreviewSource =
+		source ?? (canShowOriginal ? "backend_preview" : "original");
+	const isControlledSource = source != null;
+	const shouldLoadOriginal =
+		!isControlledSource &&
 		canShowOriginal &&
-		requestedOriginalKey === previewKey &&
-		displayOriginalKey !== previewKey;
+		baseSource === "backend_preview" &&
+		requestedOriginal;
 	const {
 		blobUrl: originalBlobUrl,
 		error: originalError,
 		loading: originalLoading,
-	} = useBlobUrl(isLoadingOriginal ? path : null, {
+		retry: retryOriginal,
+	} = useBlobUrl(shouldLoadOriginal ? path : null, {
 		lane: "default",
+	});
+	const originalReady =
+		shouldLoadOriginal && originalBlobUrl && !originalLoading && !originalError;
+	const displaySource: ImagePreviewSource =
+		!isControlledSource && baseSource === "backend_preview" && originalReady
+			? "original"
+			: baseSource;
+	const displayPath: string | null =
+		displaySource === "backend_preview" ? (fallbackPath ?? null) : path;
+	const { blobUrl, error, loading, retry } = useBlobUrl(displayPath, {
+		lane: displaySource === "backend_preview" ? "preview" : "default",
 	});
 	const [imageRenderFailedKey, setImageRenderFailedKey] = useState<
 		string | null
 	>(null);
-	const imageRenderFailed =
-		imageRenderFailedKey === `${previewKey}\u0000${activeSource}`;
+	const imageRenderKey = `${previewKey}\u0000${displaySource}`;
+	const imageRenderFailed = imageRenderFailedKey === imageRenderKey;
 	const canRequestOriginal =
-		canShowOriginal && activeSource === "backend_preview";
+		!isControlledSource &&
+		canShowOriginal &&
+		baseSource === "backend_preview" &&
+		displaySource === "backend_preview";
 	const showOriginalState: ShowOriginalState = canRequestOriginal
-		? isLoadingOriginal
-			? "loading"
-			: "available"
-		: canShowOriginal && displayOriginalKey === previewKey
+		? originalReady
+			? "success"
+			: requestedOriginal && !originalError
+				? "loading"
+				: "available"
+		: canShowOriginal && displaySource === "original"
 			? "success"
 			: "hidden";
 	const imageContainerClass =
@@ -115,7 +121,7 @@ export function BlobImagePreview({
 				: "block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain");
 
 	const handleImageError = () => {
-		setImageRenderFailedKey(`${previewKey}\u0000${activeSource}`);
+		setImageRenderFailedKey(imageRenderKey);
 	};
 
 	const handleRetry = () => {
@@ -125,48 +131,12 @@ export function BlobImagePreview({
 
 	const handleShowOriginal = () => {
 		setImageRenderFailedKey(null);
-		setRequestedOriginalKey(previewKey);
-	};
-
-	useEffect(() => {
-		onSourceChange?.(activeSource);
-	}, [activeSource, onSourceChange]);
-
-	useEffect(() => {
-		onShowOriginalStateChange?.(showOriginalState);
-	}, [onShowOriginalStateChange, showOriginalState]);
-
-	useEffect(() => {
-		if (showOriginalRequestId == null || !canRequestOriginal) return;
-		setImageRenderFailedKey(null);
-		setRequestedOriginalKey(previewKey);
-	}, [canRequestOriginal, previewKey, showOriginalRequestId]);
-
-	useEffect(() => {
-		if (
-			!isLoadingOriginal ||
-			originalLoading ||
-			originalError ||
-			!originalBlobUrl
-		) {
+		if (requestedOriginal && originalError) {
+			retryOriginal();
 			return;
 		}
-		setImageRenderFailedKey(null);
-		setDisplayOriginalKey(previewKey);
-	}, [
-		isLoadingOriginal,
-		originalBlobUrl,
-		originalError,
-		originalLoading,
-		previewKey,
-	]);
-
-	useEffect(() => {
-		if (requestedOriginalKey !== previewKey) return;
-		if (originalError) {
-			setRequestedOriginalKey(null);
-		}
-	}, [originalError, previewKey, requestedOriginalKey]);
+		setRequestedOriginalKey(previewKey);
+	};
 
 	const originalButton =
 		canRequestOriginal && showOriginalButtonPlacement === "inline" ? (
@@ -176,11 +146,11 @@ export function BlobImagePreview({
 				size="sm"
 				className="shrink-0"
 				onClick={handleShowOriginal}
-				disabled={isLoadingOriginal}
+				disabled={showOriginalState === "loading"}
 			>
 				<Icon
-					name={isLoadingOriginal ? "Spinner" : "Eye"}
-					className={`mr-1.5 size-4 ${isLoadingOriginal ? "animate-spin" : ""}`}
+					name={showOriginalState === "loading" ? "Spinner" : "Eye"}
+					className={`mr-1.5 size-4 ${showOriginalState === "loading" ? "animate-spin" : ""}`}
 				/>
 				{t("preview_show_original")}
 			</Button>
