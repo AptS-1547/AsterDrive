@@ -160,9 +160,11 @@ export function formFromProvider(
 	provider: AdminExternalAuthProviderInfo,
 ): ExternalAuthProviderFormData {
 	const microsoftTenant = isMicrosoftProviderKind(provider.provider_kind)
-		? provider.options?.microsoft?.tenant ||
-			microsoftTenantFromIssuerUrl(provider.issuer_url) ||
-			MICROSOFT_DEFAULT_TENANT
+		? normalizeMicrosoftTenantValue(
+				provider.options?.microsoft?.tenant ||
+					microsoftTenantFromIssuerUrl(provider.issuer_url) ||
+					MICROSOFT_DEFAULT_TENANT,
+			) || MICROSOFT_DEFAULT_TENANT
 		: MICROSOFT_DEFAULT_TENANT;
 	return {
 		allowedDomains: provider.allowed_domains.join(", "),
@@ -344,10 +346,13 @@ function nullableSecretText(value: string) {
 }
 
 export function microsoftIssuerUrlForTenant(value: string) {
-	const tenant = value.trim() || MICROSOFT_DEFAULT_TENANT;
-	if (/^https?:\/\//.test(tenant)) {
+	const trimmed = value.trim();
+	if (/^https?:\/\//i.test(trimmed)) {
+		const tenant = trimmed;
 		return tenant.replace(/\/+$/, "");
 	}
+	const tenant =
+		normalizeMicrosoftTenantValue(trimmed) || MICROSOFT_DEFAULT_TENANT;
 	return `${MICROSOFT_ISSUER_BASE}/${tenant}/v2.0`;
 }
 
@@ -359,8 +364,13 @@ export function microsoftTenantFromIssuerUrl(value: string | null | undefined) {
 		if (parsed.hostname !== "login.microsoftonline.com") {
 			return "";
 		}
+		if (parsed.search || parsed.hash) {
+			return "";
+		}
 		const segments = parsed.pathname.split("/").filter(Boolean);
-		return segments.length === 2 && segments[1] === "v2.0" ? segments[0] : "";
+		return segments.length === 2 && segments[1]?.toLowerCase() === "v2.0"
+			? normalizeMicrosoftTenantValue(segments[0])
+			: "";
 	} catch {
 		return "";
 	}
@@ -369,7 +379,7 @@ export function microsoftTenantFromIssuerUrl(value: string | null | undefined) {
 export function microsoftTenantModeForValue(
 	value: string,
 ): MicrosoftTenantMode {
-	const trimmed = value.trim();
+	const trimmed = normalizeMicrosoftTenantValue(value);
 	return MICROSOFT_TENANT_PRESETS.includes(
 		trimmed as (typeof MICROSOFT_TENANT_PRESETS)[number],
 	)
@@ -377,17 +387,21 @@ export function microsoftTenantModeForValue(
 		: MICROSOFT_CUSTOM_TENANT_MODE;
 }
 
+function normalizeMicrosoftTenantValue(value: string) {
+	return value.trim().toLowerCase();
+}
+
 function formMicrosoftTenantValue(form: ExternalAuthProviderFormData) {
 	return form.microsoftTenantMode === MICROSOFT_CUSTOM_TENANT_MODE
-		? form.microsoftTenant.trim()
-		: form.microsoftTenantMode;
+		? normalizeMicrosoftTenantValue(form.microsoftTenant)
+		: normalizeMicrosoftTenantValue(form.microsoftTenantMode);
 }
 
 function providerMicrosoftTenantValue(provider: AdminExternalAuthProviderInfo) {
-	return (
+	return normalizeMicrosoftTenantValue(
 		provider.options?.microsoft?.tenant ||
-		microsoftTenantFromIssuerUrl(provider.issuer_url) ||
-		MICROSOFT_DEFAULT_TENANT
+			microsoftTenantFromIssuerUrl(provider.issuer_url) ||
+			MICROSOFT_DEFAULT_TENANT,
 	);
 }
 
@@ -557,9 +571,7 @@ export function formConnectionChanged(
 ) {
 	const defaultScopes = defaultScopesForKind(selectedKind);
 	const formIssuerUrl = formIssuerUrlForPayload(form) ?? "";
-	const providerIssuerUrl = isMicrosoftProviderKind(provider.provider_kind)
-		? ""
-		: (provider.issuer_url ?? "");
+	const providerIssuerUrl = provider.issuer_url ?? "";
 	return (
 		form.providerKind !== provider.provider_kind ||
 		normalizeConnectionValue(formIssuerUrl) !==

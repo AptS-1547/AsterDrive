@@ -169,6 +169,9 @@ where
             operations::normalize_offline_download_temp_dir_config_value(value)
         }
         operations::OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY => Ok(value.trim().to_string()),
+        operations::FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY => {
+            operations::normalize_frontend_image_preview_preference_config_value(value)
+        }
         operations::SHARE_STREAM_SESSION_TTL_SECS_KEY => {
             operations::normalize_share_stream_session_ttl_config_value(key, value)
         }

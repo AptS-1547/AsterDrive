@@ -1,8 +1,7 @@
-use crate::config::definitions::{
-    ALL_CONFIGS, AUDIT_LOG_RECORDED_ACTIONS_KEY, FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY,
-    OFFLINE_DOWNLOAD_ENGINE_KEY,
+use crate::config::definitions::{ALL_CONFIGS, AUDIT_LOG_RECORDED_ACTIONS_KEY};
+use crate::config::operations::{
+    FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY, OFFLINE_DOWNLOAD_ENGINE_KEY, OfflineDownloadEngine,
 };
-use crate::config::operations::OfflineDownloadEngine;
 use crate::types::{AuditAction, SystemConfigValueType};
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]

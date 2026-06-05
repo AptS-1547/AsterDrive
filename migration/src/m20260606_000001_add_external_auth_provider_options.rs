@@ -1,7 +1,7 @@
 //! Add provider-specific options JSON for external auth providers.
 
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::sea_orm::ConnectionTrait;
+use sea_orm_migration::sea_orm::{ConnectionTrait, DbBackend};
 
 const MICROSOFT_LOGIN_HOST: &str = "login.microsoftonline.com";
 const MICROSOFT_DEFAULT_TENANT: &str = "common";
@@ -12,21 +12,11 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        manager
-            .alter_table(
-                Table::alter()
-                    .table(ExternalAuthProviders::Table)
-                    .add_column(
-                        ColumnDef::new(ExternalAuthProviders::Options)
-                            .text()
-                            .not_null()
-                            .default("{}"),
-                    )
-                    .to_owned(),
-            )
-            .await?;
+        add_provider_options_column(manager).await?;
 
-        backfill_microsoft_provider_options(manager).await
+        backfill_default_provider_options(manager).await?;
+        backfill_microsoft_provider_options(manager).await?;
+        enforce_provider_options_not_null(manager).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -39,6 +29,65 @@ impl MigrationTrait for Migration {
             )
             .await
     }
+}
+
+async fn add_provider_options_column(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    let mut options = ColumnDef::new(ExternalAuthProviders::Options);
+    options.text();
+
+    if manager.get_database_backend() == DbBackend::MySql {
+        options.null();
+    } else {
+        options.not_null().default("{}");
+    }
+
+    manager
+        .alter_table(
+            Table::alter()
+                .table(ExternalAuthProviders::Table)
+                .add_column(options.to_owned())
+                .to_owned(),
+        )
+        .await
+}
+
+async fn backfill_default_provider_options(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    manager
+        .get_connection()
+        .execute(
+            &Query::update()
+                .table(ExternalAuthProviders::Table)
+                .value(ExternalAuthProviders::Options, "{}")
+                .and_where(Expr::col(ExternalAuthProviders::Options).is_null())
+                .to_owned(),
+        )
+        .await
+        .map_err(|error| {
+            DbErr::Migration(format!(
+                "failed to backfill default external auth provider options: {error}"
+            ))
+        })?;
+    Ok(())
+}
+
+async fn enforce_provider_options_not_null(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    if manager.get_database_backend() != DbBackend::MySql {
+        return Ok(());
+    }
+
+    manager
+        .alter_table(
+            Table::alter()
+                .table(ExternalAuthProviders::Table)
+                .modify_column(
+                    ColumnDef::new(ExternalAuthProviders::Options)
+                        .text()
+                        .not_null()
+                        .to_owned(),
+                )
+                .to_owned(),
+        )
+        .await
 }
 
 async fn backfill_microsoft_provider_options(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
@@ -69,9 +118,7 @@ async fn backfill_microsoft_provider_options(manager: &SchemaManager<'_>) -> Res
                 "failed to decode Microsoft external auth provider #{id} issuer_url during options backfill: {error}"
             ))
         })?;
-        let Some(tenant) = microsoft_tenant_from_issuer_url(issuer_url.as_deref()) else {
-            continue;
-        };
+        let tenant = microsoft_tenant_for_options_backfill(id, issuer_url.as_deref());
         let options = serde_json::json!({
             "microsoft": {
                 "tenant": tenant,
@@ -100,14 +147,29 @@ async fn backfill_microsoft_provider_options(manager: &SchemaManager<'_>) -> Res
     Ok(())
 }
 
+fn microsoft_tenant_for_options_backfill(id: i64, issuer_url: Option<&str>) -> String {
+    match microsoft_tenant_from_issuer_url(issuer_url) {
+        Some(tenant) => tenant,
+        None => {
+            tracing::warn!(
+                provider_id = id,
+                issuer_url = issuer_url.unwrap_or("<null>"),
+                "failed to parse Microsoft external auth issuer URL during options backfill; defaulting tenant to common"
+            );
+            MICROSOFT_DEFAULT_TENANT.to_string()
+        }
+    }
+}
+
 fn microsoft_tenant_from_issuer_url(value: Option<&str>) -> Option<String> {
     let value = value.map(str::trim).filter(|value| !value.is_empty())?;
+    let value = value.to_ascii_lowercase();
     if value == MICROSOFT_DEFAULT_TENANT
         || value == "organizations"
         || value == "consumers"
-        || is_microsoft_tenant_id(value)
+        || is_microsoft_tenant_id(&value)
     {
-        return Some(value.to_string());
+        return Some(value);
     }
 
     let path = value
@@ -155,4 +217,79 @@ enum ExternalAuthProviders {
     ProviderKind,
     Options,
     IssuerUrl,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn microsoft_tenant_from_issuer_url_canonicalizes_supported_values() {
+        for (input, expected) in [
+            ("common", "common"),
+            (" COMMON ", "common"),
+            ("Organizations", "organizations"),
+            ("Consumers", "consumers"),
+            (
+                "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            ),
+            (
+                "HTTPS://LOGIN.MICROSOFTONLINE.COM/Organizations/V2.0/",
+                "organizations",
+            ),
+            (
+                "https://login.microsoftonline.com/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE/v2.0",
+                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            ),
+        ] {
+            assert_eq!(
+                microsoft_tenant_from_issuer_url(Some(input)).as_deref(),
+                Some(expected),
+                "{input} should backfill as {expected}",
+            );
+        }
+    }
+
+    #[test]
+    fn microsoft_tenant_from_issuer_url_rejects_unsupported_boundaries() {
+        for input in [
+            None,
+            Some(""),
+            Some(" "),
+            Some("tenant.example.com"),
+            Some("http://login.microsoftonline.com/common/v2.0"),
+            Some("https://example.com/common/v2.0"),
+            Some("https://login.microsoftonline.com/common"),
+            Some("https://login.microsoftonline.com/common/v1.0"),
+            Some("https://login.microsoftonline.com/common/v2.0/extra"),
+            Some("https://login.microsoftonline.com/common/v2.0?x=1"),
+            Some("https://login.microsoftonline.com/common/v2.0#fragment"),
+            Some("common/v2.0"),
+        ] {
+            assert!(
+                microsoft_tenant_from_issuer_url(input).is_none(),
+                "{input:?} should not be backfilled",
+            );
+        }
+    }
+
+    #[test]
+    fn microsoft_tenant_for_options_backfill_defaults_invalid_issuer_to_common() {
+        assert_eq!(
+            microsoft_tenant_for_options_backfill(
+                42,
+                Some("https://login.example.com/common/v2.0")
+            ),
+            MICROSOFT_DEFAULT_TENANT
+        );
+        assert_eq!(
+            microsoft_tenant_for_options_backfill(42, None),
+            MICROSOFT_DEFAULT_TENANT
+        );
+        assert_eq!(
+            microsoft_tenant_for_options_backfill(42, Some("Organizations")),
+            "organizations"
+        );
+    }
 }

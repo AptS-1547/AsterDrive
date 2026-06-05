@@ -329,7 +329,7 @@ fn normalize_provider_options(
         }
         _ => {}
     }
-    Ok(options.normalized())
+    Ok(options)
 }
 
 fn normalize_provider_options_from_create(

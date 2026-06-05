@@ -1,4 +1,7 @@
-import { supportsImagePreviewExtension } from "@/lib/thumbnailSupport";
+import {
+	imagePreviewExtensionCandidatesFromMime,
+	supportsImagePreviewFile,
+} from "@/lib/thumbnailSupport";
 import type { FileCategory } from "@/types/api";
 
 const COMPOUND_EXTENSIONS = [
@@ -174,20 +177,26 @@ export function classifySharedFile(
 ): FileCategory {
 	const extension = extensionFromName(name);
 	const mime = mimeType.trim().toLowerCase();
+	const mimeImageExtensions = imagePreviewExtensionCandidatesFromMime(mime);
+	const browserImageMimeSupported = mimeImageExtensions.some((candidate) =>
+		BROWSER_IMAGE_EXTENSIONS.has(candidate),
+	);
+	const backendImageSupported = supportsImagePreviewFile(
+		name,
+		mime,
+		imagePreviewExtensions,
+	);
 	if (compoundExtension || ARCHIVE_EXTENSIONS.has(extension)) return "archive";
 	if (SPREADSHEET_EXTENSIONS.has(extension)) return "spreadsheet";
 	if (PRESENTATION_EXTENSIONS.has(extension)) return "presentation";
 	if (CODE_EXTENSIONS.has(extension)) return "code";
 	if (VIDEO_EXTENSIONS.has(extension)) return "video";
 	if (AUDIO_EXTENSIONS.has(extension)) return "audio";
-	if (
-		BROWSER_IMAGE_EXTENSIONS.has(extension) ||
-		supportsImagePreviewExtension(name, imagePreviewExtensions)
-	) {
+	if (BROWSER_IMAGE_EXTENSIONS.has(extension) || backendImageSupported) {
 		return "image";
 	}
 	if (DOCUMENT_EXTENSIONS.has(extension)) return "document";
-	if (mime.startsWith("image/")) return "image";
+	if (mime.startsWith("image/") && browserImageMimeSupported) return "image";
 	if (mime.startsWith("video/")) return "video";
 	if (mime.startsWith("audio/")) return "audio";
 	if (

@@ -125,6 +125,37 @@ async fn test_public_frontend_config_uses_admin_updated_branding_and_preview_pre
 }
 
 #[actix_web::test]
+async fn test_admin_rejects_invalid_frontend_preview_preference() {
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let key = "frontend_image_preview_preference";
+    let before = aster_drive::db::repository::config_repo::find_by_key(&db, key)
+        .await
+        .expect("config lookup should succeed")
+        .expect("frontend preview preference config should exist");
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/admin/config/{key}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "value": "sideways" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let status = resp.status();
+    let body: Value = test::read_body_json(resp).await;
+    assert!(status.is_client_error(), "{body:#?}");
+
+    let after = aster_drive::db::repository::config_repo::find_by_key(&db, key)
+        .await
+        .expect("config lookup should succeed")
+        .expect("frontend preview preference config should exist");
+    assert_eq!(after.value, before.value);
+}
+
+#[actix_web::test]
 async fn test_public_frontend_config_falls_back_for_invalid_preview_preference() {
     let state = common::setup().await;
     state

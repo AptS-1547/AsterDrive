@@ -4,7 +4,10 @@ import {
 } from "@/components/common/previewAppIconUrls";
 import { isSupportedArchivePreviewFile } from "@/lib/archiveFormats";
 import { BUILTIN_TABLE_PREVIEW_APP_KEY } from "@/lib/tablePreview";
-import { supportsImagePreviewExtension } from "@/lib/thumbnailSupport";
+import {
+	imagePreviewExtensionCandidatesFromMime,
+	supportsImagePreviewFile,
+} from "@/lib/thumbnailSupport";
 import type {
 	PreviewAppProvider,
 	PublicPreviewAppDefinition,
@@ -87,6 +90,9 @@ export function getFileTypeInfo(
 	}
 
 	const { ext } = getExtension(file.name);
+	const mimeImageExtensions = imagePreviewExtensionCandidatesFromMime(
+		file.mime_type,
+	);
 	if (
 		file.mime_type === "text/markdown" ||
 		ext === "md" ||
@@ -112,8 +118,10 @@ export function getFileTypeInfo(
 	}
 	if (
 		IMAGE_EXTENSIONS.has(ext) ||
-		supportsImagePreviewExtension(
+		mimeImageExtensions.some((extension) => IMAGE_EXTENSIONS.has(extension)) ||
+		supportsImagePreviewFile(
 			file.name,
+			file.mime_type,
 			thumbnailSupport?.image_preview?.extensions,
 		)
 	) {
@@ -615,6 +623,9 @@ export function getDefaultOpenWith(
 		.defaultMode;
 }
 
-export function isEditableTextFile(file: PreviewableFileLike) {
-	return detectBuiltinFilePreviewProfile(file).isEditableText;
+export function isEditableTextFile(
+	file: PreviewableFileLike,
+	thumbnailSupport?: PublicThumbnailSupport | null,
+) {
+	return detectBuiltinFilePreviewProfile(file, thumbnailSupport).isEditableText;
 }

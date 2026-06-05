@@ -401,6 +401,9 @@ describe("admin external auth shared helpers", () => {
 		expect(microsoftIssuerUrlForTenant("organizations")).toBe(
 			"https://login.microsoftonline.com/organizations/v2.0",
 		);
+		expect(microsoftIssuerUrlForTenant(" Organizations ")).toBe(
+			"https://login.microsoftonline.com/organizations/v2.0",
+		);
 		expect(microsoftIssuerUrlForTenant(" ")).toBe(
 			"https://login.microsoftonline.com/common/v2.0",
 		);
@@ -415,7 +418,27 @@ describe("admin external auth shared helpers", () => {
 			),
 		).toBe("consumers");
 		expect(
+			microsoftTenantFromIssuerUrl(
+				"HTTPS://LOGIN.MICROSOFTONLINE.COM/Organizations/V2.0/",
+			),
+		).toBe("organizations");
+		expect(
+			microsoftTenantFromIssuerUrl(
+				"https://login.microsoftonline.com/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE/v2.0",
+			),
+		).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+		expect(
 			microsoftTenantFromIssuerUrl("https://example.com/common/v2.0"),
+		).toBe("");
+		expect(
+			microsoftTenantFromIssuerUrl(
+				"https://login.microsoftonline.com/common/v2.0?x=1",
+			),
+		).toBe("");
+		expect(
+			microsoftTenantFromIssuerUrl(
+				"https://login.microsoftonline.com/common/v2.0#fragment",
+			),
 		).toBe("");
 		expect(createPayload(form, descriptor)).toMatchObject({
 			authorization_url: null,
@@ -459,6 +482,23 @@ describe("admin external auth shared helpers", () => {
 				},
 			},
 		});
+		expect(
+			createPayload(
+				{
+					...form,
+					microsoftTenant: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+					microsoftTenantMode: "custom",
+				},
+				descriptor,
+			),
+		).toMatchObject({
+			issuer_url: null,
+			options: {
+				microsoft: {
+					tenant: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+				},
+			},
+		});
 		expect(shouldShowIssuerUrl(descriptor)).toBe(false);
 		expect(formConnectionSummary(form, descriptor)).toBe(
 			"tenant: organizations · OIDC discovery",
@@ -472,7 +512,7 @@ describe("admin external auth shared helpers", () => {
 					issuer_url: null,
 					options: {
 						microsoft: {
-							tenant: "common",
+							tenant: "Common",
 						},
 					},
 					provider_kind: "microsoft",
@@ -502,7 +542,7 @@ describe("admin external auth shared helpers", () => {
 		expect(
 			formFromProvider(
 				provider({
-					issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
+					issuer_url: "HTTPS://LOGIN.MICROSOFTONLINE.COM/Organizations/V2.0",
 					options: undefined,
 					provider_kind: "microsoft",
 				}),
@@ -609,6 +649,31 @@ describe("admin external auth shared helpers", () => {
 				provider({
 					issuer_url: "https://login.microsoftonline.com/organizations/v2.0",
 					options: undefined,
+					provider_kind: "microsoft",
+					scopes: "openid email profile",
+				}),
+				microsoftKind(),
+			),
+		).toBe(true);
+		expect(
+			formConnectionChanged(
+				{
+					...emptyForm,
+					clientId: "client-123",
+					clientSecret: "***REDACTED***",
+					displayName: "Microsoft",
+					microsoftTenant: "organizations",
+					microsoftTenantMode: "organizations",
+					providerKind: "microsoft",
+					scopes: "openid email profile",
+				},
+				provider({
+					issuer_url: null,
+					options: {
+						microsoft: {
+							tenant: "Organizations",
+						},
+					},
 					provider_kind: "microsoft",
 					scopes: "openid email profile",
 				}),

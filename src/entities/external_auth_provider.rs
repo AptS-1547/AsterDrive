@@ -58,7 +58,7 @@ impl fmt::Debug for Model {
             .field("icon_url", &self.icon_url)
             .field("provider_kind", &self.provider_kind)
             .field("protocol", &self.protocol)
-            .field("options", &self.options)
+            .field("options", &"***REDACTED***")
             .field("issuer_url", &self.issuer_url)
             .field("authorization_url", &self.authorization_url)
             .field("token_url", &self.token_url)
@@ -119,3 +119,51 @@ impl Related<super::external_auth_login_flow::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_sensitive_options() {
+        let now = chrono::Utc::now();
+        let model = Model {
+            id: 1,
+            key: "microsoft".to_string(),
+            display_name: "Microsoft".to_string(),
+            icon_url: None,
+            provider_kind: ExternalAuthProviderKind::Microsoft,
+            protocol: ExternalAuthProtocol::Oidc,
+            options: StoredExternalAuthProviderOptions(
+                r#"{"microsoft":{"tenant":"secret-tenant"}}"#.to_string(),
+            ),
+            issuer_url: None,
+            authorization_url: None,
+            token_url: None,
+            userinfo_url: None,
+            client_id: "client-id".to_string(),
+            client_secret: Some("client-secret".to_string()),
+            scopes: "openid profile email".to_string(),
+            enabled: true,
+            auto_provision_enabled: false,
+            auto_link_verified_email_enabled: false,
+            require_email_verified: true,
+            subject_claim: None,
+            username_claim: None,
+            display_name_claim: None,
+            email_claim: None,
+            email_verified_claim: None,
+            groups_claim: None,
+            avatar_url_claim: None,
+            allowed_domains: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let debug = format!("{model:?}");
+        assert!(debug.contains(r#"options: "***REDACTED***""#));
+        assert!(debug.contains(r#"client_secret: Some("***REDACTED***")"#));
+        assert!(!debug.contains("secret-tenant"));
+        assert!(!debug.contains("client-secret"));
+    }
+}

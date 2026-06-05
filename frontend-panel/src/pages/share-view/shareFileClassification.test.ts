@@ -67,6 +67,10 @@ describe("shareFileClassification", () => {
 		expect(
 			classifySharedFile("photo.heic", "application/octet-stream", null),
 		).toBe("other");
+		expect(classifySharedFile("upload", "image/heic", null, ["heic"])).toBe(
+			"image",
+		);
+		expect(classifySharedFile("upload", "image/heic", null)).toBe("other");
 		expect(
 			classifySharedFile("track.mp3", "application/octet-stream", null, [
 				"heic",

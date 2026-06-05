@@ -119,6 +119,36 @@ describe("file preview capabilities", () => {
 			icon: "FileImage",
 		});
 		expect(
+			getFileTypeInfo({
+				name: "upload",
+				mime_type: "image/png",
+			}),
+		).toMatchObject({
+			category: "image",
+			icon: "FileImage",
+		});
+		expect(
+			getFileTypeInfo(
+				{
+					name: "upload",
+					mime_type: "image/heic",
+				},
+				thumbnailSupport,
+			),
+		).toMatchObject({
+			category: "image",
+			icon: "FileImage",
+		});
+		expect(
+			getFileTypeInfo({
+				name: "upload",
+				mime_type: "image/heic",
+			}),
+		).toMatchObject({
+			category: "unknown",
+			icon: "File",
+		});
+		expect(
 			getFileTypeInfo(
 				{
 					name: "camera.NEF",

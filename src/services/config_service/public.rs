@@ -1,5 +1,4 @@
 use crate::config::branding;
-use crate::config::definitions::FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY;
 use crate::config::site_url;
 use crate::config::{auth_runtime, media_processing, operations};
 use crate::db::repository::config_repo;
@@ -96,14 +95,9 @@ pub fn get_public_frontend_config(state: &PrimaryAppState) -> PublicFrontendConf
         version: 1,
         branding: get_public_branding(state),
         media: PublicFrontendMediaConfig {
-            image_preview_preference:
-                media_processing::PublicImagePreviewPreference::from_config_value(
-                    state
-                        .runtime_config
-                        .get(FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY)
-                        .as_deref()
-                        .unwrap_or("original_first"),
-                ),
+            image_preview_preference: operations::frontend_image_preview_preference(
+                &state.runtime_config,
+            ),
         },
     }
 }

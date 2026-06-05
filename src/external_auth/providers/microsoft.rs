@@ -104,11 +104,11 @@ pub fn normalize_microsoft_tenant_or_issuer_url(value: Option<String>) -> Result
             MICROSOFT_DEFAULT_TENANT,
         )));
     }
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+    if starts_with_http_url(trimmed) {
         return normalize_microsoft_issuer_url(trimmed).map(Some);
     }
-    validate_microsoft_tenant(trimmed)?;
-    Ok(Some(microsoft_issuer_url_for_tenant(trimmed)))
+    let tenant = canonicalize_microsoft_tenant(trimmed)?;
+    Ok(Some(microsoft_issuer_url_for_tenant(&tenant)))
 }
 
 pub fn normalize_microsoft_tenant_input(value: Option<String>) -> Result<String> {
@@ -119,12 +119,11 @@ pub fn normalize_microsoft_tenant_input(value: Option<String>) -> Result<String>
     if trimmed.is_empty() {
         return Ok(MICROSOFT_DEFAULT_TENANT.to_string());
     }
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+    if starts_with_http_url(trimmed) {
         return normalize_microsoft_issuer_url(trimmed)
             .and_then(|issuer| microsoft_tenant_from_issuer_string(&issuer));
     }
-    validate_microsoft_tenant(trimmed)?;
-    Ok(trimmed.to_string())
+    canonicalize_microsoft_tenant(trimmed)
 }
 
 /// Applies fixed Microsoft defaults before delegating to the generic OIDC driver.
@@ -164,8 +163,8 @@ fn microsoft_effective_issuer_url(provider: &ExternalAuthProviderConfig) -> Resu
         .map(|options| options.tenant.trim())
         .filter(|tenant| !tenant.is_empty())
     {
-        validate_microsoft_tenant(tenant)?;
-        return Ok(microsoft_issuer_url_for_tenant(tenant));
+        let tenant = canonicalize_microsoft_tenant(tenant)?;
+        return Ok(microsoft_issuer_url_for_tenant(&tenant));
     }
 
     let Some(issuer_url) = provider.issuer_url.as_deref() else {
@@ -175,7 +174,7 @@ fn microsoft_effective_issuer_url(provider: &ExternalAuthProviderConfig) -> Resu
     if issuer_url.is_empty() {
         return Ok(microsoft_issuer_url_for_tenant(MICROSOFT_DEFAULT_TENANT));
     }
-    if issuer_url.starts_with("http://") || issuer_url.starts_with("https://") {
+    if starts_with_http_url(issuer_url) {
         return normalize_microsoft_issuer_url(issuer_url);
     }
     normalize_microsoft_tenant_or_issuer_url(Some(issuer_url.to_string()))?
@@ -381,7 +380,7 @@ fn validate_microsoft_discovery_issuer(
         ));
     }
     let configured_tenant = microsoft_tenant_from_issuer_url(&configured)?;
-    if !is_microsoft_multi_tenant_alias(configured_tenant) {
+    if !is_microsoft_multi_tenant_alias(&configured_tenant) {
         return Err(AsterError::validation_error(
             "Microsoft discovery issuer does not match configured provider",
         ));
@@ -417,29 +416,33 @@ fn normalize_microsoft_issuer_url(value: &str) -> Result<String> {
             "Microsoft issuer URL must use login.microsoftonline.com",
         ));
     }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(AsterError::validation_error(
+            "Microsoft issuer URL must not include query or fragment",
+        ));
+    }
     let tenant = microsoft_tenant_from_issuer_url(&parsed)?;
-    Ok(microsoft_issuer_url_for_tenant(tenant))
+    Ok(microsoft_issuer_url_for_tenant(&tenant))
 }
 
 /// Extracts and validates the tenant segment from a Microsoft issuer URL.
-fn microsoft_tenant_from_issuer_url(parsed: &reqwest::Url) -> Result<&str> {
+fn microsoft_tenant_from_issuer_url(parsed: &reqwest::Url) -> Result<String> {
     let segments = parsed
         .path_segments()
         .ok_or_else(|| AsterError::validation_error("Microsoft issuer URL missing tenant"))?
         .collect::<Vec<_>>();
-    if segments.len() != 2 || segments[1] != "v2.0" {
+    if segments.len() != 2 || !segments[1].eq_ignore_ascii_case("v2.0") {
         return Err(AsterError::validation_error(
             "Microsoft issuer URL must end with /{tenant}/v2.0",
         ));
     }
-    validate_microsoft_tenant(segments[0])?;
-    Ok(segments[0])
+    canonicalize_microsoft_tenant(segments[0])
 }
 
 fn microsoft_tenant_from_issuer_string(value: &str) -> Result<String> {
     let parsed = reqwest::Url::parse(value)
         .map_aster_err_ctx("invalid Microsoft issuer URL", AsterError::validation_error)?;
-    microsoft_tenant_from_issuer_url(&parsed).map(str::to_string)
+    microsoft_tenant_from_issuer_url(&parsed)
 }
 
 /// Validates the issuer returned by the ID token against Microsoft tenant rules.
@@ -476,7 +479,7 @@ fn validate_microsoft_token_issuer(configured_issuer: &str, token_issuer: &str) 
     let configured_tenant = microsoft_tenant_from_issuer_url(&configured)?;
     let token_tenant = microsoft_tenant_from_issuer_url(&token)
         .map_err(|_| AsterError::auth_invalid_credentials("Microsoft token issuer is invalid"))?;
-    if is_microsoft_token_tenant_allowed_for_configured_tenant(configured_tenant, token_tenant) {
+    if is_microsoft_token_tenant_allowed_for_configured_tenant(&configured_tenant, &token_tenant) {
         return Ok(());
     }
     Err(AsterError::auth_invalid_credentials(
@@ -509,6 +512,12 @@ fn validate_microsoft_tenant(tenant: &str) -> Result<()> {
     ))
 }
 
+fn canonicalize_microsoft_tenant(tenant: &str) -> Result<String> {
+    let tenant = tenant.trim().to_ascii_lowercase();
+    validate_microsoft_tenant(&tenant)?;
+    Ok(tenant)
+}
+
 fn is_microsoft_multi_tenant_alias(value: &str) -> bool {
     matches!(value, "common" | "organizations" | "consumers")
 }
@@ -526,6 +535,15 @@ fn is_microsoft_tenant_id(value: &str) -> bool {
 
 fn is_loopback_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
+fn starts_with_http_url(value: &str) -> bool {
+    value
+        .get(..7)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("http://"))
+        || value
+            .get(..8)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
 }
 
 #[cfg(test)]
@@ -581,6 +599,20 @@ mod tests {
     }
 
     #[test]
+    fn microsoft_config_canonicalizes_stored_tenant_options() {
+        let mut provider = provider();
+        provider.options.microsoft = Some(crate::types::MicrosoftExternalAuthProviderOptions::new(
+            "Organizations",
+        ));
+
+        let config = microsoft_oidc_config(&provider).unwrap();
+        assert_eq!(
+            config.issuer_url.as_deref(),
+            Some("https://login.microsoftonline.com/organizations/v2.0")
+        );
+    }
+
+    #[test]
     fn microsoft_tenant_normalization_accepts_supported_tenants() {
         for tenant in ["common", "organizations", "consumers", TENANT_ID] {
             assert_eq!(
@@ -598,10 +630,58 @@ mod tests {
             ))
         );
         assert_eq!(
+            normalize_microsoft_tenant_or_issuer_url(Some(" Organizations ".to_string())).unwrap(),
+            Some("https://login.microsoftonline.com/organizations/v2.0".to_string())
+        );
+        assert_eq!(
+            normalize_microsoft_tenant_or_issuer_url(Some(
+                "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".to_string()
+            ))
+            .unwrap(),
+            Some(
+                "https://login.microsoftonline.com/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/v2.0"
+                    .to_string()
+            )
+        );
+        assert_eq!(
+            normalize_microsoft_tenant_or_issuer_url(Some(
+                "HTTPS://LOGIN.MICROSOFTONLINE.COM/Organizations/V2.0/".to_string()
+            ))
+            .unwrap(),
+            Some("https://login.microsoftonline.com/organizations/v2.0".to_string())
+        );
+        assert_eq!(
             normalize_microsoft_tenant_or_issuer_url(Some("http://127.0.0.1:3000".to_string()))
                 .unwrap(),
             Some("http://127.0.0.1:3000".to_string())
         );
+    }
+
+    #[test]
+    fn microsoft_tenant_input_normalization_canonicalizes_case() {
+        for (input, expected) in [
+            (None, MICROSOFT_DEFAULT_TENANT),
+            (Some(""), MICROSOFT_DEFAULT_TENANT),
+            (Some(" Organizations "), "organizations"),
+            (Some("Consumers"), "consumers"),
+            (
+                Some("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"),
+                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            ),
+            (
+                Some("HTTPS://LOGIN.MICROSOFTONLINE.COM/Organizations/V2.0/"),
+                "organizations",
+            ),
+            (
+                Some("https://login.microsoftonline.com/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE/v2.0"),
+                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            ),
+        ] {
+            assert_eq!(
+                normalize_microsoft_tenant_input(input.map(str::to_string)).unwrap(),
+                expected,
+            );
+        }
     }
 
     #[test]
@@ -611,6 +691,9 @@ mod tests {
             "https://login.example.com/common/v2.0",
             "https://login.microsoftonline.com/common",
             "common/v2.0",
+            "https://login.microsoftonline.com/common/v2.0/extra",
+            "https://login.microsoftonline.com/common/v2.0?x=1",
+            "https://login.microsoftonline.com/common/v2.0#fragment",
         ] {
             assert!(
                 normalize_microsoft_tenant_or_issuer_url(Some(tenant.to_string())).is_err(),

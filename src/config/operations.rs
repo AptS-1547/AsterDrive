@@ -1,7 +1,7 @@
 //! 配置子模块：`operations`。
 
-use crate::config::RuntimeConfig;
 use crate::config::bool_like::parse_bool_like;
+use crate::config::{RuntimeConfig, media_processing};
 use crate::errors::{AsterError, Result};
 use crate::utils::numbers::{u64_to_i64, u64_to_usize, usize_to_u64};
 use serde::{Deserialize, Serialize};
@@ -23,8 +23,9 @@ pub use crate::config::definitions::{
     BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY, BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
     BACKGROUND_TASK_MAX_CONCURRENCY_KEY, BACKGROUND_TASK_STORAGE_MIGRATION_MAX_CONCURRENCY_KEY,
     BACKGROUND_TASK_THUMBNAIL_MAX_CONCURRENCY_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
-    MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY, MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,
-    MEDIA_METADATA_ENABLED_KEY, MEDIA_METADATA_MAX_SOURCE_BYTES_KEY,
+    FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY, MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY,
+    MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY, MEDIA_METADATA_ENABLED_KEY,
+    MEDIA_METADATA_MAX_SOURCE_BYTES_KEY,
     OFFLINE_DOWNLOAD_ARIA2_LOWEST_SPEED_LIMIT_BYTES_PER_SEC_KEY,
     OFFLINE_DOWNLOAD_ARIA2_MAX_CONNECTION_PER_SERVER_KEY,
     OFFLINE_DOWNLOAD_ARIA2_REQUEST_TIMEOUT_SECS_KEY, OFFLINE_DOWNLOAD_ARIA2_RPC_SECRET_KEY,
@@ -477,6 +478,27 @@ pub fn media_metadata_max_source_bytes(runtime_config: &RuntimeConfig) -> i64 {
     )
 }
 
+pub fn frontend_image_preview_preference(
+    runtime_config: &RuntimeConfig,
+) -> media_processing::PublicImagePreviewPreference {
+    media_processing::PublicImagePreviewPreference::from_config_value(
+        runtime_config
+            .get(FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY)
+            .as_deref()
+            .unwrap_or("original_first"),
+    )
+}
+
+pub fn normalize_frontend_image_preview_preference_config_value(value: &str) -> Result<String> {
+    let value = value.trim();
+    match value {
+        "original_first" | "preview_first" => Ok(value.to_string()),
+        _ => Err(AsterError::validation_error(
+            "frontend image preview preference must be original_first or preview_first",
+        )),
+    }
+}
+
 pub fn offline_download_max_file_size_bytes(runtime_config: &RuntimeConfig) -> i64 {
     read_positive_i64_bytes(
         runtime_config,
@@ -922,19 +944,21 @@ mod tests {
         DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS,
         DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY, DEFAULT_SHARE_STREAM_SESSION_TTL_SECS,
         DEFAULT_TASK_LIST_MAX_LIMIT, DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT,
-        MAX_BACKGROUND_TASK_CONCURRENCY, MAX_SHARE_STREAM_SESSION_TTL_SECS,
-        MIN_SHARE_STREAM_SESSION_TTL_SECS, OFFLINE_DOWNLOAD_ENGINE_KEY,
-        OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY, OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY,
-        OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY, OFFLINE_DOWNLOAD_TEMP_DIR_KEY,
-        REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
-        SHARE_STREAM_SESSION_TTL_SECS_KEY, TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY,
-        archive_extract_max_staging_bytes, avatar_max_upload_size_bytes,
-        background_task_archive_max_concurrency, background_task_dispatch_idle_max_interval_secs,
-        background_task_max_attempts, background_task_max_concurrency,
-        background_task_storage_migration_max_concurrency,
+        FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY, MAX_BACKGROUND_TASK_CONCURRENCY,
+        MAX_SHARE_STREAM_SESSION_TTL_SECS, MIN_SHARE_STREAM_SESSION_TTL_SECS,
+        OFFLINE_DOWNLOAD_ENGINE_KEY, OFFLINE_DOWNLOAD_ENGINE_REGISTRY_JSON_KEY,
+        OFFLINE_DOWNLOAD_MAX_CONCURRENCY_KEY, OFFLINE_DOWNLOAD_MAX_MB_PER_SEC_KEY,
+        OFFLINE_DOWNLOAD_TEMP_DIR_KEY, REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
+        SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, SHARE_STREAM_SESSION_TTL_SECS_KEY,
+        TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, archive_extract_max_staging_bytes,
+        avatar_max_upload_size_bytes, background_task_archive_max_concurrency,
+        background_task_dispatch_idle_max_interval_secs, background_task_max_attempts,
+        background_task_max_concurrency, background_task_storage_migration_max_concurrency,
         background_task_thumbnail_max_concurrency, blob_reconcile_interval_secs,
-        normalize_attempts_config_value, normalize_bool_config_value, normalize_bytes_config_value,
-        normalize_concurrency_config_value, normalize_interval_config_value,
+        frontend_image_preview_preference, normalize_attempts_config_value,
+        normalize_bool_config_value, normalize_bytes_config_value,
+        normalize_concurrency_config_value,
+        normalize_frontend_image_preview_preference_config_value, normalize_interval_config_value,
         normalize_list_max_limit_config_value, normalize_non_negative_u64_config_value,
         normalize_offline_download_temp_dir_config_value, normalize_queue_capacity_config_value,
         normalize_share_stream_session_ttl_config_value, offline_download_enabled_engines,
@@ -1001,6 +1025,39 @@ mod tests {
             remote_node_health_test_interval_secs(&runtime_config),
             DEFAULT_REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS
         );
+    }
+
+    #[test]
+    fn frontend_image_preview_preference_reader_and_normalizer_are_strict() {
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(
+            frontend_image_preview_preference(&runtime_config).as_str(),
+            "original_first"
+        );
+
+        runtime_config.apply(config_model(
+            FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY,
+            "preview_first",
+        ));
+        assert_eq!(
+            frontend_image_preview_preference(&runtime_config).as_str(),
+            "preview_first"
+        );
+
+        runtime_config.apply(config_model(
+            FRONTEND_IMAGE_PREVIEW_PREFERENCE_KEY,
+            "sideways",
+        ));
+        assert_eq!(
+            frontend_image_preview_preference(&runtime_config).as_str(),
+            "original_first"
+        );
+
+        assert_eq!(
+            normalize_frontend_image_preview_preference_config_value(" preview_first ").unwrap(),
+            "preview_first"
+        );
+        assert!(normalize_frontend_image_preview_preference_config_value("sideways").is_err());
     }
 
     #[test]
