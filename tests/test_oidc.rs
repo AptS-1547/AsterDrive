@@ -121,6 +121,36 @@ async fn admin_provider_kind_api_drives_create_contract() {
     assert_eq!(oidc["supports_discovery"], true);
     assert_eq!(oidc["supports_pkce"], true);
 
+    let generic_oauth2 = kinds
+        .iter()
+        .find(|kind| kind["kind"] == "generic_oauth2")
+        .expect("Generic OAuth2 kind should be listed");
+    assert_eq!(generic_oauth2["protocol"], "oauth2");
+    assert_eq!(generic_oauth2["issuer_url_required"], false);
+    assert_eq!(
+        generic_oauth2["manual_endpoint_configuration_supported"],
+        true
+    );
+    assert_eq!(generic_oauth2["authorization_url_required"], true);
+    assert_eq!(generic_oauth2["token_url_required"], true);
+    assert_eq!(generic_oauth2["userinfo_url_required"], true);
+    assert_eq!(generic_oauth2["supports_discovery"], false);
+
+    let github = kinds
+        .iter()
+        .find(|kind| kind["kind"] == "github")
+        .expect("GitHub kind should be listed");
+    assert_eq!(github["protocol"], "oauth2");
+    assert_eq!(github["default_scopes"], "read:user user:email");
+    assert_eq!(github["issuer_url_required"], false);
+    assert_eq!(github["manual_endpoint_configuration_supported"], false);
+    assert_eq!(github["authorization_url_required"], false);
+    assert_eq!(github["token_url_required"], false);
+    assert_eq!(github["userinfo_url_required"], false);
+    assert_eq!(github["supports_discovery"], false);
+    assert_eq!(github["supports_pkce"], true);
+    assert_eq!(github["supports_email_verified_claim"], false);
+
     let google = kinds
         .iter()
         .find(|kind| kind["kind"] == "google")
@@ -150,6 +180,21 @@ async fn admin_provider_kind_api_drives_create_contract() {
     assert_eq!(microsoft["supports_discovery"], true);
     assert_eq!(microsoft["supports_pkce"], true);
     assert_eq!(microsoft["supports_email_verified_claim"], false);
+
+    let qq = kinds
+        .iter()
+        .find(|kind| kind["kind"] == "qq")
+        .expect("QQ kind should be listed");
+    assert_eq!(qq["protocol"], "oauth2");
+    assert_eq!(qq["default_scopes"], "get_user_info");
+    assert_eq!(qq["issuer_url_required"], false);
+    assert_eq!(qq["manual_endpoint_configuration_supported"], false);
+    assert_eq!(qq["authorization_url_required"], false);
+    assert_eq!(qq["token_url_required"], false);
+    assert_eq!(qq["userinfo_url_required"], false);
+    assert_eq!(qq["supports_discovery"], false);
+    assert_eq!(qq["supports_pkce"], true);
+    assert_eq!(qq["supports_email_verified_claim"], false);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/external-auth/providers")
@@ -343,10 +388,115 @@ async fn admin_create_and_test_microsoft_provider_uses_oidc_defaults() {
 }
 
 #[actix_web::test]
-async fn admin_microsoft_provider_migrates_legacy_issuer_input_to_options() {
+async fn admin_specialized_providers_reject_configurable_connection_urls() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
+
+    let url_fields = [
+        ("issuer_url", "https://idp.example.com"),
+        ("authorization_url", "https://idp.example.com/authorize"),
+        ("token_url", "https://idp.example.com/token"),
+        ("userinfo_url", "https://idp.example.com/userinfo"),
+    ];
+
+    for provider_kind in ["github", "google", "microsoft", "qq"] {
+        for (field, value) in url_fields {
+            let mut payload = serde_json::json!({
+                "provider_kind": provider_kind,
+                "display_name": provider_kind,
+                "client_id": TEST_CLIENT_ID,
+                "client_secret": "super-secret",
+            });
+            payload
+                .as_object_mut()
+                .unwrap()
+                .insert(field.to_string(), Value::String(value.to_string()));
+            let req = test::TestRequest::post()
+                .uri("/api/v1/admin/external-auth/providers")
+                .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+                .insert_header(common::csrf_header_for(&admin_token))
+                .set_json(payload)
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            let status = resp.status();
+            let body: Value = test::read_body_json(resp).await;
+            assert_eq!(status, 400, "{provider_kind} create {field}: {body:#?}");
+            assert!(
+                body["msg"].as_str().unwrap().contains(field),
+                "{provider_kind} create {field}: {body:#?}"
+            );
+        }
+    }
+
+    for provider_kind in ["github", "google", "microsoft", "qq"] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/admin/external-auth/providers")
+            .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+            .insert_header(common::csrf_header_for(&admin_token))
+            .set_json(serde_json::json!({
+                "provider_kind": provider_kind,
+                "display_name": provider_kind,
+                "client_id": TEST_CLIENT_ID,
+                "client_secret": "super-secret",
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201, "{provider_kind}");
+        let body: Value = test::read_body_json(resp).await;
+        let provider_id = body["data"]["id"].as_i64().unwrap();
+
+        for (field, value) in url_fields {
+            let mut payload = serde_json::Map::new();
+            payload.insert(field.to_string(), Value::String(value.to_string()));
+            let req = test::TestRequest::patch()
+                .uri(&format!(
+                    "/api/v1/admin/external-auth/providers/{provider_id}"
+                ))
+                .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+                .insert_header(common::csrf_header_for(&admin_token))
+                .set_json(Value::Object(payload))
+                .to_request();
+            let resp = test::call_service(&app, req).await;
+            let status = resp.status();
+            let body: Value = test::read_body_json(resp).await;
+            assert_eq!(status, 400, "{provider_kind} update {field}: {body:#?}");
+            assert!(
+                body["msg"].as_str().unwrap().contains(field),
+                "{provider_kind} update {field}: {body:#?}"
+            );
+        }
+    }
+}
+
+#[actix_web::test]
+async fn admin_microsoft_provider_rejects_issuer_url_configuration() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    for issuer_url in [
+        "organizations",
+        "https://login.microsoftonline.com/organizations/v2.0",
+    ] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/admin/external-auth/providers")
+            .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+            .insert_header(common::csrf_header_for(&admin_token))
+            .set_json(serde_json::json!({
+                "provider_kind": "microsoft",
+                "display_name": "Microsoft",
+                "issuer_url": issuer_url,
+                "client_id": TEST_CLIENT_ID,
+                "client_secret": "super-secret",
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        let status = resp.status();
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(status, 400, "{body:#?}");
+        assert!(body["msg"].as_str().unwrap().contains("issuer_url"));
+    }
 
     let req = test::TestRequest::post()
         .uri("/api/v1/admin/external-auth/providers")
@@ -354,8 +504,8 @@ async fn admin_microsoft_provider_migrates_legacy_issuer_input_to_options() {
         .insert_header(common::csrf_header_for(&admin_token))
         .set_json(serde_json::json!({
             "provider_kind": "microsoft",
-            "display_name": "Microsoft Legacy",
-            "issuer_url": "organizations",
+            "display_name": "Microsoft",
+            "options": { "microsoft": { "tenant": "organizations" } },
             "client_id": TEST_CLIENT_ID,
             "client_secret": "super-secret",
         }))
@@ -363,12 +513,23 @@ async fn admin_microsoft_provider_migrates_legacy_issuer_input_to_options() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["provider_kind"], "microsoft");
-    assert_eq!(body["data"]["issuer_url"], Value::Null);
-    assert_eq!(
-        body["data"]["options"]["microsoft"]["tenant"],
-        "organizations"
-    );
+    let provider_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!(
+            "/api/v1/admin/external-auth/providers/{provider_id}"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .set_json(serde_json::json!({
+            "issuer_url": "consumers",
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let status = resp.status();
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(status, 400, "{body:#?}");
+    assert!(body["msg"].as_str().unwrap().contains("issuer_url"));
 }
 
 #[actix_web::test]

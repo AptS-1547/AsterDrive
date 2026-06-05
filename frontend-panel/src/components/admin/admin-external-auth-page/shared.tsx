@@ -252,6 +252,48 @@ export function isQqProviderKind(
 	return (typeof kind === "string" ? kind : kind?.kind) === "qq";
 }
 
+function isSpecializedProviderKind(
+	kind:
+		| AdminExternalAuthProviderKindInfo
+		| ExternalAuthProviderKind
+		| null
+		| undefined,
+) {
+	return (
+		isGitHubProviderKind(kind) ||
+		isGoogleProviderKind(kind) ||
+		isMicrosoftProviderKind(kind) ||
+		isQqProviderKind(kind)
+	);
+}
+
+function providerKindValue(
+	kind:
+		| AdminExternalAuthProviderKindInfo
+		| ExternalAuthProviderKind
+		| null
+		| undefined,
+) {
+	return typeof kind === "string" ? kind : kind?.kind;
+}
+
+function providerUsesFixedConnection(
+	kind:
+		| AdminExternalAuthProviderKindInfo
+		| ExternalAuthProviderKind
+		| null
+		| undefined,
+	descriptor?: AdminExternalAuthProviderKindInfo | null,
+) {
+	if (descriptor && descriptor.kind === providerKindValue(kind)) {
+		return (
+			!descriptor.issuer_url_required &&
+			!descriptor.manual_endpoint_configuration_supported
+		);
+	}
+	return isSpecializedProviderKind(kind);
+}
+
 function localizedProviderKindText(
 	t: TFunction,
 	key: string,
@@ -405,16 +447,25 @@ function providerMicrosoftTenantValue(provider: AdminExternalAuthProviderInfo) {
 	);
 }
 
-function formIssuerUrlForPayload(form: ExternalAuthProviderFormData) {
-	if (
-		isGitHubProviderKind(form.providerKind) ||
-		isGoogleProviderKind(form.providerKind) ||
-		isMicrosoftProviderKind(form.providerKind) ||
-		isQqProviderKind(form.providerKind)
-	) {
+function formIssuerUrlForPayload(
+	form: ExternalAuthProviderFormData,
+	selectedKind?: AdminExternalAuthProviderKindInfo | null,
+) {
+	if (providerUsesFixedConnection(form.providerKind, selectedKind)) {
 		return null;
 	}
 	return nullableText(form.issuerUrl);
+}
+
+function formManualEndpointForPayload(
+	form: ExternalAuthProviderFormData,
+	value: string,
+	selectedKind?: AdminExternalAuthProviderKindInfo | null,
+) {
+	if (providerUsesFixedConnection(form.providerKind, selectedKind)) {
+		return null;
+	}
+	return nullableText(value);
 }
 
 function formOptionsForPayload(form: ExternalAuthProviderFormData) {
@@ -475,7 +526,11 @@ export function createPayload(
 	const allowedDomains = parseAllowedDomains(form.allowedDomains);
 	return {
 		allowed_domains: allowedDomains.length > 0 ? allowedDomains : null,
-		authorization_url: nullableText(form.authorizationUrl),
+		authorization_url: formManualEndpointForPayload(
+			form,
+			form.authorizationUrl,
+			selectedKind,
+		),
 		auto_link_verified_email_enabled: form.autoLinkVerifiedEmailEnabled,
 		auto_provision_enabled: form.autoProvisionEnabled,
 		avatar_url_claim: nullableText(form.avatarUrlClaim),
@@ -488,14 +543,18 @@ export function createPayload(
 		enabled: form.enabled,
 		groups_claim: nullableText(form.groupsClaim),
 		icon_url: nullableText(form.iconUrl),
-		issuer_url: formIssuerUrlForPayload(form),
+		issuer_url: formIssuerUrlForPayload(form, selectedKind),
 		options: formOptionsForPayload(form),
 		provider_kind: form.providerKind,
 		require_email_verified: form.requireEmailVerified,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
 		subject_claim: nullableText(form.subjectClaim),
-		token_url: nullableText(form.tokenUrl),
-		userinfo_url: nullableText(form.userinfoUrl),
+		token_url: formManualEndpointForPayload(form, form.tokenUrl, selectedKind),
+		userinfo_url: formManualEndpointForPayload(
+			form,
+			form.userinfoUrl,
+			selectedKind,
+		),
 		username_claim: nullableText(form.usernameClaim),
 	};
 }
@@ -507,7 +566,11 @@ export function updatePayload(
 	const allowedDomains = parseAllowedDomains(form.allowedDomains);
 	return {
 		allowed_domains: allowedDomains.length > 0 ? allowedDomains : null,
-		authorization_url: nullableText(form.authorizationUrl),
+		authorization_url: formManualEndpointForPayload(
+			form,
+			form.authorizationUrl,
+			selectedKind,
+		),
 		auto_link_verified_email_enabled: form.autoLinkVerifiedEmailEnabled,
 		auto_provision_enabled: form.autoProvisionEnabled,
 		avatar_url_claim: nullableText(form.avatarUrlClaim),
@@ -522,13 +585,17 @@ export function updatePayload(
 		enabled: form.enabled,
 		groups_claim: nullableText(form.groupsClaim),
 		icon_url: nullableText(form.iconUrl),
-		issuer_url: formIssuerUrlForPayload(form),
+		issuer_url: formIssuerUrlForPayload(form, selectedKind),
 		options: formOptionsForPayload(form),
 		require_email_verified: form.requireEmailVerified,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
 		subject_claim: nullableText(form.subjectClaim),
-		token_url: nullableText(form.tokenUrl),
-		userinfo_url: nullableText(form.userinfoUrl),
+		token_url: formManualEndpointForPayload(form, form.tokenUrl, selectedKind),
+		userinfo_url: formManualEndpointForPayload(
+			form,
+			form.userinfoUrl,
+			selectedKind,
+		),
 		username_claim: nullableText(form.usernameClaim),
 	};
 }
@@ -538,15 +605,23 @@ export function testParamsPayload(
 	selectedKind?: AdminExternalAuthProviderKindInfo | null,
 ): ExternalAuthProviderTestParamsInput {
 	return {
-		authorization_url: nullableText(form.authorizationUrl),
+		authorization_url: formManualEndpointForPayload(
+			form,
+			form.authorizationUrl,
+			selectedKind,
+		),
 		client_id: form.clientId.trim(),
 		client_secret: nullableSecretText(form.clientSecret),
-		issuer_url: formIssuerUrlForPayload(form),
+		issuer_url: formIssuerUrlForPayload(form, selectedKind),
 		options: formOptionsForPayload(form),
 		provider_kind: form.providerKind,
 		scopes: form.scopes.trim() || defaultScopesForKind(selectedKind),
-		token_url: nullableText(form.tokenUrl),
-		userinfo_url: nullableText(form.userinfoUrl),
+		token_url: formManualEndpointForPayload(form, form.tokenUrl, selectedKind),
+		userinfo_url: formManualEndpointForPayload(
+			form,
+			form.userinfoUrl,
+			selectedKind,
+		),
 	};
 }
 
@@ -570,8 +645,30 @@ export function formConnectionChanged(
 	selectedKind?: AdminExternalAuthProviderKindInfo | null,
 ) {
 	const defaultScopes = defaultScopesForKind(selectedKind);
-	const formIssuerUrl = formIssuerUrlForPayload(form) ?? "";
-	const providerIssuerUrl = provider.issuer_url ?? "";
+	const formIssuerUrl = formIssuerUrlForPayload(form, selectedKind) ?? "";
+	const formAuthorizationUrl =
+		formManualEndpointForPayload(form, form.authorizationUrl, selectedKind) ??
+		"";
+	const formTokenUrl =
+		formManualEndpointForPayload(form, form.tokenUrl, selectedKind) ?? "";
+	const formUserinfoUrl =
+		formManualEndpointForPayload(form, form.userinfoUrl, selectedKind) ?? "";
+	const providerHasFixedConnection = providerUsesFixedConnection(
+		provider.provider_kind,
+		selectedKind,
+	);
+	const providerIssuerUrl = providerHasFixedConnection
+		? ""
+		: (provider.issuer_url ?? "");
+	const providerAuthorizationUrl = providerHasFixedConnection
+		? null
+		: provider.authorization_url;
+	const providerTokenUrl = providerHasFixedConnection
+		? null
+		: provider.token_url;
+	const providerUserinfoUrl = providerHasFixedConnection
+		? null
+		: provider.userinfo_url;
 	return (
 		form.providerKind !== provider.provider_kind ||
 		normalizeConnectionValue(formIssuerUrl) !==
@@ -579,12 +676,12 @@ export function formConnectionChanged(
 		(isMicrosoftProviderKind(form.providerKind) &&
 			formMicrosoftTenantValue(form) !==
 				providerMicrosoftTenantValue(provider)) ||
-		normalizeConnectionValue(form.authorizationUrl) !==
-			normalizeConnectionValue(provider.authorization_url) ||
-		normalizeConnectionValue(form.tokenUrl) !==
-			normalizeConnectionValue(provider.token_url) ||
-		normalizeConnectionValue(form.userinfoUrl) !==
-			normalizeConnectionValue(provider.userinfo_url) ||
+		normalizeConnectionValue(formAuthorizationUrl) !==
+			normalizeConnectionValue(providerAuthorizationUrl) ||
+		normalizeConnectionValue(formTokenUrl) !==
+			normalizeConnectionValue(providerTokenUrl) ||
+		normalizeConnectionValue(formUserinfoUrl) !==
+			normalizeConnectionValue(providerUserinfoUrl) ||
 		normalizeConnectionValue(form.clientId) !==
 			normalizeConnectionValue(provider.client_id) ||
 		(form.scopes.trim() || defaultScopes) !==

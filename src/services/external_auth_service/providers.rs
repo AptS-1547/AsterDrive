@@ -335,11 +335,10 @@ fn normalize_provider_options(
 fn normalize_provider_options_from_create(
     provider_kind: ExternalAuthProviderKind,
     options: Option<ExternalAuthProviderOptions>,
-    legacy_issuer_url: Option<&str>,
 ) -> Result<ExternalAuthProviderOptions> {
     let mut options = options.unwrap_or_default().normalized();
     if provider_kind == ExternalAuthProviderKind::Microsoft && options.microsoft.is_none() {
-        let tenant = normalize_microsoft_tenant_input(legacy_issuer_url.map(str::to_string))?;
+        let tenant = normalize_microsoft_tenant_input(None)?;
         options.microsoft = Some(MicrosoftExternalAuthProviderOptions::new(tenant));
     }
     normalize_provider_options(provider_kind, options)
@@ -354,26 +353,6 @@ fn normalize_provider_options_from_test_params(
         return Ok(options.unwrap_or_default().normalized());
     }
     normalize_provider_options(provider_kind, options.unwrap_or_default())
-}
-
-fn normalize_provider_issuer_url_from_create(
-    provider_kind: ExternalAuthProviderKind,
-    value: Option<String>,
-    required: bool,
-) -> Result<Option<String>> {
-    if provider_kind != ExternalAuthProviderKind::Microsoft {
-        return normalize_provider_issuer_url_input(provider_kind, value, required, false);
-    }
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    if value.trim().is_empty() {
-        return Ok(None);
-    }
-    if normalize_microsoft_tenant_input(Some(value.clone())).is_ok() {
-        return Ok(None);
-    }
-    normalize_microsoft_tenant_or_issuer_url(Some(value))
 }
 
 fn microsoft_tenant_from_legacy_issuer_url(value: &str) -> Option<String> {
@@ -493,15 +472,12 @@ pub async fn create_provider(
     let legacy_issuer_url = input.issuer_url.clone();
     let display_name = normalize_required(&input.display_name, "display_name", 128)?;
     let icon_url = normalize_icon_url_input(input.icon_url)?;
-    let options = normalize_provider_options_from_create(
-        provider_kind,
-        input.options,
-        legacy_issuer_url.as_deref(),
-    )?;
-    let issuer_url = normalize_provider_issuer_url_from_create(
+    let options = normalize_provider_options_from_create(provider_kind, input.options)?;
+    let issuer_url = normalize_provider_issuer_url_input(
         provider_kind,
         legacy_issuer_url,
         descriptor.issuer_url_required,
+        false,
     )?;
     let authorization_url = normalize_manual_endpoint_input(
         input.authorization_url,
@@ -607,21 +583,12 @@ pub async fn update_provider(
         active.icon_url = Set(normalize_icon_url_input(icon_url)?);
     }
     if let Some(issuer_url) = input.issuer_url.and_then(nullable_patch_to_update) {
-        if existing.provider_kind == ExternalAuthProviderKind::Microsoft {
-            let mut options =
-                crate::types::parse_external_auth_provider_options(existing.options.as_ref());
-            let tenant = normalize_microsoft_tenant_input(issuer_url.clone())?;
-            options.microsoft = Some(MicrosoftExternalAuthProviderOptions::new(tenant));
-            active.options = Set(serialize_options(&options)?);
-            active.issuer_url = Set(None);
-        } else {
-            active.issuer_url = Set(normalize_provider_issuer_url_input(
-                existing.provider_kind,
-                issuer_url,
-                descriptor.issuer_url_required,
-                false,
-            )?);
-        }
+        active.issuer_url = Set(normalize_provider_issuer_url_input(
+            existing.provider_kind,
+            issuer_url,
+            descriptor.issuer_url_required,
+            false,
+        )?);
     }
     if let Some(options) = input.options {
         let options = normalize_provider_options(existing.provider_kind, options)?;

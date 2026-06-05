@@ -327,17 +327,34 @@ describe("admin external auth shared helpers", () => {
 		const descriptor = githubKind();
 		const form = {
 			...emptyForm,
+			authorizationUrl: "https://stale.example.com/authorize",
 			clientId: "client-123",
 			displayName: "GitHub",
+			issuerUrl: "https://stale.example.com",
 			providerKind: "github",
 			scopes: " ",
+			tokenUrl: "https://stale.example.com/token",
+			userinfoUrl: "https://stale.example.com/userinfo",
 		};
 
 		expect(defaultScopesForKind(descriptor)).toBe("read:user user:email");
 		expect(createPayload(form, descriptor)).toMatchObject({
 			authorization_url: null,
+			issuer_url: null,
 			provider_kind: "github",
 			scopes: "read:user user:email",
+			token_url: null,
+			userinfo_url: null,
+		});
+		expect(updatePayload(form, descriptor)).toMatchObject({
+			authorization_url: null,
+			issuer_url: null,
+			token_url: null,
+			userinfo_url: null,
+		});
+		expect(testParamsPayload(form, descriptor)).toMatchObject({
+			authorization_url: null,
+			issuer_url: null,
 			token_url: null,
 			userinfo_url: null,
 		});
@@ -591,6 +608,42 @@ describe("admin external auth shared helpers", () => {
 		);
 	});
 
+	it("drops stale URL fields from fixed provider payloads", () => {
+		for (const [providerKind, descriptor] of [
+			["github", githubKind()],
+			["google", googleKind()],
+			["microsoft", microsoftKind()],
+			["qq", qqKind()],
+		] as const) {
+			const form = {
+				...emptyForm,
+				authorizationUrl: "https://stale.example.com/authorize",
+				clientId: "client-123",
+				displayName: descriptor.display_name,
+				issuerUrl: "https://stale.example.com",
+				microsoftTenant: "organizations",
+				microsoftTenantMode: "organizations" as const,
+				providerKind,
+				scopes: descriptor.default_scopes,
+				tokenUrl: "https://stale.example.com/token",
+				userinfoUrl: "https://stale.example.com/userinfo",
+			};
+
+			for (const payload of [
+				createPayload(form, descriptor),
+				updatePayload(form, descriptor),
+				testParamsPayload(form, descriptor),
+			]) {
+				expect(payload).toMatchObject({
+					authorization_url: null,
+					issuer_url: null,
+					token_url: null,
+					userinfo_url: null,
+				});
+			}
+		}
+	});
+
 	it("maps saved providers into editable forms and detects connection changes", () => {
 		const saved = provider();
 		const form = formFromProvider(saved);
@@ -654,7 +707,7 @@ describe("admin external auth shared helpers", () => {
 				}),
 				microsoftKind(),
 			),
-		).toBe(true);
+		).toBe(false);
 		expect(
 			formConnectionChanged(
 				{
@@ -680,6 +733,39 @@ describe("admin external auth shared helpers", () => {
 				microsoftKind(),
 			),
 		).toBe(false);
+		for (const [providerKind, descriptor] of [
+			["github", githubKind()],
+			["google", googleKind()],
+			["qq", qqKind()],
+		] as const) {
+			expect(
+				formConnectionChanged(
+					{
+						...emptyForm,
+						authorizationUrl: "https://stale.example.com/authorize",
+						clientId: "client-123",
+						clientSecret: "***REDACTED***",
+						displayName: descriptor.display_name,
+						issuerUrl: "https://stale.example.com",
+						providerKind,
+						scopes: descriptor.default_scopes,
+						tokenUrl: "https://stale.example.com/token",
+						userinfoUrl: "https://stale.example.com/userinfo",
+					},
+					provider({
+						authorization_url: "https://stored.example.com/authorize",
+						client_secret_configured: true,
+						issuer_url: "https://stored.example.com",
+						provider_kind: providerKind,
+						protocol: descriptor.protocol,
+						scopes: descriptor.default_scopes,
+						token_url: "https://stored.example.com/token",
+						userinfo_url: "https://stored.example.com/userinfo",
+					}),
+					descriptor,
+				),
+			).toBe(false);
+		}
 	});
 
 	it("checks connection requirements and summarizes connection and claims", () => {
