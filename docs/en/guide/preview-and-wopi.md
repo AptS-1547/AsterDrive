@@ -116,6 +116,23 @@ They differ from WOPI in these ways:
 
 The built-in Microsoft / Google previewers usually follow this approach. They fit publicly accessible file preview scenarios better than general editing in a private deployment.
 
+## Built-In Image Preview
+
+When opening an image, AsterDrive chooses between two sources:
+
+- The original file, when the browser can render it directly
+- A backend-generated and cached medium WebP preview
+
+Administrators change the default strategy here:
+
+```text
+Admin -> System Settings -> File Processing -> Media Processing -> Image Preview Strategy
+```
+
+`Original first` fits sites that prefer opening the actual source file whenever possible. `Medium preview first` fits sites with many large photos, bandwidth-sensitive object storage, or workflows where users usually want a quick preview before explicitly opening the original. Whichever strategy is selected, formats the browser cannot render fall back to the backend preview.
+
+The image viewer supports fullscreen, zoom, pan, rotation, and previous/next navigation inside the current list, folder, or share scope. If the backend preview is missing on first open, AsterDrive creates an `image_preview_generate` background task. Before it finishes, the page may show loading or fallback behavior; later opens reuse the cache.
+
 ## Read-Only Archive Preview
 
 AsterDrive includes archive preview, but it is disabled by default. Administrators need to confirm both:
@@ -186,8 +203,9 @@ It is not the expiration time of the share link itself. The share link's passwor
 When WOPI saves back to AsterDrive, it is treated as an overwrite write:
 
 - A new version is created after a successful save
-- A lock appears while the file is being edited
-- Other clients cannot freely overwrite, move, or delete a locked file
+- Locks appear while the file is being edited; some client or protocol cases allow multiple shared locks on the same resource
+- Conflicting overwrite, move, or delete operations are rejected while valid locks exist
+- Expired locks are pruned by background cleanup, and administrators can also clean them manually
 - If a lock remains abnormally, an administrator can clean it from `Admin -> Locks`
 
 Whether WOPI supports multi-user collaboration depends on the external service you connect. AsterDrive provides files, tokens, sessions, and locks according to the WOPI protocol. It does not implement the collaborative editing interface for the external Office service.

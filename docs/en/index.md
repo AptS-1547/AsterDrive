@@ -37,7 +37,7 @@ features:
 
 ## First, Know What It Is
 
-AsterDrive is a lightweight self-hosted cloud drive built with Rust and React. You can start with the default single-node deployment using SQLite and local storage, then connect PostgreSQL / MySQL, S3-compatible object storage, team spaces, WebDAV, WOPI online preview and editing, and follower node storage as needed.
+AsterDrive is a lightweight self-hosted cloud drive built with Rust and React. You can start with the default single-node deployment using SQLite and local storage, then connect PostgreSQL / MySQL, S3-compatible object storage, Tencent COS, team spaces, WebDAV, WOPI online preview and editing, and follower node storage as needed.
 
 It is not a full collaboration suite or a multi-primary cluster system. The current focus is making file management, sharing, uploads, previews, storage policies, and routine operations clear for individuals and small teams.
 

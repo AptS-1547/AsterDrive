@@ -2,7 +2,7 @@
 
 WebDAV-related content has three parts: accounts, mount entry, and protocol capabilities.
 
-The protocol layer is currently split under `src/webdav/**`: `mod.rs` handles Actix mounting and method dispatch, `auth.rs` handles authentication, `fs.rs` / `file.rs` / `dir_entry.rs` adapt the filesystem, `path_resolver.rs` resolves paths, `db_lock_system.rs` implements locks, and `deltav.rs` contains the DeltaV subset.
+The protocol layer is currently split under `src/webdav/**`: `mod.rs` handles Actix mounting, runtime switches, audit context, and method dispatch; `auth.rs` handles WebDAV-specific Basic Auth; `protocol.rs` parses `Depth`, `Destination`, `If`, ETag, and related protocol headers; `responses.rs` centralizes HTTP / XML response builders; `props/` handles `PROPFIND` / `PROPPATCH`; `transfer/` handles `GET` / `HEAD` / `PUT`; `resources/` handles `MKCOL` / `DELETE` / `COPY` / `MOVE`; `locks/` handles `LOCK` / `UNLOCK`; `fs/`, `file/`, and `dir_entry.rs` adapt the filesystem; `path_resolver.rs` resolves paths; `db_lock_system.rs` implements locks; and `deltav.rs` contains the minimal DeltaV subset.
 
 ## Account API
 
@@ -100,11 +100,19 @@ Limits:
 - `REPORT version-tree` supports files only
 - this is not a full DeltaV server, only the minimal useful subset
 - the `/webdav/` mount root is a virtual entry point, not a persisted folder entity. `PROPFIND /webdav/` may list contents and read live DAV properties, but `PROPPATCH /webdav/` explicitly returns `403 Forbidden`; custom dead properties are supported only on concrete files or folders.
+- missing `Depth` on `PROPFIND` is parsed as `infinity`; when the target is a collection, the server returns `403` with `DAV:propfind-finite-depth` instead of doing unbounded recursion.
+- `COPY` accepts `Depth: 0` or missing / `infinity`, and rejects `Depth: 1`; `COPY Depth: 0` copies only the collection itself and its dead properties, not children.
+- `GET` supports `Range: bytes=...` and returns `206 Partial Content` for partial content; `GET` / `HEAD` support `If-None-Match` and return `304` when it matches.
+- `PUT`, `DELETE`, `COPY`, and `MOVE` evaluate standard ETag preconditions and WebDAV `If` lock-token conditions.
+- `MKCOL` requires an empty request body; non-empty bodies return `415 Unsupported Media Type`.
+- `Destination` must stay on the current WebDAV server and under the active WebDAV prefix.
+- `LOCK` supports exclusive and shared write locks; multiple shared locks may coexist, while an exclusive lock blocks other shared / exclusive locks.
+- creating a `LOCK` on a missing non-collection path creates a zero-byte file and returns `201 Created`.
 
 ## Authentication and runtime switches
 
 - Basic Auth: uses a dedicated WebDAV account and may be restricted to `root_folder_id`
-- Bearer JWT: reuses the normal login state and is not restricted by `root_folder_id`
+- the current WebDAV mount does not accept normal `Authorization: Bearer <jwt>`; Bearer is rejected as an unsupported auth scheme
 - if `webdav_enabled = false`, WebDAV requests return `503`
 - if `webdav_block_system_files_enabled = true`, WebDAV writes / moves / copies are blocked according to `webdav_block_system_file_patterns`, which by default includes common client junk names such as `.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`, and `$RECYCLE.BIN`. REST folder listing does not apply this filter
 

@@ -138,6 +138,14 @@ When adding a Passkey, the browser opens the system WebAuthn / Passkey verificat
 
 Passkeys do not replace local passwords. Users can continue logging in with passwords. After deleting a Passkey, only that device or security key can no longer log in to the current account directly.
 
+Administrators can also temporarily disable Passkey sign-in in the admin console:
+
+```text
+Admin -> System Settings -> User Management -> Registration & Login -> Allow Passkey Sign-In
+```
+
+After it is disabled, users cannot complete login with registered Passkeys, but existing Passkeys are not deleted. After the setting is enabled again, previously registered Passkeys can be used again.
+
 ## External Authentication / SSO
 
 Administrators can connect external identity providers here:
@@ -146,7 +154,7 @@ Administrators can connect external identity providers here:
 Admin -> External Authentication
 ```
 
-AsterDrive currently includes OpenID Connect and Generic OAuth2 support. After creating a provider, the login page shows the corresponding external login entry. The administrator must register the generated redirect URI on the identity provider side. See [External Authentication](/en/config/external-auth) for the full setup guide.
+AsterDrive supports OpenID Connect, Generic OAuth2, and dedicated providers for GitHub, QQ, Google, and Microsoft. After creating a provider, the login page shows the corresponding external login entry. The administrator must register the generated redirect URI on the identity provider side. See [External Authentication](/en/config/external-auth) for the full setup guide.
 
 The relationship between external identities and local users is determined by provider rules:
 
@@ -174,6 +182,39 @@ After it is disabled:
 - External users can no longer create new accounts from the login page
 - The first-administrator initialization flow still exists
 - Users manually created by administrators in the admin console still work
+
+### Local Account Email Allowlist / Blocklist
+
+If the site only allows company email addresses, or needs to block disposable email domains, configure these settings:
+
+```text
+Admin -> System Settings -> User Management -> Registration & Login -> Local Account Email Allowlist
+Admin -> System Settings -> User Management -> Registration & Login -> Local Account Email Blocklist
+```
+
+These settings apply only to **local accounts**:
+
+- Email addresses entered during public registration
+- Local email address changes under `Settings -> Security`
+
+They do not restrict external identities returned by third-party SSO. Email-domain rules for external authentication are still configured in each provider under `Admin -> External Authentication`.
+
+Entries can be full email addresses or exact domains:
+
+```text
+alice@example.com
+example.com
+@example.com
+```
+
+`example.com` and `@example.com` are equivalent. They match `user@example.com`, but they do not automatically match `user@sub.example.com`. Internationalized domains must be entered in punycode form.
+
+Rule order:
+
+- The blocklist overrides the allowlist
+- An empty allowlist means no allowlist restriction
+- An empty blocklist means no additional blocked email addresses
+- If both lists are empty, any valid email address can be used for local registration and local email changes
 
 ## Which Features Depend on Mail Configuration?
 
@@ -236,8 +277,11 @@ The following settings are not in `config.toml`; they are all maintained in the 
 - `auth_email_code_login_allow_totp_fallback` - Whether users with TOTP enabled may use email codes as a fallback
 - `auth_email_code_login_ttl_secs` - Email login code TTL
 - `auth_email_code_login_resend_cooldown_secs` - Email login code resend cooldown
+- `auth_passkey_login_enabled` - Whether users may sign in with registered Passkeys
 - `auth_allow_user_registration` - Public registration switch
 - `auth_register_activation_enabled` - Whether newly registered users must complete email activation first
+- `auth_local_email_allowlist` - Email addresses or exact domains allowed for local registration and local email changes
+- `auth_local_email_blocklist` - Email addresses or exact domains blocked for local registration and local email changes
 - External authentication email verification, login email code, and related mail templates - maintained in the `Mail Delivery` group
 
 See [runtime system settings](/en/config/runtime) for details.

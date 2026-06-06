@@ -151,7 +151,7 @@ AsterDrive 的常规请求路径以流式处理为主，内存不会按文件总
   + 20%-30% 安全余量
 ```
 
-如果用户经常上传大文件，优先让大文件走 S3 presigned / multipart，减少 primary 本地临时目录压力。
+如果用户经常上传大文件，优先让大文件走对象存储 presigned / multipart，减少 primary 本地临时目录压力。
 
 ## 版本、回收站和审计保留
 
@@ -257,7 +257,7 @@ LIMIT 20;
 | 目录列表或搜索 p95 持续抬升 | 跑压测，检查索引、SQLite FTS、数据库慢查询 |
 | `background_tasks_pending` 长期堆积 | 增加对应 lane 并发，或降低任务产生速度；同时确认内存和临时空间 |
 | `process_memory_rss_bytes` 单向增长且空闲不回落 | 跑长稳测试，保留日志和监控样本，排查泄漏或过高并发 |
-| `data/.uploads` 或 `data/.tmp` 经常逼近磁盘上限 | 降低并发、清理失败上传、改用 S3 multipart、扩大临时目录 |
+| `data/.uploads` 或 `data/.tmp` 经常逼近磁盘上限 | 降低并发、清理失败上传、改用对象存储 multipart、扩大临时目录 |
 | 本地存储剩余空间低于 20%-30% | 扩容、迁移策略、缩短回收站 / 版本保留，或接入 S3 / follower |
 | 存储迁移 dry-run 提示容量不足 | 不要硬跑；先扩目标容量或分批迁移 |
 

@@ -120,7 +120,7 @@ WebDAV 不走 `src/api/routes/**`，而是：
 
 1. 由 `crate::webdav::configure()` 在 primary 上挂到配置的 prefix
 2. 检查运行时开关 `webdav_enabled`
-3. 做 Basic 或 Bearer 认证
+3. 做 WebDAV 专用 Basic Auth 认证
 4. 为请求构造带用户上下文的 `AsterDavFs`
 5. 使用数据库锁系统和版本能力
 6. 进入自研 WebDAV / DeltaV handler
@@ -147,7 +147,7 @@ WebDAV 不走 `src/api/routes/**`，而是：
 ├─────────────────────────────────────────────┤
 │ 基础设施层                                  │
 │  - SeaORM + migration                       │
-│  - StorageDriver(Local / S3 / Remote)       │
+│  - StorageDriver(Local/S3/TencentCOS/Remote)│
 │  - CacheBackend(Memory / Redis / Noop)      │
 ├─────────────────────────────────────────────┤
 │ 数据层                                      │
@@ -287,7 +287,7 @@ primary 后台工作由 `src/runtime/tasks.rs` 注册，分成一个常驻 worke
 用户可见的 `background_tasks` 记录由 `background-task-dispatch` 派发。当前 dispatcher 按任务类型分四条 lane：
 
 - `Archive`：`archive_compress`、`archive_extract`、`archive_preview_generate`
-- `Thumbnail`：`thumbnail_generate`、`media_metadata_extract`
+- `Thumbnail`：`thumbnail_generate`、`image_preview_generate`、`media_metadata_extract`
 - `StorageMigration`：`storage_policy_migration`
 - `Fallback`：`storage_policy_temp_cleanup`、`trash_purge_all`、`blob_maintenance`、`system_runtime`
 

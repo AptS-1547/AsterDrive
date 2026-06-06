@@ -45,6 +45,29 @@ All provider kinds are configured by admins and shown on the login page only aft
 | `google` | `oidc` | `openid profile email` | Fixed Google Accounts issuer / discovery |
 | `microsoft` | `oidc` | `openid profile email` | Microsoft tenant-derived issuer / discovery |
 
+## Provider Options Persistence
+
+The `external_auth_providers` table has an `options` JSON text column for provider-kind-specific settings. The server reads and writes it through the strongly typed `ExternalAuthProviderOptions`; invalid stored JSON falls back to an empty config and emits a warning.
+
+Currently only Microsoft uses provider options:
+
+```json
+{
+  "microsoft": {
+    "tenant": "organizations"
+  }
+}
+```
+
+Important details:
+
+- Microsoft provider create, update, and draft-test requests should pass the tenant as `options.microsoft.tenant`
+- `tenant` accepts `common`, `organizations`, `consumers`, or a concrete tenant UUID; empty input normalizes to `common`
+- admin provider details return normalized `options`
+- legacy Microsoft rows that only stored `issuer_url` are backfilled by migration when the tenant can be inferred
+- non-Microsoft providers reject `options.microsoft`
+- dedicated provider fixed endpoints should not be overridden through `issuer_url`, `authorization_url`, `token_url`, or `userinfo_url`
+
 ## High-level flow
 
 1. An admin creates a provider in `Admin -> External Auth`.

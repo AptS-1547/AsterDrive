@@ -614,6 +614,7 @@ body.aster-diagram-zoom-open {
 }
 
 .vp-doc details {
+	--aster-details-content-gutter: 18px;
 	margin: 14px 0;
 	padding: 0;
 	overflow: clip;
@@ -660,6 +661,10 @@ body.aster-diagram-zoom-open {
 	list-style: none;
 	transition: color 180ms ease,
 		background-color 220ms var(--vp-motion-easing);
+}
+
+.vp-doc details.custom-block summary {
+	margin: 0;
 }
 
 .vp-doc details summary::-webkit-details-marker {
@@ -737,21 +742,49 @@ body.aster-diagram-zoom-open {
 
 .vp-doc details > p,
 .vp-doc details > ul,
-.vp-doc details > div[class*="language-"] {
-	margin-right: 18px;
-	margin-left: 18px;
+.vp-doc details > ol,
+.vp-doc details > blockquote,
+.vp-doc details > table,
+.vp-doc details > .custom-block,
+.vp-doc details > .vp-code-group,
+.vp-doc details > div[class*="language-"],
+.vp-doc details.custom-block > p,
+.vp-doc details.custom-block > ul,
+.vp-doc details.custom-block > ol,
+.vp-doc details.custom-block > blockquote,
+.vp-doc details.custom-block > table,
+.vp-doc details.custom-block > .custom-block,
+.vp-doc details.custom-block > .vp-code-group,
+.vp-doc details.custom-block > div[class*="language-"] {
+	margin-right: var(--aster-details-content-gutter);
+	margin-left: var(--aster-details-content-gutter);
+	margin-top: 14px;
+	margin-bottom: 0;
 }
 
-.vp-doc details > p:first-of-type {
+.vp-doc details > p:first-of-type,
+.vp-doc details.custom-block > p:first-of-type {
 	margin-top: 18px;
 }
 
-.vp-doc details > :last-child {
+.vp-doc details > :last-child,
+.vp-doc details.custom-block > :last-child {
 	margin-bottom: 18px;
 }
 
-.vp-doc details > div[class*="language-"] {
+.vp-doc details > div[class*="language-"],
+.vp-doc details.custom-block > div[class*="language-"] {
 	box-shadow: none;
+}
+
+.vp-doc details > table,
+.vp-doc details.custom-block > table {
+	width: calc(100% - var(--aster-details-content-gutter) * 2);
+}
+
+.vp-doc details > .custom-block,
+.vp-doc details.custom-block > .custom-block {
+	width: auto;
 }
 
 .dark .vp-doc details {

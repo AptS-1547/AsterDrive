@@ -24,8 +24,8 @@ flowchart TD
   Group --> SizeRule["Match policy group rules by file size"]
   SizeRule --> Policy["Hit a concrete storage policy"]
   Policy --> Local["local: write to local storage"]
-  Policy --> S3Relay["s3 + relay_stream: relay through the server to object storage"]
-  Policy --> S3Presigned["s3 + presigned: browser uploads directly to object storage"]
+  Policy --> S3Relay["s3 / tencent_cos + relay_stream: relay through the server to object storage"]
+  Policy --> S3Presigned["s3 / tencent_cos + presigned: browser uploads directly to object storage"]
   Policy --> RemoteRelay["remote + relay_stream: primary node relays to a follower node"]
   Policy --> RemotePresigned["remote + presigned: browser connects directly to follower base_url"]
 ```
@@ -63,12 +63,12 @@ Watch the capacity of these directories:
 
 ### Server Relay
 
-The browser uploads the file to AsterDrive first, then the server forwards it to S3 / MinIO.  
+The browser uploads the file to AsterDrive first, then the server forwards it to S3 / MinIO / Tencent COS.
 This path does not rely on the local temporary directory and does not perform content deduplication.
 
 ### Direct-to-Object-Storage Upload
 
-The browser uploads the file directly to S3 / MinIO. Large files are automatically split into multiple parts.  
+The browser uploads the file directly to S3 / MinIO / Tencent COS. Large files are automatically split into multiple parts.
 This saves the most server bandwidth, but the object storage must first allow the CORS rules required for browser uploads.
 
 If you use this path, confirm at least:

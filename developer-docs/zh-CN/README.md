@@ -11,6 +11,7 @@
 - [外部认证模块](./external-auth.md)
 - [API 概览](./api/index.md)
 - [测试与数据库后端](./testing.md)
+- [Jemalloc 堆画像](./jemalloc-profiling.md)
 
 ## 当前状态说明
 

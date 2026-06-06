@@ -38,6 +38,10 @@
 - `GET /teams/{team_id}/files/{id}/thumbnail`
 - `GET /s/{token}/thumbnail`
 - `GET /s/{token}/files/{file_id}/thumbnail`
+- `GET /files/{id}/image-preview`
+- `GET /teams/{team_id}/files/{id}/image-preview`
+- `GET /s/{token}/image-preview`
+- `GET /s/{token}/files/{file_id}/image-preview`
 - `GET /files/{id}/media-metadata`
 - `GET /teams/{team_id}/files/{id}/media-metadata`
 - `GET /s/{token}/media-metadata`
@@ -52,6 +56,7 @@
 另外，系统内部还会创建或记录：
 
 - `thumbnail_generate`
+- `image_preview_generate`
 - `media_metadata_extract`
 - `storage_policy_migration`
 - `storage_policy_temp_cleanup`
@@ -59,7 +64,9 @@
 - `offline_download`
 - `system_runtime`
 
-缩略图和媒体元数据任务虽然常由用户访问接口触发，但仍按 blob 级缓存任务处理，通常没有创建者，API 返回的 `creator` 为 `null`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
+缩略图、图片预览和媒体元数据任务虽然常由用户访问接口触发，但仍按 blob 级缓存任务处理，通常没有创建者，API 返回的 `creator` 为 `null`，普通用户 `/tasks` 列表通常看不到；管理员可以在 `/api/v1/admin/tasks` 看全部任务。
+
+## 存储迁移任务结果
 
 `storage_policy_migration` 是管理员通过 `/api/v1/admin/storage-migrations` 创建的后台任务，负责把一个存储策略下的 blob 迁移到另一个策略。它有独立的 checkpoint，可通过 `/api/v1/admin/storage-migrations/{task_id}/resume` 继续执行。
 
@@ -78,6 +85,8 @@
 `renamed_opaque_blobs` 表示执行阶段遇到目标策略已有相同 opaque key 的源 blob 数量。Opaque key 不代表内容哈希，不能跨策略合并；这类 blob 会复制到目标策略的新 `migration-...` key，并在 checkpoint / result 中累计。
 
 `storage_policy_temp_cleanup` 只在管理员用 `DELETE /admin/policies/{id}?force=true` 强制删除存储策略，且仍有临时对象或 multipart upload 需要延后清理时创建。它会先等待预签名 URL 的安全窗口过期，再按删除前保存的策略快照清理对象。
+
+## 离线下载
 
 `offline_download` 是“从链接导入”任务。创建请求体是 `CreateOfflineDownloadTaskParams`：
 
@@ -150,12 +159,13 @@
 
 ## 当前任务类型
 
-当前代码里的 `BackgroundTaskKind` 有十一种：
+当前代码里的 `BackgroundTaskKind` 有十二种：
 
 - `archive_extract`
 - `archive_compress`
 - `archive_preview_generate`
 - `thumbnail_generate`
+- `image_preview_generate`
 - `media_metadata_extract`
 - `trash_purge_all`
 - `storage_policy_temp_cleanup`
@@ -178,6 +188,8 @@
 - `archive_extract`：解压归档文件到工作空间目录
 - `archive_compress`：把一组选中资源打包并写回工作空间
 - `archive_preview_generate`：异步扫描 ZIP 文件并把只读 manifest 缓存在实体属性里
+- `thumbnail_generate`：异步生成列表 / 卡片缩略图并按 blob 缓存
+- `image_preview_generate`：异步生成预览面板使用的大图 WebP 并按 blob 缓存
 - `media_metadata_extract`：异步解析图片 / 音频 / 视频基础元数据并把结果按 blob 缓存；`media_metadata_enabled` 是总开关，具体图片 / 音频 / 视频处理器、后缀绑定和 `ffprobe` 命令由 `media_processing_registry_json` 控制，缺失时缓存为 `unsupported`
 - `trash_purge_all`：异步清空个人或团队回收站，完成后发布一次 `sync.required` 存储变更事件
 - `storage_policy_temp_cleanup`：强制删除存储策略后，兜底清理遗留的临时对象和 multipart upload
@@ -202,6 +214,7 @@
 - `/batch/archive-download` 及团队对应接口走的是“短期 stream ticket + 直接 ZIP 流下载”，不会创建 `background_tasks` 任务记录
 - `/batch/archive-compress` 和 `/files/{id}/extract` 才会真正创建这里能看到的后台任务
 - `/files/{id}/archive-preview` 和公开分享归档预览接口第一次命中未生成缓存时，会创建 `archive_preview_generate`；接口本身返回 `202`，前端应稍后重试原接口，而不是轮询任务详情作为唯一入口
+- `/files/{id}/image-preview`、团队空间和公开分享对应接口第一次命中未生成缓存时，会创建 `image_preview_generate`；接口本身返回 `202`，前端应稍后重试原接口
 - `DELETE /trash` 和团队对应接口不会同步清空回收站，而是创建 `trash_purge_all` 任务并返回 `TaskInfo`
 - `/tasks/offline-download` 和团队对应接口会创建 `offline_download` 任务并立即返回 `TaskInfo`；前端应在任务中心展示进度，不要等待请求同步完成下载；引擎选择由管理员配置控制，不应由客户端请求体传入
 - `/admin/storage-migrations/dry-run` 只做预检查，不创建任务；`POST /admin/storage-migrations` 才会创建 `storage_policy_migration`

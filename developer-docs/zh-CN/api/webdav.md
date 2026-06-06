@@ -2,7 +2,7 @@
 
 WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 
-当前协议层已经拆在 `src/webdav/**` 下：`mod.rs` 负责 Actix 挂载和方法分派，认证在 `auth.rs`，文件系统适配在 `fs.rs` / `file.rs` / `dir_entry.rs`，路径解析在 `path_resolver.rs`，锁系统在 `db_lock_system.rs`，DeltaV 子集在 `deltav.rs`。
+当前协议层已经拆在 `src/webdav/**` 下：`mod.rs` 负责 Actix 挂载、运行时开关、审计上下文和方法分派；`auth.rs` 负责 WebDAV 专用 Basic Auth；`protocol.rs` 负责 `Depth`、`Destination`、`If`、ETag 等协议头；`responses.rs` 集中构造 HTTP / XML 响应；`props/` 处理 `PROPFIND` / `PROPPATCH`；`transfer/` 处理 `GET` / `HEAD` / `PUT`；`resources/` 处理 `MKCOL` / `DELETE` / `COPY` / `MOVE`；`locks/` 处理 `LOCK` / `UNLOCK`；`fs/`、`file/`、`dir_entry.rs` 适配文件系统；`path_resolver.rs` 解析路径；`db_lock_system.rs` 实现锁系统；`deltav.rs` 提供最小 DeltaV 子集。
 
 ## 账号接口
 
@@ -100,11 +100,19 @@ http://localhost:3000/webdav
 - `REPORT version-tree` 只支持文件
 - 当前不是完整 DeltaV 服务器，只是最小可用子集
 - `/webdav/` 挂载根只是一个虚拟入口，不是持久化的文件夹实体。`PROPFIND /webdav/` 可以列目录和读取 live DAV 属性，但 `PROPPATCH /webdav/` 明确返回 `403 Forbidden`；自定义 dead properties 只支持具体文件或文件夹。
+- `PROPFIND` 的 `Depth` 缺省按 `infinity` 解析；如果目标是目录，会返回 `403` 和 `DAV:propfind-finite-depth`，不会做无界递归。
+- `COPY` 接受 `Depth: 0` 或缺省 / `infinity`，明确拒绝 `Depth: 1`；`COPY Depth: 0` 只复制目录自身和 dead properties，不复制子项。
+- `GET` 支持 `Range: bytes=...`，部分内容返回 `206 Partial Content`；`GET` / `HEAD` 支持 `If-None-Match` 命中返回 `304`。
+- `PUT`、`DELETE`、`COPY`、`MOVE` 会执行标准 ETag 条件判断和 WebDAV `If` header 锁 token 判断。
+- `MKCOL` 要求请求体为空；非空请求体返回 `415 Unsupported Media Type`。
+- `Destination` 必须留在当前 WebDAV server 和当前 WebDAV prefix 下。
+- `LOCK` 支持 exclusive 和 shared write lock；多个 shared lock 可以并存，exclusive lock 会阻止其他 shared / exclusive lock。
+- 对不存在的非目录路径创建 `LOCK` 会创建 0 字节文件并返回 `201 Created`。
 
 ## 认证与运行时开关
 
 - Basic Auth：使用 WebDAV 专用账号，可限制到 `root_folder_id`
-- Bearer JWT：复用普通登录态，不受 `root_folder_id` 限制
+- 当前 WebDAV 挂载入口不接受普通 `Authorization: Bearer <jwt>`；Bearer 会按 unsupported auth scheme 拒绝
 - `webdav_enabled = false` 时，WebDAV 请求会直接返回 `503`
 - `webdav_block_system_files_enabled = true` 时，WebDAV 写入 / 移动 / 复制会按 `webdav_block_system_file_patterns` 拦截系统文件名，默认包含 `.DS_Store`、`._*`、`Thumbs.db`、`desktop.ini`、`$RECYCLE.BIN` 等常见客户端垃圾文件；REST 文件夹列表不会应用这层过滤
 

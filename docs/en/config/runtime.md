@@ -17,11 +17,11 @@ Admin -> System Settings
 | --- | --- | --- |
 | Site links, share links, or mail link domains are wrong | Site Configuration | Then check [reverse proxy](/en/deployment/reverse-proxy) |
 | Login cookie, token, activation link, or email-code MFA timing is unsuitable | Authentication and Cookies | Then check [login and sessions](/en/config/auth) |
-| Registration, avatars, or Gravatar behavior is unexpected | User Management | Then check [admin console](/en/guide/admin-console) |
+| Registration, Passkey sign-in, local email allow/block lists, avatars, or Gravatar behavior is unexpected | User Management | Then check [login and sessions](/en/config/auth) |
 | Passkey, MFA, external login, or external identity binding is unexpected | Site Configuration / Admin -> External Authentication / Authentication and Cookies | Then check [login and sessions](/en/config/auth) |
 | Mail cannot be received, or links are wrong | Mail Delivery | Then check [mail](/en/config/mail) |
 | Browser blocks cross-origin API calls | Network Access | First confirm it is not a `Public Site URL` issue |
-| Background tasks, thumbnails, archive preview, or trash retention behaves abnormally | Runtime / File Processing / Storage and Retention | Then check [operations CLI](/en/deployment/ops-cli) |
+| Background tasks, thumbnails, image preview, archive preview, or trash retention behaves abnormally | Runtime / File Processing / Storage and Retention | Then check [operations CLI](/en/deployment/ops-cli) |
 | Link import file size, speed, concurrency, or timeout is unsuitable | Runtime / File Processing | Then check [operations CLI](/en/deployment/ops-cli) |
 | Audio/video playback links on share pages expire too quickly or too slowly | Runtime | Then check [sharing and public access](/en/guide/sharing) |
 | WebDAV global switch, system-file blocking, or connection behavior is abnormal | WebDAV | Then check [WebDAV](/en/config/webdav) |
@@ -35,8 +35,10 @@ Admin -> System Settings
 | Change the title, logo, or favicon shown on login and share pages | `Site Configuration` |
 | Add external preview or WOPI opening methods for Office files | `Site Configuration -> Preview Apps` |
 | Enable or limit read-only archive preview | `File Processing -> Archive Preview` |
-| Connect OIDC / Generic OAuth2 / SSO login providers | `Admin -> External Authentication` |
+| Connect OIDC / Generic OAuth2 / GitHub / QQ / Google / Microsoft login providers | `Admin -> External Authentication` |
 | Disable public registration | `User Management -> Allow Public User Registration` |
+| Temporarily disable Passkey sign-in | `User Management -> Registration & Login -> Allow Passkey Sign-In` |
+| Restrict email addresses usable for local registration and local email changes | `User Management -> Registration & Login -> Local Account Email Allowlist / Blocklist` |
 | Change the default quota for new users; teams created without an explicit quota also use it, so recheck actual team quotas after creation | `Storage and Retention -> New User Default Storage Quota` |
 | Tune cookie security requirements and Access / Refresh Token TTLs | `Authentication and Cookies` |
 | Tune activation, email-change, and password reset link TTLs | `Authentication and Cookies` |
@@ -47,7 +49,7 @@ Admin -> System Settings
 | Tune retention for trash, version history, and team archives | `Storage and Retention` |
 | Tune temporary background task artifact retention | `Runtime -> Background Tasks` |
 | Tune the online extraction staging size limit | `File Processing -> Online Extraction Staging Size Limit` |
-| Tune thumbnail size limits and vips / ffmpeg / ffprobe processors | `File Processing -> Media Processing` |
+| Tune thumbnail size limits, image preview strategy, and vips / ffmpeg / ffprobe processors | `File Processing -> Media Processing` |
 | Tune HTTP/HTTPS link import file size, speed, concurrency, and timeout | `File Processing -> Link Import` |
 | Disable WebDAV, or adjust blocking for system files such as `.DS_Store` and `Thumbs.db` | `WebDAV` |
 | Tune mail dispatch, background task dispatch, concurrency, retry, and periodic cleanup frequency | `Runtime` |
@@ -57,7 +59,7 @@ Admin -> System Settings
 ## Current Groups
 
 - **Site Configuration** - Public site URL, title, logo, favicon, preview apps
-- **User Management** - Public registration, registration activation, avatars, Gravatar
+- **User Management** - Public registration, registration activation, Passkey sign-in, local email allow/block lists, avatars, Gravatar
 - **Authentication and Cookies** - Cookie security rules, token TTLs, activation/email-change/reset link TTLs, email-code MFA
 - **Mail Delivery** - SMTP, sender, test mail, registration activation/email-change/password reset/external login email verification/login email code mail templates
 - **Network Access** - Browser cross-site access rules (CORS)
@@ -114,9 +116,14 @@ This group controls account entry points and avatar-related behavior.
 
 - **`Allow Public User Registration`** - After disabling it, the login page only supports existing-account login and administrator initialization. New accounts can only be created by administrators.
 - **`Require Email Activation After Registration`** - After enabling it, normal users created through public registration must click the activation email before logging in.
+- **`Allow Passkey Sign-In`** - After disabling it, users cannot sign in with registered Passkeys. Existing Passkeys are not deleted and can be used again after re-enabling the setting.
+- **`Local Account Email Allowlist`** - Restricts email addresses or exact domains allowed for local registration and local email changes. Empty means no allowlist restriction.
+- **`Local Account Email Blocklist`** - Blocks email addresses or exact domains for local registration and local email changes. The blocklist overrides the allowlist.
 - **`Avatar Directory`** - User-uploaded avatars are written to this local directory. Relative paths resolve under server-side `./data`.
 - **`Avatar Upload Size Limit`** - Avatar files exceeding this limit are rejected directly.
 - **`Gravatar Base URL`** - If official Gravatar access is unstable, change it to a proxy or mirror.
+
+The local email allowlist / blocklist applies only to local-account flows, not third-party SSO. Entries can be `alice@example.com`, `example.com`, or `@example.com`; domain entries are exact matches, so `example.com` does not automatically match `sub.example.com`. Internationalized domains must use punycode.
 
 ## Authentication and Cookies
 
@@ -259,6 +266,7 @@ This group controls features that read, scan, transform, or temporarily unpack f
 | aria2 per-server connections | `5` |
 | aria2 low-speed limit | `0` (disabled) |
 | Thumbnail source file size limit | `64 MiB` |
+| Image preview strategy | Original first |
 | Media metadata extraction | Enabled |
 | Media metadata source file size limit | `256 MiB` |
 
@@ -301,7 +309,7 @@ For full behavior, security boundaries, aria2 deployment, and troubleshooting, s
 
 ### Media Processing
 
-Media processing is responsible for thumbnail generation, not online preview itself.  
+Media processing is responsible for backend generation of thumbnails, image previews, and media metadata.
 It now has a structured editor under `File Processing -> Media Processing`, so you do not need to edit JSON manually.
 
 You can do these things there:
@@ -311,9 +319,17 @@ You can do these things there:
 - Configure commands used by `vips_cli`, `ffmpeg_cli`, or `ffprobe_cli`
 - Test whether the command can be executed by the server
 - Keep AsterDrive's built-in image processor as a fallback
+- Choose whether the web image preview dialog loads the original file first or the generated medium preview first
 
 The default built-in path covers common image formats.  
 If you want to extend support for HEIC, AVIF, PDF covers, video thumbnails, or video metadata, you can connect `vips`, `ffmpeg`, or `ffprobe`, but only if those commands are actually installed in the server environment.
+
+`Image preview strategy` only changes which image source the web preview dialog loads by default:
+
+- **Original first**: when the browser can render the current format, load the original file first; if the browser cannot render it or the original fails, use the backend-generated preview.
+- **Medium preview first**: load the backend-generated WebP preview first, and download the original only when the user chooses to view it.
+
+If users often open large photos, or object-storage egress bandwidth is sensitive, choose "Medium preview first". This setting does not change original files and does not affect thumbnail caches; it only changes the frontend preview dialog's default loading order.
 
 ::: tip Keep the built-in processor first
 Unless you have confirmed the command paths, permissions, and extension bindings for vips / ffmpeg / ffprobe, keeping the built-in processor as a fallback is simpler.
@@ -385,6 +401,8 @@ The primary node's service startup and shutdown are also recorded as audit event
 | Preview apps / online Office related settings | Applied to previews opened later |
 | WOPI access token / lock / discovery cache | Applied to new WOPI sessions opened later |
 | Public registration, registration activation, mail templates | Applied to later login flows and newly sent emails |
+| Local email allowlist / blocklist | Applied to later local registration and local email changes; third-party SSO is not affected |
+| Passkey sign-in switch | Applied to later Passkey sign-in requests; existing Passkeys are not deleted |
 | External login providers | Applied to the login page and later external login flows after saving |
 | External login email verification mail template, login email code mail template | Applied to newly sent matching emails |
 | Email-code MFA switch, fallback policy, TTL, and resend cooldown | Applied to later MFA login flows and newly sent email codes |
@@ -399,8 +417,9 @@ The primary node's service startup and shutdown are also recorded as audit event
 | Archive build entry, total source size, and output size limits | Applied to online compression and archive download tasks created later |
 | Link import engine registry, temp directory, file size, speed, concurrency, request timeout, and aria2 parameters | Applied to link-import tasks created later; manual retries clean old artifacts from both the default temp directory and the current offline-download temp directory |
 | Archive preview switches and limits | Applied to later requests and new `archive_preview_generate` tasks |
-| Thumbnail source file size limit | Applied to files entering thumbnail tasks later |
-| Media processor switches, commands, extension bindings | Applied to files entering thumbnail tasks later |
+| Thumbnail source file size limit | Applied to files entering thumbnail and image-preview tasks later |
+| Image preview strategy | Applied when the frontend later opens image previews and chooses the default source |
+| Media processor switches, commands, extension bindings | Applied to files entering thumbnail and image-preview tasks later |
 | Media metadata switch, size limit, processor binding | Applied to files entering media metadata tasks later; existing caches are not automatically rescanned because configuration changed |
 | Mail dispatch, background tasks, periodic cleanup, follower node health check frequency | Applied to later background polling |
 | Background task lane concurrency and maximum attempts | Applied to background tasks scheduled or retried later |

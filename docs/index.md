@@ -37,7 +37,7 @@ features:
 
 ## 先认识它
 
-AsterDrive 是一个基于 Rust 和 React 的轻量自托管云盘。你可以从默认 SQLite + 本地存储的单机部署开始，之后按需要接入 PostgreSQL / MySQL、S3 兼容对象存储、团队空间、WebDAV、WOPI 在线预览编辑，以及远程从节点存储。
+AsterDrive 是一个基于 Rust 和 React 的轻量自托管云盘。你可以从默认 SQLite + 本地存储的单机部署开始，之后按需要接入 PostgreSQL / MySQL、S3 兼容对象存储、腾讯云 COS、团队空间、WebDAV、WOPI 在线预览编辑，以及远程从节点存储。
 
 它不是完整协作套件或多主集群系统，当前重点是把个人和小团队的文件管理、分享、上传、预览、存储策略和日常运维路径做清楚。
 

@@ -39,6 +39,7 @@ Additional details:
 - `folder_limit = 0` or `file_limit = 0` can be used to skip one side of the query
 - `next_file_cursor` is returned for the file side
 - the list endpoints intentionally trim some fields from `folders` / `files`; use `/folders/{id}/info` when you need the complete folder model
+- `GET /folders/{id}/info` and `GET /teams/{team_id}/folders/{id}/info` include `storage_used`, the recursive quota-accounting bytes for all live files in the folder tree, including historical versions
 
 ## Create and update
 

@@ -32,6 +32,29 @@
 
 临时登录 flow 的 TTL 是 300 秒；邮箱补验 flow 的 TTL 是 1800 秒。过期清理由 primary 后台任务 `external-auth-flow-cleanup` 执行。
 
+## Provider options 持久化
+
+`external_auth_providers` 表当前有 `options` JSON 文本列，用于保存 provider kind 专用配置。服务端用强类型 `ExternalAuthProviderOptions` 读写这个 JSON，解析失败会降级为空配置并打 warn 日志。
+
+当前只有 Microsoft 使用 provider options：
+
+```json
+{
+  "microsoft": {
+    "tenant": "organizations"
+  }
+}
+```
+
+注意点：
+
+- Microsoft provider 创建、更新和草稿测试时，租户应通过 `options.microsoft.tenant` 传入
+- `tenant` 支持 `common`、`organizations`、`consumers` 或具体 tenant UUID；空值会规范化为 `common`
+- 管理端读取 provider 详情时会返回规范化后的 `options`
+- Microsoft 旧数据如果只存了 `issuer_url`，迁移会尽量反推出 tenant 并回填到 `options`
+- 非 Microsoft provider 带 `options.microsoft` 会被服务端拒绝
+- 专用 provider 的固定 endpoint 不应通过 `issuer_url`、`authorization_url`、`token_url` 或 `userinfo_url` 覆盖
+
 ## Provider descriptor
 
 每个 driver 通过 `ExternalAuthProviderDescriptor` 暴露能力，管理端 `GET /admin/external-auth/provider-kinds` 直接返回这些信息。前端据此决定字段是否必填、是否显示手动 endpoint、默认 scope 和 claim 区域。

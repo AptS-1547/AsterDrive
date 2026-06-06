@@ -39,6 +39,7 @@
 - `folder_limit = 0` 或 `file_limit = 0` 可以显式跳过其中一类查询
 - 返回体里会带 `next_file_cursor`；只要它非空，就可以继续翻下一页文件
 - 列表接口里的 `folders` / `files` 条目会刻意裁掉一部分不必要字段；如果你需要某个目录自己的完整信息，应改用 `/folders/{id}/info`
+- `GET /folders/{id}/info` 和团队空间的 `GET /teams/{team_id}/folders/{id}/info` 会返回 `storage_used`，表示该目录树下所有未删除文件的递归配额占用，包括当前文件大小和历史版本大小
 
 ## 创建与修改
 

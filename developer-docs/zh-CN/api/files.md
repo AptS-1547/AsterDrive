@@ -135,6 +135,8 @@
 
 这些字段会在创建、上传、覆盖写入和重命名时由服务端重新分类；搜索过滤直接依赖这些持久化字段。
 
+`GET /files/{id}` 和团队空间的 `GET /teams/{team_id}/files/{id}` 详情响应还会带 `storage_used`。这个字段是文件详情页使用的配额口径：当前 `size` 加上所有历史版本大小。目录列表里的文件条目不会返回这个字段。
+
 其中 `PUT /files/{id}/content` 支持 `If-Match`，会检查锁状态，成功后自动生成历史版本，并返回新的 `ETag`。
 
 ### `PATCH /files/{id}`
@@ -163,31 +165,34 @@
 
 这是软删除，文件会进入回收站，而不是立刻删物理内容。
 
-### 缩略图
+## 缩略图
 
-当前缩略图能力主要来自运行时的 media processing registry，并由 `/public/thumbnail-support` 暴露给匿名态前端。默认内置 `images` 处理器覆盖常见图片格式；如果启用且运行环境可找到 `vips_cli` / `ffmpeg_cli`，缩略图支持列表也会包含对应配置里的扩展名。
+当前缩略图能力主要来自运行时的 media processing registry，并由 `/public/thumbnail-support` 暴露给匿名态前端。默认内置 `images` 处理器覆盖常见图片格式；内置 `lofty` 处理器启用音频封面用途时也会暴露音频后缀；如果启用且运行环境可找到 `vips_cli` / `ffmpeg_cli`，缩略图支持列表也会包含对应配置里的扩展名。
 
-存储策略还预留了 `thumbnail_processor = "storage_native"` + `thumbnail_extensions` 的策略级扩展能力；只有实际驱动暴露存储原生缩略图接口时才会生效，当前内置 Local / S3 / Remote 驱动默认都不支持。
+存储策略也可以通过 `storage_native_processing_enabled = true`、`thumbnail_processor = "storage_native"` 和 `thumbnail_extensions` 暴露策略级原生缩略图 / 图片预览能力。内置 `tencent_cos` 策略可通过 COS CI 暴露这项能力；内置 Local、S3-compatible 和 Remote 策略不暴露原生缩略图或图片预览能力。
 
 接口统一返回 WebP，并按 Blob、processor 和 processor version 复用缓存。
 
-### 媒体元数据
+## 图片预览
+
+`GET /files/{id}/image-preview` 和团队空间的 `GET /teams/{team_id}/files/{id}/image-preview` 直接返回 WebP 图片数据，用于文件预览面板展示大图。它和缩略图接口不是同一个缓存尺寸：
+
+- 缩略图面向文件列表和卡片，可能异步生成并返回 `202`
+- 图片预览面向预览器；命中缓存时返回 WebP，缓存未命中时创建或复用 `image_preview_generate` 后台任务，并返回 `202` 和 `Retry-After`
+- 成功响应是 `image/webp`，带 `ETag` 和 `Cache-Control: private, max-age=0, must-revalidate`
+- 不支持的文件类型会返回文件/缩略图分域错误，不会退回原始文件流
+- 支持能力来自 `/public/thumbnail-support` 暴露的图片缩略图 / 图片预览能力并集，可来自后端媒体处理器，也可来自启用策略级原生处理的 Tencent COS
+- 前端默认优先使用原图还是预览图由 `/public/frontend-config` 里的 `media.image_preview_preference` 控制
+
+## 媒体元数据
 
 `GET /files/{id}/media-metadata` 返回按 Blob 缓存的媒体元数据；团队空间对应接口是 `GET /teams/{team_id}/files/{id}/media-metadata`。缓存未生成时接口返回 `202` 和 `Retry-After`，后台会创建 `media_metadata_extract` 任务，前端稍后重试同一接口即可。
 
 当前图片元数据由内置 `images` 处理器读取尺寸和格式；音频元数据由内置 `lofty` 处理器读取标题、艺术家、专辑、时长、采样率、声道、码率、曲目号和内嵌封面存在性等信息；视频元数据由 `ffprobe_cli` 处理器通过服务端 `ffprobe` 读取时长、尺寸、编码、容器和帧率。`media_metadata_enabled` 是总开关；图片 / 音频 / 视频是否参与解析、命中的后缀，以及 `ffprobe` 的命令名或绝对路径，都统一在 `media_processing_registry_json` 里配置。若运行环境找不到配置的 `ffprobe`，视频会返回并缓存为 `unsupported`；配置修正且命令可用后，旧的 missing-probe unsupported 缓存会被重新探测。
 
+存储策略可以通过 `storage_native_processing_enabled = true`、`storage_native_media_metadata_enabled = true` 和 `media_metadata_extensions` 启用策略级原生媒体元数据。内置 `tencent_cos` 策略可通过 COS CI 暴露音频 / 视频元数据；内置 Local、S3-compatible 和 Remote 策略不暴露原生媒体元数据能力。
+
 音频内嵌封面不单独开音乐封面缓存。`lofty` 处理器具备 `thumbnail:audio` 用途时，客户端继续复用现有 thumbnail 路径获取封面图；响应里的 `has_embedded_picture` 和 MIME 用于播放器元数据展示和兜底判断。
-
-### 图片预览
-
-`GET /files/{id}/image-preview` 和团队空间的 `GET /teams/{team_id}/files/{id}/image-preview` 直接返回 WebP 图片数据，用于文件预览面板展示大图。它和缩略图接口不是同一个缓存尺寸：
-
-- 缩略图面向文件列表和卡片，可能异步生成并返回 `202`
-- 图片预览面向预览器，按当前媒体处理器同步生成或命中缓存
-- 成功响应是 `image/webp`，带 `ETag` 和 `Cache-Control: private, max-age=0, must-revalidate`
-- 不支持的文件类型会返回文件/缩略图分域错误，不会退回原始文件流
-- 支持的处理器和命令仍然来自 `media_processing_registry_json`
 
 ### `GET /files/{id}/archive-preview`
 

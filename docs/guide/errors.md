@@ -228,7 +228,7 @@ Passkey 相关错误：
 
 - `data/.uploads`、`data/.tmp` 或自定义临时目录所在分区是否满了
 - 当前用户 / 团队 / 策略配额是否满了
-- S3 multipart 或 remote presigned 上传的浏览器直连地址是否可访问
+- 对象存储 multipart 或 remote presigned 上传的浏览器直连地址是否可访问
 - 远程 follower 是否健康，默认接收落点是否已经应用
 
 ### 存储策略、S3 和远程节点

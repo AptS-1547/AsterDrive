@@ -113,12 +113,14 @@ As long as the upload session has not expired, AsterDrive tries to continue the 
 
 If you want to connect AsterDrive through Finder, Windows Explorer, rclone, or a sync tool, the recommended flow is:
 
-1. Switch back to `My Space`, then create a dedicated account on the `WebDAV` page
+1. Switch to the workspace you want to connect, then create a dedicated account on the `WebDAV` page
 2. Restrict it to a directory if needed
 3. Fill the WebDAV address, username, and password into the client
 4. Run a real read/write test first
 
 When a device is retired, disabling only that WebDAV account will not affect the web login password.
+
+Personal-space accounts open only personal files; team-space accounts open only the matching team files. The WebDAV address is global, and credentials decide which workspace the client enters.
 
 ## Handle Mistaken Deletion
 
