@@ -1,6 +1,6 @@
 [package]
 name = "aster_drive"
-version = "0.2.7-test-do-not-use-in-production.3"
+version = "0.2.7"
 description = "A self-hosted cloud storage solution."
 authors = [
     "AptS-1547 <apts-1547@esaps.net>",
@@ -80,9 +80,9 @@ async-trait = "0.1"
 base64 = "0.22"
 bytes = "1"
 aws-credential-types = { version = "1.2.14", features = ["hardcoded-credentials"] }
-aws-sdk-s3 = { version = "1.134.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
+aws-sdk-s3 = { version = "1.135.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
 aws-smithy-http = "0.63"
-chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 chrono-tz = "0.10"
 clap = { version = "4", features = ["derive", "env"], optional = true }
 config = { version = "0.15", default-features = false, features = ["toml"] }
@@ -151,8 +151,8 @@ ipnet = "2.12.0"
 lofty = "0.24.0"
 
 [dev-dependencies]
-aws-smithy-http-client = { version = "1.1.12", features = ["test-util"] }
-aws-smithy-types = "1.4.8"
+aws-smithy-http-client = { version = "1.1.13", features = ["test-util"] }
+aws-smithy-types = "1.4.9"
 # Test-only RSA key generation still uses rsa 0.9, which depends on rand 0.8.
 # Keep both dev-only so production builds continue using the main rand 0.10 line.
 rand_08 = { package = "rand", version = "0.8" }

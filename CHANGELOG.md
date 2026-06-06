@@ -5,6 +5,171 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.7] - 2026-06-06
+
+### Release Highlights
+
+**AsterDrive `0.2.7` 聚焦企业级登录、图像预览、WebDAV 协议合规和存储驱动多样化。** 本版本新增 GitHub、Google、Microsoft、QQ 四大 OAuth2/OIDC 提供商支持，用户可通过单点登录快速接入；完整实现图像全屏预览、缩放、旋转和 AVIF 原生支持；WebDAV 协议大幅改进 RFC 4918 合规性，支持多活锁定、递归冲突检测和共享锁；新增腾讯云 COS 存储驱动，支持原生媒体处理和缩略图生成；企业功能继续强化，支持邮箱策略、Passkey 登录控制和团队级策略组迁移。
+
+- **OAuth2/OIDC 外部认证** — 新增 GitHub、Google、Microsoft、QQ 四大提供商，支持单点登录和 Microsoft 租户管理
+- **完整图像预览系统** — 全屏查看、缩放、旋转、导航，原生 AVIF 支持和浏览器能力检测
+- **WebDAV RFC 4918 合规** — 多活锁定、递归冲突检测、共享锁支持、If header 处理完善
+- **腾讯云 COS 驱动** — 原生媒体元数据和缩略图生成支持，S3 寻址风格配置
+- **企业认证策略** — 本地邮箱黑名单/白名单、Passkey 登录控制、策略组团队扩展
+- **性能与稳定性** — jemalloc 内存管理、缩略图缓存优化、并发限制、心跳隔离
+
+### Added
+
+- **OAuth2/OIDC 外部认证**
+  - 新增 GitHub OAuth provider，自动提取已验证主邮箱
+  - 新增 Google OIDC provider，支持标准配置
+  - 新增 Microsoft Entra provider，支持租户管理和自定义配置
+  - 新增 QQ Connect OAuth2 provider
+  - 提供商特定选项支持，Microsoft 租户值规范化
+  - 防止专门化提供商的 URL 配置覆盖
+  - 审计日志记录外部认证相关操作
+  - 前端支持提供商配置表单和设置预检
+
+- **图像预览系统**
+  - 全屏图像预览器，支持缩放、平移、旋转
+  - 图像预览导航，支持前后切换
+  - 原生 AVIF 格式支持
+  - 浏览器渲染能力检测，HEIF/HEIC 优雅降级
+  - 图像预览策略配置
+  - 每次预览的缩略图能力检测
+  - 延迟生成优化，缓存命中前不处理
+  - 简化预览状态管理和缩放逻辑
+
+- **WebDAV 协议增强**
+  - RFC 4918 完整合规实现
+  - 多活锁定支持和有效期修剪
+  - 递归操作锁定冲突检测
+  - 共享 WebDAV 锁支持
+  - If header Not 关键字不区分大小写处理
+  - 集中化 HTTP 响应构建器
+  - 请求源辅助函数提取
+  - 上下文结构整合
+
+- **存储驱动扩展**
+  - 腾讯云 COS 驱动实现
+    - 原生媒体元数据支持
+    - 原生缩略图生成
+    - 私有 URL 寻址
+  - S3 寻址风格配置（虚拟托管、路径风格），支持腾讯 COS 兼容
+  - 远程存储驱动模块化（提取子模块结构）
+  - Blob 迁移多部分上传支持
+  - 文件和文件夹详情存储使用量跟踪
+
+- **企业认证策略**
+  - 本地邮箱白名单/黑名单支持
+  - Passkey 登录政策控制
+  - 策略组迁移扩展到团队分配
+
+- **性能与运维**
+  - jemalloc 内存分配器支持（可选 feature）
+  - 最大并发限制和缩略图缓存大小校验
+  - 缩略图元数据预检查移除，优化范围读取
+  - 心跳独立任务化，防止 SQLite 死锁
+  - 存储操作可取消上下文
+  - 文件复制逻辑提取和优化
+
+### Changed
+
+- 根 crate 版本从 `0.2.6` 升级到 `0.2.7`
+- **WebDAV 架构重构**
+  - HTTP 响应构建器集中化（`webdav/responses.rs`）
+  - 协议处理独立模块化（`webdav/protocol.rs`）
+  - 请求源和上下文结构提取
+- **缩略图处理**
+  - 移除元数据预检查，直接读缓存
+  - 范围读取优化和 Bytes 类型改进
+- **存储驱动**
+  - 远程驱动分子模块化（`remote/protocol.rs`、`remote/client.rs` 等）
+  - Blob 迁移函数签名简化
+  - 维护任务禁止缓存预热
+- **任务调度**
+  - 心跳逻辑移至独立后台任务
+  - 防止 SQLite 连接死锁
+- **类型安全**
+  - 改进流处理和类型安全
+  - 外部认证提供商类型完善
+
+### Fixed
+
+- 修复 WebDAV DAV 命名空间前缀声明（RFC 4918 PROPFIND）
+- 修复图像预览逻辑和 Microsoft OIDC 遗留发行者处理
+- 防止专门化 OAuth 提供商意外的 URL 配置覆盖
+- 修复清理失败时的孤立存储对象问题
+- 改进删除操作的原子性和一致性
+
+### Security
+
+- 外部认证 URL 配置校验和专门化检查
+- 本地邮箱策略防止非预期注册
+
+### Testing
+
+- 新增 WebDAV 完整协议测试（3929+ 行）
+- 新增 OAuth2/OIDC 集成测试（覆盖所有提供商）
+- 新增存储迁移测试（911+ 行）
+- 新增任务管理测试（431+ 行）
+- 新增 WebDAV 锁系统专用测试
+- 前端新增 admin 设置、预览和外部认证配置测试
+
+### Documentation
+
+- **新增文档**
+  - 容量规划与部署建议（`deployment/capacity-planning.md`）
+  - 功能指南模块化（认证、文件、预览、上传、运维）
+  - 本地存储详细指南
+  - 腾讯云 COS 配置与使用
+  - 架构设计完整文档
+  - jemalloc profiling 指南
+- **更新文档**
+  - API 文档同步所有新提供商和存储驱动
+  - 外部认证文档完全重写（提供商安装、配置、故障排查）
+  - WebDAV 和 WOPI 文档反映 RFC 合规改进
+  - 配置文档新增认证和存储驱动选项
+
+### Notes
+
+- 本版本为 `0.2.7` 功能与生态扩展版本
+- 新增数据库迁移：
+  - `m20260604_000001_allow_shared_webdav_locks` — 共享 WebDAV 锁支持
+  - `m20260606_000001_add_external_auth_provider_options` — 外部认证提供商选项
+- **Breaking Change**：API 端点重命名
+  - 策略组迁移端点：`POST /admin/policy-groups/{id}/migrate-users` → `POST /admin/policy-groups/{id}/migrate-assignments`
+  - 原因：端点从只迁移用户扩展为同时迁移用户和团队绑定
+  - 请求类型：`MigratePolicyGroupUsersReq` → `MigratePolicyGroupAssignmentsReq`
+  - 响应类型：`PolicyGroupUserMigrationResult` → `PolicyGroupAssignmentMigrationResult`
+  - 响应新增 `affected_teams` 字段
+- **Breaking Change**：外部认证 API 调整
+  - 新增 4 个 OAuth2/OIDC 提供商类型（GitHub, Google, Microsoft, QQ）
+  - 提供商配置新增 `options` 字段
+  - Microsoft 提供商支持租户配置（`tenant_id` 规范化）
+- **Breaking Change**：WebDAV 协议改进
+  - 多活锁定和共享锁数据库模式变更
+  - 资源允许多个共享锁，需要使用 `lock_token` 显式释放
+  - WOPI 预览生命周期管理改进
+- **Breaking Change**：邮箱策略校验
+  - 本地邮箱白名单/黑名单只接受 ASCII 域名
+  - 拒绝 Unicode 域名（含 punycode）
+  - 邮箱验证要求必须只有一个 `@` 分隔符
+  - 改进的容错处理（自动 trim 空白、跳过非法条目）
+- **Breaking Change**：Passkey 政策
+  - 新增 `passkey_login_policy` 配置项
+  - 旧数据库缺少该字段时默认为启用状态
+- 强类型 API 客户端建议重新生成，以同步外部认证、存储驱动、WebDAV 和策略组迁移接口
+- Docker 用户可使用 jemalloc profiling 变体进行内存性能分析
+- 自定义客户端实现需要更新对 `migrate-users` 端点的引用，并处理新增的 `affected_teams` 字段
+
+---
+
+**统计数据**：
+- 529 files changed, 49,170 insertions(+), 8,301 deletions(-)
+- 46 commits
+- Rust Edition 2024, MSRV 1.91.1
+
 ## [v0.2.6] - 2026-06-02
 
 ### Release Highlights
@@ -4074,7 +4239,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.7...HEAD
+[v0.2.7]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.6...v0.2.7
 [v0.2.6]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.5...v0.2.6
 [v0.2.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.4...v0.2.5
 [v0.2.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.3...v0.2.4
