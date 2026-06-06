@@ -3,6 +3,8 @@
 use migration::{CurrentMigrator, MigratorTrait};
 use sea_orm::{ConnectionTrait, Database, DatabaseConnection, DbBackend, DbErr, Statement};
 
+const ALLOW_SHARED_WEBDAV_LOCKS_MIGRATION: &str = "m20260604_000001_allow_shared_webdav_locks";
+
 async fn setup_current_schema() -> sea_orm::DatabaseConnection {
     let db = Database::connect("sqlite::memory:")
         .await
@@ -11,6 +13,22 @@ async fn setup_current_schema() -> sea_orm::DatabaseConnection {
         .await
         .expect("current migrations should apply");
     db
+}
+
+fn steps_to_roll_back_allow_shared_webdav_locks() -> u32 {
+    let migrations = CurrentMigrator::migrations();
+    let position = migrations
+        .iter()
+        .position(|migration| migration.name() == ALLOW_SHARED_WEBDAV_LOCKS_MIGRATION)
+        .expect("allow shared WebDAV locks migration should be registered");
+    u32::try_from(migrations.len() - position)
+        .expect("migration rollback step count should fit u32")
+}
+
+async fn roll_back_allow_shared_webdav_locks(
+    db: &sea_orm::DatabaseConnection,
+) -> Result<(), DbErr> {
+    CurrentMigrator::down(db, Some(steps_to_roll_back_allow_shared_webdav_locks())).await
 }
 
 async fn insert_resource_lock(
@@ -56,9 +74,9 @@ async fn allow_shared_webdav_locks_down_recreates_unique_index_without_duplicate
     insert_resource_lock(&db, "urn:uuid:one", "file", 1).await;
     insert_resource_lock(&db, "urn:uuid:two", "file", 2).await;
 
-    CurrentMigrator::down(&db, Some(1))
+    roll_back_allow_shared_webdav_locks(&db)
         .await
-        .expect("last migration should roll back when resource locks are unique");
+        .expect("migration should roll back when resource locks are unique");
 
     let duplicate_insert = db
         .execute_raw(Statement::from_sql_and_values(
@@ -86,7 +104,7 @@ async fn allow_shared_webdav_locks_down_reports_duplicate_entity_locks() {
     insert_resource_lock(&db, "urn:uuid:one", "file", 1).await;
     insert_resource_lock(&db, "urn:uuid:two", "file", 1).await;
 
-    let error = CurrentMigrator::down(&db, Some(1))
+    let error = roll_back_allow_shared_webdav_locks(&db)
         .await
         .expect_err("duplicates should block rollback");
     let DbErr::Migration(message) = error else {
