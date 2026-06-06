@@ -2,13 +2,14 @@
 
 这组路径都相对于 `/api/v1`，且不需要认证。
 
-其中品牌、预览应用、缩略图能力和媒体数据能力给匿名页面启动用；remote-enrollment 两条用于 primary 和 follower 之间的远端节点 enrollment 握手。这些接口只在 `primary` 节点注册。
+其中前端启动配置、品牌、预览应用、缩略图能力和媒体数据能力给匿名页面启动用；remote-enrollment 两条用于 primary 和 follower 之间的远端节点 enrollment 握手。这些接口只在 `primary` 节点注册。
 
-公开配置读取接口都会带 `Cache-Control: public, max-age=60`。缩略图能力和媒体数据能力还会在进程内按 60 秒 TTL 缓存，并在媒体处理配置或存储策略变更时主动失效。
+公开配置读取接口都会带 `Vary: Authorization, Cookie`。匿名响应通常带 `Cache-Control: public, max-age=60`；`GET /public/custom-config` 在请求带有效访问 token 且返回 authenticated 可见条目时使用 `Cache-Control: private, max-age=60`。缩略图能力和媒体数据能力还会在进程内按 60 秒 TTL 缓存，并在媒体处理配置或存储策略变更时主动失效。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/public/branding` | 读取登录页、公开页和匿名入口需要的品牌配置 |
+| `GET` | `/public/frontend-config` | 读取前端启动所需的公开配置 |
+| `GET` | `/public/branding` | 读取旧版品牌配置；当前保留给旧客户端兼容 |
 | `GET` | `/public/preview-apps` | 读取匿名态可见的预览应用注册表 |
 | `GET` | `/public/custom-config` | 读取当前身份可见的自定义配置条目 |
 | `GET` | `/public/thumbnail-support` | 读取当前匿名态可见的缩略图扩展名能力 |
@@ -17,6 +18,8 @@
 | `POST` | `/public/remote-enrollment/ack` | follower 确认 enrollment 已完成 |
 
 ## `GET /public/branding`
+
+这是旧版兼容接口。当前前端优先使用 `GET /public/frontend-config`，后者会把品牌配置和前端公开运行参数放在同一个启动响应里。
 
 返回仍然使用统一 JSON 包装：
 
@@ -31,7 +34,8 @@
     "wordmark_dark_url": "/static/asterdrive/asterdrive-dark.svg",
     "wordmark_light_url": "/static/asterdrive/asterdrive-light.svg",
     "site_urls": ["https://drive.example.com", "https://panel.example.com"],
-    "allow_user_registration": true
+    "allow_user_registration": true,
+    "passkey_login_enabled": true
   }
 }
 ```
@@ -43,6 +47,7 @@
 - `wordmark_dark_url` / `wordmark_light_url`：亮暗背景下使用的品牌字标
 - `site_urls`：当前对外公开站点来源列表；未配置时为空数组
 - `allow_user_registration`：匿名页是否应展示注册入口
+- `passkey_login_enabled`：匿名登录页是否应展示 Passkey 登录入口
 
 当前前端登录页和公开入口会先拉这条接口，再决定匿名态 UI，而不是把这些值硬编码进前端构建产物。
 
@@ -54,9 +59,45 @@
 - `branding_wordmark_dark_url`
 - `branding_wordmark_light_url`
 - `auth_allow_user_registration`
+- `auth_passkey_login_enabled`
 - `public_site_url`
 
 `site_urls` 对应运行时配置 key 仍然是 `public_site_url`。管理接口把它作为 `string_array` 暴露，写入时必须传 JSON 字符串数组；服务端保存前会规范化每一项。每一项必须是精确 HTTP(S) origin，不能包含路径、通配符或非 HTTP(S) scheme。
+
+## `GET /public/frontend-config`
+
+这条接口是当前前端应用的匿名启动配置入口，返回统一 JSON 包装：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "version": 1,
+    "branding": {
+      "title": "AsterDrive",
+      "description": "Self-hosted cloud storage",
+      "favicon_url": "/favicon.svg",
+      "wordmark_dark_url": "/static/asterdrive/asterdrive-dark.svg",
+      "wordmark_light_url": "/static/asterdrive/asterdrive-light.svg",
+      "site_urls": ["https://drive.example.com"],
+      "allow_user_registration": true,
+      "passkey_login_enabled": true
+    },
+    "media": {
+      "image_preview_preference": "preview_first"
+    }
+  }
+}
+```
+
+要点：
+
+- `version` 当前为 `1`，用于前端判断启动配置结构版本
+- `branding` 与 `GET /public/branding` 返回的 `data` 结构一致
+- `media.image_preview_preference` 来自运行时配置 `frontend_image_preview_preference`
+- `image_preview_preference` 当前支持 `original_first` 和 `preview_first`
+- 前端会缓存这份启动配置，并在相关运行时配置变更后主动刷新
 
 ## `GET /public/preview-apps`
 
@@ -117,7 +158,8 @@
 
 - 只返回 `source = "custom"` 的条目
 - 只返回 `entries` 里的 key/value，不暴露 `id`、`source`、`updated_by` 等后台字段
-- 接口响应带 `Cache-Control: public, max-age=60`
+- 匿名响应带 `Cache-Control: public, max-age=60`
+- 带有效访问 token 且返回 authenticated 可见条目时，响应带 `Cache-Control: private, max-age=60` 和 `Vary: Authorization, Cookie`
 - 可见度分三档：
   - `private`：仅管理员可在后台看到，不会出现在此公开接口里
   - `public`：匿名即可读取
@@ -136,6 +178,20 @@
   "msg": "",
   "data": {
     "version": 1,
+    "image_preview": {
+      "enabled": true,
+      "extensions": ["bmp", "gif", "jpeg", "jpg", "png", "webp"]
+    },
+    "image_thumbnail": {
+      "enabled": true,
+      "extensions": ["bmp", "gif", "jpeg", "jpg", "png", "webp"]
+    },
+    "audio_thumbnail": {
+      "enabled": false
+    },
+    "video_thumbnail": {
+      "enabled": false
+    },
     "extensions": ["bmp", "gif", "jpe", "jpeg", "jpg", "png", "tif", "tiff", "webp"]
   }
 }
@@ -144,11 +200,13 @@
 要点：
 
 - `extensions` 已经做过规范化，统一是不带点的小写扩展名
+- `image_preview`、`image_thumbnail`、`audio_thumbnail`、`video_thumbnail` 是当前按用途拆分的能力字段
+- 顶层 `extensions` 是给旧客户端保留的兼容并集字段
 - 内置图片处理器启用时会暴露常见图片格式
 - 内置 `lofty` 处理器启用 `thumbnail:audio` 时会暴露音频后缀，前端可通过同一条 thumbnail 接口请求音频内嵌封面
 - `vips_cli` / `ffmpeg_cli` 只有在对应命令可用且处理器启用时，才会把配置里的扩展名暴露出去；因此它可能包含图片以外的文档或视频扩展名
 - 这份能力主要来自运行时配置 `media_processing_registry_json`
-- 如果某条存储策略配置了 `thumbnail_processor = "storage_native"`，且实际驱动暴露了存储原生缩略图能力，策略里的 `thumbnail_extensions` 也会合并进公开能力列表；当前内置驱动默认不暴露这项能力
+- 如果某条存储策略启用了原生处理，且实际驱动暴露存储原生缩略图 / 图片预览能力，策略里的 `thumbnail_extensions` 也会合并进公开能力列表；内置 `tencent_cos` 策略可通过 COS CI 暴露这项能力，内置 Local、S3-compatible 和 Remote 策略不暴露
 
 ## `GET /public/media-data-support`
 
@@ -192,6 +250,7 @@
 - `kinds.video` 来自 `ffprobe_cli` 处理器的 `metadata:video` 用途；命令不可用或处理器未启用时会返回 `enabled = false`
 - `match = "extensions"` 表示前端应按扩展名匹配；`match = "any"` 当前只会出现在启用 `ffprobe_cli` 且没有配置扩展名过滤时，表示视频元数据可尝试所有视频候选文件
 - 这份能力主要来自 `media_processing_registry_json`，并受 `media_metadata_max_source_bytes` 限制
+- 启用策略级原生媒体元数据后，支持的扩展名也会合并进音频 / 视频能力；内置 `tencent_cos` 策略可通过 COS CI 暴露这项能力
 
 ## `POST /public/remote-enrollment/redeem`
 

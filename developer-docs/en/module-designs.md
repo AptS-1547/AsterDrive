@@ -361,11 +361,11 @@ So “failed” here is not a single meaning. It is a result that includes retry
 The dispatcher does not use one global pool for everything. It schedules by lane:
 
 - `Archive`: `archive_compress`, `archive_extract`, `archive_preview_generate`, limited by `background_task_archive_max_concurrency`
-- `Thumbnail`: `thumbnail_generate`, `media_metadata_extract`, limited by `background_task_thumbnail_max_concurrency`
+- `Thumbnail`: `thumbnail_generate`, `image_preview_generate`, `media_metadata_extract`, limited by `background_task_thumbnail_max_concurrency`
 - `StorageMigration`: `storage_policy_migration`, limited by `background_task_storage_migration_max_concurrency`
 - `Fallback`: `storage_policy_temp_cleanup`, `trash_purge_all`, `blob_maintenance`, and system runtime records, limited by `background_task_max_concurrency`
 
-Archive preview is read-only, but it still touches object storage and ZIP parsing, so it shares the archive lane. Media metadata parsing also reads raw objects and spends CPU time, so it shares the thumbnail lane.
+Archive preview is read-only, but it still touches object storage and ZIP parsing, so it shares the archive lane. Image preview generation and media metadata parsing also read raw objects and spend CPU time, so they share the thumbnail lane.
 
 Archive and thumbnail lanes keep pulling the next batch within one dispatch round so large clusters of the same kind do not have to wait for the next periodic tick. StorageMigration is isolated to avoid occupying archive, thumbnail, or maintenance budget. Fallback is intentionally conservative so maintenance work does not starve other lanes.
 

@@ -26,7 +26,7 @@ The most important boundary in AsterDrive is the **workspace**.
 | Trash | Personal space's own trash | Each team's own trash |
 | Task center | Personal space tasks | Team space tasks |
 | Search | Searches the current personal space | Searches the current team space |
-| WebDAV | Dedicated personal-space accounts | Not shared with team spaces in the current version |
+| WebDAV | Dedicated personal-space accounts that open only personal files | Dedicated team-space accounts that open only the current team's files |
 | Storage route | Policy group bound to the user | Policy group bound to the team |
 
 After you switch workspaces on the left, files, shares, tasks, trash, and search results all switch with it.  
@@ -97,7 +97,7 @@ flowchart TD
 Common patterns:
 
 - Small teams use the default policy group directly
-- Teams with many large files use a separate S3 / MinIO policy group
+- Teams with many large files use a separate S3 / MinIO / Tencent COS policy group
 - Teams in another location use a separate follower-node policy group
 - Temporary project teams use smaller quotas and an independent policy group
 
@@ -131,6 +131,7 @@ These team-space contents are separated from personal-space contents:
 - Share links
 - Trash items
 - Online compression / online extraction / package download tasks
+- WebDAV accounts
 - Audit records
 - Search results
 
@@ -159,7 +160,7 @@ Common diagnosis order:
 ## Boundaries
 
 - A team space is not another independent site; it is still served by the same AsterDrive instance
-- Team spaces do not share personal WebDAV accounts
+- Team spaces have their own WebDAV accounts. The WebDAV address is global; credentials decide whether the client enters personal space or a team space
 - Understand team quota separately from each user's personal quota
 - A team's policy group affects future upload routes and does not automatically migrate old files
 - System administrators can perform global maintenance, but daily team collaboration is best left to team owners and team administrators

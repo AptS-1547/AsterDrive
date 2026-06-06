@@ -13,6 +13,7 @@ pub mod path_resolver;
 mod props;
 mod protocol;
 mod resources;
+mod responses;
 pub mod system_file;
 mod transfer;
 
@@ -25,9 +26,12 @@ use crate::config::WebDavConfig;
 use crate::runtime::PrimaryAppState;
 use crate::services::audit_service;
 use crate::utils::numbers::u64_to_usize;
-use crate::webdav::dav::{DavLockSystem, DavPath, FsError};
+use crate::webdav::dav::{DavLockSystem, DavPath};
 
-const XML_CONTENT_TYPE: &str = "application/xml; charset=utf-8";
+pub(crate) use responses::{
+    fs_error_response, lock_token_matches_request_uri_response, lock_token_submitted_element,
+    lock_token_submitted_response, xml_bytes, xml_response,
+};
 
 pub(crate) fn encode_href(path: &str) -> String {
     use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
@@ -64,12 +68,12 @@ pub async fn webdav_handler(
     webdav: web::Data<WebDavState>,
 ) -> HttpResponse {
     if !state.runtime_config.get_bool_or("webdav_enabled", true) {
-        return HttpResponse::ServiceUnavailable().body("WebDAV is disabled");
+        return responses::webdav_disabled();
     }
 
     let auth_result = match auth::authenticate_webdav(req.headers(), &state).await {
         Ok(result) => result,
-        Err(_) => return unauthorized_response(),
+        Err(_) => return responses::unauthorized(),
     };
 
     let audit_info = audit_service::AuditRequestInfo::from_request(&req);
@@ -211,9 +215,7 @@ pub async fn webdav_handler(
             Ok(()) => locks::handle_unlock(&req, lock_system.as_ref(), &webdav.prefix).await,
             Err(resp) => resp,
         },
-        _ => HttpResponse::MethodNotAllowed()
-            .insert_header((header::ALLOW, allow_header_value()))
-            .finish(),
+        _ => responses::method_not_allowed(allow_header_value()),
     }
 }
 
@@ -225,14 +227,14 @@ async fn collect_xml_payload(
     while let Some(chunk) = payload.next().await {
         let chunk = match chunk {
             Ok(chunk) => chunk,
-            Err(_) => return Err(HttpResponse::BadRequest().body("Failed to read request body")),
+            Err(_) => return Err(responses::request_body_read_error()),
         };
         let next_len = match data.len().checked_add(chunk.len()) {
             Some(next_len) => next_len,
-            None => return Err(HttpResponse::PayloadTooLarge().body("WebDAV XML body too large")),
+            None => return Err(responses::xml_body_too_large()),
         };
         if next_len > max_len {
-            return Err(HttpResponse::PayloadTooLarge().body("WebDAV XML body too large"));
+            return Err(responses::xml_body_too_large());
         }
         data.extend_from_slice(&chunk);
     }
@@ -256,7 +258,7 @@ pub(crate) fn ensure_system_file_name_allowed(
         return Ok(());
     }
 
-    Err(HttpResponse::Forbidden().body("WebDAV system file name is blocked"))
+    Err(responses::system_file_name_blocked())
 }
 
 pub(crate) async fn ensure_unlocked(
@@ -296,8 +298,7 @@ pub(crate) async fn ensure_parent_unlocked(
     let Some(parent) = parent_relative_path(relative) else {
         return Ok(());
     };
-    let parent_path = DavPath::new(&parent)
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid request path"))?;
+    let parent_path = DavPath::new(&parent).map_err(|_| responses::invalid_request_path())?;
     ensure_unlocked(
         lock_system,
         &parent_path,
@@ -327,8 +328,7 @@ pub(crate) fn request_origin(req: &HttpRequest) -> (String, String) {
 
 pub(crate) fn decode_relative_path(relative: &str) -> Result<(DavPath, String), HttpResponse> {
     let normalized = normalize_relative_path(relative);
-    let path = DavPath::new(&normalized)
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid request path"))?;
+    let path = DavPath::new(&normalized).map_err(|_| responses::invalid_request_path())?;
     let decoded = decoded_path_string(&path);
     Ok((path, decoded))
 }
@@ -342,22 +342,6 @@ fn normalize_relative_path(path: &str) -> String {
     } else {
         format!("/{path}")
     }
-}
-
-pub(crate) fn xml_response(root: Element, status: StatusCode) -> HttpResponse {
-    match xml_bytes(&root) {
-        Ok(body) => HttpResponse::build(status)
-            .content_type(XML_CONTENT_TYPE)
-            .body(body),
-        Err(resp) => resp,
-    }
-}
-
-pub(crate) fn xml_bytes(root: &Element) -> Result<Vec<u8>, HttpResponse> {
-    let mut buffer = Vec::new();
-    root.write(&mut buffer)
-        .map_err(|_| HttpResponse::InternalServerError().finish())?;
-    Ok(buffer)
 }
 
 pub(crate) fn dav_element(name: &str) -> Element {
@@ -379,41 +363,6 @@ pub(crate) fn status_element(status: StatusCode) -> Element {
             status.canonical_reason().unwrap_or("Unknown"),
         ),
     )
-}
-
-pub(crate) fn lock_token_submitted_element(prefix: &str, path: &DavPath) -> Element {
-    let mut submitted = dav_element("lock-token-submitted");
-    submitted.children.push(XMLNode::Element(text_element(
-        "D:href",
-        &href_for_dav_path(prefix, path),
-    )));
-    submitted
-}
-
-pub(crate) fn lock_token_submitted_response(
-    status: StatusCode,
-    prefix: &str,
-    path: &DavPath,
-) -> HttpResponse {
-    let mut error = dav_element("error");
-    error
-        .attributes
-        .insert("xmlns:D".to_string(), "DAV:".to_string());
-    error
-        .children
-        .push(XMLNode::Element(lock_token_submitted_element(prefix, path)));
-    xml_response(error, status)
-}
-
-pub(crate) fn lock_token_matches_request_uri_response(status: StatusCode) -> HttpResponse {
-    let mut error = dav_element("error");
-    error
-        .attributes
-        .insert("xmlns:D".to_string(), "DAV:".to_string());
-    error.children.push(XMLNode::Element(dav_element(
-        "lock-token-matches-request-uri",
-    )));
-    xml_response(error, status)
 }
 
 pub(crate) fn child_elements(element: &Element) -> impl Iterator<Item = &Element> {
@@ -482,22 +431,6 @@ pub(crate) fn parent_relative_path(relative: &str) -> Option<String> {
     Some(format!("/{}/", segments[..segments.len() - 1].join("/")))
 }
 
-pub(crate) fn fs_error_response(err: FsError) -> HttpResponse {
-    HttpResponse::build(fs_error_status(&err)).finish()
-}
-
-fn fs_error_status(err: &FsError) -> StatusCode {
-    match err {
-        FsError::NotFound => StatusCode::NOT_FOUND,
-        FsError::Forbidden => StatusCode::FORBIDDEN,
-        FsError::Exists => StatusCode::CONFLICT,
-        FsError::InsufficientStorage => StatusCode::INSUFFICIENT_STORAGE,
-        FsError::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-        FsError::BadRequest => StatusCode::BAD_REQUEST,
-        FsError::GeneralFailure => StatusCode::INTERNAL_SERVER_ERROR,
-    }
-}
-
 pub(crate) fn format_http_date(time: std::time::SystemTime) -> String {
     chrono::DateTime::<chrono::Utc>::from(time)
         .format("%a, %d %b %Y %H:%M:%S GMT")
@@ -514,12 +447,6 @@ fn allow_header_value() -> &'static str {
 
 pub(crate) fn multi_status() -> StatusCode {
     StatusCode::MULTI_STATUS
-}
-
-fn unauthorized_response() -> HttpResponse {
-    HttpResponse::Unauthorized()
-        .insert_header(("WWW-Authenticate", "Basic realm=\"AsterDrive WebDAV\""))
-        .body("Unauthorized")
 }
 
 /// 注册 WebDAV 路由

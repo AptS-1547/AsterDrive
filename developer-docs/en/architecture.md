@@ -120,7 +120,7 @@ WebDAV does not go through `src/api/routes/**`. Instead:
 
 1. `crate::webdav::configure()` mounts it on the configured prefix on the primary
 2. It checks the runtime `webdav_enabled` switch
-3. It performs Basic or Bearer authentication
+3. It performs WebDAV-specific Basic Auth
 4. It builds a user-scoped `AsterDavFs`
 5. It uses the database lock system and version capability support
 6. It enters the custom WebDAV / DeltaV handler
@@ -147,7 +147,7 @@ WebDAV does not go through `src/api/routes/**`. Instead:
 ├─────────────────────────────────────────────┤
 │ Infrastructure layer                        │
 │  - SeaORM + migration                       │
-│  - StorageDriver(Local / S3 / Remote)       │
+│  - StorageDriver(Local/S3/TencentCOS/Remote)│
 │  - CacheBackend(Memory / Redis / Noop)      │
 ├─────────────────────────────────────────────┤
 │ Data layer                                  │
@@ -287,7 +287,7 @@ Periodic tasks run according to runtime config intervals. They write `SystemRunt
 User-visible `background_tasks` records are dispatched by `background-task-dispatch`. The dispatcher currently uses four lanes:
 
 - `Archive`: `archive_compress`, `archive_extract`, `archive_preview_generate`
-- `Thumbnail`: `thumbnail_generate`, `media_metadata_extract`
+- `Thumbnail`: `thumbnail_generate`, `image_preview_generate`, `media_metadata_extract`
 - `StorageMigration`: `storage_policy_migration`
 - `Fallback`: `storage_policy_temp_cleanup`, `trash_purge_all`, `blob_maintenance`, `system_runtime`
 

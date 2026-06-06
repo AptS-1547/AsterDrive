@@ -228,7 +228,7 @@ Users can retry once. If it repeats, administrators should check:
 
 - Whether `data/.uploads`, `data/.tmp`, or custom temp directories are on a full partition
 - Whether user / team / policy quota is exhausted
-- Whether the S3 multipart or remote presigned browser-direct URL is reachable
+- Whether the object-storage multipart or remote presigned browser-direct URL is reachable
 - Whether the remote follower is healthy and has an applied default ingress target
 
 ### Storage Policies, S3, And Remote Nodes

@@ -9,7 +9,8 @@ use crate::services::file_service;
 use crate::webdav::dav::{DavFileSystem, DavLockSystem, FsError, OpenOptions};
 use crate::webdav::{
     ensure_parent_unlocked, ensure_system_file_name_allowed, ensure_unlocked, fs,
-    fs_error_response, href_for_relative, protocol, request_origin, request_path, system_file,
+    fs_error_response, href_for_relative, protocol, request_origin, request_path, responses,
+    system_file,
 };
 use protocol::HttpEtagPrecondition;
 
@@ -46,7 +47,7 @@ pub(crate) async fn handle_get_head(
         Err(err) => return fs_error_response(err),
     };
     if meta.is_dir() {
-        return HttpResponse::MethodNotAllowed().finish();
+        return responses::empty(StatusCode::METHOD_NOT_ALLOWED);
     }
     match protocol::evaluate_http_etag_preconditions(
         req.headers(),
@@ -121,10 +122,7 @@ pub(crate) async fn handle_get_head(
 }
 
 fn range_not_satisfiable_response(length: u64) -> HttpResponse {
-    HttpResponse::RangeNotSatisfiable()
-        .insert_header((header::CONTENT_RANGE, format!("bytes */{length}")))
-        .insert_header(("Accept-Ranges", "bytes"))
-        .finish()
+    responses::range_not_satisfiable(length)
 }
 
 pub(crate) async fn handle_put(
@@ -143,7 +141,7 @@ pub(crate) async fn handle_put(
         return resp;
     }
     let existed = match dav_fs.metadata(&path).await {
-        Ok(meta) if meta.is_dir() => return HttpResponse::MethodNotAllowed().finish(),
+        Ok(meta) if meta.is_dir() => return responses::empty(StatusCode::METHOD_NOT_ALLOWED),
         Ok(meta) => {
             if let Err(resp) = protocol::evaluate_http_etag_preconditions(
                 req.headers(),
@@ -217,8 +215,8 @@ pub(crate) async fn handle_put(
 
     let mut file = match dav_fs.open(&path, options).await {
         Ok(file) => file,
-        Err(FsError::Exists) => return HttpResponse::PreconditionFailed().finish(),
-        Err(FsError::NotFound) => return HttpResponse::Conflict().finish(),
+        Err(FsError::Exists) => return responses::precondition_failed(),
+        Err(FsError::NotFound) => return responses::conflict(),
         Err(err) => {
             tracing::warn!(path = %relative, error = %err, "WebDAV PUT open failed");
             return fs_error_response(err);
@@ -228,7 +226,7 @@ pub(crate) async fn handle_put(
     while let Some(chunk) = payload.next().await {
         let chunk = match chunk {
             Ok(chunk) => chunk,
-            Err(_) => return HttpResponse::BadRequest().body("Failed to read request body"),
+            Err(_) => return responses::request_body_read_error(),
         };
         if let Err(err) = file.write_bytes(chunk).await {
             tracing::warn!(path = %relative, error = %err, "WebDAV PUT write failed");

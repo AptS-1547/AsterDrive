@@ -27,6 +27,29 @@
 - 锁：按 `id asc`
 - 团队成员：按 `role asc`
 
+## 总览面板
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/admin/overview` | 读取管理后台总览所需的聚合数据 |
+
+当前返回内容包含：
+
+- 总用户数、启用中用户、禁用用户
+- 总文件数、总文件字节数、总 blob 数、总 blob 字节数、总分享数
+- 今日审计事件数、今日新增用户数、今日上传数、今日新分享数
+- 最近 N 天日报（默认 7）
+- 最近一批审计事件
+- 最近一批后台任务 / 系统运行任务
+
+支持这些查询参数：
+
+- `days`：日报天数，默认 `7`，最大 `90`
+- `timezone`：IANA 时区名，例如 `UTC`、`Asia/Shanghai`
+- `event_limit`：最近活动返回数量，默认 `8`，最大 `50`
+
+这个接口当前的日报和“最近活动”都基于审计日志统计，因此如果审计日志关闭，对应数据会偏少或为 0。总量类指标（用户 / 文件 / blob / 分享 / 字节数）不依赖审计日志。
+
 ## 存储策略
 
 | 方法 | 路径 | 说明 |
@@ -59,12 +82,16 @@
 
 当前实现注意点：
 
+- `driver_type` 当前支持 `local`、`s3`、`tencent_cos` 和 `remote`
 - 创建和更新都会采用请求里的 `chunk_size`
 - `options` 当前承载策略级行为：
   - S3 / Remote 上传下载策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned","remote_upload_strategy":"presigned","remote_download_strategy":"presigned"}`
   - 本地策略的内容去重开关 `content_dedup`
   - S3 连接 / 读取 / 操作超时：`s3_connect_timeout_secs`、`s3_read_timeout_secs`、`s3_operation_timeout_secs`
-  - 存储原生缩略图：`thumbnail_processor = "storage_native"` + `thumbnail_extensions`；只有驱动显式暴露该能力时才允许，当前内置 Local / S3 / Remote 驱动默认都不支持
+  - 存储原生缩略图 / 图片预览：`storage_native_processing_enabled`、`thumbnail_processor`、`thumbnail_extensions`
+  - 存储原生媒体元数据：`storage_native_media_metadata_enabled`、`media_metadata_extensions`
+- `driver_type = "tencent_cos"` 普通读写复用 S3-compatible 对象存储路径，会校验 Tencent COS endpoint 形态；策略启用后可通过 COS CI 暴露原生缩略图、图片预览和媒体元数据能力
+- 内置 Local、S3-compatible 和 Remote 驱动不暴露存储原生缩略图、图片预览或媒体元数据能力
 - 旧配置 `{"presigned_upload":true}` 仍兼容，等价于 S3 预签名上传策略
 - REST 已经可以通过 `allowed_types` 管理策略允许的 MIME / 类型列表；不传时创建会使用空列表，更新会保持原值
 - `driver_type = "remote"` 时需要绑定 `remote_node_id`，远端节点本身通过 `/admin/remote-nodes` 管理
@@ -155,7 +182,7 @@
 
 ## 外部认证提供商
 
-外部认证 provider 由管理员配置，匿名登录入口只读取启用后的公开摘要。当前支持的 provider kind 是 `oidc` 和 `generic_oauth2`。
+外部认证 provider 由管理员配置，匿名登录入口只读取启用后的公开摘要。当前支持的 provider kind 是 `oidc`、`generic_oauth2`、`github`、`qq`、`google` 和 `microsoft`。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
@@ -208,17 +235,43 @@
 }
 ```
 
+创建 Microsoft provider 示例：
+
+```json
+{
+  "provider_kind": "microsoft",
+  "display_name": "Microsoft",
+  "icon_url": "/static/external-auth/microsoft-logo.svg",
+  "options": {
+    "microsoft": {
+      "tenant": "organizations"
+    }
+  },
+  "client_id": "00000000-0000-0000-0000-000000000000",
+  "client_secret": "secret-value",
+  "scopes": "openid profile email",
+  "enabled": true,
+  "auto_provision_enabled": false,
+  "auto_link_verified_email_enabled": false,
+  "require_email_verified": false
+}
+```
+
 当前实现注意点：
 
 - provider `key` 由服务端生成，登录路径使用 `/auth/external-auth/{kind}/{provider}/start`
 - `issuer_url`、`authorization_url`、`token_url`、`userinfo_url` 必须是 HTTPS，localhost 例外；fragment 不允许
 - `oidc` 支持 discovery；`generic_oauth2` 要手动配置 authorization、token 和 userinfo endpoint
+- `github`、`qq`、`google` 和 `microsoft` 是专用 provider kind，端点和默认 claim 语义由后端 driver 固定；不要在请求里传这些 provider 不支持的手动 endpoint
+- `microsoft` 的租户配置走 `options.microsoft.tenant`，支持 `common`、`organizations`、`consumers` 或具体 tenant UUID；读取详情时会返回规范化后的 `options`
+- `options` 当前主要用于 provider 专用配置；非 Microsoft provider 传 `options.microsoft` 会被拒绝
 - provider kind 的能力、默认 scope 和字段要求来自 `GET /admin/external-auth/provider-kinds`
 - `client_secret` 在读取详情时会脱敏为 `***REDACTED***`，同时返回 `client_secret_configured`
 - `auto_provision_enabled` 允许外部身份自动创建本地用户；`allowed_domains` 可限制邮箱域名
 - `auto_link_verified_email_enabled` 允许用已验证邮箱自动绑定已有本地用户
 - `require_email_verified` 打开后，未验证邮箱的外部身份需要走 `/auth/external-auth/email-verification/*`
 - Generic OAuth2 有 `client_secret` 时使用 `client_secret_post` 发起一次 token exchange；不会为了探测认证方式重放 authorization code
+- 专用 provider 的行为细节见 [外部认证模块](../external-auth.md)
 - 创建、更新、删除和测试都会写管理员审计日志
 
 ## 文件与 Blob 管理
@@ -296,29 +349,6 @@
   "target_group_id": 9
 }
 ```
-
-## 总览面板
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/admin/overview` | 读取管理后台总览所需的聚合数据 |
-
-当前返回内容包含：
-
-- 总用户数、启用中用户、禁用用户
-- 总文件数、总文件字节数、总 blob 数、总 blob 字节数、总分享数
-- 今日审计事件数、今日新增用户数、今日上传数、今日新分享数
-- 最近 N 天日报（默认 7）
-- 最近一批审计事件
-- 最近一批后台任务 / 系统运行任务
-
-支持这些查询参数：
-
-- `days`：日报天数，默认 `7`，最大 `90`
-- `timezone`：IANA 时区名，例如 `UTC`、`Asia/Shanghai`
-- `event_limit`：最近活动返回数量，默认 `8`，最大 `50`
-
-这个接口当前的日报和“最近活动”都基于审计日志统计，因此如果审计日志关闭，对应数据会偏少或为 0。总量类指标（用户 / 文件 / blob / 分享 / 字节数）不依赖审计日志。
 
 ## 用户
 
@@ -489,6 +519,9 @@
 - `max_versions_per_file`
 - `auth_allow_user_registration`
 - `auth_register_activation_enabled`
+- `auth_local_email_allowlist`
+- `auth_local_email_blocklist`
+- `auth_passkey_login_enabled`
 - `auth_email_code_login_enabled`
 - `auth_email_code_login_allow_totp_fallback`
 - `auth_email_code_login_ttl_secs`
@@ -558,6 +591,7 @@
 - `media_metadata_enabled`
 - `media_metadata_max_source_bytes`
 - `media_processing_registry_json`
+- `frontend_image_preview_preference`
 - `mail_template_login_email_code_subject`
 - `mail_template_login_email_code_html`
 

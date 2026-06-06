@@ -54,7 +54,7 @@ To manage a group of content, switch to the corresponding workspace first.
 - `Trash`: handle deleted content in the current workspace
 - `My Shares`: view links already sent from the current workspace
 - `Task Center`: view background tasks such as online compression, online extraction, package downloads, and link import
-- `WebDAV`: appears only in personal space and is used to create desktop client accounts
+- `WebDAV`: creates desktop client accounts for the current workspace; personal and team spaces manage their own accounts
 - `Settings` in the top-right user menu: adjust profile, interface, security, and team-related settings
 
 ## Upload and Organize Files
@@ -99,8 +99,14 @@ When you need to handle multiple items at once, select them and batch execute:
 
 In the file list and trash, you can use `Ctrl + A` or `Cmd + A` to select all items on the current page.
 
-File or folder "Details" shows name, size, type, creation time, modification time, lock status, share status, storage policy ID, and other information.  
+File or folder "Details" shows name, size, storage used, type, creation time, modification time, lock status, share status, storage policy ID, and other information.
 When diagnosing "which policy is this file on" or "is it locked", start here.
+
+"Size" and "storage used" are not the same:
+
+- File size is the size of the current file itself
+- File storage used also counts historical versions
+- Folder storage used recursively counts everything under that folder, which helps find which directory is consuming quota
 
 ## Open, Preview, and Edit
 
@@ -127,6 +133,8 @@ The most common scenario is handing Office files to an external previewer or WOP
 
 Whether such entries appear depends on whether the administrator configured a corresponding preview app for the current file type.  
 If your `docx`, `xlsx`, or `pptx` file does not show an extra open method, the site has usually not connected that file type to a usable external service yet.
+
+Image preview first uses the original file when the browser can render it directly. If the browser cannot render the format, or the administrator configured the site to prefer medium previews, the page uses a backend-generated preview instead. After opening an image, you can move to the previous / next image in the current list, folder, or share scope. You can also enter fullscreen, zoom, pan, and rotate. For very large photos, the administrator may configure previews to load the medium image first and download the original only when you explicitly choose to view it.
 
 Archive preview is a read-only listing preview. It shows only directories, files, sizes, and modification times inside the archive. It does not extract the archive into the current folder and cannot download a single file inside the archive. The first time you open an archive, it may show generation in progress until the background task finishes and the listing is displayed.
 
@@ -253,7 +261,7 @@ The share list is paginated. When there are many shares, confirm the current pag
 
 If you want to use AsterDrive directly from Finder, Windows Explorer, rclone, or other desktop tools, create a dedicated WebDAV account.
 
-WebDAV accounts are managed only in personal space and are not shared with team spaces.
+WebDAV accounts follow workspaces. An account created in personal space opens only your personal files; an account created in a team space opens only that team's files. The WebDAV address is the same; the credentials decide which workspace the client enters.
 
 Common practice:
 
@@ -266,6 +274,8 @@ When creating a WebDAV account, you can:
 - Customize the username
 - Customize the password, or let the system generate one automatically
 - Specify the access scope
+
+Team-space WebDAV accounts are managed under `Settings -> Teams -> Team Details -> WebDAV`. Team owners and administrators can see all team accounts; regular members can manage only the team WebDAV accounts they created.
 
 The password is shown only once after creation. Save it immediately.
 
@@ -361,6 +371,8 @@ The `Passkey` tab manages passwordless login methods:
 - Delete passkeys no longer used
 
 When adding one, the browser opens the system verification window. After success, the login page can use device unlock, fingerprint, face, or security key to log into the account directly. The exact method depends on your browser and system.
+
+If you have already added a passkey but the login page suddenly does not show the passkey sign-in entry, the current browser environment may not support it, or an administrator may have temporarily disabled site-wide passkey sign-in. That switch does not delete registered passkeys; they can be used again after the administrator re-enables it.
 
 The `External identities` tab lists external login identities bound to the current account. After unbinding, that identity can no longer directly log into this account. If the administrator enabled auto-binding by verified email, it may still bind again later when the rules are met.
 

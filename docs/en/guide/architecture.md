@@ -15,7 +15,7 @@ For deeper source-level design notes, see `developer-docs/en/architecture.md` an
 - Metadata mainly lives in the database, while file content mainly lives behind storage drivers. The database records ownership, versions, quota accounting, sharing state, and runtime settings; storage drivers keep the actual object bytes.
 - Personal spaces and team spaces share the same file pipeline, with different workspace scopes for permissions, quota ownership, and policy selection.
 - Configuration has two layers: startup configuration from `config.toml` / `ASTER__...` environment variables, and database-backed runtime configuration that administrators can update without editing the startup file.
-- Large uploads may go through backend relay, chunked upload, S3 presigned upload, or S3 multipart upload. All successful paths still return to the database to finalize file records, Blob references, and quota accounting.
+- Large uploads may go through backend relay, chunked upload, object-storage presigned upload, or multipart upload. All successful paths still return to the database to finalize file records, Blob references, and quota accounting.
 
 ## Component Relationships
 
@@ -177,9 +177,9 @@ An upload is not finished just because object bytes were written. A successful u
 - the database has correct file, Blob, version, and upload-session state
 - quota has been charged to the correct personal or team space
 - filename conflicts, overwrites, locks, trash state, and policy limits have been handled
-- recoverable local temporary state or S3 multipart state has been finalized
+- recoverable local temporary state or object-storage multipart state has been finalized
 
-That is why upload troubleshooting needs three signals at once: the browser upload task, primary logs, and upload-session / background-task state in the database. S3 direct uploads also require checking object-storage CORS, presigned URLs, multipart limits, and whether the reverse proxy incorrectly intercepted callbacks.
+That is why upload troubleshooting needs three signals at once: the browser upload task, primary logs, and upload-session / background-task state in the database. Object-storage direct uploads also require checking object-storage CORS, presigned URLs, multipart limits, and whether the reverse proxy incorrectly intercepted callbacks.
 
 ## Download and Share Data Flow
 

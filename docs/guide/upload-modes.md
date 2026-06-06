@@ -24,8 +24,8 @@ flowchart TD
   Group --> SizeRule["按文件大小匹配策略组规则"]
   SizeRule --> Policy["命中具体存储策略"]
   Policy --> Local["local：写入本地存储"]
-  Policy --> S3Relay["s3 + relay_stream：服务端转发到对象存储"]
-  Policy --> S3Presigned["s3 + presigned：浏览器直传对象存储"]
+  Policy --> S3Relay["s3 / tencent_cos + relay_stream：服务端转发到对象存储"]
+  Policy --> S3Presigned["s3 / tencent_cos + presigned：浏览器直传对象存储"]
   Policy --> RemoteRelay["remote + relay_stream：主控节点转发到从节点"]
   Policy --> RemotePresigned["remote + presigned：浏览器直连从节点 base_url"]
 ```
@@ -63,12 +63,12 @@ flowchart TD
 
 ### 服务端转发
 
-浏览器先把文件传给 AsterDrive，再由服务端转到 S3 / MinIO。  
+浏览器先把文件传给 AsterDrive，再由服务端转到 S3 / MinIO / 腾讯云 COS。
 这条路不靠本地临时目录，也不会做内容去重。
 
 ### 对象存储直传
 
-浏览器直接把文件传到 S3 / MinIO。大文件会自动分成多段。  
+浏览器直接把文件传到 S3 / MinIO / 腾讯云 COS。大文件会自动分成多段。
 这种方式最省服务端带宽，但对象存储必须先配好浏览器上传所需的 CORS。
 
 如果你用这条路，至少确认：

@@ -123,6 +123,7 @@ If desktop clients will use WebDAV:
 - WebDAV prefix matches the reverse proxy path
 - real clients can connect, list directories, upload, overwrite-save, and delete
 - clients use dedicated WebDAV accounts, not normal web login passwords
+- if team spaces need WebDAV access, clients use WebDAV accounts created in the team space and member permissions match expectations
 
 If online preview or WOPI is enabled:
 

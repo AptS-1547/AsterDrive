@@ -154,7 +154,7 @@ Reverse proxy examples are in [Reverse Proxy Deployment](./reverse-proxy).
 
 ### Can Connect, but All Operations Return 401
 
-WebDAV uses its own account system. It is **not the normal login account**. Create a dedicated account from the `WebDAV` page in the personal space sidebar.
+WebDAV uses its own account system. It is **not the normal login account**. Create a dedicated account in the workspace you want to connect: use the personal-space `WebDAV` page for personal files, and the team workspace or `Settings -> Teams -> Team Details -> WebDAV` for team files.
 
 Normal login JWT can also use Bearer authentication, but most WebDAV clients do not support custom headers. Dedicated accounts are the easiest path.
 
@@ -165,6 +165,8 @@ Check the error code:
 - `resource_locked`: a file or folder is held by a WebDAV LOCK. Usually another client did not release it, or the previous client crashed without UNLOCK. Wait for lock expiration or unlock manually in the admin panel.
 - `precondition_failed`: the client sent `If-Match` / `If-None-Match`, but the condition was not satisfied. Common when multiple clients edit the same file at once.
 - Quota-related: user quota is full.
+
+If moving, copying, or deleting a folder fails, a child file or subfolder in that tree may have a conflicting lock. AsterDrive checks these locks recursively so clients cannot bypass a lock by modifying a parent folder. Close other WebDAV clients or online editors first, then wait for expiration. If the lock is clearly stale, clean it under `Admin -> Locks`.
 
 ## Office / WOPI
 
@@ -186,6 +188,10 @@ If it repeats:
 
 - Check whether the AsterDrive clock is correct. WOPI proof-key validation has a +/-20 minute time window.
 - Check the WOPI service's own clock.
+
+### Save or Move Reports the File Is Locked
+
+WOPI editing keeps locks on files, and AsterDrive also allows multiple shared locks where the protocol semantics allow them. While valid locks exist, conflicting overwrite, move, or delete operations are rejected. First confirm whether the file is still open in an Office editor, WebDAV client, or another browser tab. If a client already exited abnormally, administrators can clean expired locks or force-unlock stale records under `Admin -> Locks`.
 
 ## Background Tasks
 

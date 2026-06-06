@@ -13,8 +13,8 @@ use xmltree::Element;
 use crate::db::repository::{file_repo, user_repo, version_repo};
 use crate::webdav::auth::WebdavAuthResult;
 use crate::webdav::dav::DavPath;
-use crate::webdav::href_for_relative;
 use crate::webdav::path_resolver::{self, ResolvedNode};
+use crate::webdav::{href_for_relative, responses, xml_response};
 
 /// 处理 REPORT 方法（cadaver `history` 发送 `DAV:version-tree`）
 pub(crate) async fn handle_report(
@@ -27,11 +27,14 @@ pub(crate) async fn handle_report(
     // 解析 XML body，确认是 version-tree 报告
     let root = match Element::parse(Cursor::new(body_bytes)) {
         Ok(el) => el,
-        Err(_) => return error_response(400, "Invalid XML body"),
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid XML body"),
     };
 
     if root.name != "version-tree" {
-        return error_response(501, &format!("Unsupported REPORT type: {}", root.name));
+        return error_response(
+            StatusCode::NOT_IMPLEMENTED,
+            &format!("Unsupported REPORT type: {}", root.name),
+        );
     }
 
     // 从 URI 中去掉 prefix 得到文件路径
@@ -41,7 +44,7 @@ pub(crate) async fn handle_report(
     // 构造一个 DavPath 用于路径解析
     let dav_path = match DavPath::new(relative) {
         Ok(p) => p,
-        Err(_) => return error_response(400, "Invalid path"),
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid path"),
     };
 
     let node =
@@ -49,19 +52,29 @@ pub(crate) async fn handle_report(
             .await
         {
             Ok(n) => n,
-            Err(_) => return error_response(404, "Not Found"),
+            Err(_) => return error_response(StatusCode::NOT_FOUND, "Not Found"),
         };
 
     let file = match node {
         ResolvedNode::File(f) => f,
-        _ => return error_response(409, "Version history is only available for files"),
+        _ => {
+            return error_response(
+                StatusCode::CONFLICT,
+                "Version history is only available for files",
+            );
+        }
     };
     let decoded_relative = String::from_utf8_lossy(dav_path.as_bytes()).into_owned();
 
     // 查版本列表
     let versions = match version_repo::find_by_file_id(db, file.id).await {
         Ok(v) => v,
-        Err(_) => return error_response(500, "Failed to query versions"),
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to query versions",
+            );
+        }
     };
 
     // 查用户名
@@ -124,15 +137,7 @@ pub(crate) async fn handle_report(
             .push(xmltree::XMLNode::Element(response));
     }
 
-    let mut xml_buf = Vec::new();
-    // xmltree::Element::write() 自动输出 <?xml?> 声明，不需要手动添加
-    if multistatus.write(&mut xml_buf).is_err() {
-        return error_response(500, "Failed to serialize XML");
-    }
-
-    HttpResponse::build(StatusCode::MULTI_STATUS)
-        .content_type("application/xml; charset=utf-8")
-        .body(xml_buf)
+    xml_response(multistatus, StatusCode::MULTI_STATUS)
 }
 
 /// 处理 VERSION-CONTROL 方法（所有文件自动版本控制，直接返回 200）
@@ -147,14 +152,19 @@ pub(crate) async fn handle_version_control(
 
     let dav_path = match DavPath::new(relative) {
         Ok(p) => p,
-        Err(_) => return error_response(400, "Invalid path"),
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "Invalid path"),
     };
 
     match path_resolver::resolve_path_in_scope(db, auth.scope, &dav_path, auth.root_folder_id).await
     {
-        Ok(ResolvedNode::File(_)) => HttpResponse::Ok().body("Already under version control"),
-        Ok(_) => error_response(409, "Only files support version control"),
-        Err(_) => error_response(404, "Not Found"),
+        Ok(ResolvedNode::File(_)) => {
+            responses::text(StatusCode::OK, "Already under version control")
+        }
+        Ok(_) => error_response(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "Only files support version control",
+        ),
+        Err(_) => error_response(StatusCode::NOT_FOUND, "Not Found"),
     }
 }
 
@@ -219,7 +229,6 @@ fn build_version_response(
     response
 }
 
-fn error_response(status: u16, msg: &str) -> HttpResponse {
-    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    HttpResponse::build(status).body(msg.to_string())
+fn error_response(status: StatusCode, msg: &str) -> HttpResponse {
+    responses::text(status, msg)
 }

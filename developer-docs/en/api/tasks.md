@@ -32,8 +32,8 @@ Current common creation paths include:
 - `POST /teams/{team_id}/files/{id}/extract`
 - `GET /files/{id}/archive-preview`
 - `GET /teams/{team_id}/files/{id}/archive-preview`
-- public-share archive preview, thumbnail, and media metadata endpoints
-- authenticated thumbnail and media metadata endpoints
+- public-share archive preview, thumbnail, image preview, and media metadata endpoints
+- authenticated thumbnail, image preview, and media metadata endpoints
 - `POST /tasks/offline-download`
 - `POST /teams/{team_id}/tasks/offline-download`
 - `DELETE /trash`
@@ -44,6 +44,7 @@ Current common creation paths include:
 System-created or system-recorded kinds include:
 
 - `thumbnail_generate`
+- `image_preview_generate`
 - `media_metadata_extract`
 - `storage_policy_migration`
 - `storage_policy_temp_cleanup`
@@ -51,7 +52,7 @@ System-created or system-recorded kinds include:
 - `offline_download`
 - `system_runtime`
 
-Thumbnail and media metadata tasks are blob-level cache tasks. They often have no creator, so the API returns `creator = null`, and ordinary `/tasks` lists usually do not show them. Admins can see all tasks through `/api/v1/admin/tasks`.
+Thumbnail, image preview, and media metadata tasks are blob-level cache tasks. They often have no creator, so the API returns `creator = null`, and ordinary `/tasks` lists usually do not show them. Admins can see all tasks through `/api/v1/admin/tasks`.
 
 ## Storage migration task result
 
@@ -141,6 +142,7 @@ Lists and details return `TaskInfo`, with fields such as:
 - `archive_compress`
 - `archive_preview_generate`
 - `thumbnail_generate`
+- `image_preview_generate`
 - `media_metadata_extract`
 - `trash_purge_all`
 - `storage_policy_temp_cleanup`
@@ -173,6 +175,7 @@ If the task is not failed, the API returns `400`.
 - `/batch/archive-download` uses a short-lived stream ticket and direct ZIP streaming; it does not create a `background_tasks` row
 - `/batch/archive-compress` and `/files/{id}/extract` do create visible background tasks
 - archive preview endpoints return `202` while generation is queued; clients should retry the original endpoint
+- image preview endpoints return `202` while `image_preview_generate` is queued; clients should retry the original endpoint
 - `DELETE /trash` creates `trash_purge_all` instead of synchronously emptying trash
 - `/tasks/offline-download` returns `TaskInfo` immediately; progress should be shown in the task center; clients should not pass an engine choice in the request body
 - `/admin/storage-migrations/dry-run` does not create a task; `POST /admin/storage-migrations` does

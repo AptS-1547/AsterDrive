@@ -123,7 +123,7 @@
 - follower 内部对象读取流 `/api/v1/internal/storage/objects/{tail:.*}`
 - primary reverse tunnel WebSocket `/api/v1/internal/remote-tunnel/connect`
 
-公开品牌配置、公开预览应用配置、公开缩略图能力、公开媒体数据能力和公开 enrollment 虽然不需要登录，但仍然是普通 `/api/v1/public/*` JSON 接口。
+公开前端启动配置、公开品牌配置、公开预览应用配置、公开缩略图能力、公开媒体数据能力和公开 enrollment 虽然不需要登录，但仍然是普通 `/api/v1/public/*` JSON 接口。
 
 ## 错误码分域
 
@@ -147,7 +147,6 @@
 ### WebDAV
 
 - `Authorization: Basic ...`
-- `Authorization: Bearer <jwt>`
 
 ### Follower 内部存储协议
 

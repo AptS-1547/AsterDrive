@@ -151,7 +151,7 @@ Temporary space budget =
   + 20%-30% safety margin
 ```
 
-If users often upload large files, prefer S3 presigned / multipart upload for large objects to reduce pressure on the primary's local temporary directories.
+If users often upload large files, prefer object-storage presigned / multipart upload for large objects to reduce pressure on the primary's local temporary directories.
 
 ## Versions, Trash, and Audit Retention
 
@@ -257,7 +257,7 @@ When you see these signals, expand capacity or adjust policy:
 | Directory listing or search p95 keeps rising | Run benchmarks, check indexes, SQLite FTS, and database slow queries |
 | `background_tasks_pending` keeps piling up | Increase the relevant lane concurrency or reduce task generation; confirm memory and temporary space first |
 | `process_memory_rss_bytes` grows one-way and does not drop when idle | Run a soak test, keep logs and monitoring samples, investigate leak or excessive concurrency |
-| `data/.uploads` or `data/.tmp` often approaches disk limit | Reduce concurrency, clean failed uploads, use S3 multipart, or enlarge temporary directories |
+| `data/.uploads` or `data/.tmp` often approaches disk limit | Reduce concurrency, clean failed uploads, use object-storage multipart, or enlarge temporary directories |
 | Local storage free space drops below 20%-30% | Expand disk, migrate policies, shorten trash / version retention, or add S3 / follower storage |
 | Storage migration dry-run reports insufficient capacity | Do not force it; expand target capacity or migrate in batches |
 

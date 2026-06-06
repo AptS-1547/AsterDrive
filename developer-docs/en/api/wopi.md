@@ -113,6 +113,15 @@ Dispatches by `X-WOPI-Override`:
 
 Conflicts return `409` with `X-WOPI-LockFailureReason` and, when known, `X-WOPI-Lock`.
 
+Current implementation notes:
+
+- loading WOPI lock state prunes expired lock rows for the file before evaluating the request
+- repeating `LOCK` with the same opaque lock value refreshes the lock timeout
+- `LOCK` with `X-WOPI-OldLock` performs an atomic unlock-and-relock when the old value matches
+- non-WOPI locks and multiple simultaneous active lock rows are treated as conflicts outside WOPI, usually with an empty `X-WOPI-Lock`
+- `GET_LOCK` returns `200` with the current `X-WOPI-Lock`; when no active lock exists, the value is empty
+- `UNLOCK` / `REFRESH_LOCK` without an active lock return `409`
+
 ### `PUT_RELATIVE`
 
 Creates or overwrites a sibling file. Required headers:
@@ -140,9 +149,11 @@ Persists a WOPI host user-state string to the user profile. Constraints:
 - body must be ASCII
 - maximum length is `1024` bytes
 
-## Contents endpoints
+## `GET /wopi/files/{id}/contents`
 
 `GET /wopi/files/{id}/contents` returns the raw file stream. It behaves like normal download: inline by default, supports `If-None-Match`, and supports `X-WOPI-MaxExpectedSize`.
+
+## `POST /wopi/files/{id}/contents`
 
 `POST /wopi/files/{id}/contents` currently supports only `X-WOPI-Override: PUT`. It overwrites through the normal file-content update path, writes version history, updates ETag/version information, and returns `X-WOPI-ItemVersion`. If an active WOPI lock exists, the caller must provide the matching `X-WOPI-Lock`.
 

@@ -11,7 +11,8 @@ use crate::webdav::{
     child_relative_path, dav_element, decoded_path_string, ensure_parent_unlocked,
     ensure_system_file_name_allowed, ensure_unlocked, fs, fs_error_response, href_for_dav_path,
     href_for_relative, lock_token_submitted_element, multi_status, parent_relative_path,
-    request_origin, request_path, status_element, system_file, text_element, xml_response,
+    request_origin, request_path, responses, status_element, system_file, text_element,
+    xml_response,
 };
 
 #[derive(Clone)]
@@ -64,7 +65,7 @@ pub(crate) async fn handle_mkcol(
         Err(resp) => return resp,
     };
     if relative == "/" {
-        return HttpResponse::MethodNotAllowed().finish();
+        return responses::empty(StatusCode::METHOD_NOT_ALLOWED);
     }
     if let Err(resp) = ensure_system_file_name_allowed(system_file_policy, &relative) {
         return resp;
@@ -120,8 +121,8 @@ pub(crate) async fn handle_mkcol(
                 href_for_relative(prefix, &relative),
             ))
             .finish(),
-        Err(FsError::Exists) => HttpResponse::MethodNotAllowed().finish(),
-        Err(FsError::NotFound) => HttpResponse::Conflict().finish(),
+        Err(FsError::Exists) => responses::empty(StatusCode::METHOD_NOT_ALLOWED),
+        Err(FsError::NotFound) => responses::conflict(),
         Err(err) => fs_error_response(err),
     }
 }
@@ -147,7 +148,7 @@ pub(crate) async fn handle_delete(
         Err(err) => return fs_error_response(err),
     };
     if meta.is_dir() && !depth.is_infinity() {
-        return HttpResponse::BadRequest().finish();
+        return responses::bad_request();
     }
     if let Err(resp) = protocol::evaluate_http_etag_preconditions(
         req.headers(),
@@ -258,7 +259,7 @@ pub(crate) async fn handle_copy_move(
         Err(resp) => return resp,
     };
     if same_resource_path(&source_relative, &destination_relative) {
-        return HttpResponse::Forbidden().finish();
+        return responses::forbidden();
     }
     if let Err(resp) = ensure_system_file_name_allowed(system_file_policy, &destination_relative) {
         return resp;
@@ -269,7 +270,7 @@ pub(crate) async fn handle_copy_move(
 
     let destination = match DavPath::new(&destination_relative) {
         Ok(path) => path,
-        Err(_) => return HttpResponse::BadRequest().body("Invalid destination path"),
+        Err(_) => return responses::bad_request_text("Invalid destination path"),
     };
 
     let source_meta = match dav_fs.metadata(&source).await {
@@ -286,10 +287,10 @@ pub(crate) async fn handle_copy_move(
     }
     if source_meta.is_dir() {
         if is_move && !depth.is_infinity() {
-            return HttpResponse::BadRequest().finish();
+            return responses::bad_request();
         }
         if !is_move && depth == Depth::One {
-            return HttpResponse::BadRequest().finish();
+            return responses::bad_request();
         }
     }
     let recursive_collection_copy_or_move =
@@ -297,7 +298,7 @@ pub(crate) async fn handle_copy_move(
     if recursive_collection_copy_or_move
         && is_descendant_path(&source_relative, &destination_relative)
     {
-        return HttpResponse::Forbidden().finish();
+        return responses::forbidden();
     }
     if let Err(resp) = protocol::ensure_if_header(
         req.headers(),
@@ -351,7 +352,7 @@ pub(crate) async fn handle_copy_move(
         Err(resp) => return resp,
     };
     if !overwrite && destination_exists {
-        return HttpResponse::PreconditionFailed().finish();
+        return responses::precondition_failed();
     }
     let destination_is_collection = destination_meta.as_ref().is_some_and(|meta| meta.is_dir());
     let destination_deep =
@@ -460,9 +461,7 @@ pub(crate) async fn handle_copy_move(
 }
 
 fn no_store_response(status: StatusCode) -> HttpResponse {
-    HttpResponse::build(status)
-        .insert_header((header::CACHE_CONTROL, "no-store"))
-        .finish()
+    responses::no_store(status)
 }
 
 async fn locked_multi_status_response(
@@ -519,12 +518,7 @@ fn multi_status_locked_response(
         multistatus.children.push(XMLNode::Element(response));
     }
 
-    let mut response = xml_response(multistatus, multi_status());
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        header::HeaderValue::from_static("no-store"),
-    );
-    response
+    responses::with_no_store(xml_response(multistatus, multi_status()))
 }
 
 async fn unsubmitted_lock_conflicts(
@@ -793,20 +787,14 @@ fn multi_status_failure_response(prefix: &str, failures: &[MultiStatusFailure]) 
         multistatus.children.push(XMLNode::Element(response));
     }
 
-    let mut response = xml_response(multistatus, multi_status());
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        header::HeaderValue::from_static("no-store"),
-    );
-    response
+    responses::with_no_store(xml_response(multistatus, multi_status()))
 }
 
 pub(crate) async fn ensure_empty_body(payload: &mut web::Payload) -> Result<(), HttpResponse> {
     while let Some(chunk) = payload.next().await {
-        let chunk =
-            chunk.map_err(|_| HttpResponse::BadRequest().body("Failed to read request body"))?;
+        let chunk = chunk.map_err(|_| responses::request_body_read_error())?;
         if !chunk.is_empty() {
-            return Err(HttpResponse::UnsupportedMediaType().finish());
+            return Err(responses::unsupported_media_type());
         }
     }
     Ok(())
@@ -814,16 +802,16 @@ pub(crate) async fn ensure_empty_body(payload: &mut web::Payload) -> Result<(), 
 
 async fn ensure_parent_exists(dav_fs: &fs::AsterDavFs, relative: &str) -> Result<(), HttpResponse> {
     let Some(parent) = parent_relative_path(relative) else {
-        return Err(HttpResponse::MethodNotAllowed().finish());
+        return Err(responses::empty(StatusCode::METHOD_NOT_ALLOWED));
     };
     if parent == "/" {
         return Ok(());
     }
-    let parent_path = DavPath::new(&parent).map_err(|_| HttpResponse::BadRequest().finish())?;
+    let parent_path = DavPath::new(&parent).map_err(|_| responses::bad_request())?;
     match dav_fs.metadata(&parent_path).await {
         Ok(meta) if meta.is_dir() => Ok(()),
-        Ok(_) => Err(HttpResponse::Conflict().finish()),
-        Err(FsError::NotFound) => Err(HttpResponse::Conflict().finish()),
+        Ok(_) => Err(responses::conflict()),
+        Err(FsError::NotFound) => Err(responses::conflict()),
         Err(err) => Err(fs_error_response(err)),
     }
 }

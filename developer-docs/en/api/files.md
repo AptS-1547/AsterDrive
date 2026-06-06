@@ -73,7 +73,7 @@ Presigned browser uploads require usable CORS on the object storage or follower 
 
 - `POST /files/upload`: ordinary multipart upload; empty files are rejected, and same-folder same-name files are not overwritten. With S3 / Remote `relay_stream`, the body is relayed directly to the target driver.
 - `POST /files/new`: creates a 0-byte file for “new text file” style actions
-- `GET /files/upload/sessions`: lists unexpired, recoverable sessions in `uploading` / `assembling` / `presigned` status
+- `GET /files/upload/sessions`: lists unexpired, recoverable sessions in `uploading` / `assembling` / `presigned` status; `frontend_client_id` can filter sessions created by the same frontend instance
 - `PUT /files/upload/{upload_id}/{chunk_number}`: uploads one chunk, with `chunk_number` starting at `0`
 - `POST /files/upload/{upload_id}/presign-parts`: used only for `presigned_multipart`
 - `GET /files/upload/{upload_id}`: returns upload progress used by resumable upload
@@ -113,7 +113,7 @@ Completion behavior:
 - `POST /files/{id}/wopi/open`: creates a WOPI launch session for a configured WOPI previewer
 - `GET /files/{id}/download`: streams file content or redirects to a presigned GET URL when policy says so; supports `If-None-Match`
 - `GET /files/{id}/thumbnail`: returns thumbnail, or `202` with `Retry-After` while generating
-- `GET /files/{id}/image-preview`: returns raw WebP with `ETag`
+- `GET /files/{id}/image-preview`: returns raw WebP with `ETag`, or `202` with `Retry-After` while generating
 - `GET /files/{id}/media-metadata`: returns blob-cached metadata, or `202` while queued
 - `PUT /files/{id}/content`: overwrite existing content, check locks, create version history, and return a new `ETag`
 - `POST /files/{id}/extract`: creates an archive extraction task
@@ -128,6 +128,8 @@ File info and list items include persisted classification fields:
 
 These fields are recalculated on create, upload, overwrite, and rename.
 
+Detail responses from `GET /files/{id}` and `GET /teams/{team_id}/files/{id}` also include `storage_used`. This is the quota-accounting size for the file detail view: current `size` plus all historical version sizes. Directory list items omit this field.
+
 ## `PATCH /files/{id}`
 
 Request:
@@ -141,19 +143,30 @@ Request:
 
 Supports rename, move, and `folder_id = null` to move to root. Name conflicts at the destination are rejected, and locked files cannot be modified.
 
-## Thumbnails, previews, and metadata
+## Thumbnails
 
-Thumbnail support comes from the media processing registry and is exposed anonymously through `/public/thumbnail-support`. The built-in `images` processor covers common image formats. Optional `vips_cli` / `ffmpeg_cli` processors contribute additional extensions only when enabled and available.
+Thumbnail support comes from the media processing registry and is exposed anonymously through `/public/thumbnail-support`. The built-in `images` processor covers common image formats. The built-in `lofty` processor can expose audio suffixes for embedded cover thumbnails. Optional `vips_cli` / `ffmpeg_cli` processors contribute additional extensions only when enabled and available.
+
+Storage policies can also contribute storage-native thumbnail and image-preview support with `storage_native_processing_enabled = true`, `thumbnail_processor = "storage_native"`, and `thumbnail_extensions`. Built-in `tencent_cos` policies can expose this through COS CI; built-in Local, S3-compatible, and Remote policies do not expose native thumbnail or image-preview capabilities.
 
 Thumbnails return WebP and reuse cache by blob, processor, and processor version.
+
+## Image previews
 
 Image preview endpoints return larger WebP images for preview panels and are separate from thumbnails:
 
 - thumbnails are list/card-oriented and may return `202`
-- image previews are previewer-oriented and are generated or served from cache synchronously
+- image previews are previewer-oriented; cache hits return raw WebP, while cache misses enqueue `image_preview_generate` and return `202` with `Retry-After`
 - unsupported types return file/thumbnail-domain errors instead of falling back to original bytes
+- the frontend can choose its default strategy from `/public/frontend-config` field `media.image_preview_preference`
+
+The supported image-preview extensions are the same public capability union advertised by `/public/thumbnail-support` under image thumbnail/preview support. They can come from backend media processors or a storage-native provider such as Tencent COS when the policy opts in.
+
+## Media metadata
 
 Media metadata is cached by blob. Image metadata is read by the built-in `images` processor, audio by `lofty`, and video by `ffprobe_cli`. `media_metadata_enabled` is the master switch, while per-kind settings live in `media_processing_registry_json`.
+
+Storage-native media metadata can be enabled per policy with `storage_native_processing_enabled = true`, `storage_native_media_metadata_enabled = true`, and `media_metadata_extensions`. Built-in `tencent_cos` policies can expose native audio/video metadata through COS CI; built-in Local, S3-compatible, and Remote policies do not expose native media metadata.
 
 Audio embedded cover art is exposed through the existing thumbnail path when the `lofty` processor has `thumbnail:audio`.
 

@@ -15,6 +15,7 @@ use crate::webdav::dav::{
 };
 use crate::webdav::locks::{lockdiscovery_element, supportedlock_element};
 use crate::webdav::protocol::{self, Depth};
+use crate::webdav::responses;
 use crate::webdav::{
     child_elements, child_relative_path, dav_element, display_name, ensure_unlocked,
     format_creation_date, format_http_date, fs, fs_error_response, href_for_dav_path,
@@ -125,7 +126,7 @@ pub(crate) async fn handle_propfind(
         Err(err) => return fs_error_response(err),
     };
     if depth == Depth::Infinity && root_meta.is_dir() {
-        return propfind_finite_depth_error();
+        return responses::propfind_finite_depth_response();
     }
     let mut resources = match collect_propfind_resources(dav_fs, &path, &relative, depth).await {
         Ok(resources) => resources,
@@ -151,17 +152,6 @@ pub(crate) async fn handle_propfind(
     xml_response(multistatus, multi_status())
 }
 
-fn propfind_finite_depth_error() -> HttpResponse {
-    let mut error = dav_element("error");
-    error
-        .attributes
-        .insert("xmlns:D".to_string(), "DAV:".to_string());
-    error
-        .children
-        .push(XMLNode::Element(dav_element("propfind-finite-depth")));
-    xml_response(error, StatusCode::FORBIDDEN)
-}
-
 pub(crate) async fn handle_proppatch(
     req: &HttpRequest,
     dav_fs: &fs::AsterDavFs,
@@ -177,8 +167,7 @@ pub(crate) async fn handle_proppatch(
         // The WebDAV mount root is a virtual listing boundary, not a persisted
         // file/folder entity. Dead properties are intentionally unavailable
         // there instead of being backed by an implicit root row.
-        return HttpResponse::Forbidden()
-            .body("PROPPATCH on the WebDAV mount root is not supported");
+        return responses::unsupported_root_proppatch();
     }
     let (request_scheme, request_host) = request_origin(req);
     if let Err(resp) = protocol::ensure_if_header(
@@ -260,10 +249,9 @@ fn parse_propfind_request(body: &[u8]) -> Result<PropfindKind, HttpResponse> {
         });
     }
 
-    let root = Element::parse(Cursor::new(body))
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid XML body"))?;
+    let root = Element::parse(Cursor::new(body)).map_err(|_| responses::invalid_xml_body())?;
     if root.name != "propfind" {
-        return Err(HttpResponse::BadRequest().body("Invalid PROPFIND body"));
+        return Err(invalid_propfind_body());
     }
 
     let mut kind = None;
@@ -273,13 +261,13 @@ fn parse_propfind_request(body: &[u8]) -> Result<PropfindKind, HttpResponse> {
         match child.name.as_str() {
             "propname" => {
                 if kind.is_some() {
-                    return Err(HttpResponse::BadRequest().body("Invalid PROPFIND body"));
+                    return Err(invalid_propfind_body());
                 }
                 kind = Some(PropfindKind::PropName);
             }
             "allprop" => {
                 if kind.is_some() {
-                    return Err(HttpResponse::BadRequest().body("Invalid PROPFIND body"));
+                    return Err(invalid_propfind_body());
                 }
                 kind = Some(PropfindKind::AllProp {
                     include: Vec::new(),
@@ -287,18 +275,18 @@ fn parse_propfind_request(body: &[u8]) -> Result<PropfindKind, HttpResponse> {
             }
             "include" => {
                 if !matches!(kind.as_ref(), Some(PropfindKind::AllProp { .. })) {
-                    return Err(HttpResponse::BadRequest().body("Invalid PROPFIND body"));
+                    return Err(invalid_propfind_body());
                 }
                 include.extend(child_elements(child).map(RequestedProp::from));
             }
             "prop" => {
                 if kind.is_some() {
-                    return Err(HttpResponse::BadRequest().body("Invalid PROPFIND body"));
+                    return Err(invalid_propfind_body());
                 }
                 let props = child_elements(child).map(RequestedProp::from).collect();
                 kind = Some(PropfindKind::Prop(props));
             }
-            _ => return Err(HttpResponse::BadRequest().body("Invalid PROPFIND body")),
+            _ => return Err(invalid_propfind_body()),
         }
     }
 
@@ -308,7 +296,7 @@ fn parse_propfind_request(body: &[u8]) -> Result<PropfindKind, HttpResponse> {
             if include.is_empty() {
                 Ok(kind)
             } else {
-                Err(HttpResponse::BadRequest().body("Invalid PROPFIND body"))
+                Err(invalid_propfind_body())
             }
         }
         None => Ok(PropfindKind::AllProp {
@@ -318,10 +306,9 @@ fn parse_propfind_request(body: &[u8]) -> Result<PropfindKind, HttpResponse> {
 }
 
 fn parse_proppatch_request(body: &[u8]) -> Result<Vec<(bool, DavProp)>, HttpResponse> {
-    let root = Element::parse(Cursor::new(body))
-        .map_err(|_| HttpResponse::BadRequest().body("Invalid XML body"))?;
+    let root = Element::parse(Cursor::new(body)).map_err(|_| responses::invalid_xml_body())?;
     if root.name != "propertyupdate" {
-        return Err(HttpResponse::BadRequest().body("Invalid PROPPATCH body"));
+        return Err(invalid_proppatch_body());
     }
 
     let root_lang = xml_lang_value(&root).map(str::to_string);
@@ -331,14 +318,14 @@ fn parse_proppatch_request(body: &[u8]) -> Result<Vec<(bool, DavProp)>, HttpResp
         let set = match action.name.as_str() {
             "set" => true,
             "remove" => false,
-            _ => return Err(HttpResponse::BadRequest().body("Invalid PROPPATCH body")),
+            _ => return Err(invalid_proppatch_body()),
         };
         let mut action_children = child_elements(action);
         let Some(prop_container) = action_children.next() else {
-            return Err(HttpResponse::BadRequest().body("Invalid PROPPATCH body"));
+            return Err(invalid_proppatch_body());
         };
         if prop_container.name != "prop" || action_children.next().is_some() {
-            return Err(HttpResponse::BadRequest().body("Invalid PROPPATCH body"));
+            return Err(invalid_proppatch_body());
         }
         let prop_container_lang = xml_lang_value(prop_container).or(action_lang);
         for prop in child_elements(prop_container) {
@@ -347,9 +334,17 @@ fn parse_proppatch_request(body: &[u8]) -> Result<Vec<(bool, DavProp)>, HttpResp
         }
     }
     if patches.is_empty() {
-        return Err(HttpResponse::BadRequest().body("Invalid PROPPATCH body"));
+        return Err(invalid_proppatch_body());
     }
     Ok(patches)
+}
+
+fn invalid_propfind_body() -> HttpResponse {
+    responses::bad_request_text("Invalid PROPFIND body")
+}
+
+fn invalid_proppatch_body() -> HttpResponse {
+    responses::bad_request_text("Invalid PROPPATCH body")
 }
 
 async fn collect_propfind_resources(

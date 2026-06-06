@@ -2,13 +2,14 @@
 
 These paths are relative to `/api/v1` and do not require authentication.
 
-Branding, preview-app registry, thumbnail support, and media-data support are used by anonymous pages at startup. The remote-enrollment endpoints are used by the enrollment handshake between primary and follower nodes. These endpoints are registered only on `primary` nodes.
+Frontend bootstrap config, branding, preview-app registry, thumbnail support, and media-data support are used by anonymous pages at startup. The remote-enrollment endpoints are used by the enrollment handshake between primary and follower nodes. These endpoints are registered only on `primary` nodes.
 
-Public configuration endpoints use `Cache-Control: public, max-age=60`. Thumbnail-support and media-data-support responses are also cached in-process for 60 seconds and invalidated when media-processing config or storage policies change.
+Public configuration endpoints include `Vary: Authorization, Cookie`. Anonymous responses usually use `Cache-Control: public, max-age=60`; `GET /public/custom-config` uses `Cache-Control: private, max-age=60` when the request carries a valid access token and authenticated-visible entries are included. Thumbnail-support and media-data-support responses are also cached in-process for 60 seconds and invalidated when media-processing config or storage policies change.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/public/branding` | Read branding config for login, public pages, and anonymous entries |
+| `GET` | `/public/frontend-config` | Read public frontend bootstrap config |
+| `GET` | `/public/branding` | Read legacy branding config for old clients |
 | `GET` | `/public/preview-apps` | Read the anonymous-visible preview-app registry |
 | `GET` | `/public/custom-config` | Read custom config entries visible to the current identity |
 | `GET` | `/public/thumbnail-support` | Read public thumbnail extension support |
@@ -17,6 +18,8 @@ Public configuration endpoints use `Cache-Control: public, max-age=60`. Thumbnai
 | `POST` | `/public/remote-enrollment/ack` | Follower confirms enrollment completion |
 
 ## `GET /public/branding`
+
+This is the legacy compatibility endpoint. The current frontend prefers `GET /public/frontend-config`, which bundles branding and other public runtime parameters into a single bootstrap response.
 
 Response:
 
@@ -31,7 +34,8 @@ Response:
     "wordmark_dark_url": "/static/asterdrive/asterdrive-dark.svg",
     "wordmark_light_url": "/static/asterdrive/asterdrive-light.svg",
     "site_urls": ["https://drive.example.com", "https://panel.example.com"],
-    "allow_user_registration": true
+    "allow_user_registration": true,
+    "passkey_login_enabled": true
   }
 }
 ```
@@ -43,10 +47,46 @@ Fields:
 - `wordmark_dark_url` / `wordmark_light_url`: brand wordmarks for dark / light backgrounds
 - `site_urls`: configured public HTTP(S) origins; empty when unset
 - `allow_user_registration`: whether anonymous pages should show registration entry points
+- `passkey_login_enabled`: whether the anonymous login page should show Passkey login
 
-These values come from runtime config keys such as `branding_title`, `branding_description`, `branding_*_url`, `auth_allow_user_registration`, and `public_site_url`.
+These values come from runtime config keys such as `branding_title`, `branding_description`, `branding_*_url`, `auth_allow_user_registration`, `auth_passkey_login_enabled`, and `public_site_url`.
 
 `site_urls` still maps to the runtime key `public_site_url`. The admin API exposes it as `string_array`; writes must pass a JSON string array. Each value must be an exact HTTP(S) origin without paths, wildcards, or non-HTTP(S) schemes.
+
+## `GET /public/frontend-config`
+
+This endpoint is the current anonymous bootstrap entry for the frontend application. It returns the standard JSON envelope:
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "version": 1,
+    "branding": {
+      "title": "AsterDrive",
+      "description": "Self-hosted cloud storage",
+      "favicon_url": "/favicon.svg",
+      "wordmark_dark_url": "/static/asterdrive/asterdrive-dark.svg",
+      "wordmark_light_url": "/static/asterdrive/asterdrive-light.svg",
+      "site_urls": ["https://drive.example.com"],
+      "allow_user_registration": true,
+      "passkey_login_enabled": true
+    },
+    "media": {
+      "image_preview_preference": "preview_first"
+    }
+  }
+}
+```
+
+Key points:
+
+- `version` is currently `1`
+- `branding` matches the `data` shape returned by `GET /public/branding`
+- `media.image_preview_preference` comes from runtime config `frontend_image_preview_preference`
+- supported `image_preview_preference` values are `original_first` and `preview_first`
+- the frontend caches this bootstrap config and refreshes it after related runtime config changes
 
 ## `GET /public/preview-apps`
 
@@ -105,7 +145,8 @@ Notes:
 
 - only `source = "custom"` entries are returned
 - only the `entries` key/value map is exposed; internal admin fields such as `id`, `source`, and `updated_by` are not returned
-- the response uses `Cache-Control: public, max-age=60`
+- anonymous responses use `Cache-Control: public, max-age=60`
+- when a valid access token is supplied and authenticated-visible entries are returned, the response uses `Cache-Control: private, max-age=60` with `Vary: Authorization, Cookie`
 - visibility has three levels:
   - `private`: admin-only, never returned by this endpoint
   - `public`: readable without login
@@ -124,6 +165,20 @@ Returns the server's public thumbnail-generation support:
   "msg": "",
   "data": {
     "version": 1,
+    "image_preview": {
+      "enabled": true,
+      "extensions": ["bmp", "gif", "jpeg", "jpg", "png", "webp"]
+    },
+    "image_thumbnail": {
+      "enabled": true,
+      "extensions": ["bmp", "gif", "jpeg", "jpg", "png", "webp"]
+    },
+    "audio_thumbnail": {
+      "enabled": false
+    },
+    "video_thumbnail": {
+      "enabled": false
+    },
     "extensions": ["bmp", "gif", "jpe", "jpeg", "jpg", "png", "tif", "tiff", "webp"]
   }
 }
@@ -132,11 +187,13 @@ Returns the server's public thumbnail-generation support:
 Notes:
 
 - extensions are normalized to lowercase without leading dots
+- `image_preview`, `image_thumbnail`, `audio_thumbnail`, and `video_thumbnail` are the current per-use capability fields
+- top-level `extensions` is kept as a compatibility union for older clients
 - the built-in image processor exposes common image formats when enabled
 - the built-in `lofty` processor can expose audio suffixes for embedded cover thumbnails
 - `vips_cli` / `ffmpeg_cli` expose configured extensions only when the commands are available and the processors are enabled
 - the capability mainly comes from `media_processing_registry_json`
-- storage-native thumbnails can also contribute extensions when a storage policy and driver expose that capability; built-in Local / S3 / Remote drivers do not expose it by default
+- storage-native thumbnails and image previews can also contribute extensions when a storage policy opts in and the driver exposes that capability; built-in `tencent_cos` policies can expose it through COS CI, while built-in Local, S3-compatible, and Remote policies do not
 
 ## `GET /public/media-data-support`
 
@@ -171,7 +228,7 @@ Returns media metadata parsing support:
 }
 ```
 
-The top-level `enabled` maps to `media_metadata_enabled`. The per-kind entries are derived from the active media-processing registry and bounded by `media_metadata_max_source_bytes`.
+The top-level `enabled` maps to `media_metadata_enabled`. The per-kind entries are derived from the active media-processing registry and bounded by `media_metadata_max_source_bytes`. Storage-native media metadata extensions can also be merged into audio/video support when a policy opts in and the driver exposes that capability; built-in `tencent_cos` policies can expose it through COS CI.
 
 ## `POST /public/remote-enrollment/redeem`
 

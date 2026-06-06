@@ -138,6 +138,14 @@ Passkey 是每个用户自己管理的登录方式，入口在：
 
 Passkey 不替代本地密码。用户仍然可以继续使用密码登录；删除某个 Passkey 后，只是那台设备或那把安全密钥不能再直接登录当前账号。
 
+管理员也可以在后台临时关闭 Passkey 登录入口：
+
+```text
+管理 -> 系统设置 -> 用户管理 -> 注册与登录 -> 允许使用 Passkey 登录
+```
+
+关闭后，用户不能再用已登记的 Passkey 完成登录，但已有 Passkey 不会被删除。重新开启后，原来登记过的 Passkey 仍然可以继续使用。
+
 ## 外部认证 / SSO
 
 管理员可以在这里接入外部身份提供商：
@@ -146,7 +154,7 @@ Passkey 不替代本地密码。用户仍然可以继续使用密码登录；删
 管理 -> 外部认证
 ```
 
-当前内置支持 OpenID Connect 和通用 OAuth2。创建提供商后，登录页会展示对应的外部登录入口；管理员需要把页面生成的重定向 URI 登记到身份提供商侧。完整配置细节见 [外部认证](/config/external-auth)。
+当前支持 OpenID Connect、通用 OAuth2，以及 GitHub、QQ、Google、Microsoft 专用 provider。创建提供商后，登录页会展示对应的外部登录入口；管理员需要把页面生成的重定向 URI 登记到身份提供商侧。完整配置细节见 [外部认证](/config/external-auth)。
 
 外部身份和本地用户的关系由提供商规则决定：
 
@@ -174,6 +182,39 @@ Passkey 不替代本地密码。用户仍然可以继续使用密码登录；删
 - 外部用户不能再从登录页创建新账号
 - 第一个管理员初始化流程仍然存在
 - 管理员在后台手动创建的用户仍然可以使用
+
+### 本地账号邮箱白名单 / 黑名单
+
+如果站点只允许公司邮箱注册，或者要阻止一次性邮箱，可以在这里配置：
+
+```text
+管理 -> 系统设置 -> 用户管理 -> 注册与登录 -> 本地账号邮箱白名单
+管理 -> 系统设置 -> 用户管理 -> 注册与登录 -> 本地账号邮箱黑名单
+```
+
+这两项只作用于**本地账号**：
+
+- 公开注册时填写的邮箱
+- 用户在 `设置 -> 安全` 里改绑的本地邮箱
+
+它们不会限制第三方 SSO 返回的外部身份。外部认证的邮箱域名限制仍然在 `管理 -> 外部认证` 的 provider 规则里配置。
+
+名单项可以写完整邮箱，也可以写精确域名：
+
+```text
+alice@example.com
+example.com
+@example.com
+```
+
+`example.com` 和 `@example.com` 等价，只匹配 `user@example.com`，不会自动匹配 `user@sub.example.com`。国际化域名需要写 punycode 形式。
+
+规则顺序：
+
+- 黑名单优先于白名单
+- 白名单为空时，表示不启用白名单限制
+- 黑名单为空时，表示不额外阻止邮箱
+- 两个名单都为空时，所有合法邮箱都可以用于本地注册和本地邮箱改绑
 
 ## 哪些功能依赖邮件配置
 
@@ -236,8 +277,11 @@ ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=false
 - `auth_email_code_login_allow_totp_fallback` —— 是否允许已启用 TOTP 的用户用邮箱验证码兜底
 - `auth_email_code_login_ttl_secs` —— 邮箱登录验证码有效期
 - `auth_email_code_login_resend_cooldown_secs` —— 邮箱登录验证码重发冷却
+- `auth_passkey_login_enabled` —— 是否允许用户用已登记的 Passkey 登录
 - `auth_allow_user_registration` —— 公开注册开关
 - `auth_register_activation_enabled` —— 新注册用户是否必须先完成邮箱激活
+- `auth_local_email_allowlist` —— 本地注册和本地邮箱改绑允许使用的邮箱或精确域名
+- `auth_local_email_blocklist` —— 本地注册和本地邮箱改绑禁止使用的邮箱或精确域名
 - 外部认证邮箱验证、登录邮箱验证码等邮件模版 —— 在 `邮件投递` 分组里维护
 
 具体说明见 [系统设置](/config/runtime)。

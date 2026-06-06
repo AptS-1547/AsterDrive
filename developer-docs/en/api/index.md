@@ -102,7 +102,7 @@ The following responses are raw content instead of `ApiResponse`:
 - follower object streams `/api/v1/internal/storage/objects/{tail:.*}`
 - primary reverse-tunnel WebSocket `/api/v1/internal/remote-tunnel/connect`
 
-Public branding, preview-app configuration, thumbnail support, media-data support, and remote enrollment are unauthenticated, but they are still ordinary `/api/v1/public/*` JSON endpoints.
+Public frontend bootstrap config, branding, preview-app configuration, thumbnail support, media-data support, and remote enrollment are unauthenticated, but they are still ordinary `/api/v1/public/*` JSON endpoints.
 
 ## Error-code ranges
 
@@ -126,7 +126,6 @@ Public branding, preview-app configuration, thumbnail support, media-data suppor
 ### WebDAV
 
 - `Authorization: Basic ...`
-- `Authorization: Bearer <jwt>`
 
 ### Follower internal storage protocol
 

@@ -69,6 +69,13 @@ Resend request:
 
 Public resend and password-recovery flows apply minimum response-time padding to avoid directly exposing account existence.
 
+Local-account email policy is controlled by two runtime config keys:
+
+- `auth_local_email_allowlist`: allowed exact normalized email addresses or exact ASCII domains; an empty list means no allowlist restriction
+- `auth_local_email_blocklist`: blocked exact normalized email addresses or exact ASCII domains; blocklist wins over allowlist
+
+The policy applies to local registration and local email changes only. Internationalized domains must be stored in punycode form. These keys are not a CORS allowlist and do not configure external-auth provider domain restrictions.
+
 `/auth/setup` and `/auth/register` use the same body:
 
 ```json
@@ -191,6 +198,8 @@ Registration and management require login:
 
 Passkeys are stored in the `passkeys` table. Credentials are stored as strongly typed wrapped JSON. The server requires discoverable credentials.
 
+`auth_passkey_login_enabled = false` disables anonymous passkey sign-in and hides the login entry point from current frontend bootstrap config, but it does not delete registered credentials. Logged-in users can still manage their saved passkeys.
+
 ## MFA management
 
 MFA self-management requires login. Persistent factors currently support TOTP. Login challenges can use TOTP, one-time recovery code, or email code. Email code is not a persistent factor; it exists only inside the login flow and is stored in `mfa_email_codes`.
@@ -243,6 +252,8 @@ On success, the server returns the factor and recovery codes:
 
 ## External authentication
 
+Supported provider kinds are `oidc`, `generic_oauth2`, `github`, `qq`, `google`, and `microsoft`.
+
 Anonymous provider list:
 
 - `GET /auth/external-auth/providers`
@@ -263,7 +274,7 @@ User self-management:
 - `GET /auth/external-auth/links`
 - `DELETE /auth/external-auth/links/{id}`
 
-The `oidc` driver uses discovery, PKCE, nonce, and ID Token validation. The `generic_oauth2` driver uses manually configured endpoints, PKCE, token exchange, and UserInfo claim mapping. See [External Authentication Module](../external-auth.md).
+The `oidc` driver uses discovery, PKCE, nonce, and ID Token validation. The `generic_oauth2` driver uses manually configured endpoints, PKCE, token exchange, and UserInfo claim mapping. Dedicated `github`, `qq`, `google`, and `microsoft` providers use backend-fixed endpoints and claim semantics; callers should not send manual OAuth endpoint fields for those provider kinds. Microsoft tenant selection lives under `options.microsoft.tenant`. See [External Authentication Module](../external-auth.md).
 
 ## Profile, preferences, avatars, and events
 

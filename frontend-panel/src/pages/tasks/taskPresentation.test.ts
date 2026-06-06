@@ -79,6 +79,11 @@ function t(key: string, values?: Record<string, number | string>) {
 		"tasks:step_thumbnail_generate_inspect_source": "Inspect source file",
 		"tasks:step_thumbnail_generate_render_thumbnail": "Render thumbnail",
 		"tasks:step_thumbnail_generate_persist_thumbnail": "Save thumbnail",
+		"tasks:step_image_preview_generate_waiting": "Waiting",
+		"tasks:step_image_preview_generate_inspect_source": "Inspect source file",
+		"tasks:step_image_preview_generate_render_thumbnail":
+			"Render image preview",
+		"tasks:step_image_preview_generate_persist_thumbnail": "Save image preview",
 		"tasks:kind_image_preview_generate": "Image preview generation",
 	};
 	return translations[key] ?? key;
@@ -1038,6 +1043,45 @@ describe("taskPresentation storage policy migration", () => {
 				progress_total: 1,
 			}),
 		).toBe("Save thumbnail");
+	});
+
+	it("translates image preview generation steps", () => {
+		expect(
+			formatTaskStepTitle(t, "image_preview_generate", {
+				key: "waiting",
+				title: "step_image_preview_generate_waiting",
+				status: "succeeded",
+				progress_current: 1,
+				progress_total: 1,
+			}),
+		).toBe("Waiting");
+		expect(
+			formatTaskStepTitle(t, "image_preview_generate", {
+				key: "inspect_source",
+				title: "step_image_preview_generate_inspect_source",
+				status: "succeeded",
+				progress_current: 1,
+				progress_total: 1,
+			}),
+		).toBe("Inspect source file");
+		expect(
+			formatTaskStepTitle(t, "image_preview_generate", {
+				key: "render_thumbnail",
+				title: "step_image_preview_generate_render_thumbnail",
+				status: "succeeded",
+				progress_current: 1,
+				progress_total: 1,
+			}),
+		).toBe("Render image preview");
+		expect(
+			formatTaskStepTitle(t, "image_preview_generate", {
+				key: "persist_thumbnail",
+				title: "step_image_preview_generate_persist_thumbnail",
+				status: "succeeded",
+				progress_current: 1,
+				progress_total: 1,
+			}),
+		).toBe("Save image preview");
 	});
 
 	it("parses storage migration results and ignores other result shapes", () => {
