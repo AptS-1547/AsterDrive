@@ -12,9 +12,4 @@ ignore = [
     # paste 1.0.x unmaintained — dtolnay 不再维护
     # 纯编译期宏，零运行时代码，无安全风险
     "RUSTSEC-2024-0436",
-
-    # rand 0.8.x unsound with custom logger — 传递依赖 (sqlx, actix-multipart, jsonwebtoken)
-    # 当前锁文件使用已修复的 rand 0.8.6；保留 ignore 是为了兼容旧 advisory DB 对版本范围的误报
-    # 触发条件为自定义 logger 内调用 rand::rng()/thread_rng()，本项目不适用
-    "RUSTSEC-2026-0097",
 ]
