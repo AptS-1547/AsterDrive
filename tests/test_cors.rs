@@ -2,6 +2,7 @@
 
 #[macro_use]
 mod common;
+use aster_drive::runtime::SharedRuntimeState;
 
 use actix_web::{App, body::to_bytes, http::header, test, web};
 use serde_json::Value;

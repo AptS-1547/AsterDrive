@@ -10,7 +10,7 @@ use crate::config::{avatar, operations};
 use crate::db::repository::{user_profile_repo, user_repo};
 use crate::entities::user_profile;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::media_processing_service;
 use crate::types::AvatarSource;
 
@@ -37,7 +37,7 @@ async fn write_local_avatar(path: &std::path::Path, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
-pub async fn cleanup_avatar_upload(state: &PrimaryAppState, user_id: i64) -> Result<()> {
+pub async fn cleanup_avatar_upload(state: &impl SharedRuntimeState, user_id: i64) -> Result<()> {
     let profile = user_profile_repo::find_by_user_id(state.writer_db(), user_id).await?;
     if let Some(profile) = profile.as_ref() {
         delete_upload_objects(state, profile).await;
@@ -54,7 +54,7 @@ pub async fn upload_avatar(
     let existing = user_profile_repo::find_by_user_id(state.writer_db(), user_id).await?;
     let upload_data = read_avatar_upload(
         payload,
-        operations::avatar_max_upload_size_bytes(&state.runtime_config),
+        operations::avatar_max_upload_size_bytes(&state.runtime_config()),
     )
     .await?;
     let processed_avatar = media_processing_service::process_avatar_upload(
@@ -74,7 +74,7 @@ pub async fn upload_avatar(
         .as_ref()
         .map(|profile| profile.avatar_version.saturating_add(1))
         .unwrap_or(1);
-    let avatar_root_dir = avatar::resolve_local_avatar_root_dir(&state.runtime_config)?;
+    let avatar_root_dir = avatar::resolve_local_avatar_root_dir(&state.runtime_config())?;
     let prefix_key = user_avatar_prefix(user_id, version);
     let prefix = user_avatar_dir(&avatar_root_dir, user_id, version);
     let small_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_SM);
@@ -127,7 +127,7 @@ pub async fn upload_avatar(
 }
 
 pub async fn set_avatar_source(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     source: AvatarSource,
 ) -> Result<UserProfileInfo> {
@@ -189,7 +189,11 @@ fn validate_avatar_size(size: u32) -> Result<u32> {
     }
 }
 
-pub async fn get_avatar_bytes(state: &PrimaryAppState, user_id: i64, size: u32) -> Result<Vec<u8>> {
+pub async fn get_avatar_bytes(
+    state: &impl SharedRuntimeState,
+    user_id: i64,
+    size: u32,
+) -> Result<Vec<u8>> {
     let size = validate_avatar_size(size)?;
     user_repo::find_by_id(state.reader_db(), user_id).await?;
     let profile = user_profile_repo::find_by_user_id(state.reader_db(), user_id)
@@ -204,7 +208,7 @@ pub async fn get_avatar_bytes(state: &PrimaryAppState, user_id: i64, size: u32) 
 
     stored_avatar_prefix(Some(&profile))
         .ok_or_else(|| AsterError::record_not_found("avatar key missing"))?;
-    let avatar_root_dir = avatar::resolve_local_avatar_root_dir(&state.runtime_config)?;
+    let avatar_root_dir = avatar::resolve_local_avatar_root_dir(state.runtime_config())?;
     let path =
         resolve_stored_avatar_variant_path(&avatar_root_dir, &profile, size).ok_or_else(|| {
             tracing::warn!(

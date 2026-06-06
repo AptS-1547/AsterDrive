@@ -6,7 +6,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, file_blob, upload_session};
 use crate::errors::{Result, upload_assembly_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::storage_change_service;
 use crate::services::workspace_scope_service::WorkspaceStorageScope;
 

@@ -12,11 +12,11 @@ use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{file_repo, version_repo};
 use crate::entities::{file, file_blob, file_version};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{profile_service, user_service};
 
 pub async fn list_files(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     limit: u64,
     offset: u64,
     query: &AdminFileListQuery,
@@ -59,7 +59,7 @@ pub async fn list_files(
     .await
 }
 
-pub async fn get_file(state: &PrimaryAppState, file_id: i64) -> Result<AdminFileDetail> {
+pub async fn get_file(state: &impl SharedRuntimeState, file_id: i64) -> Result<AdminFileDetail> {
     let (file, blob) = file_repo::find_admin_file_by_id(state.reader_db(), file_id).await?;
     let versions = version_repo::find_by_file_id(state.reader_db(), file_id).await?;
     let version_blob_ids = versions
@@ -99,7 +99,7 @@ pub async fn get_file(state: &PrimaryAppState, file_id: i64) -> Result<AdminFile
 }
 
 pub async fn list_blobs(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     limit: u64,
     offset: u64,
     query: &AdminFileBlobListQuery,
@@ -128,7 +128,10 @@ pub async fn list_blobs(
     .await
 }
 
-pub async fn get_blob(state: &PrimaryAppState, blob_id: i64) -> Result<AdminFileBlobDetail> {
+pub async fn get_blob(
+    state: &impl SharedRuntimeState,
+    blob_id: i64,
+) -> Result<AdminFileBlobDetail> {
     let blob = file_repo::find_blob_by_id(state.reader_db(), blob_id).await?;
     let files = file_repo::find_by_blob_id(state.reader_db(), blob_id).await?;
     let versions = version_repo::find_by_blob_id(state.reader_db(), blob_id).await?;
@@ -256,7 +259,7 @@ fn to_admin_blob_info(
 }
 
 async fn enrich_admin_blob_infos(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     blobs: Vec<file_blob::Model>,
 ) -> Result<Vec<AdminFileBlobInfo>> {
     let blob_ids = blobs.iter().map(|blob| blob.id).collect::<Vec<_>>();

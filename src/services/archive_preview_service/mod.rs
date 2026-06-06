@@ -11,7 +11,7 @@ use crate::entities::{file, file_blob};
 use crate::errors::{
     AsterError, MapAsterErr, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{SharedRuntimeState, TaskRuntimeState};
 use crate::services::archive_service::format::{ArchiveFormat, detect_supported_archive_format};
 use crate::services::archive_service::scan::ArchiveScanLimits;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
@@ -83,7 +83,7 @@ pub(crate) enum ArchivePreviewManifestLookup {
 }
 
 pub(crate) async fn preview_file_in_scope(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     filename_encoding: ArchiveFilenameEncoding,
@@ -97,7 +97,7 @@ pub(crate) async fn preview_file_in_scope(
 }
 
 pub(crate) async fn preview_shared_file(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     token: &str,
     filename_encoding: ArchiveFilenameEncoding,
 ) -> Result<ArchivePreviewManifestLookup> {
@@ -107,7 +107,7 @@ pub(crate) async fn preview_shared_file(
 }
 
 pub(crate) async fn preview_shared_folder_file(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     token: &str,
     file_id: i64,
     filename_encoding: ArchiveFilenameEncoding,
@@ -118,9 +118,9 @@ pub(crate) async fn preview_shared_folder_file(
     preview_verified_file(state, &source_file, filename_encoding).await
 }
 
-fn ensure_user_preview_enabled(state: &PrimaryAppState) -> Result<()> {
+fn ensure_user_preview_enabled(state: &impl SharedRuntimeState) -> Result<()> {
     ensure_preview_master_enabled(state)?;
-    if !operations::archive_preview_user_enabled(&state.runtime_config) {
+    if !operations::archive_preview_user_enabled(state.runtime_config()) {
         return Err(archive_preview_forbidden_error(
             ApiSubcode::ArchivePreviewUserDisabled,
             "archive preview for user files is disabled",
@@ -129,9 +129,9 @@ fn ensure_user_preview_enabled(state: &PrimaryAppState) -> Result<()> {
     Ok(())
 }
 
-fn ensure_share_preview_enabled(state: &PrimaryAppState) -> Result<()> {
+fn ensure_share_preview_enabled(state: &impl SharedRuntimeState) -> Result<()> {
     ensure_preview_master_enabled(state)?;
-    if !operations::archive_preview_share_enabled(&state.runtime_config) {
+    if !operations::archive_preview_share_enabled(state.runtime_config()) {
         return Err(archive_preview_forbidden_error(
             ApiSubcode::ArchivePreviewShareDisabled,
             "archive preview for shared files is disabled",
@@ -140,8 +140,8 @@ fn ensure_share_preview_enabled(state: &PrimaryAppState) -> Result<()> {
     Ok(())
 }
 
-fn ensure_preview_master_enabled(state: &PrimaryAppState) -> Result<()> {
-    if !operations::archive_preview_enabled(&state.runtime_config) {
+fn ensure_preview_master_enabled(state: &impl SharedRuntimeState) -> Result<()> {
+    if !operations::archive_preview_enabled(state.runtime_config()) {
         return Err(archive_preview_forbidden_error(
             ApiSubcode::ArchivePreviewDisabled,
             "archive preview is disabled",
@@ -151,14 +151,14 @@ fn ensure_preview_master_enabled(state: &PrimaryAppState) -> Result<()> {
 }
 
 async fn preview_verified_file(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     source_file: &file::Model,
     filename_encoding: ArchiveFilenameEncoding,
 ) -> Result<ArchivePreviewManifestLookup> {
     let archive_format = ensure_archive_preview_source_supported(source_file)?;
     let blob = file_repo::find_blob_by_id(state.reader_db(), source_file.blob_id).await?;
     let limits = ArchivePreviewLimits::from_runtime_config(
-        &state.runtime_config,
+        state.runtime_config(),
         filename_encoding,
         archive_format,
     )?;
@@ -250,14 +250,14 @@ impl ArchivePreviewLimits {
 }
 
 pub(super) async fn download_blob_to_temp(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     context: &task_service::TaskExecutionContext,
     source_file: &file::Model,
     blob: &file_blob::Model,
     temp_path: &Path,
 ) -> Result<()> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     let mut stream = driver.get_stream(&blob.storage_path).await?;
     let mut output = tokio::fs::File::create(temp_path).await.map_aster_err_ctx(
         "create archive preview source temp file",

@@ -5,7 +5,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::StorageChangeRuntimeState;
 use crate::services::{
     folder_service, storage_change_service, workspace_storage_service::WorkspaceStorageScope,
 };
@@ -16,7 +16,7 @@ use super::common::{
 };
 
 async fn restore_file_in_scope(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
@@ -68,7 +68,7 @@ async fn restore_file_in_scope(
 }
 
 async fn restore_folder_in_scope(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
@@ -124,12 +124,16 @@ async fn restore_folder_in_scope(
 }
 
 /// 恢复文件
-pub async fn restore_file(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn restore_file(
+    state: &impl StorageChangeRuntimeState,
+    id: i64,
+    user_id: i64,
+) -> Result<()> {
     restore_file_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
 pub async fn restore_team_file(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     team_id: i64,
     id: i64,
     user_id: i64,
@@ -146,12 +150,16 @@ pub async fn restore_team_file(
 }
 
 /// 恢复文件夹（递归恢复子项）
-pub async fn restore_folder(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn restore_folder(
+    state: &impl StorageChangeRuntimeState,
+    id: i64,
+    user_id: i64,
+) -> Result<()> {
     restore_folder_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
 pub async fn restore_team_folder(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     team_id: i64,
     id: i64,
     user_id: i64,

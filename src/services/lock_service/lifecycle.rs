@@ -5,7 +5,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
 use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::types::EntityType;
 
@@ -17,7 +17,7 @@ use super::state::{clear_entity_locked_if_unlocked, set_entity_locked};
 
 /// 锁定资源（REST/WebDAV/Web Editor 统一入口）
 pub async fn lock(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     entity_type: EntityType,
     entity_id: i64,
     owner_id: Option<i64>,
@@ -102,7 +102,7 @@ pub async fn lock(
 
 /// 解锁资源（用户主动解锁）
 pub async fn unlock(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
@@ -150,7 +150,7 @@ pub async fn unlock(
 }
 
 /// 按 token 解锁（WebDAV UNLOCK 用）
-pub async fn unlock_by_token(state: &PrimaryAppState, token: &str) -> Result<()> {
+pub async fn unlock_by_token(state: &impl SharedRuntimeState, token: &str) -> Result<()> {
     let db = state.writer_db();
     let lock = lock_repo::find_by_token(db, token)
         .await?
@@ -168,7 +168,7 @@ pub async fn unlock_by_token(state: &PrimaryAppState, token: &str) -> Result<()>
 }
 
 /// 强制解锁（admin 用）
-pub async fn force_unlock(state: &PrimaryAppState, lock_id: i64) -> Result<()> {
+pub async fn force_unlock(state: &impl SharedRuntimeState, lock_id: i64) -> Result<()> {
     let db = state.writer_db();
     let lock = lock_repo::find_by_id(db, lock_id)
         .await?
@@ -186,7 +186,7 @@ pub async fn force_unlock(state: &PrimaryAppState, lock_id: i64) -> Result<()> {
 }
 
 pub async fn force_unlock_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     lock_id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<()> {

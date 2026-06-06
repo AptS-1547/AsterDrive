@@ -2,7 +2,7 @@ use chrono::Utc;
 
 use crate::db::repository::background_task_repo;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::types::BackgroundTaskStatus;
 
 use crate::config::operations;
@@ -33,17 +33,17 @@ pub async fn drain(state: &PrimaryAppState) -> Result<DispatchStats> {
     Ok(total)
 }
 
-pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
-    let mut cleaned = cleanup_expired_in_root(state, &state.config.server.temp_dir).await?;
-    if let Some(temp_root) = operations::offline_download_temp_dir(&state.runtime_config)
-        && temp_root != state.config.server.temp_dir
+pub async fn cleanup_expired(state: &impl SharedRuntimeState) -> Result<u64> {
+    let mut cleaned = cleanup_expired_in_root(state, &state.config().server.temp_dir).await?;
+    if let Some(temp_root) = operations::offline_download_temp_dir(state.runtime_config())
+        && temp_root != state.config().server.temp_dir
     {
         cleaned += cleanup_expired_in_root(state, &temp_root).await?;
     }
     Ok(cleaned)
 }
 
-async fn cleanup_expired_in_root(state: &PrimaryAppState, temp_root: &str) -> Result<u64> {
+async fn cleanup_expired_in_root(state: &impl SharedRuntimeState, temp_root: &str) -> Result<u64> {
     let now = Utc::now();
     let tasks_root = crate::utils::paths::temp_file_path(temp_root, "tasks");
     let mut entries = match tokio::fs::read_dir(&tasks_root).await {

@@ -23,7 +23,7 @@ use futures::StreamExt;
 use xmltree::{Element, XMLNode};
 
 use crate::config::WebDavConfig;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service;
 use crate::utils::numbers::u64_to_usize;
 use crate::webdav::dav::{DavLockSystem, DavPath};
@@ -67,7 +67,7 @@ pub async fn webdav_handler(
     state: web::Data<PrimaryAppState>,
     webdav: web::Data<WebDavState>,
 ) -> HttpResponse {
-    if !state.runtime_config.get_bool_or("webdav_enabled", true) {
+    if !state.runtime_config().get_bool_or("webdav_enabled", true) {
         return responses::webdav_disabled();
     }
 
@@ -143,7 +143,7 @@ pub async fn webdav_handler(
         }
         "PUT" => {
             let system_file_policy =
-                system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
+                system_file::SystemFileBlockPolicy::from_runtime_config(state.runtime_config());
             transfer::handle_put(
                 &req,
                 &dav_fs,
@@ -156,7 +156,7 @@ pub async fn webdav_handler(
         }
         "MKCOL" => {
             let system_file_policy =
-                system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
+                system_file::SystemFileBlockPolicy::from_runtime_config(state.runtime_config());
             resources::handle_mkcol(
                 &req,
                 &dav_fs,
@@ -176,7 +176,7 @@ pub async fn webdav_handler(
         "COPY" => match resources::ensure_empty_body(&mut payload).await {
             Ok(()) => {
                 let system_file_policy =
-                    system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
+                    system_file::SystemFileBlockPolicy::from_runtime_config(state.runtime_config());
                 resources::handle_copy_move(
                     &req,
                     &dav_fs,
@@ -192,7 +192,7 @@ pub async fn webdav_handler(
         "MOVE" => match resources::ensure_empty_body(&mut payload).await {
             Ok(()) => {
                 let system_file_policy =
-                    system_file::SystemFileBlockPolicy::from_runtime_config(&state.runtime_config);
+                    system_file::SystemFileBlockPolicy::from_runtime_config(state.runtime_config());
                 resources::handle_copy_move(
                     &req,
                     &dav_fs,

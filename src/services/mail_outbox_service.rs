@@ -74,7 +74,12 @@ pub(crate) async fn enqueue<C: ConnectionTrait>(
 }
 
 pub async fn dispatch_due(state: &impl MailRuntimeState) -> Result<DispatchStats> {
-    dispatch_due_with(state.writer_db(), state.runtime_config(), state.mail_sender()).await
+    dispatch_due_with(
+        state.writer_db(),
+        state.runtime_config(),
+        state.mail_sender(),
+    )
+    .await
 }
 
 pub async fn dispatch_due_with(
@@ -185,7 +190,12 @@ pub async fn dispatch_due_with(
 }
 
 pub async fn drain(state: &impl MailRuntimeState) -> Result<DispatchStats> {
-    drain_with(state.writer_db(), state.runtime_config(), state.mail_sender()).await
+    drain_with(
+        state.writer_db(),
+        state.runtime_config(),
+        state.mail_sender(),
+    )
+    .await
 }
 
 pub async fn drain_with(

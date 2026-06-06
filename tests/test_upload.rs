@@ -6,6 +6,7 @@ mod common;
 use actix_web::test;
 use aster_drive::api::subcode::ApiSubcode;
 use aster_drive::db::repository::policy_repo;
+use aster_drive::runtime::SharedRuntimeState;
 use serde_json::Value;
 use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 use tokio::task::JoinSet;
@@ -730,7 +731,7 @@ async fn test_concurrent_store_from_temp_same_name_auto_renames() {
 
     let state = Arc::new(common::setup().await);
     let user = auth_service::register(
-        &state,
+        state.as_ref(),
         "raceuser",
         "concurrent-store@test.com",
         "password123",
@@ -1961,9 +1962,14 @@ async fn test_concurrent_chunk_upload_idempotent() {
     use std::sync::Arc;
 
     let state = Arc::new(common::setup().await);
-    let user = auth_service::register(&state, "testuser", "test@example.com", "password123")
-        .await
-        .unwrap();
+    let user = auth_service::register(
+        state.as_ref(),
+        "testuser",
+        "test@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
     let upload_id = new_test_upload_id();
     create_upload_session(
         &state,

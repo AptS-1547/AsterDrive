@@ -1,7 +1,7 @@
 //! API 路由：`frontend`。
 
 use crate::config::branding;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use actix_web::{HttpRequest, HttpResponse, web};
 use rust_embed::Embed;
 use std::path::PathBuf;
@@ -81,15 +81,15 @@ impl FrontendService {
             .replace("%ASTERDRIVE_VERSION%", env!("CARGO_PKG_VERSION"))
             .replace(
                 "%ASTERDRIVE_TITLE%",
-                &escape_html(branding::title_or_default(&state.runtime_config)),
+                &escape_html(branding::title_or_default(&state.runtime_config())),
             )
             .replace(
                 "%ASTERDRIVE_DESCRIPTION%",
-                &escape_html(branding::description_or_default(&state.runtime_config)),
+                &escape_html(branding::description_or_default(&state.runtime_config())),
             )
             .replace(
                 "%ASTERDRIVE_FAVICON_URL%",
-                &escape_html(branding::favicon_url_or_default(&state.runtime_config)),
+                &escape_html(branding::favicon_url_or_default(&state.runtime_config())),
             )
             .replace("%ASTERDRIVE_CSP%", &escape_html(FRONTEND_CSP_META));
 

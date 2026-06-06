@@ -1,7 +1,7 @@
 use crate::db::repository::file_repo;
 use crate::entities::{file_blob, storage_policy};
 use crate::errors::AsterError;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::media_processing_service;
 use crate::storage::StorageDriver;
 use std::sync::Arc;
@@ -37,7 +37,7 @@ pub(crate) async fn ensure_blob_cleanup_if_unreferenced(
     match file_repo::claim_blob_cleanup(state.writer_db(), current_blob.id).await {
         Ok(true) => {
             cleanup_claimed_blob(state, &current_blob, &mut |policy| {
-                state.driver_registry.get_driver(policy)
+                state.driver_registry().get_driver(policy)
             })
             .await
         }
@@ -57,7 +57,7 @@ pub(crate) async fn cleanup_unreferenced_blob(
     blob: &file_blob::Model,
 ) -> bool {
     cleanup_unreferenced_blob_with_driver(state, blob, &mut |policy| {
-        state.driver_registry.get_driver(policy)
+        state.driver_registry().get_driver(policy)
     })
     .await
 }
@@ -146,7 +146,7 @@ where
         }
     }
 
-    let Some(policy) = state.policy_snapshot.get_policy(current_blob.policy_id) else {
+    let Some(policy) = state.policy_snapshot().get_policy(current_blob.policy_id) else {
         tracing::warn!(
             blob_id = current_blob.id,
             policy_id = current_blob.policy_id,

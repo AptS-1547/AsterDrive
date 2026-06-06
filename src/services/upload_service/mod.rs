@@ -16,7 +16,7 @@ mod shared;
 use std::time::Instant;
 
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_models::FileInfo;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
@@ -104,6 +104,6 @@ pub(crate) async fn upload_in_scope_with_audit(
     Ok(file.into())
 }
 
-fn record_direct_upload_metric(state: &PrimaryAppState, status: &'static str) {
-    state.metrics.record_file_upload("direct", status);
+fn record_direct_upload_metric(state: &impl SharedRuntimeState, status: &'static str) {
+    state.metrics().record_file_upload("direct", status);
 }

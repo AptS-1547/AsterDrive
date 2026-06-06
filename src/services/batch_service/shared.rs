@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result, display_error};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 use super::MAX_BATCH_ITEMS;
@@ -42,7 +42,7 @@ fn build_folder_map(folders: Vec<folder::Model>) -> HashMap<i64, folder::Model> 
 }
 
 async fn find_files_by_ids_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     ids: &[i64],
 ) -> Result<Vec<file::Model>> {
@@ -57,7 +57,7 @@ async fn find_files_by_ids_in_scope(
 }
 
 async fn find_folders_by_ids_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     ids: &[i64],
 ) -> Result<Vec<folder::Model>> {
@@ -79,7 +79,7 @@ pub(crate) struct NormalizedSelection {
 }
 
 async fn load_folder_hierarchy_map(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_map: &HashMap<i64, file::Model>,
     folder_map: &HashMap<i64, folder::Model>,
@@ -163,7 +163,7 @@ fn normalize_selection(
 }
 
 pub(crate) async fn load_normalized_selection_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -198,7 +198,7 @@ pub(crate) fn reserve_unique_name(
 }
 
 pub(super) async fn load_target_folder_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     target_folder_id: Option<i64>,
 ) -> std::result::Result<Option<folder::Model>, String> {
@@ -213,7 +213,7 @@ pub(super) async fn load_target_folder_in_scope(
 }
 
 pub(super) async fn load_folder_ancestor_ids_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     target_folder: Option<&folder::Model>,
 ) -> Result<HashSet<i64>> {

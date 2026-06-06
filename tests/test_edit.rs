@@ -2,6 +2,7 @@
 
 #[macro_use]
 mod common;
+use aster_drive::runtime::SharedRuntimeState;
 
 use actix_web::body::to_bytes;
 use actix_web::test;

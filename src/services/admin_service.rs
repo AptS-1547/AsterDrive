@@ -12,7 +12,7 @@ use crate::db::repository::{
     audit_log_repo, background_task_repo, file_repo, share_repo, user_repo,
 };
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{
     audit_service, profile_service,
     task_service::{SystemRuntimeTaskKind, types::RuntimeSystemHealthStatus},
@@ -194,7 +194,7 @@ fn admin_overview_cache_key(days: u32, timezone_name: &str) -> String {
 }
 
 pub async fn get_overview(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     days: u32,
     timezone_name: &str,
     event_limit: u64,
@@ -204,7 +204,11 @@ pub async fn get_overview(
     let cache_key = admin_overview_cache_key(days, timezone.name());
     let (recent_events, recent_background_tasks) =
         load_recent_overview_events(state, event_limit).await?;
-    if let Some(core) = state.cache.get::<CachedAdminOverviewCore>(&cache_key).await {
+    if let Some(core) = state
+        .cache()
+        .get::<CachedAdminOverviewCore>(&cache_key)
+        .await
+    {
         tracing::debug!(
             days,
             timezone = timezone.name(),
@@ -278,7 +282,7 @@ pub async fn get_overview(
         daily_reports,
     };
     state
-        .cache
+        .cache()
         .set(&cache_key, &core, Some(ADMIN_OVERVIEW_CACHE_TTL))
         .await;
     tracing::debug!(
@@ -291,7 +295,7 @@ pub async fn get_overview(
 }
 
 async fn load_recent_overview_events(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     event_limit: u64,
 ) -> Result<(
     Vec<audit_service::AuditLogEntry>,
@@ -322,7 +326,7 @@ async fn load_recent_overview_events(
 }
 
 async fn build_background_task_events(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     tasks: Vec<crate::entities::background_task::Model>,
 ) -> Result<Vec<AdminBackgroundTaskEvent>> {
     let creator_ids: Vec<i64> = tasks
@@ -463,7 +467,7 @@ fn admin_health_status_from_runtime(status: RuntimeSystemHealthStatus) -> AdminS
 }
 
 async fn build_daily_reports(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     today: NaiveDate,
     days: u32,
     timezone: Tz,

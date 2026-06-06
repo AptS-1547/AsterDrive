@@ -7,7 +7,7 @@ use crate::api::response::ApiResponse;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::config::site_url;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::{self, AuditContext, AuditRequestInfo};
 use crate::services::auth_service::Claims;
 use crate::services::external_auth_service::{
@@ -63,7 +63,11 @@ pub async fn start_login(
     path: web::Path<(String, String)>,
     body: web::Json<ExternalAuthStartLoginRequest>,
 ) -> Result<HttpResponse> {
-    csrf::ensure_request_source_allowed(&req, &state.runtime_config, RequestSourceMode::Required)?;
+    csrf::ensure_request_source_allowed(
+        &req,
+        &state.runtime_config(),
+        RequestSourceMode::Required,
+    )?;
     let (kind, provider) = path.into_inner();
     let provider_kind = parse_provider_kind(&kind)?;
     let response = external_auth_service::start_login(
@@ -100,7 +104,7 @@ pub async fn finish_login(
 ) -> Result<HttpResponse> {
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     let (kind, provider) = path.into_inner();
     let provider_kind = match parse_provider_kind(&kind) {
@@ -148,7 +152,11 @@ pub async fn start_email_verification(
     req: HttpRequest,
     body: web::Json<ExternalAuthEmailVerificationStartRequest>,
 ) -> Result<HttpResponse> {
-    csrf::ensure_request_source_allowed(&req, &state.runtime_config, RequestSourceMode::Required)?;
+    csrf::ensure_request_source_allowed(
+        &req,
+        &state.runtime_config(),
+        RequestSourceMode::Required,
+    )?;
     let response =
         external_auth_service::start_email_verification(&state, body.into_inner()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(response)))
@@ -171,10 +179,14 @@ pub async fn link_with_password(
     req: HttpRequest,
     body: web::Json<ExternalAuthPasswordLinkRequest>,
 ) -> Result<HttpResponse> {
-    csrf::ensure_request_source_allowed(&req, &state.runtime_config, RequestSourceMode::Required)?;
+    csrf::ensure_request_source_allowed(
+        &req,
+        &state.runtime_config(),
+        RequestSourceMode::Required,
+    )?;
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     let result = external_auth_service::link_with_password(
         &state,
@@ -215,7 +227,7 @@ pub async fn confirm_email_verification(
 
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     let result = match external_auth_service::confirm_email_verification(
         &state,
@@ -332,12 +344,13 @@ fn external_auth_redirect_completion_response(
 ) -> Result<HttpResponse> {
     match completion {
         PrimaryLoginCompletion::Authenticated(result) => {
-            let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+            let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
             let secure = auth_policy.cookie_secure;
             let csrf_token = csrf::build_csrf_token();
             let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
             let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
-            let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, return_path);
+            let redirect_url =
+                site_url::public_app_url_or_path(&state.runtime_config(), return_path);
 
             Ok(HttpResponse::Found()
                 .append_header((header::LOCATION, redirect_url))
@@ -368,7 +381,7 @@ fn external_auth_redirect_completion_response(
                 urlencoding::encode(&methods),
                 urlencoding::encode(return_path)
             );
-            let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, &path);
+            let redirect_url = site_url::public_app_url_or_path(&state.runtime_config(), &path);
             Ok(HttpResponse::Found()
                 .append_header((header::LOCATION, redirect_url))
                 .finish())
@@ -475,7 +488,7 @@ fn external_auth_error_redirect_response(
             ErrorCode::from(error) as u32
         )
     };
-    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, &path);
+    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config(), &path);
     HttpResponse::Found()
         .append_header((header::LOCATION, redirect_url))
         .finish()
@@ -491,7 +504,7 @@ fn external_auth_email_required_redirect_response(
         urlencoding::encode(flow_token),
         urlencoding::encode(return_path)
     );
-    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, &path);
+    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config(), &path);
     HttpResponse::Found()
         .append_header((header::LOCATION, redirect_url))
         .finish()
@@ -499,7 +512,7 @@ fn external_auth_email_required_redirect_response(
 
 fn external_auth_status_redirect_response(state: &PrimaryAppState, status: &str) -> HttpResponse {
     let path = format!("/login?external_auth={}", urlencoding::encode(status));
-    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config, &path);
+    let redirect_url = site_url::public_app_url_or_path(&state.runtime_config(), &path);
     HttpResponse::Found()
         .append_header((header::LOCATION, redirect_url))
         .finish()

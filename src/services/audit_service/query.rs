@@ -5,7 +5,7 @@ use crate::api::pagination::{AdminAuditLogSortBy, OffsetPage, SortOrder, load_of
 use crate::db::repository::audit_log_repo;
 use crate::entities::audit_log;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{profile_service, user_service};
 use crate::types::TeamMemberRole;
 
@@ -17,7 +17,7 @@ use super::presentation::build_audit_presentation;
 const DEFAULT_RETENTION_DAYS: i64 = 90;
 
 async fn query_models(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     filters: AuditLogFilters,
     limit: u64,
     offset: u64,
@@ -47,7 +47,7 @@ async fn query_models(
 }
 
 async fn build_audit_entries(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     entries: Vec<audit_log::Model>,
 ) -> Result<Vec<AuditLogEntry>> {
     let user_ids: Vec<i64> = entries
@@ -105,7 +105,7 @@ async fn build_audit_entries(
 }
 
 pub async fn query(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     filters: AuditLogFilters,
     limit: u64,
     offset: u64,
@@ -177,7 +177,7 @@ fn build_team_audit_entry(
 }
 
 pub async fn query_team_entries(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     filters: AuditLogFilters,
     limit: u64,
     offset: u64,
@@ -221,13 +221,13 @@ pub async fn query_team_entries(
 }
 
 /// 清理过期审计日志
-pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
+pub async fn cleanup_expired(state: &impl SharedRuntimeState) -> Result<u64> {
     flush_global_audit_log_manager().await;
     let retention_days = state
-        .runtime_config
+        .runtime_config()
         .get_i64("audit_log_retention_days")
         .unwrap_or_else(|| {
-            if let Some(raw) = state.runtime_config.get("audit_log_retention_days") {
+            if let Some(raw) = state.runtime_config().get("audit_log_retention_days") {
                 tracing::warn!(
                     "invalid audit_log_retention_days value '{}', using default",
                     raw

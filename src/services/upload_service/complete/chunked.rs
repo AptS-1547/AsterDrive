@@ -5,7 +5,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::file_repo;
 use crate::entities::{file, storage_policy, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result, upload_assembly_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::shared::{
     cleanup_upload_temp_dir, run_upload_completion_stage,
 };
@@ -43,8 +43,10 @@ pub(super) async fn complete_chunked_upload_with_actor_username(
         UploadSessionStatus::Uploading,
         "completed upload session",
         async {
-            let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-            let driver = state.driver_registry.get_driver(&policy)?;
+            let policy = state
+                .policy_snapshot()
+                .get_policy_or_err(session.policy_id)?;
+            let driver = state.driver_registry().get_driver(&policy)?;
             finalize_chunked_upload_session(
                 state,
                 &session,
@@ -129,7 +131,7 @@ async fn finalize_remote_chunked_upload_session(
         workspace_storage_service::prepare_non_dedup_blob_upload(policy, session.total_size);
     let (writer, reader) = tokio::io::duplex(CHUNK_RELAY_BUFFER_SIZE);
     let relay_task = tokio::spawn(stream_local_chunks_into_writer(
-        state.config.server.upload_temp_dir.clone(),
+        state.config().server.upload_temp_dir.clone(),
         session.id.clone(),
         session.total_chunks,
         writer,
@@ -236,7 +238,7 @@ async fn assemble_local_chunks_to_temp_file(
 
     let upload_id = session.id.as_str();
     let assembled_path =
-        paths::upload_assembled_path(&state.config.server.upload_temp_dir, upload_id);
+        paths::upload_assembled_path(&state.config().server.upload_temp_dir, upload_id);
     let mut out_file = tokio::fs::File::create(&assembled_path)
         .await
         .map_aster_err_ctx("create assembled file", |message| {
@@ -251,7 +253,7 @@ async fn assemble_local_chunks_to_temp_file(
     // 避免第二遍再把 assembled 文件完整读一遍。
     for i in 0..session.total_chunks {
         let chunk_path =
-            paths::upload_chunk_path(&state.config.server.upload_temp_dir, upload_id, i);
+            paths::upload_chunk_path(&state.config().server.upload_temp_dir, upload_id, i);
         let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
             &format!("open chunk {i}"),
             |message| {

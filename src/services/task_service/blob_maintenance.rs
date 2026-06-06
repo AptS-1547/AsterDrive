@@ -9,7 +9,7 @@ use crate::db::repository::{file_repo, version_repo};
 use crate::db::transaction;
 use crate::entities::{background_task, file_blob};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::storage::StorageDriver;
 
@@ -501,7 +501,7 @@ impl MaintenanceDriverCache {
         state: &PrimaryAppState,
         policy: &crate::entities::storage_policy::Model,
     ) -> Result<Arc<dyn StorageDriver>> {
-        if let Some(driver) = state.driver_registry.get_cached_driver(policy.id) {
+        if let Some(driver) = state.driver_registry().get_cached_driver(policy.id) {
             return Ok(driver);
         }
 
@@ -513,7 +513,7 @@ impl MaintenanceDriverCache {
         // normal traffic has already warmed the shared registry, reuse that
         // Arc; otherwise keep the driver only for this task so maintenance does
         // not turn a cold policy into a process-lifetime HTTP client cache.
-        let driver = state.driver_registry.build_uncached_driver(policy)?;
+        let driver = state.driver_registry().build_uncached_driver(policy)?;
         self.drivers.insert(policy.id, driver.clone());
         Ok(driver)
     }
@@ -524,7 +524,7 @@ async fn check_blob_object(
     driver_cache: &mut MaintenanceDriverCache,
     blob: &file_blob::Model,
 ) -> Result<BlobObjectCheck> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let driver = driver_cache.driver_for_policy(state, &policy)?;
     let metadata = match driver.metadata(&blob.storage_path).await {
         Ok(metadata) => metadata,

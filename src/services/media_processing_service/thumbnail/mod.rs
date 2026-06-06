@@ -9,7 +9,7 @@ mod storage_native;
 use crate::db::repository::file_repo;
 use crate::entities::file_blob;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::types::MediaProcessorKind;
 use bytes::Bytes;
 
@@ -98,7 +98,7 @@ pub(crate) async fn generate_and_store_thumbnail_with_processor(
     source_mime_type: &str,
     processor_kind: MediaProcessorKind,
 ) -> Result<StoredThumbnail> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let ctx =
         build_thumbnail_context_with_processor(state, &policy, source_file_name, processor_kind)?;
     generate_and_store_with_context(state, blob, source_file_name, source_mime_type, &ctx).await

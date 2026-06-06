@@ -6,7 +6,7 @@ mod common;
 use aster_drive::db::repository::config_repo;
 use aster_drive::db::repository::user_repo;
 use aster_drive::entities::user;
-use aster_drive::runtime::PrimaryAppState;
+use aster_drive::runtime::{PrimaryAppState, SharedRuntimeState};
 use aster_drive::services::profile_service;
 use aster_drive::types::AvatarSource;
 

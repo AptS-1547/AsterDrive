@@ -4,13 +4,13 @@ use chrono::Utc;
 
 use crate::db::repository::lock_repo;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::types::EntityType;
 use crate::utils::numbers::usize_to_u64;
 
 /// 清理过期锁（后台任务用）
-pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
+pub async fn cleanup_expired(state: &impl SharedRuntimeState) -> Result<u64> {
     let db = state.writer_db();
 
     // 先查出过期锁的 entity 信息（需要重置 is_locked）
@@ -57,7 +57,7 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
 }
 
 pub async fn cleanup_expired_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     audit_ctx: &AuditContext,
 ) -> Result<u64> {
     let count = cleanup_expired(state).await?;

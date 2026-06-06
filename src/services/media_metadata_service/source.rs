@@ -5,7 +5,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::archive_service::range_reader::StorageRangeReader;
 use crate::storage::StorageDriver;
 use crate::utils::raii::TempFileGuard;
@@ -17,8 +17,8 @@ pub(super) async fn prepare_media_metadata_source(
     source_mime_type: &str,
     allow_range: bool,
 ) -> Result<PreparedMediaMetadataSource> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
 
     if let Some(local_path_driver) = driver.as_local_path() {
         return Ok(PreparedMediaMetadataSource::Local(
@@ -41,7 +41,7 @@ pub(super) async fn prepare_media_metadata_source(
     let temp_source = stream_blob_to_temp_source(
         driver,
         blob,
-        &state.config.server.temp_dir,
+        &state.config().server.temp_dir,
         source_file_name,
         source_mime_type,
     )

@@ -10,7 +10,7 @@ use super::selection::{
 };
 use crate::entities::background_task;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     batch_service,
     task_service::{
@@ -118,7 +118,7 @@ pub(super) async fn process_archive_compress_task(
         )
         .await?;
         ensure_archive_selection_active(scope, &selection)?;
-        let limits = ArchiveBuildLimits::from_runtime_config(&state.runtime_config);
+        let limits = ArchiveBuildLimits::from_runtime_config(&state.runtime_config());
         let collected =
             collect_archive_entries_from_selection_in_scope(state, scope, &selection, limits)
                 .await?;
@@ -162,8 +162,8 @@ pub(super) async fn process_archive_compress_task(
         let archive_temp_path_for_worker = archive_temp_path.clone();
         let handle = tokio::runtime::Handle::current();
         let db = state.writer_db().clone();
-        let driver_registry = state.driver_registry.clone();
-        let policy_snapshot = state.policy_snapshot.clone();
+        let driver_registry = state.driver_registry().clone();
+        let policy_snapshot = state.policy_snapshot().clone();
         let context_for_worker = context.clone();
         let steps_for_worker = steps.clone();
 

@@ -7,7 +7,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::cache::CacheExt;
 use crate::db::repository::{user_repo, webdav_account_repo};
 use crate::errors::{AsterError, MapAsterErr, auth_forbidden_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::utils::hash;
 
@@ -62,15 +62,18 @@ fn webdav_auth_cache_key(username: &str, password: &str) -> String {
     )
 }
 
-pub(crate) async fn invalidate_webdav_auth_for_username(state: &PrimaryAppState, username: &str) {
+pub(crate) async fn invalidate_webdav_auth_for_username(
+    state: &impl SharedRuntimeState,
+    username: &str,
+) {
     state
-        .cache
+        .cache()
         .invalidate_prefix(&webdav_auth_cache_prefix(username))
         .await;
 }
 
 pub(crate) async fn invalidate_webdav_auth_for_user(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
 ) -> Result<(), AsterError> {
     let accounts = webdav_account_repo::find_by_user(state.writer_db(), user_id).await?;
@@ -86,7 +89,7 @@ pub(crate) async fn invalidate_webdav_auth_for_user(
 /// 1. `Authorization: Basic base64(username:password)` — 查 webdav_accounts 表
 pub(crate) async fn authenticate_webdav(
     headers: &actix_web::http::header::HeaderMap,
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
 ) -> Result<WebdavAuthResult, AsterError> {
     let auth_header = headers
         .get(actix_web::http::header::AUTHORIZATION)
@@ -103,7 +106,7 @@ pub(crate) async fn authenticate_webdav(
 /// Basic Auth: 查 webdav_accounts 表（独立于登录密码）
 async fn authenticate_basic(
     encoded: &str,
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
 ) -> Result<WebdavAuthResult, AsterError> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded)
@@ -117,7 +120,7 @@ async fn authenticate_basic(
         .ok_or_else(|| AsterError::auth_invalid_credentials("invalid basic auth format"))?;
 
     let cache_key = webdav_auth_cache_key(username, password);
-    if let Some(cached) = state.cache.get::<CachedWebdavAuth>(&cache_key).await {
+    if let Some(cached) = state.cache().get::<CachedWebdavAuth>(&cache_key).await {
         validate_cached_scope(state, cached.scope()).await?;
         tracing::debug!(username_hash = %username_cache_component(username), "webdav auth cache hit");
         return Ok(WebdavAuthResult {
@@ -170,7 +173,7 @@ async fn authenticate_basic(
     };
 
     state
-        .cache
+        .cache()
         .set(
             &cache_key,
             &CachedWebdavAuth {
@@ -189,7 +192,7 @@ async fn authenticate_basic(
 }
 
 async fn validate_cached_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
 ) -> Result<(), AsterError> {
     let user = user_repo::find_by_id(state.writer_db(), scope.actor_user_id()).await?;
@@ -209,7 +212,7 @@ mod tests {
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::entities::{user, webdav_account};
     use crate::errors::AsterError;
-    use crate::runtime::PrimaryAppState;
+    use crate::runtime::{PrimaryAppState, SharedRuntimeState};
     use crate::services::mail_service;
     use crate::storage::{DriverRegistry, PolicySnapshot};
     use crate::types::{UserRole, UserStatus};

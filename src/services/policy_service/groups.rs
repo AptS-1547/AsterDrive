@@ -7,7 +7,7 @@ use crate::api::pagination::{AdminPolicyGroupSortBy, OffsetPage, SortOrder, load
 use crate::db::repository::{policy_group_repo, policy_repo, team_repo, user_repo};
 use crate::entities::{storage_policy_group, storage_policy_group_item};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 
 use super::models::{
     CreateStoragePolicyGroupInput, PolicyGroupAssignmentMigrationResult, StoragePolicyGroupInfo,
@@ -98,7 +98,7 @@ where
 }
 
 pub async fn list_groups_paginated(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     limit: u64,
     offset: u64,
     sort_by: AdminPolicyGroupSortBy,
@@ -127,13 +127,13 @@ pub async fn list_groups_paginated(
     })
 }
 
-pub async fn get_group(state: &PrimaryAppState, id: i64) -> Result<StoragePolicyGroupInfo> {
+pub async fn get_group(state: &impl SharedRuntimeState, id: i64) -> Result<StoragePolicyGroupInfo> {
     let group = policy_group_repo::find_group_by_id(state.reader_db(), id).await?;
     Ok(build_group_info(state, &group))
 }
 
 pub async fn create_group(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     input: CreateStoragePolicyGroupInput,
 ) -> Result<StoragePolicyGroupInfo> {
     let CreateStoragePolicyGroupInput {
@@ -172,13 +172,13 @@ pub async fn create_group(
         policy_group_repo::set_only_default_group(&txn, group.id).await?;
     }
     crate::db::transaction::commit(txn).await?;
-    state.policy_snapshot.reload(state.writer_db()).await?;
+    state.policy_snapshot().reload(state.writer_db()).await?;
     let group = policy_group_repo::find_group_by_id(state.writer_db(), group.id).await?;
     Ok(build_group_info(state, &group))
 }
 
 pub async fn update_group(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     id: i64,
     input: UpdateStoragePolicyGroupInput,
 ) -> Result<StoragePolicyGroupInfo> {
@@ -265,12 +265,12 @@ pub async fn update_group(
     }
 
     crate::db::transaction::commit(txn).await?;
-    state.policy_snapshot.reload(state.writer_db()).await?;
+    state.policy_snapshot().reload(state.writer_db()).await?;
     let group = policy_group_repo::find_group_by_id(state.writer_db(), group.id).await?;
     Ok(build_group_info(state, &group))
 }
 
-pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
+pub async fn delete_group(state: &impl SharedRuntimeState, id: i64) -> Result<()> {
     let group = policy_group_repo::find_group_by_id(state.writer_db(), id).await?;
     tracing::debug!(
         policy_group_id = id,
@@ -300,7 +300,7 @@ pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
     }
 
     policy_group_repo::delete_group(state.writer_db(), id).await?;
-    state.policy_snapshot.reload(state.writer_db()).await?;
+    state.policy_snapshot().reload(state.writer_db()).await?;
     tracing::info!(
         policy_group_id = id,
         policy_group_name = %group.name,
@@ -310,7 +310,7 @@ pub async fn delete_group(state: &PrimaryAppState, id: i64) -> Result<()> {
 }
 
 pub async fn migrate_group_assignments(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     source_group_id: i64,
     target_group_id: i64,
 ) -> Result<PolicyGroupAssignmentMigrationResult> {
@@ -361,7 +361,7 @@ pub async fn migrate_group_assignments(
             migrated_assignments: 0,
         });
     }
-    state.policy_snapshot.reload(state.writer_db()).await?;
+    state.policy_snapshot().reload(state.writer_db()).await?;
 
     Ok(PolicyGroupAssignmentMigrationResult {
         source_group_id,

@@ -4,7 +4,7 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 
 use crate::entities::file;
 use crate::errors::{MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::{
     StoreFromTempHints, StoreFromTempParams, VerifiedFolderPolicyHint, WorkspaceStorageScope,
     create_empty, resolve_policy_for_size_with_verified_folder, store_from_temp_with_hints,
@@ -44,7 +44,7 @@ pub(super) async fn upload_staged(
 
     let mut filename = String::from("unnamed");
     let mut saw_file_field = false;
-    let temp_dir = &state.config.server.temp_dir;
+    let temp_dir = &state.config().server.temp_dir;
     let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
     let temp_path =
         crate::utils::paths::runtime_temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());

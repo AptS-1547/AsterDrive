@@ -9,7 +9,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result, precondition_failed_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::storage_change_service;
 
 use super::{
@@ -129,7 +129,7 @@ pub(crate) async fn create_empty(
     const EMPTY_SIZE: i64 = 0;
 
     let policy = resolve_policy_for_size(state, scope, folder_id, EMPTY_SIZE).await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     let should_dedup = local_content_dedup_enabled(&policy);
     let now = Utc::now();
 
@@ -219,7 +219,7 @@ pub(crate) async fn store_preuploaded_nondedup(
 
     let filename = crate::utils::normalize_validate_name(filename)?;
 
-    let driver = state.driver_registry.get_driver(policy)?;
+    let driver = state.driver_registry().get_driver(policy)?;
 
     if policy.max_file_size > 0 && size > policy.max_file_size {
         cleanup_preuploaded_blob_upload(

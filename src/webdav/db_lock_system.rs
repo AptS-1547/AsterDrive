@@ -9,7 +9,7 @@ use xmltree::Element;
 
 use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::types::EntityType;

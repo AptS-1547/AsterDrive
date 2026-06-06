@@ -1,6 +1,6 @@
 //! 集成测试公共 helper。
 
-use aster_drive::runtime::PrimaryAppState;
+use aster_drive::runtime::{PrimaryAppState, SharedRuntimeState};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -1308,6 +1308,7 @@ pub fn system_config_model(key: &str, value: &str) -> aster_drive::entities::sys
 macro_rules! create_test_app {
     ($state:expr) => {{
         use actix_web::{App, test, web};
+        use aster_drive::runtime::SharedRuntimeState;
 
         let state = $state;
         let db = state.writer_db().clone();
@@ -1570,6 +1571,7 @@ macro_rules! upload_test_file_to_folder {
 macro_rules! setup_with_webdav {
     () => {{
         use actix_web::{App, test, web};
+        use aster_drive::runtime::SharedRuntimeState;
 
         let state = common::setup().await;
         let db1 = state.writer_db().clone();

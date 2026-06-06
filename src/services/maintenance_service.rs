@@ -7,7 +7,7 @@ use chrono::Utc;
 use crate::db::repository::{file_repo, upload_session_repo, version_repo};
 use crate::entities::{file_blob, upload_session};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 
 const COMPLETED_SESSION_BATCH_SIZE: u64 = 1_000;
 const BLOB_RECONCILE_BATCH_SIZE: u64 = 1_000;
@@ -76,7 +76,7 @@ pub async fn cleanup_expired_completed_upload_sessions(
             }
 
             let temp_dir = crate::utils::paths::upload_temp_dir(
-                &state.config.server.upload_temp_dir,
+                &state.config().server.upload_temp_dir,
                 &session.id,
             );
             crate::utils::cleanup_temp_dir(&temp_dir).await;
@@ -272,7 +272,7 @@ async fn cleanup_completed_session_stale_temp_object(
         return true;
     };
 
-    let Some(policy) = state.policy_snapshot.get_policy(session.policy_id) else {
+    let Some(policy) = state.policy_snapshot().get_policy(session.policy_id) else {
         tracing::warn!(
             session_id = %session.id,
             policy_id = session.policy_id,
@@ -281,7 +281,7 @@ async fn cleanup_completed_session_stale_temp_object(
         return false;
     };
 
-    let Ok(driver) = state.driver_registry.get_driver(&policy) else {
+    let Ok(driver) = state.driver_registry().get_driver(&policy) else {
         tracing::warn!(
             session_id = %session.id,
             policy_id = session.policy_id,
@@ -291,7 +291,7 @@ async fn cleanup_completed_session_stale_temp_object(
     };
 
     if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-        let Ok(multipart) = state.driver_registry.get_multipart_driver(&policy) else {
+        let Ok(multipart) = state.driver_registry().get_multipart_driver(&policy) else {
             // 策略不支持 multipart（如已切换为 Local），跳过 abort 直接删 key
             return delete_completed_stale_temp_object(&*driver, session, temp_key).await;
         };

@@ -12,7 +12,7 @@ mod transfer;
 use std::future::Future;
 
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState, StorageChangeRuntimeState};
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_models::FileInfo;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
@@ -104,7 +104,7 @@ pub(crate) async fn delete_in_scope_with_audit(
 }
 
 pub(crate) async fn update_in_scope_with_audit(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     name: Option<String>,
@@ -156,7 +156,7 @@ pub(crate) async fn update_content_stream_in_scope_with_audit(
 }
 
 pub(crate) async fn set_lock_in_scope_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     locked: bool,
@@ -239,33 +239,35 @@ pub(crate) async fn download_in_scope_with_file_and_audit(
 }
 
 pub fn record_download_metric(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     source: &'static str,
     outcome: &DownloadOutcome,
 ) {
     state
-        .metrics
+        .metrics()
         .record_file_download(source, outcome.metrics_outcome(), outcome.has_range());
 }
 
-pub fn record_download_failure_metric(state: &PrimaryAppState, source: &'static str) {
-    state.metrics.record_file_download(source, "failure", false);
+pub fn record_download_failure_metric(state: &impl SharedRuntimeState, source: &'static str) {
+    state
+        .metrics()
+        .record_file_download(source, "failure", false);
 }
 
 pub fn record_download_failure_metric_with_reason(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     source: &'static str,
     reason: &'static str,
     has_range: bool,
 ) {
     let outcome = format!("failure:{reason}");
     state
-        .metrics
+        .metrics()
         .record_file_download(source, outcome.as_str(), has_range);
 }
 
 pub async fn record_download_result<Fut>(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     source: &'static str,
     has_range: bool,
     fut: Fut,

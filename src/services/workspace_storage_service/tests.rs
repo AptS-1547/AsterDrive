@@ -4,7 +4,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::cache;
 use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
 use crate::entities::{file, file_blob, storage_policy, user};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::mail_service;
 use crate::storage::{BlobMetadata, StoragePathVisitor};
 use crate::storage::{

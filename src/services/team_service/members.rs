@@ -12,7 +12,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{team_member_repo, team_repo, user_repo};
 use crate::entities::team_member;
 use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service;
 use crate::types::TeamMemberRole;
 
@@ -24,7 +24,7 @@ use super::shared::{
 use super::{AddTeamMemberInput, TeamMemberInfo, TeamMemberListFilters, TeamMemberPage};
 
 pub async fn list_admin_members(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     filters: TeamMemberListFilters,
     limit: u64,
@@ -35,7 +35,7 @@ pub async fn list_admin_members(
 }
 
 pub async fn get_admin_member(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     member_user_id: i64,
 ) -> Result<TeamMemberInfo> {
@@ -51,7 +51,7 @@ pub async fn get_admin_member(
 }
 
 pub async fn add_admin_member(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     input: AddTeamMemberInput,
 ) -> Result<TeamMemberInfo> {
@@ -98,7 +98,7 @@ pub async fn add_admin_member(
 }
 
 pub async fn update_admin_member_role(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     member_user_id: i64,
     role: TeamMemberRole,
@@ -135,7 +135,7 @@ pub async fn update_admin_member_role(
 }
 
 pub async fn remove_admin_member(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     member_user_id: i64,
 ) -> Result<()> {
@@ -174,7 +174,7 @@ pub async fn remove_admin_member(
 }
 
 pub async fn list_members(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     actor_user_id: i64,
     filters: TeamMemberListFilters,
@@ -186,7 +186,7 @@ pub async fn list_members(
 }
 
 pub async fn get_member(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     actor_user_id: i64,
     member_user_id: i64,
@@ -203,7 +203,7 @@ pub async fn get_member(
 }
 
 pub async fn add_member(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     actor_user_id: i64,
     input: AddTeamMemberInput,
@@ -264,7 +264,7 @@ pub async fn add_member(
 }
 
 pub async fn update_member_role(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     actor_user_id: i64,
     member_user_id: i64,
@@ -318,7 +318,7 @@ pub async fn update_member_role(
 }
 
 pub async fn remove_member(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     actor_user_id: i64,
     member_user_id: i64,

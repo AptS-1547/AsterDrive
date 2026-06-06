@@ -9,7 +9,7 @@ use utoipa::ToSchema;
 use crate::db::repository::{file_repo, team_repo};
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
     file_service,
@@ -28,23 +28,26 @@ pub struct DirectLinkTokenInfo {
 }
 
 pub(crate) async fn create_token_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<DirectLinkTokenInfo> {
     let file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
-    let token = build_token(&file, &state.config.auth.jwt_secret)?;
+    let token = build_token(&file, &state.config().auth.jwt_secret)?;
     Ok(DirectLinkTokenInfo { token })
 }
 
-pub(crate) async fn load_public_file(state: &PrimaryAppState, file_id: i64) -> Result<file::Model> {
+pub(crate) async fn load_public_file(
+    state: &impl SharedRuntimeState,
+    file_id: i64,
+) -> Result<file::Model> {
     let file = file_repo::find_by_id(state.reader_db(), file_id).await?;
     validate_file_scope(state, &file).await?;
     Ok(file)
 }
 
 pub(crate) async fn resolve_file_for_download(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     requested_name: &str,
 ) -> Result<file::Model> {
@@ -52,7 +55,7 @@ pub(crate) async fn resolve_file_for_download(
     let file_id = parsed.file_id();
     let file = load_public_file(state, file_id).await?;
 
-    if !verify_token_signature(&file, &parsed, &state.config.auth.jwt_secret)? {
+    if !verify_token_signature(&file, &parsed, &state.config().auth.jwt_secret)? {
         return Err(AsterError::share_not_found(
             "direct link token signature mismatch",
         ));
@@ -145,7 +148,7 @@ fn parse_token(token: &str) -> Result<ParsedDirectLinkToken<'_>> {
     Ok(ParsedDirectLinkToken::Legacy { file_id, signature })
 }
 
-async fn validate_file_scope(state: &PrimaryAppState, file: &file::Model) -> Result<()> {
+async fn validate_file_scope(state: &impl SharedRuntimeState, file: &file::Model) -> Result<()> {
     if file.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
             "file #{} is in trash",

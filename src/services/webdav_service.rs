@@ -5,7 +5,7 @@ use chrono::Utc;
 use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::entities::folder;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState, StorageChangeRuntimeState};
 use crate::services::{
     file_service, folder_service, storage_change_service, workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
@@ -40,7 +40,7 @@ async fn collect_folder_tree_models_in_scope(
 }
 
 pub async fn collect_folder_tree(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     folder_id: i64,
     include_deleted: bool,
@@ -54,7 +54,7 @@ pub async fn collect_folder_tree(
 ///
 /// 先收集所有未删除的文件和文件夹 ID，再一次事务内批量 soft_delete。
 pub async fn recursive_soft_delete(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     user_id: i64,
     folder_id: i64,
 ) -> Result<()> {
@@ -67,7 +67,7 @@ pub async fn recursive_soft_delete(
 }
 
 pub(crate) async fn recursive_soft_delete_in_scope(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<()> {

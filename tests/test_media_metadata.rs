@@ -8,6 +8,7 @@ use aster_drive::db::repository::{
     background_task_repo, config_repo, file_repo, media_metadata_repo,
 };
 use aster_drive::entities::{file, file_blob};
+use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::types::{
     BackgroundTaskKind, BackgroundTaskStatus, FileCategory, SystemConfigSource,
     SystemConfigValueType,

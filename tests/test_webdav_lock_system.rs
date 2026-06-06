@@ -2,6 +2,7 @@
 
 #[macro_use]
 mod common;
+use aster_drive::runtime::SharedRuntimeState;
 
 use std::io::Cursor;
 use std::time::Duration;

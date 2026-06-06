@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::config::operations;
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::storage::StorageDriver;
 use crate::types::MediaProcessorKind;
 
@@ -37,12 +37,12 @@ pub(super) async fn render_thumbnail_bytes(
             );
             crate::services::thumbnail_service::ensure_source_size_supported(
                 blob,
-                operations::thumbnail_max_source_bytes(&state.runtime_config),
+                operations::thumbnail_max_source_bytes(&state.runtime_config()),
             )?;
             crate::services::thumbnail_service::render_thumbnail_bytes(
                 driver.as_ref(),
                 blob,
-                &state.config.server.temp_dir,
+                &state.config().server.temp_dir,
             )
             .await
         }
@@ -56,7 +56,7 @@ pub(super) async fn render_thumbnail_bytes(
             );
             crate::services::thumbnail_service::ensure_source_size_supported(
                 blob,
-                operations::thumbnail_max_source_bytes(&state.runtime_config),
+                operations::thumbnail_max_source_bytes(&state.runtime_config()),
             )?;
             render_thumbnail_with_vips_cli(
                 state,
@@ -78,7 +78,7 @@ pub(super) async fn render_thumbnail_bytes(
             );
             crate::services::thumbnail_service::ensure_source_size_supported(
                 blob,
-                operations::thumbnail_max_source_bytes(&state.runtime_config),
+                operations::thumbnail_max_source_bytes(&state.runtime_config()),
             )?;
             render_thumbnail_with_ffmpeg_cli(
                 state,
@@ -98,7 +98,7 @@ pub(super) async fn render_thumbnail_bytes(
             );
             crate::services::thumbnail_service::ensure_source_size_supported(
                 blob,
-                operations::thumbnail_max_source_bytes(&state.runtime_config),
+                operations::thumbnail_max_source_bytes(&state.runtime_config()),
             )?;
             render_thumbnail_with_lofty(
                 state,
@@ -130,7 +130,7 @@ async fn render_thumbnail_with_lofty(
     source_mime_type: &str,
     driver: &dyn StorageDriver,
 ) -> Result<Vec<u8>> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir =
         std::path::PathBuf::from(temp_root).join(format!("media-lofty-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
@@ -198,12 +198,12 @@ pub(super) async fn render_image_preview_bytes(
             );
             crate::services::thumbnail_service::ensure_source_size_supported(
                 blob,
-                operations::thumbnail_max_source_bytes(&state.runtime_config),
+                operations::thumbnail_max_source_bytes(&state.runtime_config()),
             )?;
             crate::services::thumbnail_service::render_webp_derivative_bytes(
                 driver.as_ref(),
                 blob,
-                &state.config.server.temp_dir,
+                &state.config().server.temp_dir,
                 crate::services::thumbnail_service::current_image_preview_max_dim(),
             )
             .await
@@ -218,7 +218,7 @@ pub(super) async fn render_image_preview_bytes(
             );
             crate::services::thumbnail_service::ensure_source_size_supported(
                 blob,
-                operations::thumbnail_max_source_bytes(&state.runtime_config),
+                operations::thumbnail_max_source_bytes(&state.runtime_config()),
             )?;
             render_image_preview_with_vips_cli(
                 state,
@@ -248,7 +248,7 @@ pub(super) async fn render_image_preview_bytes(
             );
             crate::services::thumbnail_service::ensure_source_size_supported(
                 blob,
-                operations::thumbnail_max_source_bytes(&state.runtime_config),
+                operations::thumbnail_max_source_bytes(&state.runtime_config()),
             )?;
             render_thumbnail_with_ffmpeg_cli(
                 state,

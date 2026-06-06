@@ -4,7 +4,7 @@ use crate::entities::{file_blob, storage_policy};
 use crate::errors::{
     AsterError, Result, precondition_failed_with_subcode, validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::types::{MediaProcessorKind, parse_storage_policy_options};
 
 use super::shared::{MediaOperation, ResolvedMediaProcessor, ThumbnailContext};
@@ -18,7 +18,7 @@ pub(crate) fn resolve_thumbnail_processor_for_blob(
     file_name: &str,
     source_mime_type: &str,
 ) -> Result<ResolvedMediaProcessor> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     resolve_thumbnail_processor_for_policy(state, &policy, file_name, source_mime_type)
 }
 
@@ -42,10 +42,10 @@ pub(super) fn build_thumbnail_context(
     file_name: &str,
     source_mime_type: &str,
 ) -> Result<ThumbnailContext> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let processor =
         resolve_thumbnail_processor_for_policy(state, &policy, file_name, source_mime_type)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     Ok(ThumbnailContext { driver, processor })
 }
 
@@ -55,7 +55,7 @@ pub(super) fn build_thumbnail_context_with_processor(
     source_file_name: &str,
     processor_kind: MediaProcessorKind,
 ) -> Result<ThumbnailContext> {
-    let registry = media_processing_config::media_processing_registry(&state.runtime_config);
+    let registry = media_processing_config::media_processing_registry(&state.runtime_config());
     let processor_config =
         media_processing_config::processor_config_for_kind(&registry, processor_kind)
             .cloned()
@@ -71,7 +71,7 @@ pub(super) fn build_thumbnail_context_with_processor(
         return Err(thumbnail_processor_unavailable_error(reason));
     }
 
-    let driver = state.driver_registry.get_driver(policy)?;
+    let driver = state.driver_registry().get_driver(policy)?;
     let source_extension = media_processing_config::file_extension(source_file_name);
     tracing::debug!(
         operation = MediaOperation::Thumbnail.as_str(),
@@ -106,7 +106,7 @@ fn resolve_thumbnail_processor_for_policy(
     source_mime_type: &str,
 ) -> Result<ResolvedMediaProcessor> {
     let candidates = collect_thumbnail_processor_candidates(
-        &state.runtime_config,
+        &state.runtime_config(),
         policy,
         file_name,
         source_mime_type,
@@ -234,7 +234,7 @@ fn storage_native_processor_unavailable_reason(
     state: &PrimaryAppState,
     policy: &storage_policy::Model,
 ) -> Result<Option<String>> {
-    let driver = state.driver_registry.get_driver(policy)?;
+    let driver = state.driver_registry().get_driver(policy)?;
     if driver.as_native_thumbnail().is_none() {
         return Ok(Some(format!(
             "storage policy #{} does not expose storage-native thumbnail processing",

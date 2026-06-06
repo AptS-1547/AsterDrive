@@ -14,7 +14,7 @@ use crate::config::{operations, site_url};
 use crate::db::repository::{file_repo, share_repo};
 use crate::entities::{file, share};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     direct_link_service, file_service, file_service::ResolvedDownloadRange, share_service,
 };
@@ -76,7 +76,7 @@ enum ResolvedShareStreamTarget {
 }
 
 pub(crate) async fn create_session_for_shared_file_for_origin(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share_token: &str,
     request_origin: crate::services::preview_link_service::RequestOrigin<'_>,
 ) -> Result<ShareStreamSessionInfo> {
@@ -91,7 +91,7 @@ pub(crate) async fn create_session_for_shared_file_for_origin(
 }
 
 pub(crate) async fn create_session_for_shared_folder_file_for_origin(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share_token: &str,
     file_id: i64,
     request_origin: crate::services::preview_link_service::RequestOrigin<'_>,
@@ -109,7 +109,7 @@ pub(crate) async fn create_session_for_shared_folder_file_for_origin(
 }
 
 pub(crate) async fn resolve_file_for_stream(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share_token: &str,
     session_token: &str,
     requested_name: &str,
@@ -191,9 +191,9 @@ pub(crate) async fn stream_file(
     }
 }
 
-fn share_stream_session_ttl_secs_i64(state: &PrimaryAppState) -> Result<i64> {
+fn share_stream_session_ttl_secs_i64(state: &impl SharedRuntimeState) -> Result<i64> {
     u64_to_i64(
-        operations::share_stream_session_ttl_secs(&state.runtime_config),
+        operations::share_stream_session_ttl_secs(state.runtime_config()),
         operations::SHARE_STREAM_SESSION_TTL_SECS_KEY,
     )
 }
@@ -207,16 +207,16 @@ fn build_payload(subject: ShareStreamSubject, ttl_secs: i64) -> ShareStreamSessi
 }
 
 fn build_session_for_shared_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share: &share::Model,
     file: &file::Model,
     payload: &ShareStreamSessionPayload,
     request_origin: Option<crate::services::preview_link_service::RequestOrigin<'_>>,
 ) -> Result<ShareStreamSessionInfo> {
-    let token = encode_shared_session(share, file, payload, &state.config.auth.jwt_secret)?;
+    let token = encode_shared_session(share, file, payload, &state.config().auth.jwt_secret)?;
     Ok(ShareStreamSessionInfo {
         path: stream_path(
-            &state.runtime_config,
+            state.runtime_config(),
             &share.token,
             &token,
             &file.name,
@@ -264,7 +264,7 @@ fn encode_payload(payload: &ShareStreamSessionPayload) -> Result<String> {
 }
 
 async fn resolve_session_target(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share_token: &str,
     session_token: &str,
 ) -> Result<(ShareStreamSessionPayload, ResolvedShareStreamTarget)> {
@@ -284,7 +284,7 @@ async fn resolve_session_target(
         &file,
         payload_segment,
         signature,
-        &state.config.auth.jwt_secret,
+        &state.config().auth.jwt_secret,
     ) {
         return Err(AsterError::share_not_found(
             "share stream session token signature mismatch",
@@ -300,7 +300,7 @@ async fn resolve_session_target(
 }
 
 async fn load_target(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     payload: &ShareStreamSessionPayload,
     counted: bool,
 ) -> Result<(share::Model, file::Model)> {
@@ -421,7 +421,7 @@ fn verify_shared_payload(
 }
 
 async fn ensure_counted_once(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     session_token: &str,
     payload: &ShareStreamSessionPayload,
 ) -> Result<CountReservation> {
@@ -439,7 +439,7 @@ async fn ensure_counted_once(
 
         let pending = encode_marker_state(CountMarkerState::Pending)?;
         if state
-            .cache
+            .cache()
             .set_bytes_if_absent(&key, pending, Some(ttl_secs))
             .await
         {
@@ -458,7 +458,7 @@ async fn ensure_counted_once(
 }
 
 async fn mark_counted(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     session_token: &str,
     payload: &ShareStreamSessionPayload,
 ) -> Result<()> {
@@ -467,21 +467,24 @@ async fn mark_counted(
     let counted = CountMarkerState::Counted;
     FALLBACK_COUNTED_SESSIONS.insert(key.clone(), counted).await;
     state
-        .cache
+        .cache()
         .set_bytes(&key, encode_marker_state(counted)?, Some(ttl_secs))
         .await;
     Ok(())
 }
 
 async fn count_marker_state(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     session_token: &str,
 ) -> Option<CountMarkerState> {
     count_marker_state_by_key(state, &counted_cache_key(session_token)).await
 }
 
-async fn count_marker_state_by_key(state: &PrimaryAppState, key: &str) -> Option<CountMarkerState> {
-    let primary = state.cache.get::<CountMarkerState>(key).await;
+async fn count_marker_state_by_key(
+    state: &impl SharedRuntimeState,
+    key: &str,
+) -> Option<CountMarkerState> {
+    let primary = state.cache().get::<CountMarkerState>(key).await;
     let fallback = FALLBACK_COUNTED_SESSIONS.get(key).await;
 
     match (primary, fallback) {
@@ -495,9 +498,9 @@ async fn count_marker_state_by_key(state: &PrimaryAppState, key: &str) -> Option
     }
 }
 
-async fn release_counted_marker(state: &PrimaryAppState, session_token: &str) {
+async fn release_counted_marker(state: &impl SharedRuntimeState, session_token: &str) {
     let key = counted_cache_key(session_token);
-    state.cache.delete(&key).await;
+    state.cache().delete(&key).await;
     FALLBACK_COUNTED_SESSIONS.remove(&key).await;
 }
 

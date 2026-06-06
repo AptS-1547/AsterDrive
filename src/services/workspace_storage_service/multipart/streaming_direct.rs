@@ -5,7 +5,7 @@ use tokio::io::AsyncWriteExt;
 use crate::api::subcode::ApiSubcode;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::{
     StorePreuploadedNondedupParams, check_quota, cleanup_preuploaded_blob_upload,
     prepare_non_dedup_blob_upload, store_preuploaded_nondedup,
@@ -40,7 +40,7 @@ pub(super) async fn upload_streaming_direct(
     }
 
     check_quota(state.writer_db(), scope, declared_size).await?;
-    let driver = state.driver_registry.get_driver(policy)?;
+    let driver = state.driver_registry().get_driver(policy)?;
     let prepared_upload = prepare_non_dedup_blob_upload(policy, declared_size);
     let storage_path = prepared_upload.storage_path().to_string();
 

@@ -60,7 +60,7 @@ use crate::config::operations;
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
-use crate::runtime::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
+use crate::runtime::{SharedRuntimeState, TaskRuntimeState};
 use crate::services::{
     audit_service::{self, AuditContext},
     profile_service, user_service,
@@ -300,14 +300,14 @@ impl workspace_storage_service::StorageCancellationCheck for TaskStorageCancella
 }
 
 pub(crate) async fn list_tasks_paginated_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<TaskInfo>> {
     workspace_storage_service::require_scope_access(state, scope).await?;
 
-    let limit = limit.clamp(1, operations::task_list_max_limit(&state.runtime_config));
+    let limit = limit.clamp(1, operations::task_list_max_limit(state.runtime_config()));
     let (tasks, total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             background_task_repo::find_paginated_personal(state.writer_db(), user_id, limit, offset)
@@ -325,14 +325,14 @@ pub(crate) async fn list_tasks_paginated_in_scope(
 }
 
 pub(crate) async fn list_tasks_paginated_for_admin(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     limit: u64,
     offset: u64,
     filters: AdminTaskListFilters,
     sort_by: AdminTaskSortBy,
     sort_order: SortOrder,
 ) -> Result<OffsetPage<TaskInfo>> {
-    let limit = limit.clamp(1, operations::task_list_max_limit(&state.runtime_config));
+    let limit = limit.clamp(1, operations::task_list_max_limit(state.runtime_config()));
     let (tasks, total) = background_task_repo::find_paginated_all_filtered(
         state.writer_db(),
         limit,
@@ -352,7 +352,7 @@ pub(crate) async fn list_tasks_paginated_for_admin(
 }
 
 pub(crate) async fn cleanup_tasks_for_admin(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     filters: AdminTaskCleanupFilters,
 ) -> Result<u64> {
     validate_admin_task_cleanup_status(filters.status)?;
@@ -368,7 +368,7 @@ pub(crate) async fn cleanup_tasks_for_admin(
 }
 
 pub(crate) async fn get_task_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<TaskInfo> {
@@ -380,7 +380,7 @@ pub(crate) async fn get_task_in_scope(
 }
 
 pub(crate) async fn retry_task_in_scope(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     scope: WorkspaceStorageScope,
     task_id: i64,
 ) -> Result<TaskInfo> {
@@ -434,7 +434,7 @@ async fn retry_task_record(
 }
 
 pub(crate) async fn retry_task_in_scope_with_audit(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     scope: WorkspaceStorageScope,
     task_id: i64,
     audit_ctx: &AuditContext,
@@ -460,7 +460,7 @@ pub(crate) async fn retry_task_in_scope_with_audit(
 }
 
 async fn build_task_infos(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     tasks: Vec<background_task::Model>,
 ) -> Result<Vec<TaskInfo>> {
     let creator_ids: Vec<i64> = tasks
@@ -481,7 +481,7 @@ async fn build_task_infos(
 }
 
 async fn build_task_info_with_lookup(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     task: background_task::Model,
 ) -> Result<TaskInfo> {
     let creator = match task.creator_user_id {
@@ -876,7 +876,7 @@ pub(super) fn task_scope(task: &background_task::Model) -> Result<WorkspaceStora
 }
 
 pub(super) async fn mark_task_progress(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     lease_guard: &TaskLeaseGuard,
     current: i64,
     total: i64,
@@ -929,7 +929,7 @@ pub(super) async fn update_task_progress_db(
 }
 
 pub(super) async fn set_task_runtime_json(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     lease_guard: &TaskLeaseGuard,
     runtime_json: Option<&str>,
 ) -> Result<()> {
@@ -952,7 +952,7 @@ pub(super) async fn set_task_runtime_json(
 }
 
 pub(super) async fn set_task_display_name(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     lease_guard: &TaskLeaseGuard,
     display_name: &str,
 ) -> Result<()> {
@@ -976,7 +976,7 @@ pub(super) async fn set_task_display_name(
 }
 
 pub(super) async fn mark_task_succeeded(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     lease_guard: &TaskLeaseGuard,
     result_json: Option<&StoredTaskResult>,
     current: i64,
@@ -1012,10 +1012,10 @@ pub(super) async fn mark_task_succeeded(
 }
 
 pub(super) async fn prepare_task_temp_dir(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     lease: TaskLease,
 ) -> Result<String> {
-    prepare_task_temp_dir_in_root(&state.config.server.temp_dir, lease).await
+    prepare_task_temp_dir_in_root(&state.config().server.temp_dir, lease).await
 }
 
 pub(super) async fn prepare_task_temp_dir_in_root(

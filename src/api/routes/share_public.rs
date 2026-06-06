@@ -10,7 +10,7 @@ use crate::api::routes::files;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::config::{NetworkTrustConfig, RateLimitConfig};
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
     archive_preview_service, direct_link_service, file_service, media_metadata_service,
@@ -232,7 +232,7 @@ pub async fn verify_password(
     body: web::Json<VerifyPasswordReq>,
 ) -> Result<HttpResponse> {
     let result = share_service::verify_password_and_sign(&state, &path, &body.password).await?;
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
     let cookie = build_share_cookie(
         path.as_str(),
         result.cookie_signature,
@@ -991,7 +991,7 @@ mod tests {
     use crate::config::{CacheConfig, Config, DatabaseConfig, NetworkTrustConfig, RateLimitConfig};
     use crate::db::repository::{background_task_repo, file_repo, folder_repo};
     use crate::entities::{file, file_blob, folder, storage_policy, user};
-    use crate::runtime::PrimaryAppState;
+    use crate::runtime::{PrimaryAppState, SharedRuntimeState};
     use crate::services::{mail_service, media_processing_service, share_service};
     use crate::storage::drivers::local::LocalDriver;
     use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};

@@ -13,7 +13,7 @@ use sea_orm::{ActiveModelTrait, ConnectionTrait, Set};
 use crate::db::repository::{file_repo, folder_repo, version_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{SharedRuntimeState, StorageChangeRuntimeState};
 use crate::services::{
     storage_change_service,
     workspace_models::FolderInfo,
@@ -49,7 +49,7 @@ where
 /// 只查 `(id, size)`，并通过 `after_id` 做 cursor 分页；调用方处理完当前页后
 /// 立即释放 file ids，避免大目录详情把整棵树文件记录压进内存。
 async fn load_file_id_size_page(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_ids: &[i64],
     after_id: Option<i64>,
@@ -72,7 +72,7 @@ async fn load_file_id_size_page(
 ///
 /// 这里同样只拿 id，不加载完整 folder model；详情页只需要继续向下遍历。
 async fn load_child_folder_ids(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_ids: &[i64],
 ) -> Result<Vec<i64>> {
@@ -96,7 +96,7 @@ async fn load_child_folder_ids(
 /// 这段逻辑刻意不复用 `collect_folder_tree_in_scope()`：那个 helper 会收集完整树，
 /// 删除/复制场景可以接受，详情页统计大目录时不该这么做。
 async fn compute_folder_storage_used(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<i64> {
@@ -155,7 +155,7 @@ async fn compute_folder_storage_used(
 }
 
 pub(crate) async fn create_in_scope(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     scope: WorkspaceStorageScope,
     name: &str,
     parent_id: Option<i64>,
@@ -237,7 +237,7 @@ pub(crate) async fn create_in_scope(
 }
 
 pub async fn create(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     user_id: i64,
     name: &str,
     parent_id: Option<i64>,
@@ -253,7 +253,7 @@ pub async fn create(
 }
 
 pub(crate) async fn delete_in_scope(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<()> {
@@ -303,12 +303,12 @@ pub(crate) async fn delete_in_scope(
 }
 
 /// 删除文件夹（软删除 → 回收站，递归标记子项）
-pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn delete(state: &impl StorageChangeRuntimeState, id: i64, user_id: i64) -> Result<()> {
     delete_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
 pub(crate) async fn get_info_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
@@ -316,7 +316,7 @@ pub(crate) async fn get_info_in_scope(
 }
 
 pub(crate) async fn get_info_with_storage_used_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<FolderInfo> {
@@ -330,7 +330,7 @@ pub(crate) async fn get_info_with_storage_used_in_scope(
 }
 
 pub(crate) async fn update_in_scope(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     scope: WorkspaceStorageScope,
     id: i64,
     name: Option<String>,
@@ -526,7 +526,7 @@ async fn lock_folder_ids_in_order<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Re
 }
 
 pub async fn update(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     id: i64,
     user_id: i64,
     name: Option<String>,
@@ -551,7 +551,7 @@ pub async fn update(
 /// “未传字段”和“显式传 null”，而本函数的 `target_parent_id: None`
 /// 明确表示“移到根目录”。
 pub async fn move_folder(
-    state: &PrimaryAppState,
+    state: &impl StorageChangeRuntimeState,
     id: i64,
     user_id: i64,
     target_parent_id: Option<i64>,
@@ -572,7 +572,7 @@ pub async fn move_folder(
 }
 
 pub(crate) async fn set_lock_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
     locked: bool,
@@ -614,7 +614,7 @@ pub(crate) async fn set_lock_in_scope(
 
 /// 设置/解除文件夹锁，返回更新后的文件夹信息
 pub async fn set_lock(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     folder_id: i64,
     user_id: i64,
     locked: bool,

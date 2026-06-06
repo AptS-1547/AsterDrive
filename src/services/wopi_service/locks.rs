@@ -7,7 +7,7 @@ use crate::config::wopi;
 use crate::db::repository::lock_repo;
 use crate::entities::{file, resource_lock};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{
     audit_service::{self, AuditRequestInfo},
     lock_service,
@@ -34,7 +34,7 @@ pub(crate) enum ActiveWopiLockState {
 }
 
 pub async fn get_lock(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     access_token: &str,
     request_source: WopiRequestSource<'_>,
@@ -55,7 +55,7 @@ pub async fn get_lock(
 }
 
 pub async fn lock_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     access_token: &str,
     requested_lock: &str,
@@ -120,7 +120,7 @@ pub async fn lock_file(
 }
 
 pub async fn unlock_and_relock_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     access_token: &str,
     requested_lock: &str,
@@ -168,7 +168,7 @@ pub async fn unlock_and_relock_file(
 }
 
 pub async fn refresh_lock(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     access_token: &str,
     requested_lock: &str,
@@ -214,7 +214,7 @@ pub async fn refresh_lock(
 }
 
 pub async fn unlock_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     access_token: &str,
     requested_lock: &str,
@@ -266,7 +266,7 @@ pub async fn unlock_file(
 }
 
 async fn log_wopi_lock_action(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     request_info: &AuditRequestInfo,
     actor_user_id: i64,
     action: audit_service::AuditAction,
@@ -286,7 +286,7 @@ async fn log_wopi_lock_action(
 }
 
 pub(crate) async fn ensure_wopi_lock_matches(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     requested_lock: Option<&str>,
 ) -> Result<Option<WopiConflict>> {
@@ -300,7 +300,7 @@ pub(crate) async fn ensure_wopi_lock_matches(
 }
 
 pub(crate) async fn ensure_wopi_putfile_lock_matches(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file: &file::Model,
     requested_lock: Option<&str>,
 ) -> Result<Option<WopiConflict>> {
@@ -346,7 +346,7 @@ fn ensure_active_wopi_lock_matches(
 }
 
 pub(crate) async fn load_active_lock(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
 ) -> Result<ActiveWopiLockState> {
     let mut active_locks = Vec::new();
@@ -390,7 +390,7 @@ pub(crate) fn active_wopi_lock_value(active_lock: &ActiveWopiLock) -> Option<Str
 }
 
 async fn create_wopi_lock(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     payload: &WopiAccessTokenPayload,
     file: &file::Model,
     requested_lock: &str,
@@ -407,7 +407,7 @@ async fn create_wopi_lock(
         Some(payload.actor_user_id),
         Some(owner_info),
         Some(Duration::seconds(wopi::lock_ttl_secs(
-            &state.runtime_config,
+            state.runtime_config(),
         ))),
     )
     .await?;
@@ -415,7 +415,7 @@ async fn create_wopi_lock(
 }
 
 async fn concurrent_wopi_lock_conflict(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
 ) -> Result<WopiConflict> {
     match load_active_lock(state, file_id).await? {
@@ -453,10 +453,13 @@ where
     Err(error)
 }
 
-async fn refresh_lock_model(state: &PrimaryAppState, lock: resource_lock::Model) -> Result<()> {
+async fn refresh_lock_model(
+    state: &impl SharedRuntimeState,
+    lock: resource_lock::Model,
+) -> Result<()> {
     let mut active: resource_lock::ActiveModel = lock.into();
     active.timeout_at = Set(Some(
-        Utc::now() + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config)),
+        Utc::now() + Duration::seconds(wopi::lock_ttl_secs(state.runtime_config())),
     ));
     active
         .update(state.writer_db())
@@ -466,7 +469,7 @@ async fn refresh_lock_model(state: &PrimaryAppState, lock: resource_lock::Model)
 }
 
 async fn replace_wopi_lock_model(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     lock: resource_lock::Model,
     payload: &WopiAccessTokenPayload,
     requested_lock: &str,
@@ -481,7 +484,7 @@ async fn replace_wopi_lock_model(
         &owner_info,
     ))?);
     active.timeout_at = Set(Some(
-        Utc::now() + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config)),
+        Utc::now() + Duration::seconds(wopi::lock_ttl_secs(state.runtime_config())),
     ));
     active
         .update(state.writer_db())

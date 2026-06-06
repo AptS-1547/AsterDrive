@@ -7,7 +7,7 @@ use validator::Validate;
 use crate::db::repository::{managed_follower_repo, policy_group_repo, policy_repo};
 use crate::entities::{storage_policy_group, storage_policy_group_item};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::storage::drivers::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::types::{
     DriverType, RemoteNodeTransportMode, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
@@ -121,11 +121,11 @@ pub(super) async fn validate_remote_binding<C: sea_orm::ConnectionTrait>(
 }
 
 pub(super) fn build_group_info(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     group: &storage_policy_group::Model,
 ) -> StoragePolicyGroupInfo {
     let items = state
-        .policy_snapshot
+        .policy_snapshot()
         .get_policy_group_items(group.id)
         .into_iter()
         .map(|resolved| {

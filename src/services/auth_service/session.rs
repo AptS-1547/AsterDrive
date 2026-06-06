@@ -15,7 +15,10 @@ fn auth_snapshot_cache_key(user_id: i64) -> String {
     format!("auth_snapshot:{user_id}")
 }
 
-pub async fn get_auth_snapshot(state: &impl SharedRuntimeState, user_id: i64) -> Result<AuthSnapshot> {
+pub async fn get_auth_snapshot(
+    state: &impl SharedRuntimeState,
+    user_id: i64,
+) -> Result<AuthSnapshot> {
     let cache_key = auth_snapshot_cache_key(user_id);
     if let Some(snapshot) = state.cache().get(&cache_key).await {
         tracing::debug!(user_id, "auth snapshot cache hit");
@@ -33,7 +36,10 @@ pub async fn get_auth_snapshot(state: &impl SharedRuntimeState, user_id: i64) ->
 }
 
 pub async fn invalidate_auth_snapshot_cache(state: &impl SharedRuntimeState, user_id: i64) {
-    state.cache().delete(&auth_snapshot_cache_key(user_id)).await;
+    state
+        .cache()
+        .delete(&auth_snapshot_cache_key(user_id))
+        .await;
 }
 
 pub(crate) async fn purge_all_auth_sessions_in_connection<C: ConnectionTrait>(

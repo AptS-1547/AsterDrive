@@ -10,6 +10,7 @@ use tokio::time::{Duration, timeout};
 
 use aster_drive::db::repository::background_task_repo;
 use aster_drive::entities::background_task;
+use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::types::{
     BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult,
 };

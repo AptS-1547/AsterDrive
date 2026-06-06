@@ -12,6 +12,7 @@ use crate::db::repository::background_task_repo;
 use crate::db::{self, repository::config_repo, transaction};
 use crate::entities::background_task;
 use crate::errors::AsterError;
+use crate::runtime::SharedRuntimeState;
 use crate::services::task_service::{
     SystemRuntimeTaskKind, TaskExecutionContext, TaskLease, TaskLeaseGuard, is_task_lease_lost,
     is_task_lease_renewal_timed_out, is_task_worker_shutdown_requested,

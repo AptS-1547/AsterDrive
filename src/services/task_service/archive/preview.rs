@@ -4,7 +4,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::file_repo;
 use crate::entities::{background_task, file, file_blob};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
 use crate::services::{
     archive_preview_service,
     task_service::{
@@ -23,7 +23,7 @@ use crate::services::{
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
 
 pub(crate) async fn ensure_archive_preview_task(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     source_file: &file::Model,
     blob: &file_blob::Model,
     limit_signature: &str,
@@ -123,7 +123,7 @@ pub(super) async fn process_archive_preview_task(
         let archive_format =
             archive_preview_service::ensure_archive_preview_source_supported(&source_file)?;
         let limits = archive_preview_service::ArchivePreviewLimits::from_runtime_config(
-            &state.runtime_config,
+            &state.runtime_config(),
             crate::types::ArchiveFilenameEncoding::Auto,
             archive_format,
         )?;
@@ -145,8 +145,8 @@ pub(super) async fn process_archive_preview_task(
         let blob = file_repo::find_blob_by_id(state.writer_db(), source_file.blob_id).await?;
         ensure_source_blob_matches_payload(&blob, &payload)?;
 
-        let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-        let driver = state.driver_registry.get_driver(&policy)?;
+        let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
+        let driver = state.driver_registry().get_driver(&policy)?;
         let use_range_scan = driver.supports_efficient_range();
         let source_archive_path = if use_range_scan {
             context.ensure_active()?;

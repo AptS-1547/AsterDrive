@@ -3,7 +3,7 @@
 use crate::db::repository::folder_repo;
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 pub(crate) fn ensure_folder_model_in_scope(
@@ -50,7 +50,7 @@ pub(crate) fn ensure_personal_folder_scope(folder: &folder::Model) -> Result<()>
 
 /// 校验目标文件夹存在、归属当前用户且未被删除
 pub async fn verify_folder_access(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     folder_id: i64,
 ) -> Result<()> {

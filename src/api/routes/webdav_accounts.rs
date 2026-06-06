@@ -11,7 +11,7 @@ use crate::api::response::ApiResponse;
 use crate::config::site_url;
 use crate::config::{NetworkTrustConfig, RateLimitConfig};
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{audit_service, auth_service::Claims, webdav_account_service};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
@@ -49,17 +49,17 @@ pub async fn get_settings(
     state: web::Data<PrimaryAppState>,
     req: HttpRequest,
 ) -> Result<HttpResponse> {
-    let endpoint_path = if state.config.webdav.prefix == "/" {
+    let endpoint_path = if state.config().webdav.prefix == "/" {
         "/".to_string()
     } else {
-        format!("{}/", state.config.webdav.prefix.trim_end_matches('/'))
+        format!("{}/", state.config().webdav.prefix.trim_end_matches('/'))
     };
     let conn = req.connection_info();
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(WebdavSettingsInfo {
-        prefix: state.config.webdav.prefix.clone(),
+        prefix: state.config().webdav.prefix.clone(),
         endpoint: site_url::public_app_url_or_path_for_request(
-            &state.runtime_config,
+            &state.runtime_config(),
             &endpoint_path,
             conn.scheme(),
             conn.host(),

@@ -5,7 +5,7 @@ use futures::{StreamExt, stream};
 use crate::db::repository::{file_repo, share_repo};
 use crate::entities::file;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     share_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceResourceScope, WorkspaceStorageScope},

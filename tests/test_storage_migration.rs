@@ -23,7 +23,7 @@ use aster_drive::db::repository::{
 };
 use aster_drive::entities::{file, file_blob, file_version, storage_policy};
 use aster_drive::errors::{AsterError, MapAsterErr, Result};
-use aster_drive::runtime::PrimaryAppState;
+use aster_drive::runtime::{PrimaryAppState, SharedRuntimeState};
 use aster_drive::services::task_service;
 use aster_drive::storage::{
     BlobMetadata, MultipartStorageDriver, StorageDriver, StorageErrorKind, StreamUploadDriver,

@@ -10,7 +10,7 @@ use crate::errors::{
     AsterError, MapAsterErr, Result, file_upload_error_with_subcode,
     precondition_failed_with_subcode, validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     policy_service::StoragePolicy,
     workspace_models::FileInfo,
@@ -72,7 +72,7 @@ pub(crate) async fn stream_request_body_to_temp_upload(
             workspace_storage_service::local_content_dedup_enabled(policy),
         )
     } else {
-        let temp_dir = &state.config.server.temp_dir;
+        let temp_dir = &state.config().server.temp_dir;
         let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
         let temp_path = crate::utils::paths::runtime_temp_file_path(
             temp_dir,
@@ -328,7 +328,7 @@ pub(crate) async fn update_content_in_scope(
         crate::utils::cleanup_temp_file(&staging_path).await;
         result
     } else {
-        let temp_dir = &state.config.server.temp_dir;
+        let temp_dir = &state.config().server.temp_dir;
         let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
         let temp_path = crate::utils::paths::runtime_temp_file_path(
             temp_dir,

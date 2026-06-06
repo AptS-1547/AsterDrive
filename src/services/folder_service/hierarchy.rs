@@ -9,7 +9,7 @@ use crate::cache::CacheExt;
 use crate::db::repository::folder_repo;
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 use super::{FolderAncestorItem, ensure_folder_model_in_scope};
@@ -31,9 +31,9 @@ fn folder_path_cache_key(folder_id: i64) -> String {
     format!("{FOLDER_PATH_CACHE_PREFIX}{folder_id}")
 }
 
-pub(crate) async fn invalidate_folder_path_cache(state: &PrimaryAppState) {
+pub(crate) async fn invalidate_folder_path_cache(state: &impl SharedRuntimeState) {
     state
-        .cache
+        .cache()
         .invalidate_prefix(FOLDER_PATH_CACHE_PREFIX)
         .await;
 }
@@ -128,7 +128,7 @@ fn build_folder_path_entries_from_chain_map(
 }
 
 pub async fn build_folder_paths_cached(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     folder_ids: &[i64],
 ) -> Result<HashMap<i64, String>> {
     let mut ids = folder_ids.to_vec();
@@ -141,7 +141,7 @@ pub async fn build_folder_paths_cached(
 
     for &id in &ids {
         let cache_key = folder_path_cache_key(id);
-        if let Some(cached) = state.cache.get::<CachedFolderPathChain>(&cache_key).await {
+        if let Some(cached) = state.cache().get::<CachedFolderPathChain>(&cache_key).await {
             if cached.chain_ids.is_empty() {
                 misses.push(id);
             } else {
@@ -176,7 +176,7 @@ pub async fn build_folder_paths_cached(
                 Ok(entry) => {
                     if entry.chain_ids != cached.chain_ids {
                         state
-                            .cache
+                            .cache()
                             .set(
                                 &folder_path_cache_key(id),
                                 &CachedFolderPathChain {
@@ -189,7 +189,7 @@ pub async fn build_folder_paths_cached(
                     paths.insert(id, entry.path);
                 }
                 Err(_) => {
-                    state.cache.delete(&folder_path_cache_key(id)).await;
+                    state.cache().delete(&folder_path_cache_key(id)).await;
                     misses.push(id);
                 }
             }
@@ -205,7 +205,7 @@ pub async fn build_folder_paths_cached(
     let loaded = build_folder_path_entries(state.reader_db(), &misses).await?;
     for (&id, entry) in &loaded {
         state
-            .cache
+            .cache()
             .set(
                 &folder_path_cache_key(id),
                 &CachedFolderPathChain {
@@ -224,7 +224,7 @@ pub async fn build_folder_paths_cached(
 }
 
 pub(crate) async fn get_ancestors_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<Vec<FolderAncestorItem>> {
@@ -252,7 +252,7 @@ pub(crate) async fn get_ancestors_in_scope(
 
 /// 获取文件夹的祖先链（从根下第一层到当前文件夹）
 pub async fn get_ancestors(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     folder_id: i64,
 ) -> Result<Vec<FolderAncestorItem>> {

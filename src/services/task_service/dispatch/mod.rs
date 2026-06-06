@@ -14,7 +14,7 @@ use futures::stream::{self, StreamExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 
 use claim::claim_due_for_lane;
 use execute::run_claimed_tasks;
@@ -107,11 +107,11 @@ pub(crate) async fn dispatch_due_with_shutdown(
     Ok(stats)
 }
 
-async fn refresh_pending_metric(state: &PrimaryAppState) {
+async fn refresh_pending_metric(state: &impl SharedRuntimeState) {
     match crate::db::repository::background_task_repo::count_pending_or_retry(state.writer_db())
         .await
     {
-        Ok(pending) => state.metrics.set_background_tasks_pending(pending),
+        Ok(pending) => state.metrics().set_background_tasks_pending(pending),
         Err(error) => tracing::warn!(
             error = %error,
             "failed to refresh background task pending metric"

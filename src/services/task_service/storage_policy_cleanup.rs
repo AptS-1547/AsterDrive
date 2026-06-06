@@ -6,7 +6,9 @@ use crate::api::constants::HOUR_SECS;
 use crate::db::repository::managed_follower_repo;
 use crate::entities::{background_task, managed_follower, storage_policy};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{
+    PrimaryAppState, RemoteProtocolRuntimeState, SharedRuntimeState, TaskRuntimeState,
+};
 use crate::storage::StorageDriver;
 use crate::storage::StorageErrorKind;
 use crate::storage::drivers::{local::LocalDriver, s3::S3Driver, tencent_cos::TencentCosDriver};
@@ -39,7 +41,7 @@ struct CleanupRunStats {
 }
 
 pub(crate) async fn create_storage_policy_temp_cleanup_task(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     policy: &storage_policy::Model,
     temp_keys: &[String],
     multipart_uploads: &[(String, String)],
@@ -253,7 +255,7 @@ fn policy_snapshot(policy: &storage_policy::Model) -> StoragePolicyCleanupPolicy
 }
 
 async fn remote_node_snapshot_for_policy(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     policy: &storage_policy::Model,
 ) -> Result<Option<StoragePolicyCleanupRemoteNodeSnapshot>> {
     if policy.driver_type != DriverType::Remote {
@@ -274,7 +276,7 @@ async fn remote_node_snapshot_for_policy(
 }
 
 fn driver_from_payload(
-    state: &PrimaryAppState,
+    state: &impl RemoteProtocolRuntimeState,
     payload: &StoragePolicyTempCleanupTaskPayload,
 ) -> Result<Box<dyn StorageDriver>> {
     let policy = storage_policy::Model {
@@ -324,7 +326,7 @@ fn driver_from_payload(
             };
             Ok(Box::new(
                 state
-                    .remote_protocol
+                    .remote_protocol()
                     .driver_for_policy(&policy, &follower)?,
             ))
         }

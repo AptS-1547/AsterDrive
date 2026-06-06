@@ -7,7 +7,7 @@ use crate::db::{
 };
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 
 use super::lane::{TaskLaneConfig, task_lane};
 use super::{TASK_PROCESSING_STALE_SECS, TaskLease, task_lease_expires_at};
@@ -27,7 +27,7 @@ pub(super) struct ClaimedTask {
     pub(super) processing_token: i64,
 }
 pub(super) async fn claim_due_for_lane(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     lane_config: TaskLaneConfig,
 ) -> Result<Vec<(background_task::Model, TaskLease)>> {
     if lane_config.limit == 0 {

@@ -15,7 +15,7 @@ use crate::entities::{file, wopi_session};
 use crate::errors::{
     AsterError, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{
     auth_service, preview_app_service, workspace_storage_service,
     workspace_storage_service::WorkspaceStorageScope,
@@ -84,12 +84,12 @@ fn wopi_session_cache_ttl(session: &wopi_session::Model) -> Option<u64> {
     }
 }
 
-async fn cache_wopi_session(state: &PrimaryAppState, session: &wopi_session::Model) {
+async fn cache_wopi_session(state: &impl SharedRuntimeState, session: &wopi_session::Model) {
     let Some(ttl) = wopi_session_cache_ttl(session) else {
         return;
     };
     state
-        .cache
+        .cache()
         .set(
             &wopi_session_cache_key(&session.token_hash),
             &CachedWopiSession::from(session),
@@ -99,11 +99,11 @@ async fn cache_wopi_session(state: &PrimaryAppState, session: &wopi_session::Mod
 }
 
 async fn load_wopi_session_by_hash(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token_hash: &str,
 ) -> Result<Option<CachedWopiSession>> {
     let cache_key = wopi_session_cache_key(token_hash);
-    if let Some(cached) = state.cache.get::<CachedWopiSession>(&cache_key).await {
+    if let Some(cached) = state.cache().get::<CachedWopiSession>(&cache_key).await {
         tracing::debug!(token_hash = %token_hash, "wopi session cache hit");
         return Ok(Some(cached));
     }
@@ -117,20 +117,20 @@ async fn load_wopi_session_by_hash(
 }
 
 async fn delete_wopi_session(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token_hash: &str,
     session_id: i64,
 ) -> Result<()> {
     wopi_session_repo::delete_by_id(state.writer_db(), session_id).await?;
     state
-        .cache
+        .cache()
         .delete(&wopi_session_cache_key(token_hash))
         .await;
     Ok(())
 }
 
 pub(crate) async fn create_launch_session_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     app_key: &str,
@@ -151,7 +151,7 @@ pub(crate) async fn create_launch_session_in_scope(
     let action_url = resolve_action_url(state, &app_config, &file, &wopi_src).await?;
     let expires_at = Utc::now()
         + Duration::seconds(crate::config::wopi::access_token_ttl_secs(
-            &state.runtime_config,
+            state.runtime_config(),
         ));
     let access_token = create_access_token_session(
         state,
@@ -191,35 +191,35 @@ fn require_public_origin(public_origin: Option<String>) -> Result<String> {
 }
 
 pub(crate) fn select_public_origin(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<String> {
     require_public_origin(
         request_origin
             .and_then(|origin| {
                 site_url::public_site_url_for_request(
-                    &state.runtime_config,
+                    state.runtime_config(),
                     origin.scheme,
                     origin.host,
                 )
             })
-            .or_else(|| site_url::public_site_url(&state.runtime_config)),
+            .or_else(|| site_url::public_site_url(state.runtime_config())),
     )
 }
 
 pub(crate) fn select_public_origin_from_preselected(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     request_public_origin: Option<&str>,
 ) -> Result<String> {
     require_public_origin(
         request_public_origin
             .map(str::to_owned)
-            .or_else(|| site_url::public_site_url(&state.runtime_config)),
+            .or_else(|| site_url::public_site_url(state.runtime_config())),
     )
 }
 
 pub(crate) fn build_public_wopi_src(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<String> {
@@ -234,13 +234,13 @@ pub(crate) fn build_public_wopi_src(
 }
 
 pub(crate) async fn create_access_token_for_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     payload: &WopiAccessTokenPayload,
     file_id: i64,
 ) -> Result<String> {
     let expires_at = Utc::now()
         + Duration::seconds(crate::config::wopi::access_token_ttl_secs(
-            &state.runtime_config,
+            state.runtime_config(),
         ));
     create_access_token_session(
         state,
@@ -254,7 +254,7 @@ pub(crate) async fn create_access_token_for_file(
 }
 
 pub(crate) async fn resolve_access_token(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     access_token: &str,
     request_source: WopiRequestSource<'_>,
@@ -342,7 +342,7 @@ pub(crate) fn scope_from_payload(payload: &WopiAccessTokenPayload) -> WorkspaceS
 }
 
 async fn create_access_token_session(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     payload: &WopiAccessTokenPayload,
 ) -> Result<String> {
     let token = format!("wopi_{}", crate::utils::id::new_short_token());
@@ -384,6 +384,6 @@ fn payload_from_session(session: &CachedWopiSession) -> Result<WopiAccessTokenPa
     })
 }
 
-pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u64> {
+pub async fn cleanup_expired(state: &impl SharedRuntimeState) -> Result<u64> {
     wopi_session_repo::delete_expired(state.writer_db()).await
 }

@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::config::operations;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::task_service::types::TaskStepInfo;
 use crate::storage::error::{StorageErrorKind, storage_driver_error_with_subcode};
 use crate::utils::numbers::u64_to_i64;
@@ -43,30 +43,30 @@ impl Aria2OfflineDownloadEngine {
         max_bytes: i64,
         download_timeout: StdDuration,
     ) -> Result<Self> {
-        let rpc_url = operations::offline_download_aria2_rpc_url(&state.runtime_config)
+        let rpc_url = operations::offline_download_aria2_rpc_url(&state.runtime_config())
             .ok_or_else(|| {
                 AsterError::validation_error(
                     "offline_download_aria2_rpc_url is required when offline_download_engine is aria2",
                 )
             })?;
         let rpc_timeout = StdDuration::from_secs(
-            operations::offline_download_aria2_request_timeout_secs(&state.runtime_config).max(1),
+            operations::offline_download_aria2_request_timeout_secs(&state.runtime_config()).max(1),
         );
         Ok(Self {
             max_bytes,
             download_timeout,
             client: Aria2RpcClient::new(
                 &rpc_url,
-                operations::offline_download_aria2_rpc_secret(&state.runtime_config),
+                operations::offline_download_aria2_rpc_secret(&state.runtime_config()),
                 rpc_timeout,
             )?,
-            split: operations::offline_download_aria2_split(&state.runtime_config),
+            split: operations::offline_download_aria2_split(&state.runtime_config()),
             max_connection_per_server: operations::offline_download_aria2_max_connection_per_server(
-                &state.runtime_config,
+                &state.runtime_config(),
             ),
             lowest_speed_limit_bytes_per_sec:
                 operations::offline_download_aria2_lowest_speed_limit_bytes_per_sec(
-                    &state.runtime_config,
+                    &state.runtime_config(),
                 ),
         })
     }

@@ -3,7 +3,7 @@
 use crate::db::repository::background_task_repo;
 use crate::entities::{background_task, file, file_blob};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
 use crate::services::media_metadata_service;
 use crate::storage::StorageErrorKind;
 use crate::types::{

@@ -3,7 +3,7 @@
 use crate::db::repository::upload_session_repo;
 use crate::entities::upload_session;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use sea_orm::ConnectionTrait;
 

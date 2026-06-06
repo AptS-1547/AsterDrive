@@ -10,7 +10,7 @@ use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     archive_service::{
         scan::{
@@ -220,8 +220,8 @@ pub(super) async fn download_file_to_temp(
     temp_path: &Path,
 ) -> Result<()> {
     let blob = file_repo::find_blob_by_id(state.writer_db(), source_file.blob_id).await?;
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     let mut stream = driver.get_stream(&blob.storage_path).await?;
     let mut output = tokio::fs::File::create(temp_path).await.map_aster_err_ctx(
         "create source archive temp file",

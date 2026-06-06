@@ -9,7 +9,7 @@ use sea_orm::{DatabaseConnection, Set};
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::task_service::TaskExecutionContext;
 use crate::services::{
     folder_service,

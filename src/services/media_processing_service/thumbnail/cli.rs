@@ -6,7 +6,7 @@ use tokio::io::AsyncReadExt;
 
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::storage::StorageDriver;
 
 use crate::services::media_processing_service::cli_input::prepare_cli_source;
@@ -29,7 +29,7 @@ pub(super) async fn render_thumbnail_with_vips_cli(
     driver: &dyn StorageDriver,
     command: &str,
 ) -> Result<Vec<u8>> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir = PathBuf::from(temp_root).join(format!("media-vips-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
         .await
@@ -115,7 +115,7 @@ pub(super) async fn render_image_preview_with_vips_cli(
     driver: &dyn StorageDriver,
     command: &str,
 ) -> Result<Vec<u8>> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir =
         PathBuf::from(temp_root).join(format!("media-vips-preview-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
@@ -205,7 +205,7 @@ pub(super) async fn render_thumbnail_with_ffmpeg_cli(
     driver: &dyn StorageDriver,
     command: &str,
 ) -> Result<Vec<u8>> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir = PathBuf::from(temp_root).join(format!("media-ffmpeg-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
         .await

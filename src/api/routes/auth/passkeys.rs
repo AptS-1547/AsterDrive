@@ -8,7 +8,7 @@ use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::response::ApiResponse;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::{self, AuditContext, AuditRequestInfo};
 use crate::services::{auth_service::Claims, passkey_service};
 use crate::utils::numbers::u64_to_i64;
@@ -189,7 +189,11 @@ pub async fn start_login(
     req: HttpRequest,
     body: web::Json<PasskeyLoginStartReq>,
 ) -> Result<HttpResponse> {
-    csrf::ensure_request_source_allowed(&req, &state.runtime_config, RequestSourceMode::Required)?;
+    csrf::ensure_request_source_allowed(
+        &req,
+        &state.runtime_config(),
+        RequestSourceMode::Required,
+    )?;
     let resp = passkey_service::start_login(
         &state,
         body.identifier.as_deref(),
@@ -217,12 +221,12 @@ pub async fn finish_login(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config,
+        &state.runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     let result = passkey_service::finish_login(
         &state,
@@ -244,7 +248,7 @@ pub async fn finish_login(
     )
     .await;
 
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
     let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;

@@ -78,14 +78,6 @@ pub trait RemoteProtocolRuntimeState: SharedRuntimeState {
     fn remote_protocol(&self) -> &Arc<RemoteProtocolRuntime>;
 }
 
-pub trait PrimaryRuntimeState:
-    MailRuntimeState
-    + StorageChangeRuntimeState
-    + ShareDownloadRuntimeState
-    + RemoteProtocolRuntimeState
-{
-}
-
 pub trait TaskRuntimeState: SharedRuntimeState {
     fn wake_background_task_dispatcher(&self);
 }
@@ -101,20 +93,8 @@ impl PrimaryAppState {
         Arc::new(RemoteProtocolRuntime::new())
     }
 
-    pub fn writer_db(&self) -> &DatabaseConnection {
-        self.db_handles.writer()
-    }
-
-    pub fn reader_db(&self) -> &DatabaseConnection {
-        self.db_handles.reader()
-    }
-
     pub fn sqlite_read_write_split(&self) -> bool {
         self.db_handles.sqlite_read_write_split()
-    }
-
-    pub fn wake_background_task_dispatcher(&self) {
-        self.background_task_dispatch_wakeup.notify_one();
     }
 
     pub fn should_record_audit_action(&self, action: crate::types::AuditAction) -> bool {
@@ -141,14 +121,6 @@ impl From<&PrimaryAppState> for FollowerAppState {
 }
 
 impl FollowerAppState {
-    pub fn writer_db(&self) -> &DatabaseConnection {
-        self.db_handles.writer()
-    }
-
-    pub fn reader_db(&self) -> &DatabaseConnection {
-        self.db_handles.reader()
-    }
-
     pub fn sqlite_read_write_split(&self) -> bool {
         self.db_handles.sqlite_read_write_split()
     }
@@ -187,8 +159,6 @@ impl SharedRuntimeState for PrimaryAppState {
         &self.metrics
     }
 }
-
-impl PrimaryRuntimeState for PrimaryAppState {}
 
 impl MailRuntimeState for PrimaryAppState {
     fn mail_sender(&self) -> &Arc<dyn MailSender> {
@@ -290,8 +260,6 @@ impl<T: SharedRuntimeState> SharedRuntimeState for web::Data<T> {
     }
 }
 
-impl<T: PrimaryRuntimeState> PrimaryRuntimeState for web::Data<T> {}
-
 impl<T: MailRuntimeState> MailRuntimeState for web::Data<T> {
     fn mail_sender(&self) -> &Arc<dyn MailSender> {
         self.get_ref().mail_sender()
@@ -327,9 +295,8 @@ impl<T: FollowerRuntimeState> FollowerRuntimeState for web::Data<T> {}
 #[cfg(test)]
 mod tests {
     use super::{
-        FollowerRuntimeState, MailRuntimeState, PrimaryAppState, PrimaryRuntimeState,
-        RemoteProtocolRuntimeState, ShareDownloadRuntimeState, SharedRuntimeState,
-        StorageChangeRuntimeState, TaskRuntimeState,
+        FollowerRuntimeState, MailRuntimeState, PrimaryAppState, RemoteProtocolRuntimeState,
+        ShareDownloadRuntimeState, SharedRuntimeState, StorageChangeRuntimeState, TaskRuntimeState,
     };
     use crate::config::{CacheConfig, Config, RuntimeConfig};
     use crate::services::share_service::build_share_download_rollback_queue;
@@ -429,7 +396,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn web_data_forwards_primary_runtime_state_traits() {
+    async fn web_data_forwards_runtime_state_traits() {
         let state = setup_state().await;
         let data = web::Data::new(state.clone());
 

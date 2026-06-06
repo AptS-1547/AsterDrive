@@ -13,7 +13,7 @@ use crate::api::middleware::rate_limit;
 use crate::api::request_auth::access_token;
 use crate::config::site_url;
 use crate::config::{NetworkTrustConfig, RateLimitConfig};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{auth_service, storage_change_service};
 use actix_governor::Governor;
 use actix_web::http::header;
@@ -380,7 +380,7 @@ fn contact_verification_redirect_url(
         redirect_path.push_str(&urlencoding::encode(email));
     }
 
-    site_url::public_app_url_or_path(&state.runtime_config, &redirect_path)
+    site_url::public_app_url_or_path(&state.runtime_config(), &redirect_path)
 }
 
 fn contact_verification_redirect_response(

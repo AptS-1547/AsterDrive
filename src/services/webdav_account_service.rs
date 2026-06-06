@@ -11,7 +11,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::webdav_account_repo;
 use crate::entities::webdav_account;
 use crate::errors::{AsterError, Result, validation_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{
     profile_service,
     user_service::{self, UserSummary},
@@ -99,7 +99,7 @@ impl From<webdav_account::Model> for WebdavAccount {
 ///
 /// password 为 None 时自动生成 16 位随机密码
 pub async fn create(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     username: &str,
     password: Option<&str>,
@@ -116,7 +116,7 @@ pub async fn create(
 }
 
 pub async fn create_for_team(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     actor_user_id: i64,
     team_id: i64,
     username: &str,
@@ -139,7 +139,7 @@ pub async fn create_for_team(
 }
 
 async fn create_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     username: &str,
     password: Option<&str>,
@@ -203,13 +203,13 @@ async fn create_in_scope(
 }
 
 /// 列出用户的所有 WebDAV 账号（带文件夹路径）
-pub async fn list(state: &PrimaryAppState, user_id: i64) -> Result<Vec<WebdavAccountInfo>> {
+pub async fn list(state: &impl SharedRuntimeState, user_id: i64) -> Result<Vec<WebdavAccountInfo>> {
     let accounts = webdav_account_repo::find_by_user(state.writer_db(), user_id).await?;
     build_account_infos(state, accounts).await
 }
 
 pub async fn list_for_team(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     actor_user_id: i64,
     team_id: i64,
 ) -> Result<Vec<WebdavAccountInfo>> {
@@ -229,7 +229,7 @@ pub async fn list_for_team(
 }
 
 pub async fn list_paginated(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     limit: u64,
     offset: u64,
@@ -245,7 +245,7 @@ pub async fn list_paginated(
 }
 
 pub async fn list_team_paginated(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     actor_user_id: i64,
     team_id: i64,
     limit: u64,
@@ -278,7 +278,7 @@ pub async fn list_team_paginated(
 }
 
 async fn build_account_infos(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     accounts: Vec<webdav_account::Model>,
 ) -> Result<Vec<WebdavAccountInfo>> {
     let folder_ids: Vec<i64> = accounts
@@ -317,7 +317,7 @@ async fn build_account_infos(
 }
 
 /// 删除 WebDAV 账号（需要验证归属）
-pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
+pub async fn delete(state: &impl SharedRuntimeState, id: i64, user_id: i64) -> Result<()> {
     let account = webdav_account_repo::find_by_id(state.writer_db(), id).await?;
     if account.team_id.is_some() {
         return Err(AsterError::auth_forbidden(
@@ -337,7 +337,7 @@ pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()
 }
 
 pub async fn delete_for_team(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     id: i64,
     actor_user_id: i64,
     team_id: i64,
@@ -373,7 +373,7 @@ pub async fn delete_for_team(
 
 /// 切换启用/禁用
 pub async fn toggle_active(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     id: i64,
     user_id: i64,
 ) -> Result<WebdavAccount> {
@@ -397,7 +397,7 @@ pub async fn toggle_active(
 }
 
 pub async fn toggle_team_active(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     id: i64,
     actor_user_id: i64,
     team_id: i64,
@@ -433,7 +433,7 @@ pub async fn toggle_team_active(
 
 /// 测试 WebDAV 凭据是否正确
 pub async fn test_credentials(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     username: &str,
     password: &str,
 ) -> Result<()> {

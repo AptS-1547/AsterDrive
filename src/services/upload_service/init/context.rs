@@ -4,7 +4,7 @@ use sea_orm::Set;
 use crate::db::repository::upload_session_repo;
 use crate::entities::{storage_policy, upload_session};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::shared::{
     UniqueUuidAttempt, abort_created_multipart_upload_after_init_error, with_unique_upload_id,

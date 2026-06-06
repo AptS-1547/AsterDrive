@@ -8,7 +8,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::db::repository::search_repo;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{
     folder_service::{FileListItem, FolderListItem, build_folder_list_items},
     share_service,
@@ -209,7 +209,7 @@ fn parse_search_dates(params: &SearchParams) -> Result<SearchDateRange> {
 }
 
 pub(crate) async fn search_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     params: &SearchParams,
 ) -> Result<SearchResults> {
@@ -404,7 +404,7 @@ pub(crate) async fn search_in_scope(
 }
 
 pub async fn search(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     params: &SearchParams,
 ) -> Result<SearchResults> {
@@ -412,7 +412,7 @@ pub async fn search(
 }
 
 pub async fn search_in_team(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
     params: &SearchParams,

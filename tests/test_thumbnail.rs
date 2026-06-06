@@ -6,7 +6,7 @@ mod common;
 use actix_web::test;
 use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::{background_task_repo, file_repo, policy_repo};
-use aster_drive::runtime::PrimaryAppState;
+use aster_drive::runtime::{PrimaryAppState, SharedRuntimeState};
 use aster_drive::types::{
     BackgroundTaskKind, BackgroundTaskStatus, MediaProcessorKind, StoragePolicyOptions,
     serialize_storage_policy_options,

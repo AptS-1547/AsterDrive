@@ -8,7 +8,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{file_repo, managed_follower_repo, policy_group_repo, policy_repo};
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
-use crate::runtime::{PrimaryAppState, RemoteProtocolRuntimeState, SharedRuntimeState};
+use crate::runtime::{RemoteProtocolRuntimeState, SharedRuntimeState, TaskRuntimeState};
 use crate::storage::drivers::tencent_cos::TencentCosDriver;
 use crate::types::{
     DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
@@ -85,7 +85,7 @@ fn validate_connection_credentials(
 }
 
 pub async fn list_paginated(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     limit: u64,
     offset: u64,
     sort_by: AdminPolicySortBy,
@@ -100,15 +100,18 @@ pub async fn list_paginated(
     .await
 }
 
-pub async fn get(state: &PrimaryAppState, id: i64) -> Result<StoragePolicy> {
+pub async fn get(state: &impl SharedRuntimeState, id: i64) -> Result<StoragePolicy> {
     policy_repo::find_by_id(state.reader_db(), id)
         .await
         .map(Into::into)
 }
 
-pub async fn capacity_info(state: &PrimaryAppState, id: i64) -> Result<StoragePolicyCapacityInfo> {
+pub async fn capacity_info(
+    state: &impl SharedRuntimeState,
+    id: i64,
+) -> Result<StoragePolicyCapacityInfo> {
     let policy = policy_repo::find_by_id(state.reader_db(), id).await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     let blob_summary = file_repo::summarize_blobs_by_policy(state.reader_db(), policy.id).await?;
     let capacity = capacity_info_or_status(driver.as_ref(), policy.driver_type).await;
     Ok(StoragePolicyCapacityInfo {
@@ -149,7 +152,7 @@ pub(crate) async fn capacity_info_or_status(
 }
 
 pub async fn create(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     input: CreateStoragePolicyInput,
 ) -> Result<StoragePolicy> {
     let CreateStoragePolicyInput {
@@ -215,14 +218,14 @@ pub async fn create(
         policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
     }
     crate::db::transaction::commit(txn).await?;
-    state.policy_snapshot.reload(state.writer_db()).await?;
+    state.policy_snapshot().reload(state.writer_db()).await?;
     crate::services::config_service::invalidate_public_thumbnail_support_cache();
     policy_repo::find_by_id(state.writer_db(), result.id)
         .await
         .map(Into::into)
 }
 
-pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()> {
+pub async fn delete(state: &impl TaskRuntimeState, id: i64, force: bool) -> Result<()> {
     let policy = policy_repo::find_by_id(state.writer_db(), id).await?;
     tracing::debug!(
         policy_id = id,
@@ -312,8 +315,8 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
 
     // 与 update 一致：先 invalidate driver 再 reload snapshot，
     // 避免"策略行已删除但 driver 仍在缓存里"的窗口。
-    state.driver_registry.invalidate(id);
-    state.policy_snapshot.reload(state.writer_db()).await?;
+    state.driver_registry().invalidate(id);
+    state.policy_snapshot().reload(state.writer_db()).await?;
     crate::services::config_service::invalidate_public_thumbnail_support_cache();
     tracing::info!(
         policy_id = id,
@@ -325,7 +328,7 @@ pub async fn delete(state: &PrimaryAppState, id: i64, force: bool) -> Result<()>
 }
 
 pub async fn update(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     id: i64,
     input: UpdateStoragePolicyInput,
 ) -> Result<StoragePolicy> {
@@ -449,8 +452,8 @@ pub async fn update(
     // 失效顺序很关键：必须先 invalidate driver 再 reload snapshot。
     // 如果反过来，中间窗口里读请求可能拿到"新 policy model + 旧 driver cache"，
     // 把写操作发到老的 endpoint/bucket/credential 上——无日志、无报错的静默错路由。
-    state.driver_registry.invalidate(id);
-    state.policy_snapshot.reload(state.writer_db()).await?;
+    state.driver_registry().invalidate(id);
+    state.policy_snapshot().reload(state.writer_db()).await?;
     crate::services::config_service::invalidate_public_thumbnail_support_cache();
 
     policy_repo::find_by_id(state.writer_db(), result.id)

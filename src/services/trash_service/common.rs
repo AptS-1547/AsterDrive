@@ -7,7 +7,7 @@ use sea_orm::ConnectionTrait;
 use crate::db::repository::{file_repo, folder_repo, property_repo, share_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     file_service, folder_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceResourceScope, WorkspaceStorageScope},
@@ -19,12 +19,12 @@ use super::models::{TrashFileItem, TrashFolderItem};
 
 const FOLDER_PURGED_EVENT_FILE_IDS_LIMIT: usize = 1000;
 
-pub fn load_retention_days(state: &PrimaryAppState) -> i64 {
+pub fn load_retention_days(state: &impl SharedRuntimeState) -> i64 {
     state
-        .runtime_config
+        .runtime_config()
         .get_i64("trash_retention_days")
         .unwrap_or_else(|| {
-            if let Some(raw) = state.runtime_config.get("trash_retention_days") {
+            if let Some(raw) = state.runtime_config().get("trash_retention_days") {
                 tracing::warn!(
                     "invalid trash_retention_days value '{}', using default",
                     raw
@@ -125,7 +125,7 @@ pub(super) fn parent_restore_target_unavailable(
 }
 
 pub(super) async fn verify_file_in_trash_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
@@ -140,7 +140,7 @@ pub(super) async fn verify_file_in_trash_in_scope(
 }
 
 pub(super) async fn verify_folder_in_trash_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {

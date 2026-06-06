@@ -7,7 +7,7 @@ use crate::config::{auth_runtime, mail, mail::RuntimeMailSettings};
 use crate::db::repository::config_repo;
 use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::types::{SystemConfigSource, SystemConfigValueType, SystemConfigVisibility};
 use serde::{Deserialize, Serialize};
@@ -152,7 +152,7 @@ impl From<system_config::Model> for SystemConfig {
 }
 
 pub async fn list_paginated(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<SystemConfig>> {
@@ -169,7 +169,7 @@ pub async fn list_paginated(
     Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
 }
 
-pub async fn get_by_key(state: &PrimaryAppState, key: &str) -> Result<SystemConfig> {
+pub async fn get_by_key(state: &impl SharedRuntimeState, key: &str) -> Result<SystemConfig> {
     config_repo::find_by_key(state.reader_db(), key)
         .await?
         .map(apply_system_config_definition)
@@ -178,7 +178,7 @@ pub async fn get_by_key(state: &PrimaryAppState, key: &str) -> Result<SystemConf
 }
 
 pub async fn set(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     key: &str,
     value: impl Into<SystemConfigValue>,
     updated_by: i64,
@@ -187,7 +187,7 @@ pub async fn set(
 }
 
 pub async fn set_with_visibility(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     key: &str,
     value: impl Into<SystemConfigValue>,
     visibility: Option<SystemConfigVisibility>,
@@ -222,16 +222,16 @@ pub async fn set_with_visibility(
     Ok(config.into())
 }
 
-pub async fn delete(state: &PrimaryAppState, key: &str) -> Result<()> {
+pub async fn delete(state: &impl SharedRuntimeState, key: &str) -> Result<()> {
     config_repo::delete_by_key(state.writer_db(), key).await?;
-    state.runtime_config.remove(key);
+    state.runtime_config().remove(key);
     invalidate_dependent_public_config_caches(key);
     tracing::debug!(key, "deleted runtime config");
     Ok(())
 }
 
 pub async fn delete_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     key: &str,
     audit_ctx: &AuditContext,
 ) -> Result<()> {
@@ -251,7 +251,7 @@ pub async fn delete_with_audit(
 }
 
 pub async fn set_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     key: &str,
     value: &SystemConfigValue,
     updated_by: i64,
@@ -261,7 +261,7 @@ pub async fn set_with_audit(
 }
 
 pub async fn set_with_audit_and_visibility(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     key: &str,
     value: &SystemConfigValue,
     visibility: Option<SystemConfigVisibility>,
@@ -309,7 +309,7 @@ pub async fn set_with_audit_and_visibility(
 }
 
 async fn audit_config_update(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     audit_ctx: &AuditContext,
     config: &system_config::Model,
     prior_visibility: Option<SystemConfigVisibility>,
@@ -351,16 +351,24 @@ fn validate_visibility_target(key: &str, visibility: Option<SystemConfigVisibili
     Ok(())
 }
 
-fn normalize_system_value(state: &PrimaryAppState, key: &str, value: &str) -> Result<String> {
-    shared_system_config::normalize_system_value(&state.runtime_config, key, value)
+fn normalize_system_value(
+    state: &impl SharedRuntimeState,
+    key: &str,
+    value: &str,
+) -> Result<String> {
+    shared_system_config::normalize_system_value(state.runtime_config(), key, value)
 }
 
-fn validate_config_dependencies(state: &PrimaryAppState, key: &str, value: &str) -> Result<()> {
+fn validate_config_dependencies(
+    state: &impl SharedRuntimeState,
+    key: &str,
+    value: &str,
+) -> Result<()> {
     if key != auth_runtime::AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY || value != "true" {
         return Ok(());
     }
 
-    let settings = RuntimeMailSettings::from_runtime_config(&state.runtime_config);
+    let settings = RuntimeMailSettings::from_runtime_config(state.runtime_config());
     if settings.is_ready_for_delivery() {
         return Ok(());
     }
@@ -371,7 +379,7 @@ fn validate_config_dependencies(state: &PrimaryAppState, key: &str, value: &str)
 }
 
 async fn upsert_config_and_apply_dependents(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     key: &str,
     value: &str,
     visibility: Option<SystemConfigVisibility>,
@@ -403,7 +411,7 @@ async fn upsert_config_and_apply_dependents(
         Ok(changed) => {
             crate::db::transaction::commit(txn).await?;
             for item in &changed {
-                state.runtime_config.apply(item.clone());
+                state.runtime_config().apply(item.clone());
             }
             Ok(changed)
         }
@@ -415,7 +423,7 @@ async fn upsert_config_and_apply_dependents(
 }
 
 fn mail_config_change_disables_email_code_mfa(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     key: &str,
     value: &str,
 ) -> bool {
@@ -428,7 +436,7 @@ fn mail_config_change_disables_email_code_mfa(
     ) {
         return false;
     }
-    if !state.runtime_config.get_bool_or(
+    if !state.runtime_config().get_bool_or(
         auth_runtime::AUTH_EMAIL_CODE_LOGIN_ENABLED_KEY,
         auth_runtime::DEFAULT_AUTH_EMAIL_CODE_LOGIN_ENABLED,
     ) {
@@ -439,13 +447,13 @@ fn mail_config_change_disables_email_code_mfa(
         if lookup_key == key {
             value.to_string()
         } else {
-            state.runtime_config.get(lookup_key).unwrap_or_default()
+            state.runtime_config().get(lookup_key).unwrap_or_default()
         }
     };
     let settings = RuntimeMailSettings {
         smtp_host: lookup(mail::MAIL_SMTP_HOST_KEY),
         smtp_port: state
-            .runtime_config
+            .runtime_config()
             .get(mail::MAIL_SMTP_PORT_KEY)
             .and_then(|raw| raw.trim().parse().ok())
             .unwrap_or(mail::DEFAULT_MAIL_SMTP_PORT),
@@ -453,11 +461,11 @@ fn mail_config_change_disables_email_code_mfa(
         smtp_password: lookup(mail::MAIL_SMTP_PASSWORD_KEY),
         from_address: lookup(mail::MAIL_FROM_ADDRESS_KEY),
         from_name: state
-            .runtime_config
+            .runtime_config()
             .get(mail::MAIL_FROM_NAME_KEY)
             .unwrap_or_default(),
         encryption_enabled: state
-            .runtime_config
+            .runtime_config()
             .get_bool_or(mail::MAIL_SECURITY_KEY, mail::DEFAULT_MAIL_SECURITY),
     };
 

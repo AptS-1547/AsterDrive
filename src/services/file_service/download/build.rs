@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::file_service::{
     DownloadDisposition, ensure_personal_file_scope, get_info_in_scope, if_none_match_matches,
     inline_sandbox_csp, requires_inline_sandbox,
@@ -143,7 +143,7 @@ pub(crate) async fn build_download_outcome_with_disposition_and_range(
         .await;
     }
 
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let options = parse_storage_policy_options(policy.options.as_ref());
     let should_presign = disposition == DownloadDisposition::Attachment
         && match policy.driver_type {
@@ -172,7 +172,7 @@ async fn build_presigned_redirect_outcome(
     file: &file::Model,
     blob: &file_blob::Model,
 ) -> Result<DownloadOutcome> {
-    let driver = state.driver_registry.get_driver(policy)?;
+    let driver = state.driver_registry().get_driver(policy)?;
     let presigned = driver.as_presigned().ok_or_else(|| {
         AsterError::storage_driver_error("presigned download not supported by driver")
     })?;
@@ -265,8 +265,8 @@ pub(crate) async fn build_stream_outcome_with_disposition_and_range(
         });
     }
 
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     // 主下载链路必须保持流式读取；不要改回 driver.get() 的全量缓冲实现。
     let stream = match range {
         Some(range) => {

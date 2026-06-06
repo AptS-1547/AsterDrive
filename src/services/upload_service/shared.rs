@@ -12,7 +12,7 @@ use crate::errors::{
     AsterError, Result, chunk_upload_error_with_subcode, upload_assembly_error_with_subcode,
     validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::storage::MultipartStorageDriver;
 use crate::storage::StorageErrorKind;
 use crate::types::UploadSessionStatus;
@@ -255,8 +255,8 @@ where
     }
 }
 
-pub(super) async fn cleanup_upload_temp_dir(state: &PrimaryAppState, upload_id: &str) {
-    let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+pub(super) async fn cleanup_upload_temp_dir(state: &impl SharedRuntimeState, upload_id: &str) {
+    let temp_dir = paths::upload_temp_dir(&state.config().server.upload_temp_dir, upload_id);
     crate::utils::cleanup_temp_dir(&temp_dir).await;
 }
 

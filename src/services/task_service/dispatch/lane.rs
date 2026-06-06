@@ -1,5 +1,5 @@
 use crate::config::operations;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::types::BackgroundTaskKind;
 
 use super::super::registry;
@@ -27,28 +27,28 @@ pub(super) const TASK_LANES: [TaskLane; 5] = [
     TaskLane::StorageMigration,
     TaskLane::Fallback,
 ];
-pub(super) fn task_lane_configs(state: &PrimaryAppState) -> Vec<TaskLaneConfig> {
+pub(super) fn task_lane_configs(state: &impl SharedRuntimeState) -> Vec<TaskLaneConfig> {
     TASK_LANES
         .into_iter()
         .map(|lane| TaskLaneConfig {
             lane,
             limit: match lane {
                 TaskLane::Archive => {
-                    operations::background_task_archive_max_concurrency(&state.runtime_config)
+                    operations::background_task_archive_max_concurrency(state.runtime_config())
                 }
                 TaskLane::Thumbnail => {
-                    operations::background_task_thumbnail_max_concurrency(&state.runtime_config)
+                    operations::background_task_thumbnail_max_concurrency(state.runtime_config())
                 }
                 TaskLane::OfflineDownload => {
-                    operations::offline_download_max_concurrency(&state.runtime_config)
+                    operations::offline_download_max_concurrency(state.runtime_config())
                 }
                 TaskLane::StorageMigration => {
                     operations::background_task_storage_migration_max_concurrency(
-                        &state.runtime_config,
+                        state.runtime_config(),
                     )
                 }
                 TaskLane::Fallback => {
-                    operations::background_task_max_concurrency(&state.runtime_config)
+                    operations::background_task_max_concurrency(state.runtime_config())
                 }
             },
             fast_continue: matches!(lane, TaskLane::Archive | TaskLane::Thumbnail),

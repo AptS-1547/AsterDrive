@@ -8,7 +8,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{file_repo, folder_repo, team_member_repo, team_repo, user_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::{cache::CacheExt, types::TeamMemberRole};
 use sea_orm::ConnectionTrait;
 use serde::{Deserialize, Serialize};
@@ -74,20 +74,23 @@ fn actor_username_cache_key(user_id: i64) -> String {
     format!("actor_username:{user_id}")
 }
 
-pub(crate) async fn invalidate_team_access_cache_for_team(state: &PrimaryAppState, team_id: i64) {
+pub(crate) async fn invalidate_team_access_cache_for_team(
+    state: &impl SharedRuntimeState,
+    team_id: i64,
+) {
     state
-        .cache
+        .cache()
         .invalidate_prefix(&team_access_cache_prefix(team_id))
         .await;
 }
 
 pub(crate) async fn invalidate_team_access_cache_for_member(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
 ) {
     state
-        .cache
+        .cache()
         .delete(&team_access_cache_key(team_id, user_id))
         .await;
 }
@@ -116,17 +119,17 @@ impl WorkspaceStorageScope {
 }
 
 async fn load_team_access<C: ConnectionTrait>(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     db: &C,
     team_id: i64,
     user_id: i64,
 ) -> Result<CachedTeamAccess> {
     let cache_key = team_access_cache_key(team_id, user_id);
-    if let Some(cached) = state.cache.get::<CachedTeamAccess>(&cache_key).await {
+    if let Some(cached) = state.cache().get::<CachedTeamAccess>(&cache_key).await {
         let access = match load_team_access_from_database(db, team_id, user_id).await {
             Ok(access) => access,
             Err(error @ (AsterError::RecordNotFound(_) | AsterError::AuthForbidden(_))) => {
-                state.cache.delete(&cache_key).await;
+                state.cache().delete(&cache_key).await;
                 return Err(error);
             }
             Err(error) => return Err(error),
@@ -135,7 +138,7 @@ async fn load_team_access<C: ConnectionTrait>(
             tracing::debug!(team_id, user_id, "team access cache hit");
         } else {
             state
-                .cache
+                .cache()
                 .set(&cache_key, &access, Some(TEAM_ACCESS_CACHE_TTL))
                 .await;
             tracing::debug!(
@@ -149,7 +152,7 @@ async fn load_team_access<C: ConnectionTrait>(
 
     let access = load_team_access_from_database(db, team_id, user_id).await?;
     state
-        .cache
+        .cache()
         .set(&cache_key, &access, Some(TEAM_ACCESS_CACHE_TTL))
         .await;
     tracing::debug!(team_id, user_id, "team access cache miss");
@@ -174,14 +177,14 @@ async fn load_team_access_from_database<C: ConnectionTrait>(
 }
 
 pub(crate) async fn require_scope_access(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
 ) -> Result<()> {
     require_scope_access_with_db(state, state.reader_db(), scope).await
 }
 
 pub(crate) async fn require_scope_access_with_db<C: ConnectionTrait>(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     db: &C,
     scope: WorkspaceStorageScope,
 ) -> Result<()> {
@@ -207,19 +210,19 @@ pub(crate) async fn load_scope_actor_username<C: ConnectionTrait>(
 }
 
 pub(crate) async fn load_scope_actor_username_cached(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
 ) -> Result<String> {
     let user_id = scope.actor_user_id();
     let cache_key = actor_username_cache_key(user_id);
-    if let Some(username) = state.cache.get::<String>(&cache_key).await {
+    if let Some(username) = state.cache().get::<String>(&cache_key).await {
         tracing::debug!(user_id, "actor username cache hit");
         return Ok(username);
     }
 
     let username = load_scope_actor_username(state.reader_db(), scope).await?;
     state
-        .cache
+        .cache()
         .set(&cache_key, &username, Some(ACTOR_USERNAME_CACHE_TTL))
         .await;
     tracing::debug!(user_id, "actor username cache miss");
@@ -352,7 +355,7 @@ pub(crate) fn ensure_active_folder_scope(
 }
 
 pub(crate) async fn require_team_access(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
 ) -> Result<()> {
@@ -362,7 +365,7 @@ pub(crate) async fn require_team_access(
 }
 
 pub(crate) async fn load_team_member_role(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
 ) -> Result<TeamMemberRole> {
@@ -372,7 +375,7 @@ pub(crate) async fn load_team_member_role(
 }
 
 pub(crate) async fn require_team_access_with_db<C: ConnectionTrait>(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     db: &C,
     team_id: i64,
     user_id: i64,
@@ -383,7 +386,7 @@ pub(crate) async fn require_team_access_with_db<C: ConnectionTrait>(
 }
 
 pub(crate) async fn require_team_policy_group_id(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
 ) -> Result<i64> {
@@ -391,7 +394,7 @@ pub(crate) async fn require_team_policy_group_id(
 }
 
 pub(crate) async fn require_team_policy_group_id_with_db<C: ConnectionTrait>(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     db: &C,
     team_id: i64,
     user_id: i64,
@@ -406,7 +409,7 @@ pub(crate) async fn require_team_policy_group_id_with_db<C: ConnectionTrait>(
 }
 
 pub(crate) async fn require_team_management_access(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
 ) -> Result<()> {
@@ -421,7 +424,7 @@ pub(crate) async fn require_team_management_access(
 }
 
 pub(crate) async fn verify_folder_access(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
@@ -429,7 +432,7 @@ pub(crate) async fn verify_folder_access(
 }
 
 pub(crate) async fn verify_folder_access_for_read(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
@@ -438,7 +441,7 @@ pub(crate) async fn verify_folder_access_for_read(
 
 async fn verify_folder_access_with_db<C: ConnectionTrait>(
     db: &C,
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<folder::Model> {
@@ -452,7 +455,7 @@ async fn verify_folder_access_with_db<C: ConnectionTrait>(
 }
 
 pub(crate) async fn verify_file_access(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
@@ -460,7 +463,7 @@ pub(crate) async fn verify_file_access(
 }
 
 pub(crate) async fn verify_file_access_for_read(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
@@ -469,7 +472,7 @@ pub(crate) async fn verify_file_access_for_read(
 
 async fn verify_file_access_with_db<C: ConnectionTrait>(
     db: &C,
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<file::Model> {
@@ -483,7 +486,7 @@ async fn verify_file_access_with_db<C: ConnectionTrait>(
 }
 
 pub(crate) async fn list_files_in_folder(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
 ) -> Result<Vec<file::Model>> {
@@ -498,7 +501,7 @@ pub(crate) async fn list_files_in_folder(
 }
 
 pub(crate) async fn list_folders_in_parent(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
 ) -> Result<Vec<folder::Model>> {
@@ -522,6 +525,7 @@ mod tests {
         storage_policy, storage_policy_group, storage_policy_group_item, team, team_member, user,
     };
     use crate::runtime::PrimaryAppState;
+    use crate::services::workspace_scope_service::SharedRuntimeState;
     use crate::services::{folder_service, mail_service};
     use crate::storage::{DriverRegistry, PolicySnapshot};
     use crate::types::{
@@ -581,7 +585,7 @@ mod tests {
         }
     }
 
-    async fn create_user(state: &PrimaryAppState, username: &str) -> user::Model {
+    async fn create_user(state: &impl SharedRuntimeState, username: &str) -> user::Model {
         let now = Utc::now();
         user::ActiveModel {
             username: Set(username.to_string()),
@@ -606,7 +610,7 @@ mod tests {
     }
 
     async fn create_policy_group_with_policy(
-        state: &PrimaryAppState,
+        state: &impl SharedRuntimeState,
         name: &str,
     ) -> storage_policy_group::Model {
         let now = Utc::now();
@@ -662,7 +666,7 @@ mod tests {
         .await
         .expect("test policy group item should insert");
         state
-            .policy_snapshot
+            .policy_snapshot()
             .reload(state.writer_db())
             .await
             .expect("policy snapshot should reload");
@@ -670,7 +674,7 @@ mod tests {
     }
 
     async fn create_team_with_member(
-        state: &PrimaryAppState,
+        state: &impl SharedRuntimeState,
         owner: &user::Model,
         member: &user::Model,
         policy_group_id: i64,

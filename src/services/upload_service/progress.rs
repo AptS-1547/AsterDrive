@@ -7,7 +7,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
 use crate::errors::{Result, validation_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::{
     RecoverableUploadPartResponse, RecoverableUploadSessionResponse, UploadProgressResponse,
 };
@@ -42,7 +42,9 @@ async fn get_progress_impl(
             session.s3_multipart_id.as_deref(),
         ) {
             (Some(temp_key), Some(multipart_id)) => {
-                let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
+                let policy = state
+                    .policy_snapshot()
+                    .get_policy_or_err(session.policy_id)?;
                 state
                     .driver_registry
                     .get_multipart_driver(&policy)?
@@ -52,7 +54,9 @@ async fn get_progress_impl(
             _ => scan_received_chunks(state, &session.id).await,
         }
     } else if session.s3_multipart_id.is_some() {
-        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
+        let policy = state
+            .policy_snapshot()
+            .get_policy_or_err(session.policy_id)?;
         if is_relay_multipart_policy(&policy) {
             upload_session_part_repo::list_part_numbers(state.reader_db(), &session.id)
                 .await?
@@ -226,8 +230,10 @@ async fn presign_parts_impl(
         validation_error_with_subcode(ApiSubcode::UploadSessionCorrupted, "missing s3_temp_key")
     })?;
 
-    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-    let multipart = state.driver_registry.get_multipart_driver(&policy)?;
+    let policy = state
+        .policy_snapshot()
+        .get_policy_or_err(session.policy_id)?;
+    let multipart = state.driver_registry().get_multipart_driver(&policy)?;
 
     let expires = std::time::Duration::from_secs(HOUR_SECS);
     let mut urls = HashMap::new();
@@ -300,7 +306,7 @@ pub async fn presign_parts_for_team(
 
 /// 扫描临时目录中实际存在的 chunk 文件，返回排序后的 chunk 编号列表
 async fn scan_received_chunks(state: &PrimaryAppState, upload_id: &str) -> Vec<i32> {
-    let dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+    let dir = paths::upload_temp_dir(&state.config().server.upload_temp_dir, upload_id);
     let mut received = Vec::new();
     let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
         return received;

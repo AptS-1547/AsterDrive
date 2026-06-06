@@ -16,7 +16,7 @@ use super::{
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
 use crate::services::task_service::{
     TaskExecutionContext, registry,
     retry::TaskRetryClass,
@@ -310,9 +310,13 @@ async fn release_task_for_shutdown(
     Ok(())
 }
 
-fn record_task_metric(state: &PrimaryAppState, kind: BackgroundTaskKind, status: &'static str) {
+fn record_task_metric(
+    state: &impl SharedRuntimeState,
+    kind: BackgroundTaskKind,
+    status: &'static str,
+) {
     state
-        .metrics
+        .metrics()
         .record_background_task_transition(kind.as_str(), status);
 }
 

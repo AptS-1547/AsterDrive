@@ -4,7 +4,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::{file, upload_session};
 use crate::errors::{Result, upload_assembly_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::shared::{
     run_upload_completion_stage, upload_completion_error_is_retryable,
 };
@@ -28,8 +28,10 @@ pub(super) async fn complete_presigned_upload(
         )
     })?;
 
-    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let policy = state
+        .policy_snapshot()
+        .get_policy_or_err(session.policy_id)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     let actual_size = ensure_uploaded_s3_object_size(
         driver.as_ref(),
         temp_key,
@@ -283,9 +285,11 @@ async fn complete_s3_multipart_upload_session(
         )
     })?;
 
-    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-    let multipart = state.driver_registry.get_multipart_driver(&policy)?;
+    let policy = state
+        .policy_snapshot()
+        .get_policy_or_err(session.policy_id)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
+    let multipart = state.driver_registry().get_multipart_driver(&policy)?;
     let driver_ref: &dyn StorageDriver = driver.as_ref();
 
     tracing::debug!(

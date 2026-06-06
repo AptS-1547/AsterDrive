@@ -2,14 +2,14 @@
 
 use crate::entities::file;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{
     lock_service, workspace_models::FileInfo, workspace_storage_service::WorkspaceStorageScope,
 };
 use crate::types::EntityType;
 
 pub(crate) async fn set_lock_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     locked: bool,
@@ -50,7 +50,7 @@ pub(crate) async fn set_lock_in_scope(
 
 /// 设置/解除文件锁，返回更新后的文件信息
 pub async fn set_lock(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     user_id: i64,
     locked: bool,

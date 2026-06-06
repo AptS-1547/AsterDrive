@@ -9,7 +9,7 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::db::repository::file_repo;
 use crate::errors::Result as AsterResult;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::storage::StorageDriver;
@@ -236,9 +236,9 @@ impl AsterDavFile {
     }
 
     async fn create_upload_temp_file(
-        state: &PrimaryAppState,
+        state: &impl SharedRuntimeState,
     ) -> Result<(tokio::fs::File, String), FsError> {
-        let upload_temp_dir = state.config.server.upload_temp_dir.clone();
+        let upload_temp_dir = state.config().server.upload_temp_dir.clone();
         let temp_path = crate::utils::paths::temp_file_path(
             &upload_temp_dir,
             &format!("webdav-{}.upload", uuid::Uuid::new_v4()),

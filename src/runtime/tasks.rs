@@ -12,8 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
-use super::FollowerAppState;
-use super::PrimaryAppState;
+use super::{FollowerAppState, PrimaryAppState};
 use crate::services::share_service::ShareDownloadRollbackWorker;
 use crate::services::task_service::SystemRuntimeTaskKind;
 use crate::utils::numbers::u128_to_u64;
@@ -936,6 +935,7 @@ mod tests {
         REMOTE_NODE_HEALTH_TEST_INTERVAL_SECS_KEY,
     };
     use crate::errors::AsterError;
+    use crate::runtime::SharedRuntimeState;
     use crate::services::task_service::{DispatchStats, RuntimeTaskRunOutcome};
     use chrono::Utc;
     use migration::Migrator;

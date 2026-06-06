@@ -12,7 +12,7 @@ use crate::config::operations;
 use crate::db::repository::background_task_repo;
 use crate::entities::{background_task, file};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::archive_service::format::{ArchiveFormat, detect_supported_archive_format};
 use crate::services::{
     storage_change_service,
@@ -99,8 +99,8 @@ pub(super) async fn process_archive_extract_task(
             workspace_storage_service::verify_folder_access(state, scope, target_folder_id).await?;
         }
         let max_staging_bytes =
-            operations::archive_extract_max_staging_bytes(&state.runtime_config);
-        let extract_limits = ArchiveExtractLimits::from_runtime_config(&state.runtime_config);
+            operations::archive_extract_max_staging_bytes(&state.runtime_config());
+        let extract_limits = ArchiveExtractLimits::from_runtime_config(&state.runtime_config());
         let policy_resolver = resolve_archive_extract_policy_resolver(state, scope).await?;
 
         set_task_step_active(
@@ -139,7 +139,7 @@ pub(super) async fn process_archive_extract_task(
         let steps_for_worker = steps.clone();
 
         let db = state.writer_db().clone();
-        let policy_snapshot = state.policy_snapshot.clone();
+        let policy_snapshot = state.policy_snapshot().clone();
         let handle = tokio::runtime::Handle::current();
         let context_for_worker = context.clone();
         let source_archive_path_for_worker = source_archive_path;

@@ -1,6 +1,6 @@
 use crate::entities::file_blob;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use bytes::Bytes;
 
 use crate::services::media_processing_service::resolve::build_thumbnail_context;
@@ -66,7 +66,7 @@ pub(crate) async fn generate_and_store_image_preview_with_processor(
     source_mime_type: &str,
     processor_kind: MediaProcessorKind,
 ) -> Result<StoredImagePreview> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let ctx =
         build_thumbnail_context_with_processor(state, &policy, source_file_name, processor_kind)?;
     let stored = generate_and_store_image_preview_with_context(

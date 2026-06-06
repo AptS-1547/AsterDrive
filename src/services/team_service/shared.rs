@@ -17,7 +17,7 @@ use crate::entities::{team, team_member, user};
 use crate::errors::{
     AsterError, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{profile_service, user_service};
 use crate::types::TeamMemberRole;
 
@@ -58,8 +58,8 @@ fn normalize_description(description: Option<&str>) -> String {
     description.unwrap_or_default().trim().to_string()
 }
 
-fn default_team_storage_quota(state: &PrimaryAppState) -> i64 {
-    let raw = state.runtime_config.get("default_storage_quota");
+fn default_team_storage_quota(state: &impl SharedRuntimeState) -> i64 {
+    let raw = state.runtime_config().get("default_storage_quota");
     let Some(raw) = raw.as_deref() else {
         return 0;
     };
@@ -87,7 +87,7 @@ fn validate_storage_quota(storage_quota: i64) -> Result<i64> {
 }
 
 async fn load_creator_summary(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team: &team::Model,
 ) -> Result<Option<user_service::UserSummary>> {
     let creator = user_service::user_summary_by_id(
@@ -107,7 +107,7 @@ async fn load_creator_summary(
 }
 
 pub(super) async fn build_team_info(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team: &team::Model,
     my_role: TeamMemberRole,
 ) -> Result<TeamInfo> {
@@ -145,7 +145,7 @@ pub(super) fn build_team_info_with_metadata(
 }
 
 pub(super) async fn build_admin_team_info(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team: &team::Model,
 ) -> Result<AdminTeamInfo> {
     let creator = load_creator_summary(state, team).await?;
@@ -179,7 +179,7 @@ pub(super) fn build_admin_team_info_with_metadata(
 }
 
 pub(super) async fn build_team_member_info(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     membership: team_member::Model,
     user: user::Model,
 ) -> Result<TeamMemberInfo> {
@@ -202,7 +202,7 @@ pub(super) async fn build_team_member_info(
 }
 
 async fn build_team_member_infos(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     rows: Vec<(team_member::Model, user::Model)>,
 ) -> Result<Vec<TeamMemberInfo>> {
     let users: Vec<user::Model> = rows.iter().map(|(_, user)| user.clone()).collect();
@@ -259,7 +259,7 @@ fn build_team_member_page(
 }
 
 pub(super) async fn load_team_member_page(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     filters: &TeamMemberListFilters,
     limit: u64,
@@ -269,7 +269,7 @@ pub(super) async fn load_team_member_page(
     // 这样前端改角色时可以直接展示“至少保留一个管理员”的上下文信息。
     let effective_limit = limit.clamp(
         1,
-        operations::team_member_list_max_limit(&state.runtime_config),
+        operations::team_member_list_max_limit(state.runtime_config()),
     );
     let repo_filters = team_member_repo::TeamMemberPageFilters {
         role: filters.role,
@@ -311,7 +311,7 @@ pub(super) async fn load_team_member_page(
 }
 
 pub(super) async fn resolve_target_user(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: Option<i64>,
     identifier: Option<&str>,
 ) -> Result<user::Model> {
@@ -336,7 +336,7 @@ pub(super) async fn resolve_target_user(
 }
 
 pub(super) async fn require_team_membership(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
 ) -> Result<(team::Model, team_member::Model)> {
@@ -344,7 +344,7 @@ pub(super) async fn require_team_membership(
 }
 
 pub(super) async fn require_team_membership_for_read(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
 ) -> Result<(team::Model, team_member::Model)> {
@@ -408,7 +408,7 @@ pub(super) async fn ensure_not_last_manager<C: ConnectionTrait>(
 }
 
 pub(super) async fn load_team_metadata<'a>(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     teams: impl IntoIterator<Item = &'a team::Model>,
 ) -> Result<(HashMap<i64, user_service::UserSummary>, HashMap<i64, u64>)> {
     let mut creator_ids = HashSet::new();
@@ -437,7 +437,7 @@ pub(super) async fn load_team_metadata<'a>(
 }
 
 pub(super) async fn ensure_assignable_policy_group(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     group_id: i64,
 ) -> Result<()> {
     let group = policy_group_repo::find_group_by_id(state.writer_db(), group_id).await?;
@@ -458,13 +458,13 @@ pub(super) async fn ensure_assignable_policy_group(
 }
 
 pub(super) async fn resolve_required_policy_group_id(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     policy_group_id: Option<i64>,
 ) -> Result<i64> {
     let group_id = match policy_group_id {
         Some(group_id) => group_id,
         None => state
-            .policy_snapshot
+            .policy_snapshot()
             .system_default_policy_group()
             .map(|group| group.id)
             .ok_or_else(|| {
@@ -479,7 +479,7 @@ pub(super) async fn resolve_required_policy_group_id(
 }
 
 pub(super) async fn create_team_record(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     created_by_user_id: i64,
     initial_member_user_id: i64,
     initial_member_role: TeamMemberRole,
@@ -544,7 +544,7 @@ pub(super) async fn create_team_record(
 }
 
 pub(super) async fn update_team_record(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team: team::Model,
     input: UpdateTeamInput,
     policy_group_id: Option<i64>,
@@ -580,7 +580,10 @@ pub(super) async fn update_team_record(
     Ok(updated)
 }
 
-pub(super) async fn archive_team_record(state: &PrimaryAppState, team: team::Model) -> Result<()> {
+pub(super) async fn archive_team_record(
+    state: &impl SharedRuntimeState,
+    team: team::Model,
+) -> Result<()> {
     let team_id = team.id;
     let team_name = team.name.clone();
     let mut active = team.into_active_model();
@@ -602,7 +605,7 @@ pub(super) async fn archive_team_record(state: &PrimaryAppState, team: team::Mod
 }
 
 pub(super) async fn restore_team_record(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team: team::Model,
 ) -> Result<team::Model> {
     let team_id = team.id;

@@ -7,6 +7,7 @@ use aster_drive::config::{mail, site_url};
 use aster_drive::db::repository::mail_outbox_repo;
 use aster_drive::entities::mail_outbox;
 use aster_drive::errors::{AsterError, Result};
+use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::services::{
     mail_outbox_service,
     mail_service::{self, MailMessage, MailSender},

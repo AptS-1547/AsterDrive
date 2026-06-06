@@ -16,7 +16,7 @@ use crate::errors::{
     AsterError, MapAsterErr, Result, chunk_upload_error_with_subcode,
     payload_too_large_with_subcode, validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::ChunkUploadResponse;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::upload_service::shared::{
@@ -506,8 +506,10 @@ async fn upload_chunk_impl(
             });
         }
 
-        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-        let multipart = state.driver_registry.get_multipart_driver(&policy)?;
+        let policy = state
+            .policy_snapshot()
+            .get_policy_or_err(session.policy_id)?;
+        let multipart = state.driver_registry().get_multipart_driver(&policy)?;
         let etag = match multipart
             .upload_multipart_part_bytes(temp_key, multipart_id, s3_part_number, data)
             .await
@@ -573,7 +575,7 @@ async fn upload_chunk_impl(
     }
 
     let chunk_path = paths::upload_chunk_path(
-        &state.config.server.upload_temp_dir,
+        &state.config().server.upload_temp_dir,
         upload_id,
         chunk_number,
     );
@@ -595,7 +597,7 @@ async fn upload_chunk_impl(
         });
     }
 
-    let chunk_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+    let chunk_dir = paths::upload_temp_dir(&state.config().server.upload_temp_dir, upload_id);
     let temp_chunk_path = paths::temp_file_path(
         &chunk_dir,
         &format!(
@@ -703,8 +705,10 @@ async fn upload_chunk_payload_impl(
             });
         }
 
-        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-        let multipart = state.driver_registry.get_multipart_driver(&policy)?;
+        let policy = state
+            .policy_snapshot()
+            .get_policy_or_err(session.policy_id)?;
+        let multipart = state.driver_registry().get_multipart_driver(&policy)?;
         let etag = match upload_multipart_part_payload(
             multipart.as_ref(),
             temp_key,
@@ -781,7 +785,7 @@ async fn upload_chunk_payload_impl(
     }
 
     let chunk_path = paths::upload_chunk_path(
-        &state.config.server.upload_temp_dir,
+        &state.config().server.upload_temp_dir,
         upload_id,
         chunk_number,
     );
@@ -804,7 +808,7 @@ async fn upload_chunk_payload_impl(
         });
     }
 
-    let chunk_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+    let chunk_dir = paths::upload_temp_dir(&state.config().server.upload_temp_dir, upload_id);
     let temp_chunk_path = paths::temp_file_path(
         &chunk_dir,
         &format!(

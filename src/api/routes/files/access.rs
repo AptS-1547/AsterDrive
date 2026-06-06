@@ -930,7 +930,7 @@ mod tests {
     use crate::config::{CacheConfig, Config, DatabaseConfig, RateLimitConfig, RuntimeConfig};
     use crate::db::repository::{background_task_repo, file_repo};
     use crate::entities::{file, file_blob, storage_policy, user};
-    use crate::runtime::PrimaryAppState;
+    use crate::runtime::{PrimaryAppState, SharedRuntimeState};
     use crate::services::file_service::{ImagePreviewResult, ThumbnailResult};
     use crate::services::{auth_service, mail_service, media_processing_service};
     use crate::storage::StorageDriver;

@@ -7,7 +7,7 @@ use crate::db::repository::{
 };
 use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service, profile_service,
@@ -39,7 +39,7 @@ pub struct UpdateUserInput {
 }
 
 pub async fn create(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     username: &str,
     email: &str,
     password: &str,
@@ -49,7 +49,7 @@ pub async fn create(
 }
 
 pub async fn create_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     username: &str,
     email: &str,
     password: &str,
@@ -79,7 +79,7 @@ pub async fn create_with_audit(
 }
 
 pub async fn update(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     input: UpdateUserInput,
 ) -> Result<super::models::UserInfo> {
     let UpdateUserInput {
@@ -185,10 +185,10 @@ pub async fn update(
     if policy_group_changed {
         if let Some(policy_group_id) = updated.policy_group_id {
             state
-                .policy_snapshot
+                .policy_snapshot()
                 .set_user_policy_group(updated.id, policy_group_id);
         } else {
-            state.policy_snapshot.remove_user_policy_group(updated.id);
+            state.policy_snapshot().remove_user_policy_group(updated.id);
         }
     }
     if role_changed || status_changed || email_verified_changed {
@@ -206,7 +206,7 @@ pub async fn update(
 }
 
 pub async fn update_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     input: UpdateUserInput,
     audit_ctx: &AuditContext,
 ) -> Result<super::models::UserInfo> {

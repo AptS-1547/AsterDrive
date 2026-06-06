@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 
 use crate::api::constants::HOUR_SECS;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::shared::{
     UniqueUuidAttempt, delete_upload_session_record_after_init_error, with_unique_upload_id,
@@ -41,7 +41,7 @@ async fn init_presigned_s3_upload(
     ctx: &InitUploadContext,
     transport: PolicyUploadTransport,
 ) -> Result<InitUploadResponse> {
-    let driver = state.driver_registry.get_driver(&ctx.policy)?;
+    let driver = state.driver_registry().get_driver(&ctx.policy)?;
     let chunk_size = transport.effective_chunk_size(&ctx.policy);
 
     // 小文件 presigned：客户端直接 PUT 到最终 temp object，不经过服务端 relay，
@@ -52,7 +52,7 @@ async fn init_presigned_s3_upload(
 
     // 大文件 presigned multipart：服务端仍然不接管数据流，但必须保留 session，
     // 用来记录 multipart upload_id、分片总数以及后续 complete 阶段的收口点。
-    let multipart = state.driver_registry.get_multipart_driver(&ctx.policy)?;
+    let multipart = state.driver_registry().get_multipart_driver(&ctx.policy)?;
     let total_chunks =
         numbers::calc_total_chunks(ctx.total_size, chunk_size, "presigned multipart upload")?;
 
@@ -159,7 +159,7 @@ async fn init_relay_stream_s3_upload(
     }
 
     // relay_stream + 大文件：客户端仍然分片传给服务端，服务端再逐片上传到 S3 multipart。
-    let multipart = state.driver_registry.get_multipart_driver(&ctx.policy)?;
+    let multipart = state.driver_registry().get_multipart_driver(&ctx.policy)?;
     let total_chunks =
         numbers::calc_total_chunks(ctx.total_size, chunk_size, "relay multipart upload")?;
 

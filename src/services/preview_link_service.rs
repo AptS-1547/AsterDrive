@@ -10,7 +10,7 @@ use crate::config::site_url;
 use crate::db::repository::file_repo;
 use crate::entities::{file, share};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
     direct_link_service, file_service, share_service,
@@ -69,7 +69,7 @@ enum ResolvedPreviewTarget {
 }
 
 pub(crate) async fn create_token_for_file_in_scope_for_origin(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
     request_origin: RequestOrigin<'_>,
@@ -80,7 +80,7 @@ pub(crate) async fn create_token_for_file_in_scope_for_origin(
 }
 
 pub async fn create_token_for_shared_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share_token: &str,
 ) -> Result<PreviewLinkInfo> {
     let (share, file) = share_service::load_preview_shared_file(state, share_token).await?;
@@ -91,7 +91,7 @@ pub async fn create_token_for_shared_file(
 }
 
 pub async fn create_token_for_shared_file_for_origin(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share_token: &str,
     request_origin: RequestOrigin<'_>,
 ) -> Result<PreviewLinkInfo> {
@@ -103,7 +103,7 @@ pub async fn create_token_for_shared_file_for_origin(
 }
 
 pub async fn create_token_for_shared_folder_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share_token: &str,
     file_id: i64,
 ) -> Result<PreviewLinkInfo> {
@@ -117,7 +117,7 @@ pub async fn create_token_for_shared_folder_file(
 }
 
 pub async fn create_token_for_shared_folder_file_for_origin(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share_token: &str,
     file_id: i64,
     request_origin: RequestOrigin<'_>,
@@ -181,7 +181,7 @@ pub(crate) async fn download_file(
 }
 
 pub(crate) async fn resolve_file_for_download(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     requested_name: &str,
 ) -> Result<crate::entities::file::Model> {
@@ -204,29 +204,29 @@ fn build_payload(subject: PreviewSubject) -> PreviewTokenPayload {
 }
 
 fn build_link_for_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file: &file::Model,
     payload: &PreviewTokenPayload,
     request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<PreviewLinkInfo> {
-    let token = encode_file_token(file, payload, &state.config.auth.jwt_secret)?;
+    let token = encode_file_token(file, payload, &state.config().auth.jwt_secret)?;
     Ok(PreviewLinkInfo {
-        path: preview_path(&state.runtime_config, &token, &file.name, request_origin),
+        path: preview_path(state.runtime_config(), &token, &file.name, request_origin),
         expires_at: decode_expiry(payload.exp)?,
         max_uses: payload.max_uses,
     })
 }
 
 fn build_link_for_shared_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share: &share::Model,
     file: &file::Model,
     payload: &PreviewTokenPayload,
     request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<PreviewLinkInfo> {
-    let token = encode_shared_token(share, file, payload, &state.config.auth.jwt_secret)?;
+    let token = encode_shared_token(share, file, payload, &state.config().auth.jwt_secret)?;
     Ok(PreviewLinkInfo {
-        path: preview_path(&state.runtime_config, &token, &file.name, request_origin),
+        path: preview_path(state.runtime_config(), &token, &file.name, request_origin),
         expires_at: decode_expiry(payload.exp)?,
         max_uses: payload.max_uses,
     })
@@ -273,7 +273,10 @@ fn encode_payload(payload: &PreviewTokenPayload) -> Result<String> {
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
 }
 
-async fn resolve_token(state: &PrimaryAppState, token: &str) -> Result<ResolvedPreviewTarget> {
+async fn resolve_token(
+    state: &impl SharedRuntimeState,
+    token: &str,
+) -> Result<ResolvedPreviewTarget> {
     let (payload_segment, signature) = split_token(token)?;
     let payload = decode_payload(payload_segment)?;
     let expires_at = decode_expiry(payload.exp)?;
@@ -288,7 +291,7 @@ async fn resolve_token(state: &PrimaryAppState, token: &str) -> Result<ResolvedP
                 &file,
                 payload_segment,
                 signature,
-                &state.config.auth.jwt_secret,
+                &state.config().auth.jwt_secret,
             )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",
@@ -303,7 +306,7 @@ async fn resolve_token(state: &PrimaryAppState, token: &str) -> Result<ResolvedP
                 &file,
                 payload_segment,
                 signature,
-                &state.config.auth.jwt_secret,
+                &state.config().auth.jwt_secret,
             )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",
@@ -323,7 +326,7 @@ async fn resolve_token(state: &PrimaryAppState, token: &str) -> Result<ResolvedP
                 &file,
                 payload_segment,
                 signature,
-                &state.config.auth.jwt_secret,
+                &state.config().auth.jwt_secret,
             )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",
@@ -459,7 +462,7 @@ fn verify_shared_payload(
 }
 
 async fn reserve_usage(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     payload: &PreviewTokenPayload,
 ) -> Result<ReservedUse> {
@@ -468,7 +471,7 @@ async fn reserve_usage(
     for slot in 0..payload.max_uses {
         let cache_key = preview_usage_slot_key(token, slot);
         if state
-            .cache
+            .cache()
             .set_bytes_if_absent(&cache_key, marker.clone(), Some(ttl_secs))
             .await
         {
@@ -481,8 +484,8 @@ async fn reserve_usage(
     ))
 }
 
-async fn rollback_usage(state: &PrimaryAppState, reserved: &ReservedUse) {
-    state.cache.delete(&reserved.cache_key).await;
+async fn rollback_usage(state: &impl SharedRuntimeState, reserved: &ReservedUse) {
+    state.cache().delete(&reserved.cache_key).await;
 }
 
 fn ttl_seconds(payload: &PreviewTokenPayload) -> Result<u64> {

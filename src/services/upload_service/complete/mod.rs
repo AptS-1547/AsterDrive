@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use crate::entities::{file, upload_session};
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::AuditContext;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::upload_service::shared::find_file_by_session;
@@ -92,12 +92,16 @@ async fn complete_upload_impl_with_hints(
     result
 }
 
-fn record_upload_completion_metric(state: &PrimaryAppState, mode: &'static str, success: bool) {
+fn record_upload_completion_metric(
+    state: &impl SharedRuntimeState,
+    mode: &'static str,
+    success: bool,
+) {
     let status = if success { "success" } else { "failure" };
     state
-        .metrics
+        .metrics()
         .record_upload_session_event(mode, "complete", status);
-    state.metrics.record_file_upload(mode, status);
+    state.metrics().record_file_upload(mode, status);
 }
 
 fn upload_mode_label_from_completion_plan(plan: &CompletionPlan) -> &'static str {

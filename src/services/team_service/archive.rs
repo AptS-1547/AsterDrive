@@ -8,7 +8,7 @@ use crate::db::repository::{
 };
 use crate::entities::{team, upload_session};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::types::EntityType;
@@ -17,7 +17,7 @@ const DEFAULT_TEAM_ARCHIVE_RETENTION_DAYS: i64 = 7;
 const TEAM_ARCHIVE_BATCH_SIZE: u64 = 1_000;
 
 fn load_team_archive_retention_days(state: &PrimaryAppState) -> i64 {
-    let Some(raw) = state.runtime_config.get("team_archive_retention_days") else {
+    let Some(raw) = state.runtime_config().get("team_archive_retention_days") else {
         return DEFAULT_TEAM_ARCHIVE_RETENTION_DAYS;
     };
 
@@ -44,7 +44,7 @@ async fn cleanup_team_upload_sessions(
         let Some(temp_key) = session.s3_temp_key.as_deref() else {
             continue;
         };
-        let Some(policy) = state.policy_snapshot.get_policy(session.policy_id) else {
+        let Some(policy) = state.policy_snapshot().get_policy(session.policy_id) else {
             tracing::warn!(
                 upload_id = %session.id,
                 policy_id = session.policy_id,
@@ -54,7 +54,7 @@ async fn cleanup_team_upload_sessions(
             incomplete_cleanups += 1;
             continue;
         };
-        let Ok(driver) = state.driver_registry.get_driver(&policy) else {
+        let Ok(driver) = state.driver_registry().get_driver(&policy) else {
             tracing::warn!(
                 upload_id = %session.id,
                 policy_id = session.policy_id,
@@ -94,8 +94,10 @@ async fn cleanup_team_upload_sessions(
             }
         }
 
-        let temp_dir =
-            crate::utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &session.id);
+        let temp_dir = crate::utils::paths::upload_temp_dir(
+            &state.config().server.upload_temp_dir,
+            &session.id,
+        );
         crate::utils::cleanup_temp_dir(&temp_dir).await;
     }
 

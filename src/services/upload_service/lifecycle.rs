@@ -5,7 +5,7 @@ use chrono::{Duration, Utc};
 use crate::db::repository::upload_session_repo;
 use crate::entities::upload_session;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::upload_service::shared::{
     UploadStorageErrorClass, classify_upload_storage_error, cleanup_upload_temp_dir,
@@ -105,14 +105,14 @@ async fn delete_temp_object_for_cleanup(
 }
 
 async fn cleanup_remote_upload_state(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     session: &upload_session::Model,
 ) -> UploadRemoteCleanupOutcome {
     let Some(temp_key) = session.s3_temp_key.as_deref() else {
         return UploadRemoteCleanupOutcome::Complete;
     };
 
-    let Some(policy) = state.policy_snapshot.get_policy(session.policy_id) else {
+    let Some(policy) = state.policy_snapshot().get_policy(session.policy_id) else {
         tracing::warn!(
             session_id = %session.id,
             policy_id = session.policy_id,
@@ -121,7 +121,7 @@ async fn cleanup_remote_upload_state(
         return UploadRemoteCleanupOutcome::DeferredIntervention;
     };
 
-    let driver = match state.driver_registry.get_driver(&policy) {
+    let driver = match state.driver_registry().get_driver(&policy) {
         Ok(driver) => driver,
         Err(error) => {
             tracing::warn!(
@@ -252,8 +252,8 @@ fn upload_session_mode_label(session: &upload_session::Model) -> &'static str {
     "chunked"
 }
 
-fn record_upload_cancel_metric(state: &PrimaryAppState, mode: &'static str, success: bool) {
-    state.metrics.record_upload_session_event(
+fn record_upload_cancel_metric(state: &impl SharedRuntimeState, mode: &'static str, success: bool) {
+    state.metrics().record_upload_session_event(
         mode,
         "cancel",
         if success { "success" } else { "failure" },
@@ -261,7 +261,7 @@ fn record_upload_cancel_metric(state: &PrimaryAppState, mode: &'static str, succ
 }
 
 pub async fn force_cleanup_by_policy(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     policy_id: i64,
 ) -> Result<ForceCleanupByPolicyResult> {
     let sessions = upload_session_repo::find_by_policy(state.writer_db(), policy_id).await?;

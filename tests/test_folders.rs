@@ -5,6 +5,7 @@ mod common;
 
 use actix_web::test;
 use aster_drive::db::repository::{folder_repo, user_repo};
+use aster_drive::runtime::SharedRuntimeState;
 use serde_json::Value;
 
 #[actix_web::test]

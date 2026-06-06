@@ -8,7 +8,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::db::repository::{file_repo, version_repo};
 use crate::entities::file_version;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     audit_service::{self, AuditContext},
     storage_change_service,
@@ -208,7 +208,7 @@ async fn delete_version_inner(
 }
 
 async fn list_versions_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<Vec<file_version::Model>> {
@@ -256,7 +256,7 @@ async fn delete_version_in_scope(
 
 /// 列出文件的所有版本
 pub async fn list_versions(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     file_id: i64,
     user_id: i64,
 ) -> Result<Vec<FileVersion>> {
@@ -266,7 +266,7 @@ pub async fn list_versions(
 }
 
 pub async fn list_versions_for_team(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     file_id: i64,
     user_id: i64,
@@ -606,7 +606,7 @@ async fn get_max_versions(state: &PrimaryAppState) -> u64 {
         .runtime_config
         .get_u64("max_versions_per_file")
         .unwrap_or_else(|| {
-            if let Some(raw) = state.runtime_config.get("max_versions_per_file") {
+            if let Some(raw) = state.runtime_config().get("max_versions_per_file") {
                 tracing::warn!("invalid max_versions_per_file value '{}', using 10", raw);
             }
             10

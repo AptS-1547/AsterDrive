@@ -9,7 +9,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{team_member_repo, team_repo};
 use crate::entities::{team, team_member};
 use crate::errors::{Result, auth_forbidden_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::types::TeamMemberRole;
 
 use super::shared::{
@@ -21,7 +21,7 @@ use super::shared::{
 use super::{CreateTeamInput, TeamInfo, UpdateTeamInput};
 
 pub async fn list_teams(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     archived: bool,
 ) -> Result<Vec<TeamInfo>> {
@@ -29,7 +29,7 @@ pub async fn list_teams(
 }
 
 pub async fn list_teams_filtered(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     archived: bool,
     keyword: Option<&str>,
@@ -60,7 +60,7 @@ pub async fn list_teams_filtered(
 }
 
 pub async fn list_user_team_ids(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     archived: bool,
 ) -> Result<HashSet<i64>> {
@@ -74,7 +74,7 @@ pub async fn list_user_team_ids(
 }
 
 async fn list_user_team_memberships(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     archived: bool,
     keyword: Option<&str>,
@@ -107,7 +107,7 @@ async fn list_user_team_memberships(
 }
 
 pub async fn create_team(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     creator_user_id: i64,
     input: CreateTeamInput,
 ) -> Result<TeamInfo> {
@@ -127,13 +127,17 @@ pub async fn create_team(
     build_team_info(state, &created_team, TeamMemberRole::Owner).await
 }
 
-pub async fn get_team(state: &PrimaryAppState, team_id: i64, user_id: i64) -> Result<TeamInfo> {
+pub async fn get_team(
+    state: &impl SharedRuntimeState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<TeamInfo> {
     let (team, membership) = require_team_membership_for_read(state, team_id, user_id).await?;
     build_team_info(state, &team, membership.role).await
 }
 
 pub async fn update_team(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     actor_user_id: i64,
     input: UpdateTeamInput,
@@ -144,7 +148,11 @@ pub async fn update_team(
     build_team_info(state, &updated, membership.role).await
 }
 
-pub async fn archive_team(state: &PrimaryAppState, team_id: i64, actor_user_id: i64) -> Result<()> {
+pub async fn archive_team(
+    state: &impl SharedRuntimeState,
+    team_id: i64,
+    actor_user_id: i64,
+) -> Result<()> {
     let (team, membership) = require_team_membership(state, team_id, actor_user_id).await?;
     if !membership.role.is_owner() {
         return Err(auth_forbidden_with_subcode(
@@ -158,7 +166,7 @@ pub async fn archive_team(state: &PrimaryAppState, team_id: i64, actor_user_id: 
 }
 
 pub async fn restore_team(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     actor_user_id: i64,
 ) -> Result<TeamInfo> {

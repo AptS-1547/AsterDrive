@@ -2,6 +2,7 @@
 
 #[macro_use]
 mod common;
+use aster_drive::runtime::SharedRuntimeState;
 
 use actix_web::test;
 use sea_orm::Set;

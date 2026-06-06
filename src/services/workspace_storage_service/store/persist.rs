@@ -1,7 +1,7 @@
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::{
     StorageOperationContext, check_quota, cleanup_preuploaded_blob_upload, persist_preuploaded_blob,
 };

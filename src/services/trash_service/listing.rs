@@ -2,7 +2,7 @@
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 use crate::utils::numbers::usize_to_u64;
 
@@ -12,7 +12,7 @@ use super::common::{
 use super::models::{TrashContents, TrashFileCursor};
 
 pub fn expires_cursor_to_deleted_cursor(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     expires_at: chrono::DateTime<chrono::Utc>,
     id: i64,
 ) -> (chrono::DateTime<chrono::Utc>, i64) {
@@ -21,7 +21,7 @@ pub fn expires_cursor_to_deleted_cursor(
 }
 
 async fn list_trash_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_limit: u64,
     folder_offset: u64,
@@ -126,7 +126,7 @@ async fn list_trash_in_scope(
 
 /// 列出用户回收站内容（分页）
 pub async fn list_trash(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     folder_limit: u64,
     folder_offset: u64,
@@ -145,7 +145,7 @@ pub async fn list_trash(
 }
 
 pub async fn list_team_trash(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     team_id: i64,
     user_id: i64,
     folder_limit: u64,

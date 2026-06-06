@@ -2,7 +2,7 @@
 
 use crate::entities::background_task;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 use super::spec::{self, TrashPurgeAllTask, decode_payload_as};

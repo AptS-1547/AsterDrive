@@ -281,10 +281,7 @@ pub async fn send_email_code(
     })
 }
 
-async fn consume_email_code_after_mail_failure(
-    state: &impl SharedRuntimeState,
-    record_id: i64,
-) {
+async fn consume_email_code_after_mail_failure(state: &impl SharedRuntimeState, record_id: i64) {
     if let Err(cleanup_error) =
         mfa_email_code_repo::consume(state.writer_db(), record_id, Utc::now()).await
     {

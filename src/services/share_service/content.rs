@@ -4,7 +4,7 @@ use crate::db::repository::{file_repo, share_repo};
 use crate::entities::{file, share};
 use crate::errors::{AsterError, Result};
 use crate::metrics_core::SharedMetricsRecorder;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, ShareDownloadRuntimeState, SharedRuntimeState};
 use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
     file_service, folder_service, media_metadata_service, media_processing_service, task_service,
@@ -300,7 +300,7 @@ pub async fn download_shared_folder_file_with_range(
 }
 
 pub async fn list_shared_folder(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     params: &folder_service::FolderListParams,
 ) -> Result<folder_service::FolderContents> {
@@ -463,7 +463,7 @@ pub async fn get_shared_folder_file_media_metadata(
 }
 
 pub(crate) async fn load_preview_shared_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
     let share = load_valid_share(state, token).await?;
@@ -472,7 +472,7 @@ pub(crate) async fn load_preview_shared_file(
 }
 
 pub(crate) async fn load_preview_shared_folder_file(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     file_id: i64,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
@@ -480,7 +480,7 @@ pub(crate) async fn load_preview_shared_folder_file(
 }
 
 pub(crate) async fn load_shared_file_ignoring_download_limit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
     let share = load_usable_share_ignoring_download_limit(state, token).await?;
@@ -489,7 +489,7 @@ pub(crate) async fn load_shared_file_ignoring_download_limit(
 }
 
 pub(crate) async fn load_shared_folder_file_ignoring_download_limit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     file_id: i64,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
@@ -497,7 +497,7 @@ pub(crate) async fn load_shared_folder_file_ignoring_download_limit(
 }
 
 pub async fn list_shared_subfolder(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     folder_id: i64,
     params: &folder_service::FolderListParams,
@@ -598,7 +598,7 @@ async fn download_share_resource_with_disposition(
             // 回滚刚才的 increment，避免 `download_count` 虚增、提前触碰 `max_downloads`。
             // NotModified/PresignedRedirect 一次性响应不需要挂 hook。
             if let file_service::DownloadOutcome::Stream(ref mut s) = outcome {
-                let queue = state.share_download_rollback.clone();
+                let queue = state.share_download_rollback().clone();
                 let share_id = share.id;
                 s.on_abort = Some(Box::new(move || {
                     queue.enqueue(share_id);

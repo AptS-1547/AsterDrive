@@ -50,11 +50,7 @@ fn link_to_info(
     }
 }
 
-pub async fn delete_link(
-    state: &impl SharedRuntimeState,
-    user_id: i64,
-    id: i64,
-) -> Result<bool> {
+pub async fn delete_link(state: &impl SharedRuntimeState, user_id: i64, id: i64) -> Result<bool> {
     external_auth_identity_repo::delete_for_user(state.writer_db(), id, user_id).await
 }
 

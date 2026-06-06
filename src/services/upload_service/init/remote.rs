@@ -2,7 +2,7 @@ use chrono::{Duration, Utc};
 
 use crate::api::constants::HOUR_SECS;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::shared::{
     UniqueUuidAttempt, delete_upload_session_record_after_init_error, with_unique_upload_id,
@@ -54,7 +54,7 @@ async fn init_relay_stream_remote_upload(
         return Ok(direct_upload_response());
     }
 
-    let multipart = state.driver_registry.get_multipart_driver(&ctx.policy)?;
+    let multipart = state.driver_registry().get_multipart_driver(&ctx.policy)?;
     let total_chunks =
         numbers::calc_total_chunks(ctx.total_size, chunk_size, "remote relay multipart upload")?;
 
@@ -83,14 +83,14 @@ async fn init_presigned_remote_upload(
     ctx: &InitUploadContext,
     transport: PolicyUploadTransport,
 ) -> Result<InitUploadResponse> {
-    let driver = state.driver_registry.get_driver(&ctx.policy)?;
+    let driver = state.driver_registry().get_driver(&ctx.policy)?;
     let chunk_size = transport.effective_chunk_size(&ctx.policy);
 
     if transport.resolve_init_mode(&ctx.policy, ctx.total_size) == UploadMode::Presigned {
         return init_remote_presigned_single_upload(state, ctx, driver.as_ref()).await;
     }
 
-    let multipart = state.driver_registry.get_multipart_driver(&ctx.policy)?;
+    let multipart = state.driver_registry().get_multipart_driver(&ctx.policy)?;
     let total_chunks = numbers::calc_total_chunks(
         ctx.total_size,
         chunk_size,

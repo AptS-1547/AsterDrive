@@ -8,7 +8,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob, storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::HASH_BUF_SIZE;
 use crate::services::workspace_storage_service::{
     StorageOperationContext, StoreFromTempHints, StoreFromTempParams, WorkspaceStorageScope,
@@ -109,7 +109,7 @@ pub(super) async fn prepare_store_from_temp(
         )));
     }
 
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     let blob_plan = build_temp_blob_plan(
         temp_path,
         size,

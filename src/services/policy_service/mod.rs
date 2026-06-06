@@ -6,7 +6,7 @@ mod policies;
 mod shared;
 
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{SharedRuntimeState, TaskRuntimeState};
 use crate::services::audit_service::{self, AuditContext};
 use crate::types::DriverType;
 
@@ -46,7 +46,7 @@ fn policy_audit_details(policy: &StoragePolicy) -> Option<serde_json::Value> {
 }
 
 pub async fn create_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     input: CreateStoragePolicyInput,
     audit_ctx: &AuditContext,
 ) -> Result<StoragePolicy> {
@@ -65,7 +65,7 @@ pub async fn create_with_audit(
 }
 
 pub async fn update_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     id: i64,
     input: UpdateStoragePolicyInput,
     audit_ctx: &AuditContext,
@@ -85,7 +85,7 @@ pub async fn update_with_audit(
 }
 
 pub async fn delete_with_audit(
-    state: &PrimaryAppState,
+    state: &impl TaskRuntimeState,
     id: i64,
     force: bool,
     audit_ctx: &AuditContext,
@@ -106,7 +106,7 @@ pub async fn delete_with_audit(
 }
 
 pub async fn create_group_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     input: CreateStoragePolicyGroupInput,
     audit_ctx: &AuditContext,
 ) -> Result<StoragePolicyGroupInfo> {
@@ -131,7 +131,7 @@ pub async fn create_group_with_audit(
 }
 
 pub async fn update_group_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     id: i64,
     input: UpdateStoragePolicyGroupInput,
     audit_ctx: &AuditContext,
@@ -157,7 +157,7 @@ pub async fn update_group_with_audit(
 }
 
 pub async fn delete_group_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<()> {
@@ -183,7 +183,7 @@ pub async fn delete_group_with_audit(
 }
 
 pub async fn migrate_group_assignments_with_audit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     source_group_id: i64,
     target_group_id: i64,
     audit_ctx: &AuditContext,

@@ -9,7 +9,7 @@ use super::{
 use crate::api::response::ApiResponse;
 use crate::config::{auth_runtime::RuntimeAuthPolicy, cors, site_url};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::AuditRequestInfo;
 use crate::services::{auth_service, config_service, user_service};
 use crate::types::VerificationPurpose;
@@ -34,7 +34,7 @@ async fn bootstrap_public_site_url_from_setup(
     req: &HttpRequest,
     user_id: i64,
 ) {
-    if !site_url::public_site_urls(&state.runtime_config).is_empty() {
+    if !site_url::public_site_urls(&state.runtime_config()).is_empty() {
         return;
     }
 
@@ -70,7 +70,7 @@ async fn bootstrap_public_site_url_from_setup(
 )]
 pub async fn check(state: web::Data<PrimaryAppState>) -> Result<HttpResponse> {
     let has_users = auth_service::check_auth_state(&state).await?;
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
     Ok(HttpResponse::Ok().json(ApiResponse::ok(CheckResp {
         has_users,
         allow_user_registration: auth_policy.allow_user_registration,

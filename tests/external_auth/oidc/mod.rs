@@ -9,6 +9,7 @@ pub use mock::start_mock_external_auth_provider;
 
 use actix_web::{body::MessageBody, dev::ServiceResponse, test};
 use aster_drive::entities::{external_auth_provider, user};
+use aster_drive::runtime::SharedRuntimeState;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel};
 use serde_json::Value;

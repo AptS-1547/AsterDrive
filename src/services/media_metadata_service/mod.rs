@@ -7,7 +7,7 @@ use crate::config::{media_processing, operations};
 use crate::db::repository::{file_repo, media_metadata_repo};
 use crate::entities::{blob_media_metadata, file, file_blob};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::types::{
     FileCategory, MediaMetadataKind, MediaMetadataPayload, MediaMetadataStatus, MediaProcessorKind,
@@ -100,7 +100,7 @@ pub(crate) async fn get_for_file_in_scope(
 }
 
 pub async fn get_for_file(state: &PrimaryAppState, f: &file::Model) -> Result<MediaMetadataLookup> {
-    if !operations::media_metadata_enabled(&state.runtime_config) {
+    if !operations::media_metadata_enabled(&state.runtime_config()) {
         return Ok(MediaMetadataLookup::Ready(disabled_metadata_info(f)));
     }
 
@@ -114,7 +114,7 @@ pub async fn get_for_file(state: &PrimaryAppState, f: &file::Model) -> Result<Me
     };
 
     let blob = file_repo::find_blob_by_id(state.reader_db(), f.blob_id).await?;
-    if media_metadata_processor_for_file_name(&state.runtime_config, kind, &f.name).is_none()
+    if media_metadata_processor_for_file_name(&state.runtime_config(), kind, &f.name).is_none()
         && !storage_native_media_metadata_matches_file(state, &blob, &f.name, kind)?
     {
         return Ok(MediaMetadataLookup::Ready(unsupported_kind_metadata_info(
@@ -150,7 +150,7 @@ fn should_use_cached_metadata(
 ) -> bool {
     if record.status == MediaMetadataStatus::Unsupported
         && let Some(processor) =
-            media_metadata_processor_for_file_name(&state.runtime_config, record.kind, &f.name)
+            media_metadata_processor_for_file_name(&state.runtime_config(), record.kind, &f.name)
     {
         let command = processor
             .config
@@ -179,7 +179,7 @@ pub async fn extract_for_blob(
     source_mime_type: &str,
     kind: MediaMetadataKind,
 ) -> Result<ExtractedMediaMetadata> {
-    if media_metadata_processor_for_file_name(&state.runtime_config, kind, source_file_name)
+    if media_metadata_processor_for_file_name(&state.runtime_config(), kind, source_file_name)
         .is_none()
         && !storage_native_media_metadata_matches_file(state, blob, source_file_name, kind)?
     {
@@ -230,7 +230,7 @@ fn storage_native_media_metadata_matches_file(
         return Ok(false);
     }
 
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let options = crate::types::parse_storage_policy_options(policy.options.as_ref());
     if !options.storage_native_media_metadata_matches_file_name(source_file_name) {
         return Ok(false);
@@ -254,13 +254,13 @@ async fn try_extract_storage_native_metadata(
         return Ok(None);
     }
 
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let options = crate::types::parse_storage_policy_options(policy.options.as_ref());
     if !options.storage_native_media_metadata_matches_file_name(source_file_name) {
         return Ok(None);
     }
 
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     let Some(native) = driver.as_native_media_metadata() else {
         tracing::warn!(
             policy_id = policy.id,
@@ -470,7 +470,7 @@ async fn extract_video_metadata(
 ) -> Result<ExtractedMediaMetadata> {
     ensure_media_metadata_source_size_supported(state, blob)?;
     let Some(processor) = media_metadata_processor_for_file_name(
-        &state.runtime_config,
+        &state.runtime_config(),
         MediaMetadataKind::Video,
         source_file_name,
     ) else {
@@ -570,7 +570,7 @@ fn ensure_media_metadata_source_size_supported(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
 ) -> Result<()> {
-    let max_source_bytes = operations::media_metadata_max_source_bytes(&state.runtime_config);
+    let max_source_bytes = operations::media_metadata_max_source_bytes(&state.runtime_config());
     if blob.size > max_source_bytes {
         return Err(AsterError::validation_error(format!(
             "media metadata source exceeds {} MiB limit",

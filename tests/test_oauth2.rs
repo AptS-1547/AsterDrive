@@ -9,6 +9,7 @@ use actix_web::http::StatusCode;
 use actix_web::test;
 use aster_drive::db::repository::external_auth_provider_repo;
 use aster_drive::entities::{external_auth_identity, user};
+use aster_drive::runtime::SharedRuntimeState;
 use external_auth::oauth2::*;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel};
 use serde_json::Value;

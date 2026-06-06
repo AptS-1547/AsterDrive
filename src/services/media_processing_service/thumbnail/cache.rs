@@ -8,7 +8,7 @@ use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::storage::{StorageDriver, StorageErrorKind};
 use crate::utils::numbers::u64_to_usize;
 
@@ -19,8 +19,8 @@ use crate::services::media_processing_service::shared::{
 const MAX_CACHED_THUMBNAIL_BYTES: u64 = 16 * 1024 * 1024;
 
 pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<()> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     delete_thumbnail_with_driver(state, blob, driver).await
 }
 
@@ -67,7 +67,7 @@ pub(super) async fn load_thumbnail_if_exists_with_context(
     if requires_server_side_source_limit(&ctx.processor) {
         crate::services::thumbnail_service::ensure_source_size_supported(
             blob,
-            operations::thumbnail_max_source_bytes(&state.runtime_config),
+            operations::thumbnail_max_source_bytes(&state.runtime_config()),
         )?;
     }
 

@@ -8,7 +8,7 @@ use crate::cache::CacheExt;
 use crate::db::repository::share_repo;
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service::{WorkspaceResourceScope, WorkspaceStorageScope};
 use crate::utils::hash;
 
@@ -83,9 +83,13 @@ fn share_token_lookup_cache_key(token: &str) -> String {
     format!("share_token_lookup:{}", hash::sha256_hex(token.as_bytes()))
 }
 
-async fn cache_share_token_lookup(state: &PrimaryAppState, cache_key: &str, share: &share::Model) {
+async fn cache_share_token_lookup(
+    state: &impl SharedRuntimeState,
+    cache_key: &str,
+    share: &share::Model,
+) {
     state
-        .cache
+        .cache()
         .set(
             cache_key,
             &CachedShareTokenLookup { id: share.id },
@@ -94,30 +98,37 @@ async fn cache_share_token_lookup(state: &PrimaryAppState, cache_key: &str, shar
         .await;
 }
 
-pub(super) async fn invalidate_share_token_record_cache(state: &PrimaryAppState, token: &str) {
+pub(super) async fn invalidate_share_token_record_cache(
+    state: &impl SharedRuntimeState,
+    token: &str,
+) {
     state
-        .cache
+        .cache()
         .delete(&share_token_lookup_cache_key(token))
         .await;
 }
 
-pub(crate) async fn invalidate_all_share_token_record_cache(state: &PrimaryAppState) {
-    state.cache.invalidate_prefix("share_token_lookup:").await;
+pub(crate) async fn invalidate_all_share_token_record_cache(state: &impl SharedRuntimeState) {
+    state.cache().invalidate_prefix("share_token_lookup:").await;
 }
 
 pub(super) async fn invalidate_share_token_record_cache_for_share(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share: &share::Model,
 ) {
     invalidate_share_token_record_cache(state, &share.token).await;
 }
 
 pub(super) async fn load_share_record_by_token(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
 ) -> Result<share::Model> {
     let cache_key = share_token_lookup_cache_key(token);
-    if let Some(cached) = state.cache.get::<CachedShareTokenLookup>(&cache_key).await {
+    if let Some(cached) = state
+        .cache()
+        .get::<CachedShareTokenLookup>(&cache_key)
+        .await
+    {
         match share_repo::find_by_id(state.reader_db(), cached.id).await {
             Ok(share) if share.token == token => {
                 tracing::debug!(share_id = share.id, "share token lookup cache hit");
@@ -129,14 +140,14 @@ pub(super) async fn load_share_record_by_token(
                     actual_token = %share.token,
                     "share token lookup cache pointed to a different token; refreshing"
                 );
-                state.cache.delete(&cache_key).await;
+                state.cache().delete(&cache_key).await;
             }
             Err(AsterError::ShareNotFound(_)) => {
                 tracing::debug!(
                     cached_share_id = cached.id,
                     "share token lookup cache pointed to a missing share; refreshing"
                 );
-                state.cache.delete(&cache_key).await;
+                state.cache().delete(&cache_key).await;
             }
             Err(error) => return Err(error),
         }
@@ -152,24 +163,24 @@ pub(super) async fn load_share_record_by_token(
 }
 
 pub(crate) async fn invalidate_active_share_target_cache_for_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
 ) {
     invalidate_active_share_target_cache_for_resource_scope(state, scope.into()).await;
 }
 
 pub(crate) async fn invalidate_active_share_target_cache_for_resource_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceResourceScope,
 ) {
     state
-        .cache
+        .cache()
         .invalidate_prefix(&active_share_target_cache_prefix_for_scope(scope))
         .await;
 }
 
 pub(crate) async fn invalidate_active_share_target_cache_for_share(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share: &share::Model,
 ) {
     let scope = match share.team_id {
@@ -185,7 +196,7 @@ pub(crate) async fn invalidate_active_share_target_cache_for_share(
 }
 
 async fn load_active_ids(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceResourceScope,
     kind: ShareTargetKind,
     ids: &[i64],
@@ -196,14 +207,14 @@ async fn load_active_ids(
     }
 
     let cache_key = active_share_target_cache_key(scope, kind, &ids);
-    if let Some(cached) = state.cache.get::<CachedActiveShareIds>(&cache_key).await {
+    if let Some(cached) = state.cache().get::<CachedActiveShareIds>(&cache_key).await {
         let active_ids = load_active_ids_from_database(state, scope, kind, &ids).await?;
         if active_ids == cached.ids {
             tracing::debug!(scope = ?scope, target_kind = kind.as_str(), "active share target cache hit");
             return Ok(active_ids);
         }
         state
-            .cache
+            .cache()
             .set(
                 &cache_key,
                 &CachedActiveShareIds {
@@ -219,7 +230,7 @@ async fn load_active_ids(
     let active_ids = load_active_ids_from_database(state, scope, kind, &ids).await?;
 
     state
-        .cache
+        .cache()
         .set(
             &cache_key,
             &CachedActiveShareIds {
@@ -233,7 +244,7 @@ async fn load_active_ids(
 }
 
 async fn load_active_ids_from_database(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceResourceScope,
     kind: ShareTargetKind,
     ids: &[i64],
@@ -255,7 +266,7 @@ async fn load_active_ids_from_database(
 }
 
 pub(crate) async fn find_active_file_ids_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
 ) -> Result<HashSet<i64>> {
@@ -263,7 +274,7 @@ pub(crate) async fn find_active_file_ids_in_scope(
 }
 
 pub(crate) async fn find_active_folder_ids_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     folder_ids: &[i64],
 ) -> Result<HashSet<i64>> {
@@ -271,7 +282,7 @@ pub(crate) async fn find_active_folder_ids_in_scope(
 }
 
 pub(crate) async fn find_active_file_ids_in_resource_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceResourceScope,
     file_ids: &[i64],
 ) -> Result<HashSet<i64>> {
@@ -279,7 +290,7 @@ pub(crate) async fn find_active_file_ids_in_resource_scope(
 }
 
 pub(crate) async fn find_active_folder_ids_in_resource_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceResourceScope,
     folder_ids: &[i64],
 ) -> Result<HashSet<i64>> {

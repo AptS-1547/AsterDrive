@@ -16,7 +16,7 @@ use crate::config::operations;
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     batch_service, folder_service,
     task_service::types::CreateArchiveTaskParams,
@@ -93,7 +93,7 @@ pub(crate) async fn stream_archive_download_in_scope(
 ) -> Result<HttpResponse> {
     let resolved = resolve_archive_download_in_scope(state, scope, &params).await?;
     let archive_name = resolved.archive_name.clone();
-    let limits = ArchiveBuildLimits::from_runtime_config(&state.runtime_config);
+    let limits = ArchiveBuildLimits::from_runtime_config(&state.runtime_config());
     let collected =
         collect_archive_entries_from_selection_in_scope(state, scope, &resolved.selection, limits)
             .await?;
@@ -102,8 +102,8 @@ pub(crate) async fn stream_archive_download_in_scope(
     let (reader, writer) = tokio::io::duplex(64 * 1024);
     let handle = tokio::runtime::Handle::current();
     let db = state.writer_db().clone();
-    let driver_registry = state.driver_registry.clone();
-    let policy_snapshot = state.policy_snapshot.clone();
+    let driver_registry = state.driver_registry().clone();
+    let policy_snapshot = state.policy_snapshot().clone();
     let archive_name_for_worker = archive_name.clone();
 
     drop(tokio::task::spawn_blocking(move || {
@@ -152,12 +152,12 @@ pub(crate) async fn stream_archive_download_in_scope(
 }
 
 pub(crate) async fn prepare_archive_download_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     params: &CreateArchiveTaskParams,
 ) -> Result<PreparedArchiveDownload> {
     let resolved = resolve_archive_download_in_scope(state, scope, params).await?;
-    let limits = ArchiveBuildLimits::from_runtime_config(&state.runtime_config);
+    let limits = ArchiveBuildLimits::from_runtime_config(state.runtime_config());
     let _ =
         collect_archive_entries_from_selection_in_scope(state, scope, &resolved.selection, limits)
             .await?;
@@ -169,7 +169,7 @@ pub(crate) async fn prepare_archive_download_in_scope(
 }
 
 pub(super) async fn resolve_archive_download_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     params: &CreateArchiveTaskParams,
 ) -> Result<ResolvedArchiveDownload> {
@@ -192,7 +192,7 @@ pub(super) async fn resolve_archive_download_in_scope(
 }
 
 async fn ensure_archive_selection_request_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -253,7 +253,7 @@ pub(super) fn ensure_archive_selection_active(
 }
 
 pub(super) async fn collect_archive_entries_from_selection_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     selection: &batch_service::NormalizedSelection,
     limits: ArchiveBuildLimits,
@@ -398,7 +398,7 @@ fn record_archive_build_entry(
 }
 
 pub(super) async fn resolve_archive_compress_target_folder_id(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     selection: &batch_service::NormalizedSelection,
     requested_target_folder_id: Option<i64>,

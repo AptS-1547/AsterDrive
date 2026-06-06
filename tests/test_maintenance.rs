@@ -1,6 +1,7 @@
 //! 集成测试：`maintenance`。
 
 mod common;
+use aster_drive::runtime::SharedRuntimeState;
 
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};

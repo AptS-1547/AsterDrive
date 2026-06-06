@@ -159,10 +159,7 @@ pub async fn redeem_enrollment_token<S: SharedRuntimeState>(
     .await
 }
 
-pub async fn ack_enrollment_token<S: SharedRuntimeState>(
-    state: &S,
-    ack_token: &str,
-) -> Result<()> {
+pub async fn ack_enrollment_token<S: SharedRuntimeState>(state: &S, ack_token: &str) -> Result<()> {
     let trimmed = ack_token.trim();
     if trimmed.is_empty() {
         return Err(AsterError::validation_error("ack_token cannot be blank"));

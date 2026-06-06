@@ -14,7 +14,7 @@ use chrono::{Duration, Utc};
 
 use crate::api::subcode::ApiSubcode;
 use crate::errors::{MapAsterErr, Result, chunk_upload_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::scope::{personal_scope, team_scope};
 use crate::services::upload_service::shared::{
@@ -125,9 +125,14 @@ async fn init_upload_for_scope(
     Ok(response)
 }
 
-fn record_upload_session_if_created(state: &PrimaryAppState, response: &InitUploadResponse) {
+fn record_upload_session_if_created(
+    state: &impl SharedRuntimeState,
+    response: &InitUploadResponse,
+) {
     if response.upload_id.is_some() {
-        state.metrics.record_upload_session(response.mode.as_str());
+        state
+            .metrics()
+            .record_upload_session(response.mode.as_str());
     }
 }
 
@@ -198,7 +203,7 @@ async fn init_chunked_upload_session(
 }
 
 async fn prepare_chunked_upload_temp_dir(state: &PrimaryAppState, upload_id: &str) -> Result<()> {
-    let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+    let temp_dir = paths::upload_temp_dir(&state.config().server.upload_temp_dir, upload_id);
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx("create temp dir", |message| {

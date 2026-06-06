@@ -5,7 +5,7 @@ use chrono::Utc;
 use crate::db::repository::{share_repo, user_profile_repo, user_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::profile_service;
 use crate::utils::hash;
 
@@ -15,7 +15,10 @@ use super::shared::{
     load_usable_share_ignoring_download_limit, load_valid_share, resolve_share_name,
 };
 
-pub async fn get_share_info(state: &PrimaryAppState, token: &str) -> Result<SharePublicInfo> {
+pub async fn get_share_info(
+    state: &impl SharedRuntimeState,
+    token: &str,
+) -> Result<SharePublicInfo> {
     let db = state.writer_db();
     let share = load_valid_share(state, token).await?;
     tracing::debug!(share_id = share.id, "loading public share info");
@@ -73,7 +76,7 @@ fn resolve_share_owner_name(
 }
 
 async fn resolve_share_owner_info(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share: &share::Model,
 ) -> Result<SharePublicOwnerInfo> {
     let user = user_repo::find_by_id(state.reader_db(), share.user_id).await?;
@@ -100,7 +103,11 @@ pub async fn get_share_avatar_bytes(
     profile_service::get_avatar_bytes(state, share.user_id, size).await
 }
 
-pub async fn verify_password(state: &PrimaryAppState, token: &str, password: &str) -> Result<()> {
+pub async fn verify_password(
+    state: &impl SharedRuntimeState,
+    token: &str,
+    password: &str,
+) -> Result<()> {
     let share = load_valid_share(state, token).await?;
     tracing::debug!("verifying share password");
 
@@ -153,7 +160,7 @@ pub fn verify_share_cookie(token: &str, cookie_value: &str, secret: &str) -> boo
 }
 
 pub async fn check_share_password_cookie(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     cookie_value: Option<&str>,
 ) -> Result<()> {
@@ -164,7 +171,7 @@ pub async fn check_share_password_cookie(
         let value = cookie_value
             .ok_or_else(|| AsterError::share_password_required("password verification required"))?;
 
-        if !verify_share_cookie(token, value, &state.config.auth.jwt_secret) {
+        if !verify_share_cookie(token, value, &state.config().auth.jwt_secret) {
             return Err(AsterError::share_password_required(
                 "invalid verification cookie",
             ));
@@ -174,7 +181,7 @@ pub async fn check_share_password_cookie(
 }
 
 pub(crate) async fn check_share_password_cookie_ignoring_download_limit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     cookie_value: Option<&str>,
 ) -> Result<()> {
@@ -184,7 +191,7 @@ pub(crate) async fn check_share_password_cookie_ignoring_download_limit(
         let value = cookie_value
             .ok_or_else(|| AsterError::share_password_required("password verification required"))?;
 
-        if !verify_share_cookie(token, value, &state.config.auth.jwt_secret) {
+        if !verify_share_cookie(token, value, &state.config().auth.jwt_secret) {
             return Err(AsterError::share_password_required(
                 "invalid verification cookie",
             ));
@@ -198,13 +205,13 @@ pub struct PasswordVerified {
 }
 
 pub async fn verify_password_and_sign(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     password: &str,
 ) -> Result<PasswordVerified> {
     verify_password(state, token, password).await?;
     Ok(PasswordVerified {
-        cookie_signature: sign_share_cookie(token, &state.config.auth.jwt_secret),
+        cookie_signature: sign_share_cookie(token, &state.config().auth.jwt_secret),
     })
 }
 

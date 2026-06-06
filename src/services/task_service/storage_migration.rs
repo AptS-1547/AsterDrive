@@ -12,7 +12,7 @@ use crate::db::repository::{
 use crate::db::transaction;
 use crate::entities::{background_task, file_blob, storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
 use crate::storage::{MultipartStorageDriver, StorageDriver, StorageErrorKind};
 use crate::types::BackgroundTaskKind;
 use crate::utils::hash::{new_sha256, sha256_digest_to_hex, sha256_hex};
@@ -179,7 +179,7 @@ async fn build_storage_policy_migration_preflight(
         &source_policy,
         &target_policy,
     );
-    let target_driver = state.driver_registry.get_driver(&target_policy)?;
+    let target_driver = state.driver_registry().get_driver(&target_policy)?;
     let target_supports_stream_upload = target_driver.as_stream_upload().is_some();
     if !target_supports_stream_upload {
         return Err(AsterError::storage_driver_error(
@@ -384,8 +384,8 @@ pub(super) async fn process_storage_policy_migration_task(
     let target_policy =
         policy_repo::find_by_id(state.writer_db(), payload.target_policy_id).await?;
     validate_migration_plan(&payload, &source_policy, &target_policy)?;
-    let source_driver = state.driver_registry.get_driver(&source_policy)?;
-    let target_driver = state.driver_registry.get_driver(&target_policy)?;
+    let source_driver = state.driver_registry().get_driver(&source_policy)?;
+    let target_driver = state.driver_registry().get_driver(&target_policy)?;
     if target_driver.as_stream_upload().is_none() {
         return Err(AsterError::storage_driver_error(
             "target storage policy does not support stream upload",

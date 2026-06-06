@@ -2,14 +2,14 @@ use crate::api::pagination::{AdminLockSortBy, OffsetPage, SortOrder, load_offset
 use crate::db::repository::lock_repo;
 use crate::entities::resource_lock;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{profile_service, user_service};
 
 use super::models::ResourceLock;
 use super::owner_info::deserialize_resource_lock_owner_info;
 
 pub async fn list_paginated(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     limit: u64,
     offset: u64,
     sort_by: AdminLockSortBy,
@@ -26,7 +26,7 @@ pub async fn list_paginated(
 }
 
 async fn build_resource_locks(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     locks: Vec<resource_lock::Model>,
 ) -> Result<Vec<ResourceLock>> {
     let owner_ids: Vec<i64> = locks.iter().filter_map(|lock| lock.owner_id).collect();

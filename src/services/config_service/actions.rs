@@ -2,7 +2,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::config::{mail, media_processing, operations};
 use crate::db::repository::user_repo;
 use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{MailRuntimeState, SharedRuntimeState};
 use crate::services::{
     audit_service::{self, AuditContext},
     mail_service, media_processing_service, preview_app_service, task_service, wopi_service,
@@ -62,7 +62,7 @@ pub struct ExecuteConfigActionInput<'a> {
 }
 
 pub async fn execute_action(
-    state: &PrimaryAppState,
+    state: &impl MailRuntimeState,
     input: ExecuteConfigActionInput<'_>,
 ) -> Result<ConfigActionResult> {
     let ExecuteConfigActionInput {
@@ -94,7 +94,7 @@ pub async fn execute_action(
 }
 
 pub async fn execute_action_with_audit(
-    state: &PrimaryAppState,
+    state: &impl MailRuntimeState,
     input: ExecuteConfigActionInput<'_>,
     audit_ctx: &AuditContext,
 ) -> Result<ConfigActionResult> {
@@ -118,7 +118,7 @@ pub async fn execute_action_with_audit(
 }
 
 async fn execute_offline_download_action(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     action: ConfigActionType,
     actor_user_id: i64,
     value: Option<&str>,
@@ -166,7 +166,7 @@ async fn execute_offline_download_action(
             .transpose()?
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or_else(|| {
-                operations::offline_download_aria2_request_timeout_secs(&state.runtime_config)
+                operations::offline_download_aria2_request_timeout_secs(state.runtime_config())
             })
             .max(1);
             let request_timeout = std::time::Duration::from_secs(request_timeout);
@@ -203,14 +203,14 @@ async fn execute_offline_download_action(
 }
 
 fn offline_download_action_config_value(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     draft_values: Option<&BTreeMap<String, String>>,
     key: &str,
 ) -> Option<String> {
     draft_values
         .and_then(|values| values.get(key))
         .cloned()
-        .or_else(|| state.runtime_config.get(key))
+        .or_else(|| state.runtime_config().get(key))
 }
 
 fn aria2_rpc_probe_error(error: AsterError) -> AsterError {
@@ -232,7 +232,7 @@ fn aria2_rpc_probe_error(error: AsterError) -> AsterError {
 }
 
 async fn execute_mail_action(
-    state: &PrimaryAppState,
+    state: &impl MailRuntimeState,
     action: ConfigActionType,
     actor_user_id: i64,
     target_email: Option<&str>,
@@ -270,7 +270,7 @@ async fn execute_mail_action(
 }
 
 async fn execute_preview_app_action(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     action: ConfigActionType,
     actor_user_id: i64,
     value: Option<&str>,
@@ -280,7 +280,7 @@ async fn execute_preview_app_action(
         ConfigActionType::BuildWopiDiscoveryPreviewConfig => {
             let raw_value = value.map(str::to_string).unwrap_or_else(|| {
                 state
-                    .runtime_config
+                    .runtime_config()
                     .get(preview_app_service::PREVIEW_APPS_CONFIG_KEY)
                     .unwrap_or_else(preview_app_service::default_public_preview_apps_json)
             });
@@ -331,7 +331,7 @@ async fn execute_preview_app_action(
 }
 
 async fn execute_media_processing_action(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     action: ConfigActionType,
     actor_user_id: i64,
     value: Option<&str>,
@@ -340,7 +340,7 @@ async fn execute_media_processing_action(
         ConfigActionType::TestVipsCli => {
             let raw_value = value.map(str::to_string).unwrap_or_else(|| {
                 state
-                    .runtime_config
+                    .runtime_config()
                     .get(media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY)
                     .unwrap_or_else(media_processing::default_media_processing_registry_json)
             });
@@ -364,7 +364,7 @@ async fn execute_media_processing_action(
         ConfigActionType::TestFfmpegCli => {
             let raw_value = value.map(str::to_string).unwrap_or_else(|| {
                 state
-                    .runtime_config
+                    .runtime_config()
                     .get(media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY)
                     .unwrap_or_else(media_processing::default_media_processing_registry_json)
             });
@@ -388,7 +388,7 @@ async fn execute_media_processing_action(
         ConfigActionType::TestFfprobeCli => {
             let raw_value = value.map(str::to_string).unwrap_or_else(|| {
                 state
-                    .runtime_config
+                    .runtime_config()
                     .get(media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY)
                     .unwrap_or_else(media_processing::default_media_processing_registry_json)
             });
@@ -420,7 +420,7 @@ async fn execute_media_processing_action(
 }
 
 async fn build_wopi_discovery_preview_apps_into_config(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     config: &mut preview_app_service::PublicPreviewAppsConfig,
     discovery_url: &str,
 ) -> Result<()> {

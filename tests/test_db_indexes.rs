@@ -2,6 +2,7 @@
 
 #[macro_use]
 mod common;
+use aster_drive::runtime::SharedRuntimeState;
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 

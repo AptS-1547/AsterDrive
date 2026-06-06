@@ -2,7 +2,7 @@ use crate::cache;
 use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob, storage_policy, user};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{mail_service, policy_service};
 use crate::storage::BlobMetadata;
 use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver, StreamUploadDriver};

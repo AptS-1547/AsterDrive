@@ -9,6 +9,7 @@ use actix_web::test;
 use aster_drive::config::branding::DEFAULT_BRANDING_TITLE;
 use aster_drive::db::repository::{auth_session_repo, passkey_repo, user_repo};
 use aster_drive::entities::passkey;
+use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::services::auth_service;
 use aster_drive::types::UserStatus;
 use base64::Engine as _;

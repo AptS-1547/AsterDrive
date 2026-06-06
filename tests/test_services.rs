@@ -3,6 +3,7 @@
 #[macro_use]
 mod common;
 
+use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::services::file_service::StoreFromTempRequest;
 use std::collections::BTreeSet;
 #[cfg(unix)]

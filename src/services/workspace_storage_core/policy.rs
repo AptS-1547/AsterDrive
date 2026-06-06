@@ -1,7 +1,7 @@
 use crate::db::repository::{team_repo, user_repo};
 use crate::entities::folder;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_scope_service::{
     WorkspaceStorageScope, require_team_policy_group_id, verify_folder_access,
 };
@@ -100,7 +100,7 @@ pub(crate) async fn resolve_policy_for_size_with_verified_folder(
     if let Some(folder) = folder
         && let Some(policy_id) = folder.policy_id()
     {
-        return state.policy_snapshot.get_policy_or_err(policy_id);
+        return state.policy_snapshot().get_policy_or_err(policy_id);
     }
 
     resolve_scope_policy_for_size(state, scope, file_size).await
@@ -118,7 +118,7 @@ pub(crate) async fn resolve_policy_for_size(
         let folder = verify_folder_access(state, scope, folder_id).await?;
 
         if let Some(policy_id) = folder.policy_id {
-            return state.policy_snapshot.get_policy_or_err(policy_id);
+            return state.policy_snapshot().get_policy_or_err(policy_id);
         }
     }
 

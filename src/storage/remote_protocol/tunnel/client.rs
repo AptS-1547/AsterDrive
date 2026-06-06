@@ -10,7 +10,7 @@ use super::server::{
 use crate::db::repository::master_binding_repo;
 use crate::entities::master_binding;
 use crate::errors::{AsterError, Result};
-use crate::runtime::FollowerAppState;
+use crate::runtime::{FollowerAppState, SharedRuntimeState};
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::remote_protocol::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_SIGNATURE_HEADER,
@@ -63,7 +63,7 @@ pub async fn run_follower_tunnel_worker(
             return;
         }
     };
-    let local_base_url = format!("http://127.0.0.1:{}", state.config.server.port);
+    let local_base_url = format!("http://127.0.0.1:{}", state.config().server.port);
     let mut workers = HashMap::new();
 
     loop {

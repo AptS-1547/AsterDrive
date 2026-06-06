@@ -7,7 +7,7 @@ use crate::errors::{
     AsterError, MapAsterErr, Result, file_upload_error_with_subcode,
     precondition_failed_with_subcode, validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::profile_service::shared::{
     AVATAR_SIZE_LG, AVATAR_SIZE_SM, MAX_AVATAR_DECODE_ALLOC,
 };
@@ -79,7 +79,7 @@ pub async fn process_avatar_upload(
     file_name: &str,
     data: Vec<u8>,
 ) -> Result<ProcessedAvatar> {
-    let processor = resolve_avatar_processor(&state.runtime_config, file_name)?;
+    let processor = resolve_avatar_processor(&state.runtime_config(), file_name)?;
     let source_extension = media_processing_config::file_extension(file_name);
     tracing::debug!(
         operation = MediaOperation::Avatar.as_str(),
@@ -208,7 +208,7 @@ async fn render_avatar_with_vips_cli(
     original: Vec<u8>,
     command: &str,
 ) -> Result<ProcessedAvatar> {
-    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config().server.temp_dir);
     let temp_dir =
         PathBuf::from(temp_root).join(format!("media-vips-avatar-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)

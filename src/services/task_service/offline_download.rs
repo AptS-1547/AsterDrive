@@ -6,7 +6,7 @@ use std::time::Duration as StdDuration;
 use crate::config::operations;
 use crate::entities::{background_task, file};
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     folder_service,
     task_service::{
@@ -67,7 +67,7 @@ pub(crate) async fn create_offline_download_task_in_scope(
     workspace_storage_service::require_scope_access_with_db(state, state.writer_db(), scope)
         .await?;
     let request = normalize_offline_download_request(params)?;
-    if operations::offline_download_enabled_engines(&state.runtime_config).is_empty() {
+    if operations::offline_download_enabled_engines(&state.runtime_config()).is_empty() {
         return Err(AsterError::validation_error(
             "offline download is disabled because no download engine is enabled",
         ));
@@ -137,15 +137,15 @@ pub(super) async fn process_offline_download_task(
         let temp_root = offline_download_temp_root(state);
         let task_temp_dir = prepare_task_temp_dir_in_root(&temp_root, lease_guard.lease()).await?;
         let temp_path = Path::new(&task_temp_dir).join(OFFLINE_DOWNLOAD_TEMP_FILE_NAME);
-        let max_bytes = operations::offline_download_max_file_size_bytes(&state.runtime_config);
+        let max_bytes = operations::offline_download_max_file_size_bytes(&state.runtime_config());
         let max_bytes_per_sec =
-            operations::offline_download_max_bytes_per_sec(&state.runtime_config);
+            operations::offline_download_max_bytes_per_sec(&state.runtime_config());
         let timeout = StdDuration::from_secs(
-            operations::offline_download_request_timeout_secs(&state.runtime_config).max(1),
+            operations::offline_download_request_timeout_secs(&state.runtime_config()).max(1),
         );
         let timeout =
             effective_offline_download_request_timeout(timeout, max_bytes, max_bytes_per_sec)?;
-        let engine_kinds = operations::offline_download_enabled_engines(&state.runtime_config);
+        let engine_kinds = operations::offline_download_enabled_engines(&state.runtime_config());
         if engine_kinds.is_empty() {
             return Err(AsterError::validation_error(
                 "offline download is disabled because no download engine is enabled",
@@ -319,8 +319,8 @@ pub(super) async fn process_offline_download_task(
 }
 
 pub(super) fn offline_download_temp_root(state: &PrimaryAppState) -> String {
-    operations::offline_download_temp_dir(&state.runtime_config)
-        .unwrap_or_else(|| state.config.server.temp_dir.clone())
+    operations::offline_download_temp_dir(&state.runtime_config())
+        .unwrap_or_else(|| state.config().server.temp_dir.clone())
 }
 
 pub(super) struct OfflineDownloadRetryPolicy;

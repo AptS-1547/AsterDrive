@@ -7,7 +7,7 @@
 use crate::api::subcode::ApiSubcode;
 use crate::db::repository::file_repo;
 use crate::errors::{AsterError, MapAsterErr, Result, precondition_failed_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     audit_service::{self, AuditRequestInfo},
     file_service, profile_service,

@@ -287,7 +287,10 @@ fn public_thumbnail_support_cache_key(state: &impl SharedRuntimeState) -> String
     format!("{PUBLIC_THUMBNAIL_SUPPORT_CACHE_KEY}:{:x}", hasher.finish())
 }
 
-fn hash_policy_snapshot_for_public_support(state: &impl SharedRuntimeState, hasher: &mut DefaultHasher) {
+fn hash_policy_snapshot_for_public_support(
+    state: &impl SharedRuntimeState,
+    hasher: &mut DefaultHasher,
+) {
     let mut policies = state.policy_snapshot().all_policies();
     policies.sort_by_key(|policy| policy.id);
     for policy in policies {

@@ -3,7 +3,7 @@
 use crate::api::subcode::ApiSubcode;
 use crate::db::repository::user_repo;
 use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
-use crate::runtime::{PrimaryAppState, SharedRuntimeState};
+use crate::runtime::SharedRuntimeState;
 use crate::utils::hash;
 
 use super::session::{invalidate_auth_snapshot_cache, purge_all_auth_sessions_in_connection};
@@ -13,7 +13,7 @@ use crate::services::mfa_service::{self, PrimaryLoginCompletion};
 use super::{AuthUserInfo, is_email_verified};
 
 pub async fn login(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     identifier: &str,
     password: &str,
     ip_address: Option<&str>,

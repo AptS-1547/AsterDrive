@@ -8,7 +8,7 @@ use crate::api::request_auth::{access_cookie_token, bearer_token};
 use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState, StorageChangeRuntimeState};
 use crate::services::audit_service::{self, AuditContext, AuditRequestInfo};
 use crate::services::auth_service::Claims;
 use crate::services::mfa_service::PrimaryLoginCompletion;
@@ -27,7 +27,8 @@ use super::cookies::{
 
 fn refresh_cookie_jti(state: &PrimaryAppState, req: &HttpRequest) -> Option<String> {
     let refresh_token = req.cookie(REFRESH_COOKIE)?.value().to_string();
-    let claims = auth_service::verify_token(&refresh_token, &state.config.auth.jwt_secret).ok()?;
+    let claims =
+        auth_service::verify_token(&refresh_token, &state.config().auth.jwt_secret).ok()?;
     if claims.token_type != TokenType::Refresh {
         return None;
     }
@@ -39,7 +40,7 @@ pub(super) fn authenticated_login_response(
     access_token: &str,
     refresh_token: &str,
 ) -> Result<HttpResponse> {
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
     let access_ttl = u64_to_i64(auth_policy.access_token_ttl_secs, "access token ttl")?;
@@ -124,7 +125,7 @@ pub async fn get_storage_events(
     let visible_team_ids = revalidate_storage_event_stream(&state, user_id, session_version, true)
         .await?
         .expect("visible teams should be loaded on initial SSE auth check");
-    let mut rx = state.storage_change_tx.subscribe();
+    let mut rx = state.storage_change_tx().subscribe();
 
     let stream = async_stream::stream! {
         let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));
@@ -246,12 +247,12 @@ pub async fn login(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config,
+        &state.runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     let result =
         auth_service::login_with_audit(&state, &body.identifier, &body.password, &audit_info)
@@ -272,15 +273,15 @@ pub async fn login(
 pub async fn refresh(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config,
+        &state.runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     csrf::ensure_double_submit_token(&req)?;
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
     let refresh_tok = req
         .cookie(REFRESH_COOKIE)
         .map(|c| c.value().to_string())
@@ -320,7 +321,7 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
     if access_cookie_token(&req).is_some() || req.cookie(REFRESH_COOKIE).is_some() {
         if let Err(error) = csrf::ensure_request_source_allowed(
             &req,
-            &state.runtime_config,
+            &state.runtime_config(),
             RequestSourceMode::OptionalWhenPresent,
         ) {
             return actix_web::ResponseError::error_response(&error);
@@ -332,7 +333,7 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
 
     let audit_info = AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     if let Some(refresh_token) = req
         .cookie(REFRESH_COOKIE)
@@ -355,7 +356,7 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
         }
     }
 
-    let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).cookie_secure;
+    let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config()).cookie_secure;
     HttpResponse::Ok()
         .cookie(clear_access_cookie(secure))
         .cookie(clear_refresh_cookie(secure))
@@ -449,7 +450,7 @@ pub async fn delete_other_sessions(
     let ctx = AuditContext::from_request_with_trusted_proxies(
         &req,
         &claims,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     audit_service::log_with_details(
         &state,
@@ -500,7 +501,7 @@ pub async fn delete_session(
     let ctx = AuditContext::from_request_with_trusted_proxies(
         &req,
         &claims,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     audit_service::log_with_details(
         &state,
@@ -519,7 +520,7 @@ pub async fn delete_session(
     )
     .await;
 
-    let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).cookie_secure;
+    let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config()).cookie_secure;
     let mut response = HttpResponse::Ok();
     if revoked_current {
         response
@@ -552,7 +553,7 @@ pub async fn put_password(
     let ctx = AuditContext::from_request_with_trusted_proxies(
         &req,
         &claims,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     let user = auth_service::change_password_with_audit(
         &state,
@@ -562,7 +563,7 @@ pub async fn put_password(
         &ctx,
     )
     .await?;
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config());
     let (access_token, refresh_token) = auth_service::issue_tokens_for_session(
         &state,
         user.id,

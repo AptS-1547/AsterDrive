@@ -2,7 +2,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::property_repo;
 use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::types::EntityType;
 
 use super::model::{ArchiveRawManifest, CachedArchiveRawManifest, CachedArchiveRawManifestRef};
@@ -12,7 +12,7 @@ use super::{
 };
 
 pub(super) async fn load_cached_raw_manifest(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     source_file: &file::Model,
     blob: &file_blob::Model,
     limits: &ArchivePreviewLimits,
@@ -58,7 +58,7 @@ pub(super) async fn load_cached_raw_manifest(
 }
 
 pub(crate) async fn store_cached_manifest(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     source_file: &file::Model,
     blob: &file_blob::Model,
     limits: &ArchivePreviewLimits,

@@ -11,7 +11,7 @@ use std::rc::Rc;
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::request_auth::{access_cookie_token, bearer_token};
 use crate::errors::AsterError;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::auth_service;
 
 /// JWT 认证中间件
@@ -65,7 +65,7 @@ where
             if cookie_token.is_some() && csrf::is_unsafe_method(req.method()) {
                 csrf::ensure_service_request_source_allowed(
                     &req,
-                    &state.runtime_config,
+                    &state.runtime_config(),
                     RequestSourceMode::OptionalWhenPresent,
                 )?;
                 csrf::ensure_service_double_submit_token(&req)?;

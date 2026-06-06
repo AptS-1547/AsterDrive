@@ -3,7 +3,7 @@
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::response::ApiResponse;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::auth_service::Claims;
 use crate::services::{audit_service, mfa_service};
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -27,7 +27,7 @@ pub async fn verify_challenge(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config,
+        &state.runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     let result = mfa_service::verify_challenge(
@@ -63,12 +63,12 @@ pub async fn send_email_code(
 ) -> Result<HttpResponse> {
     csrf::ensure_request_source_allowed(
         &req,
-        &state.runtime_config,
+        &state.runtime_config(),
         RequestSourceMode::OptionalWhenPresent,
     )?;
     let audit_info = audit_service::AuditRequestInfo::from_request_with_trusted_proxies(
         &req,
-        &state.config.network_trust.trusted_proxies,
+        &state.config().network_trust.trusted_proxies,
     );
     Ok(HttpResponse::Ok().json(ApiResponse::ok(
         mfa_service::send_email_code(&state, &body.flow_token, &audit_info).await?,

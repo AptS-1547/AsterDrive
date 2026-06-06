@@ -6,7 +6,7 @@
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{
     share_service,
     workspace_storage_service::{self, WorkspaceResourceScope, WorkspaceStorageScope},
@@ -49,7 +49,7 @@ struct FolderListingResult {
 }
 
 async fn build_folder_contents(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceResourceScope,
     listing: FolderListingResult,
     params: &FolderListParams,
@@ -89,7 +89,7 @@ async fn build_folder_contents(
 }
 
 pub(crate) async fn list_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
     params: &FolderListParams,
@@ -276,7 +276,7 @@ pub(crate) async fn list_in_scope(
 }
 
 pub async fn list(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     user_id: i64,
     parent_id: Option<i64>,
     params: &FolderListParams,
@@ -292,7 +292,7 @@ pub async fn list(
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
 pub async fn list_shared(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     folder_id: i64,
     params: &FolderListParams,
 ) -> Result<FolderContents> {

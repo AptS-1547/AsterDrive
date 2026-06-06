@@ -2,6 +2,7 @@ mod common;
 
 use actix_web::{body::MessageBody, http::StatusCode, test};
 use aster_drive::config::{auth_runtime, mail};
+use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::services::mfa_service::totp;
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};

@@ -4,7 +4,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::errors::{
     AsterError, MapAsterErr, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
 };
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::preview_app_service;
 use crate::services::wopi_service::proof::validate_wopi_proof;
 use crate::services::wopi_service::types::WopiRequestSource;
@@ -72,7 +72,7 @@ pub(crate) fn ensure_request_source_allowed(
 }
 
 pub(crate) async fn ensure_request_proof_valid(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     app_config: &WopiAppConfig,
     access_token: &str,
     request_source: &WopiRequestSource<'_>,

@@ -14,7 +14,7 @@ use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{file_repo, folder_repo, share_repo, team_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::SharedRuntimeState;
 use crate::services::{
     file_service, folder_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
@@ -81,7 +81,7 @@ pub(super) async fn lock_share_resource_in_scope<C: sea_orm::ConnectionTrait>(
 }
 
 pub(super) async fn load_share_in_scope(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     share_id: i64,
 ) -> Result<share::Model> {
@@ -91,14 +91,17 @@ pub(super) async fn load_share_in_scope(
     Ok(share)
 }
 
-pub(super) async fn load_valid_share(state: &PrimaryAppState, token: &str) -> Result<share::Model> {
+pub(super) async fn load_valid_share(
+    state: &impl SharedRuntimeState,
+    token: &str,
+) -> Result<share::Model> {
     let share = load_share_record(state, token).await?;
     validate_share(&share)?;
     Ok(share)
 }
 
 pub(crate) async fn load_usable_share_ignoring_download_limit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
 ) -> Result<share::Model> {
     let share = load_share_record(state, token).await?;
@@ -107,7 +110,7 @@ pub(crate) async fn load_usable_share_ignoring_download_limit(
 }
 
 pub(super) async fn load_share_record(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
 ) -> Result<share::Model> {
     let share = load_share_record_by_token(state, token).await?;
@@ -162,7 +165,7 @@ pub(super) fn ensure_share_matches_folder(
 }
 
 pub(super) async fn load_share_file_resource(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share: &share::Model,
 ) -> Result<crate::entities::file::Model> {
     let file_id = match share_target_for_share(share)? {
@@ -190,7 +193,7 @@ pub(super) async fn load_share_file_resource(
 }
 
 pub(super) async fn load_share_folder_resource(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     share: &share::Model,
 ) -> Result<crate::entities::folder::Model> {
     let folder_id = match share_target_for_share(share)? {
@@ -218,7 +221,7 @@ pub(super) async fn load_share_folder_resource(
 }
 
 pub(super) async fn load_valid_folder_share_root(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
 ) -> Result<(share::Model, i64)> {
     let share = load_valid_share(state, token).await?;
@@ -227,7 +230,7 @@ pub(super) async fn load_valid_folder_share_root(
 }
 
 pub(crate) async fn load_usable_folder_share_root_ignoring_download_limit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
 ) -> Result<(share::Model, i64)> {
     let share = load_usable_share_ignoring_download_limit(state, token).await?;
@@ -236,7 +239,7 @@ pub(crate) async fn load_usable_folder_share_root_ignoring_download_limit(
 }
 
 pub(super) async fn load_shared_folder_file_target(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     file_id: i64,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
@@ -262,7 +265,7 @@ pub(super) async fn load_shared_folder_file_target(
 }
 
 pub(crate) async fn load_shared_folder_file_target_ignoring_download_limit(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     file_id: i64,
 ) -> Result<(share::Model, crate::entities::file::Model)> {
@@ -287,7 +290,7 @@ pub(crate) async fn load_shared_folder_file_target_ignoring_download_limit(
 }
 
 pub(super) async fn load_shared_subfolder_target(
-    state: &PrimaryAppState,
+    state: &impl SharedRuntimeState,
     token: &str,
     folder_id: i64,
 ) -> Result<(share::Model, crate::entities::folder::Model)> {

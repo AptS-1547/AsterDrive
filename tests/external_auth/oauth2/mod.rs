@@ -4,6 +4,7 @@ pub use mock::{GitHubEmailEntry, TokenAuthObservation, start_mock_oauth2_provide
 
 use actix_web::{body::MessageBody, dev::ServiceResponse, test};
 use aster_drive::entities::{external_auth_provider, user};
+use aster_drive::runtime::SharedRuntimeState;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel};
 use serde_json::Value;
