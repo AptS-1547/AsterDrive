@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 use crate::api::api_error_code::ApiErrorCode;
 use crate::api::pagination::OffsetPage;
-use crate::config::{branding, local_email_policy::LocalEmailPolicy, site_url};
+use crate::config::{auth_runtime, branding, local_email_policy::LocalEmailPolicy, site_url};
 use crate::db::repository::{user_invitation_repo, user_repo};
 use crate::entities::{user, user_invitation};
 use crate::errors::{AsterError, Result, validation_error_with_code};
@@ -19,9 +19,7 @@ use crate::services::{
     mail_template::MailTemplatePayload,
 };
 use crate::types::{UserInvitationStatus, UserRole, UserStatus};
-use crate::utils::{hash, id};
-
-const DEFAULT_INVITATION_TTL_SECS: i64 = 72 * 60 * 60;
+use crate::utils::{hash, id, numbers::u64_to_i64};
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -66,8 +64,13 @@ pub async fn create_invitation(
     let token = id::new_short_token();
     let token_hash = hash::sha256_hex(token.as_bytes());
     let now = Utc::now();
-    let expires_at = now + Duration::seconds(DEFAULT_INVITATION_TTL_SECS);
+    let invitation_ttl_secs = u64_to_i64(
+        auth_runtime::user_invitation_ttl_secs(state.runtime_config()),
+        "user invitation ttl",
+    )?;
+    let expires_at = now + Duration::seconds(invitation_ttl_secs);
     let invitation_url = invitation_url(state.runtime_config(), &token);
+    let expires_in = format_mail_duration_seconds(invitation_ttl_secs);
     let site_name = branding::title_or_default(state.runtime_config());
 
     let txn = crate::db::transaction::begin(state.writer_db()).await?;
@@ -80,6 +83,7 @@ pub async fn create_invitation(
             &txn,
             user_invitation::ActiveModel {
                 email: Set(email.clone()),
+                token: Set(Some(token.clone())),
                 token_hash: Set(token_hash),
                 status: Set(UserInvitationStatus::Pending),
                 invited_by: Set(invited_by),
@@ -98,7 +102,7 @@ pub async fn create_invitation(
             &txn,
             &email,
             None,
-            MailTemplatePayload::user_invitation(&email, &invitation_url, &site_name, "72 hours"),
+            MailTemplatePayload::user_invitation(&email, &invitation_url, &site_name, &expires_in),
         )
         .await?;
 
@@ -127,11 +131,9 @@ pub async fn list_invitations(
     let (items, total) = user_invitation_repo::list(state.writer_db(), limit, offset).await?;
     let mut infos = Vec::with_capacity(items.len());
     for item in items {
-        infos.push(to_admin_info(
-            refresh_expired_status(state.writer_db(), item).await?,
-            None,
-            false,
-        ));
+        let invitation = refresh_expired_status(state.writer_db(), item).await?;
+        let invitation_url = copyable_invitation_url(state.runtime_config(), &invitation);
+        infos.push(to_admin_info(invitation, invitation_url, false));
     }
     Ok(OffsetPage::new(infos, total, limit, offset))
 }
@@ -243,6 +245,7 @@ async fn refresh_expired_status<C: ConnectionTrait>(
     if invitation.status == UserInvitationStatus::Pending && invitation.expires_at <= Utc::now() {
         user_invitation_repo::mark_expired_if_pending(db, invitation.id).await?;
         invitation.status = UserInvitationStatus::Expired;
+        invitation.token = None;
         invitation.updated_at = Utc::now();
     }
     Ok(invitation)
@@ -289,6 +292,35 @@ fn invitation_token_hash(token: &str) -> Result<String> {
 
 fn invitation_url(runtime_config: &crate::config::RuntimeConfig, token: &str) -> String {
     site_url::public_app_url_or_path(runtime_config, &format!("/invite/{token}"))
+}
+
+fn copyable_invitation_url(
+    runtime_config: &crate::config::RuntimeConfig,
+    invitation: &user_invitation::Model,
+) -> Option<String> {
+    if invitation.status != UserInvitationStatus::Pending || invitation.expires_at <= Utc::now() {
+        return None;
+    }
+    invitation
+        .token
+        .as_deref()
+        .filter(|token| !token.trim().is_empty())
+        .map(|token| invitation_url(runtime_config, token))
+}
+
+fn format_mail_duration_seconds(total_secs: i64) -> String {
+    let total_secs = total_secs.max(1);
+    let (value, unit) = if total_secs >= 86_400 && total_secs % 86_400 == 0 {
+        (total_secs / 86_400, "day")
+    } else if total_secs >= 3_600 && total_secs % 3_600 == 0 {
+        (total_secs / 3_600, "hour")
+    } else if total_secs >= 60 {
+        ((total_secs + 59) / 60, "minute")
+    } else {
+        (total_secs, "second")
+    };
+    let suffix = if value == 1 { "" } else { "s" };
+    format!("{value} {unit}{suffix}")
 }
 
 fn to_admin_info(

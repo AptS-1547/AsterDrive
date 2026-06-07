@@ -64,6 +64,7 @@ pub const AUTH_REFRESH_TOKEN_TTL_SECS_KEY: &str = "auth_refresh_token_ttl_secs";
 pub const AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY: &str = "auth_register_activation_ttl_secs";
 pub const AUTH_CONTACT_CHANGE_TTL_SECS_KEY: &str = "auth_contact_change_ttl_secs";
 pub const AUTH_PASSWORD_RESET_TTL_SECS_KEY: &str = "auth_password_reset_ttl_secs";
+pub const AUTH_USER_INVITATION_TTL_SECS_KEY: &str = "auth_user_invitation_ttl_secs";
 pub const AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY: &str =
     "auth_contact_verification_resend_cooldown_secs";
 pub const AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY: &str =
@@ -338,6 +339,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: CONFIG_CATEGORY_AUTH,
         description: "Password reset link lifetime in seconds",
+    },
+    ConfigDef {
+        key: AUTH_USER_INVITATION_TTL_SECS_KEY,
+        label_i18n_key: "settings_item_auth_user_invitation_ttl_secs_label",
+        description_i18n_key: "settings_item_auth_user_invitation_ttl_secs_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || "259200".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: CONFIG_CATEGORY_AUTH,
+        description: "Admin-created user invitation link lifetime in seconds",
     },
     ConfigDef {
         key: AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY,

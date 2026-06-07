@@ -43,6 +43,11 @@ async fn create_user_invitations(manager: &SchemaManager<'_>) -> Result<(), DbEr
                         .not_null(),
                 )
                 .col(
+                    ColumnDef::new(UserInvitations::Token)
+                        .string_len(128)
+                        .null(),
+                )
+                .col(
                     ColumnDef::new(UserInvitations::TokenHash)
                         .string_len(64)
                         .not_null()
@@ -142,6 +147,7 @@ enum UserInvitations {
     Table,
     Id,
     Email,
+    Token,
     TokenHash,
     Status,
     InvitedBy,

@@ -8,7 +8,7 @@ use aster_drive::config::{auth_runtime, local_email_policy, site_url};
 use aster_drive::entities::{mail_outbox, user_invitation};
 use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::types::{MailTemplateCode, UserInvitationStatus};
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
 };
@@ -160,6 +160,15 @@ async fn test_invitation_lifecycle_accepts_and_marks_user_email_verified() {
     assert!(invitation_url.starts_with("https://drive.example.test/invite/"));
     let token = extract_invitation_token(&invitation);
 
+    let list = list_invitations!(app, admin_token);
+    let listed = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"].as_i64() == invitation["id"].as_i64())
+        .expect("new pending invitation should be listed");
+    assert_eq!(listed["invitation_url"], invitation_url);
+
     let outbox = latest_invitation_outbox(&db).await;
     assert_eq!(outbox.to_address, "Invited@Example.COM");
     assert_eq!(outbox.template_code, MailTemplateCode::UserInvitation);
@@ -167,6 +176,9 @@ async fn test_invitation_lifecycle_accepts_and_marks_user_email_verified() {
         outbox.payload_json.as_ref().contains(&token),
         "stored payload should contain the plaintext token only for mail delivery"
     );
+    let pending_row = latest_invitation_row(&db, "Invited@Example.COM").await;
+    assert_eq!(pending_row.token.as_deref(), Some(token.as_str()));
+    assert_ne!(pending_row.token_hash, token);
 
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
@@ -198,15 +210,80 @@ async fn test_invitation_lifecycle_accepts_and_marks_user_email_verified() {
     assert_eq!(row.status, UserInvitationStatus::Accepted);
     assert_eq!(row.accepted_user_id, body["data"]["id"].as_i64());
     assert!(row.accepted_at.is_some());
+    assert!(row.token.is_none());
     assert!(
         row.token_hash.len() == 64 && row.token_hash != token,
-        "database should store the SHA-256 hash, not the plaintext token"
+        "database should still keep the SHA-256 hash for token lookup"
     );
 
     let (status, body) =
         accept_invitation_with_status!(app, &token, "invited_user_2", "password123");
     assert_eq!(status, 400);
     assert_eq!(body["code"], "auth.invitation_accepted");
+}
+
+#[actix_web::test]
+async fn test_invitation_uses_configured_ttl_for_expiry_and_mail_text() {
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    state.runtime_config.apply(common::system_config_model(
+        auth_runtime::AUTH_USER_INVITATION_TTL_SECS_KEY,
+        "3600",
+    ));
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let invitation = create_invitation!(app, admin_token, "ttl@example.com");
+    let created_at = DateTime::parse_from_rfc3339(invitation["created_at"].as_str().unwrap())
+        .unwrap()
+        .with_timezone(&Utc);
+    let expires_at = DateTime::parse_from_rfc3339(invitation["expires_at"].as_str().unwrap())
+        .unwrap()
+        .with_timezone(&Utc);
+    assert_eq!(expires_at - created_at, Duration::seconds(3600));
+
+    let outbox = latest_invitation_outbox(&db).await;
+    let payload: Value =
+        serde_json::from_str(outbox.payload_json.as_ref()).expect("payload should be JSON");
+    assert_eq!(payload["expires_in"], "1 hour");
+}
+
+#[actix_web::test]
+async fn test_pending_invitation_without_stored_token_is_not_copyable_but_still_accepts() {
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let invitation = create_invitation!(app, admin_token, "legacy@example.com");
+    let invitation_id = invitation["id"].as_i64().unwrap();
+    let token = extract_invitation_token(&invitation);
+
+    let mut active = user_invitation::Entity::find_by_id(invitation_id)
+        .one(&db)
+        .await
+        .expect("invitation lookup should succeed")
+        .expect("invitation row should exist")
+        .into_active_model();
+    active.token = Set(None);
+    active
+        .update(&db)
+        .await
+        .expect("invitation token clear should succeed");
+
+    let list = list_invitations!(app, admin_token);
+    let item = list["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"].as_i64() == Some(invitation_id))
+        .expect("pending invitation should be listed");
+    assert_eq!(item["status"], "pending");
+    assert!(item.get("invitation_url").is_none());
+
+    let (status, body) = accept_invitation_with_status!(app, &token, "legacy_user", "password123");
+    assert_eq!(status, 201);
+    assert_eq!(body["data"]["email"], "legacy@example.com");
 }
 
 #[actix_web::test]
@@ -256,6 +333,7 @@ async fn test_duplicate_invitation_revokes_previous_pending_and_only_new_token_w
 #[actix_web::test]
 async fn test_invitation_revoke_blocks_accept_and_rejects_non_pending_revoke() {
     let state = common::setup().await;
+    let db = state.writer_db().clone();
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
@@ -276,6 +354,8 @@ async fn test_invitation_revoke_blocks_accept_and_rejects_non_pending_revoke() {
     assert_eq!(body["data"]["status"], "revoked");
     assert!(body["data"]["revoked_at"].is_string());
     assert!(body["data"].get("invitation_url").is_none());
+    let row = latest_invitation_row(&db, "revoked@example.com").await;
+    assert!(row.token.is_none());
 
     let (status, body) = accept_invitation_with_status!(app, &token, "revoked_user", "password123");
     assert_eq!(status, 400);
@@ -325,9 +405,11 @@ async fn test_invitation_expiry_is_refreshed_by_verify_list_and_accept() {
         .find(|item| item["id"].as_i64() == Some(invitation_id))
         .expect("expired invitation should be listed");
     assert_eq!(item["status"], "expired");
+    assert!(item.get("invitation_url").is_none());
 
     let row = latest_invitation_row(&db, "expired@example.com").await;
     assert_eq!(row.status, UserInvitationStatus::Expired);
+    assert!(row.token.is_none());
 
     let (status, body) = accept_invitation_with_status!(app, &token, "expired_user", "password123");
     assert_eq!(status, 400);

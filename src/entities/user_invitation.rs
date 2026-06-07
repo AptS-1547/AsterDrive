@@ -14,6 +14,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub email: String,
+    pub token: Option<String>,
     pub token_hash: String,
     pub status: UserInvitationStatus,
     pub invited_by: i64,

@@ -11,7 +11,7 @@ pub use crate::config::definitions::{
     AUTH_EMAIL_CODE_LOGIN_TTL_SECS_KEY, AUTH_PASSKEY_LOGIN_ENABLED_KEY,
     AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY, AUTH_PASSWORD_RESET_TTL_SECS_KEY,
     AUTH_REFRESH_TOKEN_TTL_SECS_KEY, AUTH_REGISTER_ACTIVATION_ENABLED_KEY,
-    AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY,
+    AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY, AUTH_USER_INVITATION_TTL_SECS_KEY,
 };
 
 pub const DEFAULT_AUTH_COOKIE_SECURE: bool = true;
@@ -22,6 +22,7 @@ pub const DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS: u64 = 604800;
 pub const DEFAULT_AUTH_REGISTER_ACTIVATION_TTL_SECS: u64 = 86_400;
 pub const DEFAULT_AUTH_CONTACT_CHANGE_TTL_SECS: u64 = 86_400;
 pub const DEFAULT_AUTH_PASSWORD_RESET_TTL_SECS: u64 = 3_600;
+pub const DEFAULT_AUTH_USER_INVITATION_TTL_SECS: u64 = 72 * 60 * 60;
 pub const DEFAULT_AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS: u64 = 60;
 pub const DEFAULT_AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS: u64 = 60;
 pub const DEFAULT_AUTH_EMAIL_CODE_LOGIN_ENABLED: bool = false;
@@ -236,6 +237,14 @@ pub fn normalize_token_ttl_config_value(key: &str, value: &str) -> Result<String
     Ok(ttl.to_string())
 }
 
+pub fn user_invitation_ttl_secs(runtime_config: &RuntimeConfig) -> u64 {
+    read_positive_u64(
+        runtime_config,
+        AUTH_USER_INVITATION_TTL_SECS_KEY,
+        DEFAULT_AUTH_USER_INVITATION_TTL_SECS,
+    )
+}
+
 fn parse_bool_str(value: &str) -> Option<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
         "true" | "1" | "yes" | "on" => Some(true),
@@ -287,10 +296,13 @@ mod tests {
         DEFAULT_AUTH_EMAIL_CODE_LOGIN_ALLOW_TOTP_FALLBACK, DEFAULT_AUTH_EMAIL_CODE_LOGIN_ENABLED,
         DEFAULT_AUTH_EMAIL_CODE_LOGIN_RESEND_COOLDOWN_SECS, DEFAULT_AUTH_EMAIL_CODE_LOGIN_TTL_SECS,
         DEFAULT_AUTH_PASSKEY_LOGIN_ENABLED, DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS,
-        DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED, RuntimeAuthPolicy, RuntimeEmailCodeLoginPolicy,
+        DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED, DEFAULT_AUTH_USER_INVITATION_TTL_SECS,
+        RuntimeAuthPolicy, RuntimeEmailCodeLoginPolicy,
         normalize_email_code_login_bool_config_value, normalize_token_ttl_config_value,
+        user_invitation_ttl_secs,
     };
     use crate::config::RuntimeConfig;
+    use crate::config::definitions::AUTH_USER_INVITATION_TTL_SECS_KEY;
     use crate::config::definitions::CONFIG_CATEGORY_AUTH;
     use crate::entities::system_config;
     use chrono::Utc;
@@ -480,5 +492,23 @@ mod tests {
             "60"
         );
         assert!(normalize_token_ttl_config_value(AUTH_EMAIL_CODE_LOGIN_TTL_SECS_KEY, "0").is_err());
+    }
+
+    #[test]
+    fn user_invitation_ttl_reader_uses_runtime_value_and_default() {
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(
+            user_invitation_ttl_secs(&runtime_config),
+            DEFAULT_AUTH_USER_INVITATION_TTL_SECS
+        );
+
+        runtime_config.apply(config_model(AUTH_USER_INVITATION_TTL_SECS_KEY, "3600"));
+        assert_eq!(user_invitation_ttl_secs(&runtime_config), 3600);
+
+        runtime_config.apply(config_model(AUTH_USER_INVITATION_TTL_SECS_KEY, "0"));
+        assert_eq!(
+            user_invitation_ttl_secs(&runtime_config),
+            DEFAULT_AUTH_USER_INVITATION_TTL_SECS
+        );
     }
 }
