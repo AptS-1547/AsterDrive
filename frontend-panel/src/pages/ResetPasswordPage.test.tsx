@@ -187,7 +187,7 @@ describe("ResetPasswordPage", () => {
 			search: "?token=reset-token",
 		};
 		mockState.confirmPasswordReset.mockRejectedValueOnce(
-			new MockApiError(2005, "invalid"),
+			new MockApiError("auth.contact_verification_invalid", "invalid"),
 		);
 
 		render(<ResetPasswordPage />);
@@ -211,7 +211,7 @@ describe("ResetPasswordPage", () => {
 			search: "?token=reset-token",
 		};
 		mockState.confirmPasswordReset.mockRejectedValueOnce(
-			new MockApiError(2006, "expired"),
+			new MockApiError("auth.contact_verification_expired", "expired"),
 		);
 
 		render(<ResetPasswordPage />);

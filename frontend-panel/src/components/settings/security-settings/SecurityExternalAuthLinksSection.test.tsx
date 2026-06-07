@@ -137,9 +137,9 @@ function link(
 	};
 }
 
-function imageBySrc(src: string) {
+function imageBySrc(container: HTMLElement, src: string) {
 	return (
-		Array.from(document.querySelectorAll("img")).find(
+		Array.from(container.querySelectorAll("img")).find(
 			(image) => image.getAttribute("src") === src,
 		) ?? null
 	);
@@ -292,14 +292,15 @@ describe("SecurityExternalAuthLinksSection", () => {
 			}),
 		]);
 
-		render(<SecurityExternalAuthLinksSection />);
+		const { container } = render(<SecurityExternalAuthLinksSection />);
 
 		await screen.findByText("Example IDP");
-		expect(imageBySrc("https://cdn.example.com/idp.svg")).toHaveAttribute(
-			"src",
-			"https://cdn.example.com/idp.svg",
-		);
-		expect(imageBySrc("/static/external-auth/github-logo.svg")).toBeNull();
+		expect(
+			imageBySrc(container, "https://cdn.example.com/idp.svg"),
+		).toHaveAttribute("src", "https://cdn.example.com/idp.svg");
+		expect(
+			imageBySrc(container, "/static/external-auth/github-logo.svg"),
+		).toBeNull();
 	});
 
 	it("falls back to the provider kind icon when the configured icon is absent or invalid", async () => {
@@ -318,18 +319,17 @@ describe("SecurityExternalAuthLinksSection", () => {
 			}),
 		]);
 
-		render(<SecurityExternalAuthLinksSection />);
+		const { container } = render(<SecurityExternalAuthLinksSection />);
 
 		await screen.findByText("GitHub");
 		expect(screen.getByText("Invalid Icon IDP")).toBeInTheDocument();
-		expect(imageBySrc("/static/external-auth/github-logo.svg")).toHaveAttribute(
-			"src",
-			"/static/external-auth/github-logo.svg",
-		);
 		expect(
-			imageBySrc("/static/external-auth/openid-seeklogo.svg"),
+			imageBySrc(container, "/static/external-auth/github-logo.svg"),
+		).toHaveAttribute("src", "/static/external-auth/github-logo.svg");
+		expect(
+			imageBySrc(container, "/static/external-auth/openid-seeklogo.svg"),
 		).toHaveAttribute("src", "/static/external-auth/openid-seeklogo.svg");
-		expect(imageBySrc("javascript:alert(1)")).toBeNull();
+		expect(imageBySrc(container, "javascript:alert(1)")).toBeNull();
 	});
 
 	it("uses the QQ provider kind icon when no configured icon is present", async () => {
@@ -341,13 +341,12 @@ describe("SecurityExternalAuthLinksSection", () => {
 			}),
 		]);
 
-		render(<SecurityExternalAuthLinksSection />);
+		const { container } = render(<SecurityExternalAuthLinksSection />);
 
 		await screen.findByText("QQ");
-		expect(imageBySrc("/static/external-auth/qq-logo.svg")).toHaveAttribute(
-			"src",
-			"/static/external-auth/qq-logo.svg",
-		);
+		expect(
+			imageBySrc(container, "/static/external-auth/qq-logo.svg"),
+		).toHaveAttribute("src", "/static/external-auth/qq-logo.svg");
 	});
 
 	it("falls back to the provider kind icon when the configured icon contains whitespace", async () => {
@@ -358,14 +357,15 @@ describe("SecurityExternalAuthLinksSection", () => {
 			}),
 		]);
 
-		render(<SecurityExternalAuthLinksSection />);
+		const { container } = render(<SecurityExternalAuthLinksSection />);
 
 		await screen.findByText("Example IDP");
-		expect(imageBySrc("/static/external-auth/oauth-logo.svg")).toHaveAttribute(
-			"src",
-			"/static/external-auth/oauth-logo.svg",
-		);
-		expect(imageBySrc("/static/external-auth/custom icon.svg")).toBeNull();
+		expect(
+			imageBySrc(container, "/static/external-auth/oauth-logo.svg"),
+		).toHaveAttribute("src", "/static/external-auth/oauth-logo.svg");
+		expect(
+			imageBySrc(container, "/static/external-auth/custom icon.svg"),
+		).toBeNull();
 	});
 
 	it("falls back from a broken configured icon to the provider kind icon", async () => {
@@ -376,10 +376,10 @@ describe("SecurityExternalAuthLinksSection", () => {
 			}),
 		]);
 
-		render(<SecurityExternalAuthLinksSection />);
+		const { container } = render(<SecurityExternalAuthLinksSection />);
 
 		await screen.findByText("Example IDP");
-		const icon = imageBySrc("/broken-provider-icon.svg");
+		const icon = imageBySrc(container, "/broken-provider-icon.svg");
 		expect(icon).toHaveAttribute("src", "/broken-provider-icon.svg");
 
 		if (!icon) {
@@ -388,9 +388,10 @@ describe("SecurityExternalAuthLinksSection", () => {
 		fireEvent.error(icon);
 
 		await waitFor(() => {
-			expect(
-				imageBySrc("/static/external-auth/github-logo.svg"),
-			).toHaveAttribute("src", "/static/external-auth/github-logo.svg");
+			expect(icon).toHaveAttribute(
+				"src",
+				"/static/external-auth/github-logo.svg",
+			);
 		});
 	});
 
@@ -402,10 +403,10 @@ describe("SecurityExternalAuthLinksSection", () => {
 			}),
 		]);
 
-		render(<SecurityExternalAuthLinksSection />);
+		const { container } = render(<SecurityExternalAuthLinksSection />);
 
 		await screen.findByText("Example IDP");
-		const icon = imageBySrc("/static/external-auth/github-logo.svg");
+		const icon = imageBySrc(container, "/static/external-auth/github-logo.svg");
 		expect(icon).toHaveAttribute(
 			"src",
 			"/static/external-auth/github-logo.svg",
@@ -419,6 +420,8 @@ describe("SecurityExternalAuthLinksSection", () => {
 		await waitFor(() => {
 			expect(screen.getByText("Globe")).toBeInTheDocument();
 		});
-		expect(imageBySrc("/static/external-auth/github-logo.svg")).toBeNull();
+		expect(
+			imageBySrc(container, "/static/external-auth/github-logo.svg"),
+		).toBeNull();
 	});
 });

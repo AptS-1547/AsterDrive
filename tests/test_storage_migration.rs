@@ -919,7 +919,8 @@ fn assert_conflicting_storage_migration_response(
     body: &Value,
 ) {
     assert_eq!(status, actix_web::http::StatusCode::BAD_REQUEST);
-    assert_ne!(body["code"], 0);
+    let code = body["code"].as_str().expect("error code should be string");
+    assert_ne!(code, "success");
     assert!(
         body["msg"]
             .as_str()
@@ -1175,7 +1176,8 @@ async fn test_storage_migration_api_rejects_source_deletion_flag() {
 
     let body = create_migration_task_via_api(&app, &token, source.id, target.id, true).await;
 
-    assert_ne!(body["code"], 0);
+    let code = body["code"].as_str().expect("error code should be string");
+    assert_ne!(code, "success");
     assert!(
         body["msg"]
             .as_str()

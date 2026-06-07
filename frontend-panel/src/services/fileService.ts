@@ -20,6 +20,7 @@ import type {
 	TaskInfo,
 	WopiLaunchSession,
 } from "@/types/api";
+import { ApiErrorCode as ApiErrorCodeValue } from "@/types/api-helpers";
 import {
 	type ArchivePreviewRequestOptions,
 	archivePreviewRequestConfig,
@@ -234,7 +235,7 @@ export function createFileService(workspace: Workspace) {
 						const status = response.status;
 						const body = response.data;
 						const apiErr = new ApiError(
-							body?.code ?? "internal_server_error",
+							body?.code ?? ApiErrorCodeValue.InternalServerError,
 							body?.msg ?? `HTTP ${status}`,
 							{
 								retryable: body?.error?.retryable ?? undefined,

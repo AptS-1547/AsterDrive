@@ -1608,7 +1608,6 @@ async fn test_local_email_policy_rejects_registration_outside_allowlist() {
         "email address is not allowed by local account policy"
     );
     assert_eq!(body["code"], "auth.email_not_allowlisted");
-    assert_eq!(body["code"], "auth.email_not_allowlisted");
 }
 
 #[actix_web::test]
@@ -1694,7 +1693,6 @@ async fn test_local_email_policy_blocks_registration_by_domain_and_email() {
             body["msg"],
             "email address is blocked by local account policy"
         );
-        assert_eq!(body["code"], "auth.email_blocked");
         assert_eq!(body["code"], "auth.email_blocked");
     }
 }
@@ -4569,7 +4567,6 @@ async fn test_passkey_login_policy_disables_start_and_finish_without_deleting_cr
         body["msg"],
         "passkey login is disabled by administrator policy"
     );
-    assert_eq!(body["code"], "auth.passkey_login_disabled");
     assert_eq!(body["error"]["retryable"], false);
     assert!(body["error"].get("subcode").is_none());
 

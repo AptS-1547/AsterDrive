@@ -2000,7 +2000,9 @@ describe("LoginPage", () => {
 	});
 
 	it("switches pending-activation login failures into the activation state", async () => {
-		mockState.login.mockRejectedValueOnce(new MockApiError(2004, "pending"));
+		mockState.login.mockRejectedValueOnce(
+			new MockApiError("auth.pending_activation", "pending"),
+		);
 
 		render(<LoginPage />);
 

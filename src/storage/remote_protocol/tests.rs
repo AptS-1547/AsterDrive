@@ -570,7 +570,7 @@ fn not_found_record_error_uses_contextual_remote_message() {
 }
 
 #[test]
-fn remote_status_error_preserves_known_api_codes_and_ignores_unknown_remote_values() {
+fn remote_status_error_preserves_known_api_codes() {
     let body = serde_json::json!({
         "code": "storage.permission",
         "msg": "denied",
@@ -592,24 +592,6 @@ fn remote_status_error_preserves_known_api_codes_and_ignores_unknown_remote_valu
         Some(ApiErrorCode::StoragePermission)
     );
     assert_eq!(err.message(), "get remote storage object: denied");
-
-    let unknown = build_remote_status_error_from_parts(
-        reqwest::StatusCode::FORBIDDEN,
-        &serde_json::json!({
-            "code": "storage.permission",
-            "msg": "denied",
-            "error": {
-                "retryable": false
-            }
-        })
-        .to_string(),
-        "get remote storage object",
-        false,
-    );
-    assert_eq!(
-        unknown.api_error_code_override(),
-        Some(ApiErrorCode::StoragePermission)
-    );
 
     let precondition = build_remote_status_error_from_parts(
         reqwest::StatusCode::PRECONDITION_FAILED,

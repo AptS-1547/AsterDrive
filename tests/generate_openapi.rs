@@ -79,18 +79,27 @@ fn api_error_info_openapi_exposes_retryable_only() {
 #[test]
 fn api_response_openapi_code_references_api_error_code_schema() {
     let value = serde_json::to_value(ApiDoc::openapi()).unwrap();
-    let response = value["components"]["schemas"]
+    let schemas = value["components"]["schemas"]
         .as_object()
-        .expect("components schemas should be object")
+        .expect("components schemas should be object");
+    let responses = schemas
         .iter()
-        .find(|(name, _)| name.starts_with("ApiResponse_"))
-        .map(|(_, schema)| schema)
-        .expect("at least one ApiResponse schema should exist");
-    let code = &response["properties"]["code"];
+        .filter(|(name, _)| name.starts_with("ApiResponse_"));
+    let mut checked = 0;
 
-    assert_eq!(
-        code["$ref"],
-        serde_json::json!("#/components/schemas/ApiErrorCode")
-    );
-    assert!(code.get("enum").is_none());
+    for (name, schema) in responses {
+        let code = &schema["properties"]["code"];
+        assert_eq!(
+            code["$ref"],
+            serde_json::json!("#/components/schemas/ApiErrorCode"),
+            "{name} should reference ApiErrorCode for code"
+        );
+        assert!(
+            code.get("enum").is_none(),
+            "{name} code should not inline enum values"
+        );
+        checked += 1;
+    }
+
+    assert!(checked > 0, "at least one ApiResponse schema should exist");
 }

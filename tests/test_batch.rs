@@ -1170,7 +1170,8 @@ async fn test_batch_empty_request() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_ne!(body["code"], 0);
+    let code = body["code"].as_str().expect("error code should be string");
+    assert_ne!(code, "success");
 }
 
 #[actix_web::test]

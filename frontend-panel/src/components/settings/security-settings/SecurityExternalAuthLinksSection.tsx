@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
@@ -31,9 +31,13 @@ function ExternalAuthLinkIcon({ link }: { link: ExternalAuthLinkInfo }) {
 	const kindIcon = externalAuthKindIconPath(link.provider_kind);
 	const effectiveIcon = configuredIcon || kindIcon;
 	const [iconSrc, setIconSrc] = useState(effectiveIcon);
+	const previousEffectiveIconRef = useRef(effectiveIcon);
 
 	useEffect(() => {
-		setIconSrc(effectiveIcon);
+		if (previousEffectiveIconRef.current !== effectiveIcon) {
+			previousEffectiveIconRef.current = effectiveIcon;
+			setIconSrc(effectiveIcon);
+		}
 	}, [effectiveIcon]);
 
 	if (iconSrc) {
