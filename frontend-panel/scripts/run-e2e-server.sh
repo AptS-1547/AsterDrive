@@ -18,8 +18,7 @@ if [ ! -f "$FRONTEND_DIR/dist/index.html" ]; then
 	exit 1
 fi
 
-mkdir -p "$RUNTIME_DIR/frontend-panel"
-ln -s "$FRONTEND_DIR/dist" "$RUNTIME_DIR/frontend-panel/dist"
+ln -s "$FRONTEND_DIR/dist" "$RUNTIME_DIR/frontend-override"
 
 printf '[e2e] runtime dir: %s\n' "$RUNTIME_DIR"
 printf '[e2e] serving AsterDrive at http://127.0.0.1:%s\n' "$PORT"

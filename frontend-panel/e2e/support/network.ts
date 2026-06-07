@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { type E2eApiResponse, expectApiSuccess } from "./api-response";
 import { RESUMABLE_UPLOADS_KEY } from "./fixtures";
 
 export async function apiJsonInPage<T>(
@@ -56,12 +57,8 @@ export async function apiJsonInPage<T>(
 
 	expect(response.status).toBeGreaterThanOrEqual(200);
 	expect(response.status).toBeLessThan(300);
-	const payload = JSON.parse(response.text) as {
-		code: number;
-		data: T;
-		msg?: string;
-	};
-	expect(payload.code).toBe(0);
+	const payload = JSON.parse(response.text) as E2eApiResponse<T>;
+	expectApiSuccess(payload);
 	return payload.data;
 }
 
@@ -117,8 +114,8 @@ export async function uploadChunkViaApi(
 
 	expect(response.status).toBeGreaterThanOrEqual(200);
 	expect(response.status).toBeLessThan(300);
-	const payload = JSON.parse(response.text) as { code: number };
-	expect(payload.code).toBe(0);
+	const payload = JSON.parse(response.text) as E2eApiResponse;
+	expectApiSuccess(payload);
 }
 
 export async function saveResumableSession(

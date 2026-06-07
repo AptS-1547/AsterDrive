@@ -1,3 +1,4 @@
+import { E2E_API_SUCCESS_CODE } from "./support/api-response";
 import { hasUsers, loginAsAdmin, logout, setupAdmin } from "./support/auth";
 import { expect, test } from "./support/test";
 import {
@@ -97,7 +98,7 @@ test.describe
 					contentType: "application/json",
 					status: 200,
 					body: JSON.stringify({
-						code: 0,
+						code: E2E_API_SUCCESS_CODE,
 						data: {
 							email: "admin@example.com",
 							id: 1,
@@ -155,7 +156,7 @@ test.describe
 					contentType: "application/json",
 					status: 200,
 					body: JSON.stringify({
-						code: 0,
+						code: E2E_API_SUCCESS_CODE,
 						data: {
 							email: "admin@example.com",
 							id: 1,
@@ -204,7 +205,7 @@ test.describe
 					contentType: "application/json",
 					status: 200,
 					body: JSON.stringify({
-						code: 0,
+						code: E2E_API_SUCCESS_CODE,
 						data: {
 							email: "admin@example.com",
 							id: 1,

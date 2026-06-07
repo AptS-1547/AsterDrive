@@ -1,4 +1,5 @@
 import { type APIRequestContext, expect, type Page } from "@playwright/test";
+import { type E2eApiResponse, expectApiSuccess } from "./api-response";
 import { fileDropZone } from "./files";
 import {
 	ADMIN,
@@ -57,13 +58,10 @@ export async function gotoAdminPage(page: Page, url: string, heading: string) {
 export async function hasUsers(request: APIRequestContext) {
 	const response = await request.post("/api/v1/auth/check");
 	expect(response.ok()).toBe(true);
-	const payload = (await response.json()) as {
-		code: number;
-		data?: {
-			has_users?: boolean;
-		} | null;
-	};
-	expect(payload.code).toBe(0);
+	const payload = (await response.json()) as E2eApiResponse<{
+		has_users?: boolean;
+	} | null>;
+	expectApiSuccess(payload);
 	return payload.data?.has_users ?? false;
 }
 

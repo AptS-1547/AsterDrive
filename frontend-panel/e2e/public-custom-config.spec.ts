@@ -1,4 +1,5 @@
 import type { APIRequestContext, Page } from "@playwright/test";
+import { type E2eApiResponse, expectApiSuccess } from "./support/api-response";
 import { authenticate } from "./support/auth";
 import { uniqueName } from "./support/fixtures";
 import { apiJsonInPage } from "./support/network";
@@ -37,11 +38,8 @@ async function fetchPublicCustomConfigInPage(page: Page) {
 	});
 
 	expect(result.status).toBe(200);
-	const payload = JSON.parse(result.text) as {
-		code: number;
-		data: PublicCustomConfig;
-	};
-	expect(payload.code).toBe(0);
+	const payload = JSON.parse(result.text) as E2eApiResponse<PublicCustomConfig>;
+	expectApiSuccess(payload);
 	return {
 		cacheControl: result.cacheControl,
 		config: payload.data,
@@ -51,11 +49,8 @@ async function fetchPublicCustomConfigInPage(page: Page) {
 async function fetchPublicCustomConfigWithRequest(request: APIRequestContext) {
 	const response = await request.get("/api/v1/public/custom-config");
 	expect(response.status()).toBe(200);
-	const payload = (await response.json()) as {
-		code: number;
-		data: PublicCustomConfig;
-	};
-	expect(payload.code).toBe(0);
+	const payload = (await response.json()) as E2eApiResponse<PublicCustomConfig>;
+	expectApiSuccess(payload);
 	expect(response.headers()["cache-control"]).toBe("public, max-age=60");
 	return payload.data;
 }

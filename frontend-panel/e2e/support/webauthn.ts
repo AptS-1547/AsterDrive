@@ -1,4 +1,5 @@
 import type { Page, Route } from "@playwright/test";
+import { E2E_API_SUCCESS_CODE } from "./api-response";
 
 const TEST_CHALLENGE = "AQIDBA";
 const TEST_CREDENTIAL_ID = "credential-e2e";
@@ -28,7 +29,7 @@ interface CapturedPasskeyMutation {
 
 function apiResponse(data: unknown) {
 	return {
-		code: 0,
+		code: E2E_API_SUCCESS_CODE,
 		data,
 		msg: "",
 	};

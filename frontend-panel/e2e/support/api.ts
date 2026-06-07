@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { type E2eApiResponse, expectApiSuccess } from "./api-response";
 import type { TestFile } from "./fixtures";
 import { apiJsonInPage } from "./network";
 
@@ -187,11 +188,7 @@ export async function uploadFileViaApi(
 
 	expect(response.status).toBeGreaterThanOrEqual(200);
 	expect(response.status).toBeLessThan(300);
-	const payload = JSON.parse(response.text) as {
-		code: number;
-		data: E2eFileInfo;
-		msg?: string;
-	};
-	expect(payload.code).toBe(0);
+	const payload = JSON.parse(response.text) as E2eApiResponse<E2eFileInfo>;
+	expectApiSuccess(payload);
 	return payload.data;
 }
