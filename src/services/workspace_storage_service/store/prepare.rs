@@ -4,10 +4,10 @@ use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use super::{DedupTarget, TempBlobPlan};
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob, storage_policy};
-use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::HASH_BUF_SIZE;
 use crate::services::workspace_storage_service::{
@@ -44,11 +44,11 @@ pub(super) struct OverwriteContext {
 }
 
 fn upload_hash_temp_open_failed(message: String) -> AsterError {
-    file_upload_error_with_subcode(ApiSubcode::UploadHashTempOpenFailed, message)
+    file_upload_error_with_code(ApiErrorCode::UploadHashTempOpenFailed, message)
 }
 
 fn upload_hash_temp_read_failed(message: String) -> AsterError {
-    file_upload_error_with_subcode(ApiSubcode::UploadHashTempReadFailed, message)
+    file_upload_error_with_code(ApiErrorCode::UploadHashTempReadFailed, message)
 }
 
 pub(super) async fn prepare_store_from_temp(

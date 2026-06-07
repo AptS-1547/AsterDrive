@@ -1,4 +1,4 @@
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::property_repo;
 use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -68,7 +68,7 @@ pub(crate) async fn store_cached_manifest(
         serialize_cached_raw_manifest(blob.id, &blob.hash, &limits.raw_signature, manifest)?;
     if serialized.len() > ENTITY_PROPERTY_VALUE_MAX_BYTES {
         return Err(archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewManifestTooLarge,
+            ApiErrorCode::ArchivePreviewManifestTooLarge,
             format!(
                 "archive preview manifest for file #{} exceeds entity property limit {} bytes",
                 source_file.id, ENTITY_PROPERTY_VALUE_MAX_BYTES
@@ -134,7 +134,7 @@ pub(super) fn fit_raw_manifest_to_cache_limit(
     }
 
     Err(archive_preview_validation_error(
-        ApiSubcode::ArchivePreviewManifestTooLarge,
+        ApiErrorCode::ArchivePreviewManifestTooLarge,
         format!(
             "archive raw preview manifest for file #{file_id} exceeds entity property limit {ENTITY_PROPERTY_VALUE_MAX_BYTES} bytes"
         ),

@@ -11,13 +11,10 @@ import type {
 	ApiErrorCode,
 	ApiErrorInfo as ApiErrorInfoPayload,
 	ApiResponse,
-	ApiSubcode,
 } from "@/types/api";
 import {
-	ErrorCode,
-	type ErrorCode as ErrorCodeType,
+	ApiErrorCode as ApiErrorCodeValue,
 	isApiErrorCode,
-	isApiSubcode,
 } from "@/types/api-helpers";
 import { CSRF_HEADER_NAME, getCsrfToken } from "./csrf";
 
@@ -106,9 +103,6 @@ export type ApiRequestConfig = Pick<
 >;
 
 type ApiErrorDetails = {
-	apiCode?: ApiErrorCode;
-	internalCode?: string;
-	subcode?: ApiSubcode;
 	retryable?: boolean;
 };
 
@@ -197,22 +191,16 @@ function isRefreshableAuthError(error: unknown): boolean {
 }
 
 export class ApiError extends Error {
-	code: ErrorCodeType;
-	apiCode?: ApiErrorCode;
-	internalCode?: string;
-	subcode?: ApiSubcode;
+	code: ApiErrorCode;
 	retryable?: boolean;
 
 	constructor(
-		code: ErrorCodeType,
+		code: ApiErrorCode,
 		message: string,
 		details: ApiErrorDetails = {},
 	) {
 		super(message);
 		this.code = code;
-		this.apiCode = details.apiCode;
-		this.internalCode = details.internalCode;
-		this.subcode = details.subcode;
 		this.retryable = details.retryable;
 	}
 }
@@ -242,17 +230,6 @@ function normalizeApiErrorInfo(
 	}
 
 	return {
-		apiCode:
-			typeof value.code === "string" && isApiErrorCode(value.code)
-				? value.code
-				: undefined,
-		internalCode:
-			typeof value.internal_code === "string" ? value.internal_code : undefined,
-		// TODO(0.3.0): remove subcode parsing after backend clients use error.code.
-		subcode:
-			typeof value.subcode === "string" && isApiSubcode(value.subcode)
-				? value.subcode
-				: undefined,
 		retryable:
 			typeof value.retryable === "boolean" ? value.retryable : undefined,
 	};
@@ -278,7 +255,11 @@ function extractApiError(error: unknown): ApiError | null {
 
 	const code = "code" in data ? data.code : null;
 	const message = "msg" in data ? data.msg : null;
-	if (typeof code !== "number" || typeof message !== "string") {
+	if (
+		typeof code !== "string" ||
+		!isApiErrorCode(code) ||
+		typeof message !== "string"
+	) {
 		return null;
 	}
 
@@ -286,7 +267,7 @@ function extractApiError(error: unknown): ApiError | null {
 		"error" in data && typeof data.error === "object" ? data.error : null;
 
 	return new ApiError(
-		code as ErrorCodeType,
+		code,
 		message,
 		normalizeApiErrorInfo(errorInfo as ApiErrorInfoPayload | null),
 	);
@@ -310,7 +291,7 @@ async function unwrap<T>(
 			parseRetryAfterSeconds(retryAfter),
 		);
 	}
-	if (resp.code !== ErrorCode.Success) {
+	if (resp.code !== ApiErrorCodeValue.Success) {
 		throw new ApiError(resp.code, resp.msg, normalizeApiErrorInfo(resp.error));
 	}
 	return resp.data as T;

@@ -1,7 +1,7 @@
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::{mail, media_processing, operations};
 use crate::db::repository::user_repo;
-use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_code};
 use crate::runtime::{MailRuntimeState, SharedRuntimeState};
 use crate::services::{
     audit_service::{self, AuditContext},
@@ -214,9 +214,9 @@ fn offline_download_action_config_value(
 }
 
 fn aria2_rpc_probe_error(error: AsterError) -> AsterError {
-    if error.api_error_subcode() == Some(ApiSubcode::OfflineDownloadAria2RpcAuthFailed) {
-        return validation_error_with_subcode(
-            ApiSubcode::OfflineDownloadAria2RpcAuthFailed,
+    if error.api_error_code_override() == Some(ApiErrorCode::OfflineDownloadAria2RpcAuthFailed) {
+        return validation_error_with_code(
+            ApiErrorCode::OfflineDownloadAria2RpcAuthFailed,
             "aria2 RPC authentication failed: check offline_download_aria2_rpc_secret",
         );
     }
@@ -225,8 +225,8 @@ fn aria2_rpc_probe_error(error: AsterError) -> AsterError {
         .message()
         .strip_prefix("transient: ")
         .unwrap_or_else(|| error.message());
-    validation_error_with_subcode(
-        ApiSubcode::OfflineDownloadAria2RpcProbeFailed,
+    validation_error_with_code(
+        ApiErrorCode::OfflineDownloadAria2RpcProbeFailed,
         format!("aria2 RPC probe failed: {message}"),
     )
 }

@@ -471,7 +471,7 @@ async fn test_register_and_login() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["username"], "alice");
     // password_hash 不应该暴露
     assert!(body["data"]["password_hash"].is_null());
@@ -550,7 +550,7 @@ async fn test_register_and_login() {
         .expect("csrf cookie missing")
         .http_only();
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["expires_in"], 900);
     // tokens 在 cookie 里
     assert!(access.is_some());
@@ -638,9 +638,10 @@ async fn test_login_uses_generic_invalid_credentials_message() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2008);
+    assert_eq!(body["code"], "auth.credentials_failed");
     assert_eq!(body["msg"], "Invalid Credentials");
-    assert_eq!(body["error"]["code"], "auth.credentials_failed");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("code").is_none());
     assert!(
         body["msg"]
             .as_str()
@@ -670,9 +671,10 @@ async fn test_login_uses_generic_invalid_credentials_message() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2008);
+    assert_eq!(body["code"], "auth.credentials_failed");
     assert_eq!(body["msg"], "Invalid Credentials");
-    assert_eq!(body["error"]["code"], "auth.credentials_failed");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("code").is_none());
 }
 
 #[actix_web::test]
@@ -1426,7 +1428,7 @@ async fn test_passkey_login_start_rejects_missing_public_site_url_with_config_er
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 1000);
+    assert_eq!(body["code"], "bad_request");
     assert_eq!(
         body["msg"],
         "public_site_url must be configured before enabling passkey authentication"
@@ -1504,8 +1506,9 @@ async fn test_register_is_blocked_when_public_registration_is_disabled() {
     assert_eq!(resp.status(), 403);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["msg"], "new user registration is disabled");
-    assert_eq!(body["error"]["code"], "auth.registration_disabled");
-    assert_eq!(body["error"]["internal_code"], "E013");
+    assert_eq!(body["code"], "auth.registration_disabled");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("internal_code").is_none());
 }
 
 #[actix_web::test]
@@ -1604,8 +1607,8 @@ async fn test_local_email_policy_rejects_registration_outside_allowlist() {
         body["msg"],
         "email address is not allowed by local account policy"
     );
-    assert_eq!(body["error"]["code"], "auth.email_not_allowlisted");
-    assert_eq!(body["error"]["subcode"], "auth.email_not_allowlisted");
+    assert_eq!(body["code"], "auth.email_not_allowlisted");
+    assert_eq!(body["code"], "auth.email_not_allowlisted");
 }
 
 #[actix_web::test]
@@ -1650,7 +1653,7 @@ async fn test_local_email_policy_allows_registration_by_full_email_allowlist_onl
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["code"], "auth.email_not_allowlisted");
+    assert_eq!(body["code"], "auth.email_not_allowlisted");
 }
 
 #[actix_web::test]
@@ -1691,8 +1694,8 @@ async fn test_local_email_policy_blocks_registration_by_domain_and_email() {
             body["msg"],
             "email address is blocked by local account policy"
         );
-        assert_eq!(body["error"]["code"], "auth.email_blocked");
-        assert_eq!(body["error"]["subcode"], "auth.email_blocked");
+        assert_eq!(body["code"], "auth.email_blocked");
+        assert_eq!(body["code"], "auth.email_blocked");
     }
 }
 
@@ -1738,7 +1741,7 @@ async fn test_local_email_policy_blocklist_wins_over_allowlist() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["code"], "auth.email_blocked");
+    assert_eq!(body["code"], "auth.email_blocked");
 }
 
 #[actix_web::test]
@@ -1771,7 +1774,7 @@ async fn test_local_email_policy_does_not_match_subdomains_for_registration() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["code"], "auth.email_not_allowlisted");
+    assert_eq!(body["code"], "auth.email_not_allowlisted");
 }
 
 #[actix_web::test]
@@ -2007,7 +2010,7 @@ async fn test_register_activation_resend_ignores_allowlist_but_rejects_blocklist
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["code"], "auth.email_blocked");
+    assert_eq!(body["code"], "auth.email_blocked");
 }
 
 #[actix_web::test]
@@ -2107,7 +2110,7 @@ async fn test_local_email_policy_applies_to_email_change_request() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["code"], "auth.email_blocked");
+    assert_eq!(body["code"], "auth.email_blocked");
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/email/change")
@@ -2120,7 +2123,7 @@ async fn test_local_email_policy_applies_to_email_change_request() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["code"], "auth.email_not_allowlisted");
+    assert_eq!(body["code"], "auth.email_not_allowlisted");
 }
 
 #[actix_web::test]
@@ -2171,7 +2174,7 @@ async fn test_email_change_resend_ignores_allowlist_but_rejects_blocklist() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["code"], "auth.email_blocked");
+    assert_eq!(body["code"], "auth.email_blocked");
 }
 
 #[actix_web::test]
@@ -2231,7 +2234,7 @@ async fn test_password_reset_request_is_generic_for_unknown_email() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
 
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
@@ -2398,7 +2401,7 @@ async fn test_password_reset_confirm_rejects_reused_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2005);
+    assert_eq!(body["code"], "auth.contact_verification_invalid");
 }
 
 #[actix_web::test]
@@ -2454,7 +2457,7 @@ async fn test_password_reset_confirm_rejects_expired_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 410);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2006);
+    assert_eq!(body["code"], "auth.contact_verification_expired");
 }
 
 #[actix_web::test]
@@ -2633,7 +2636,7 @@ async fn test_token_refresh() {
     let access = common::extract_cookie(&resp, "aster_access");
     let refresh = common::extract_cookie(&resp, "aster_refresh");
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["expires_in"], 900);
     assert!(access.is_some());
     assert!(refresh.is_some());
@@ -3686,7 +3689,7 @@ async fn test_patch_preferences_set_and_get() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["theme_mode"], "dark");
     assert_eq!(body["data"]["color_preset"], "#16a34a");
     assert_eq!(body["data"]["view_mode"], "grid");
@@ -3929,7 +3932,7 @@ async fn test_change_password_rotates_session_and_updates_login_secret() {
     let rotated_access = common::extract_cookie(&resp, "aster_access").unwrap();
     let rotated_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["expires_in"], 900);
     let rotated_claims =
         auth_service::verify_token(&rotated_refresh, &state.config.auth.jwt_secret)
@@ -4468,7 +4471,7 @@ async fn test_passkey_register_login_and_replay_protection() {
     assert!(!login_access.is_empty());
     assert!(!login_refresh.is_empty());
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
 
     let sessions = auth_session_repo::list_active_for_user(state.writer_db(), user_id)
         .await
@@ -4521,7 +4524,7 @@ async fn test_passkey_login_without_identifier() {
     assert_eq!(resp.status(), 200);
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
 }
 
 #[actix_web::test]
@@ -4561,19 +4564,20 @@ async fn test_passkey_login_policy_disables_start_and_finish_without_deleting_cr
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2003);
+    assert_eq!(body["code"], "auth.passkey_login_disabled");
     assert_eq!(
         body["msg"],
         "passkey login is disabled by administrator policy"
     );
-    assert_eq!(body["error"]["code"], "auth.passkey_login_disabled");
-    assert_eq!(body["error"]["subcode"], "auth.passkey_login_disabled");
+    assert_eq!(body["code"], "auth.passkey_login_disabled");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("subcode").is_none());
 
     let resp = passkey_login_finish(&app, &flow_id, credential).await;
     assert_eq!(resp.status(), 403);
     assert!(common::extract_cookie(&resp, "aster_access").is_none());
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["code"], "auth.passkey_login_disabled");
+    assert_eq!(body["code"], "auth.passkey_login_disabled");
 
     let stored_after_disable =
         passkey_repo::find_by_id_for_user(state.writer_db(), passkey_id, user_id)
@@ -4660,7 +4664,7 @@ async fn test_passkey_conditional_login_preserves_mediation() {
     assert_eq!(resp.status(), 200);
     assert!(common::extract_cookie(&resp, "aster_access").is_some());
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
 }
 
 #[actix_web::test]

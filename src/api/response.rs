@@ -5,33 +5,22 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use super::{api_error_code::ApiErrorCode, error_code::ErrorCode, subcode::ApiSubcode};
+use super::api_error_code::ApiErrorCode;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ApiErrorInfo {
-    pub code: ApiErrorCode,
-    pub internal_code: String,
-    // TODO(0.3.0): remove this schema field after old clients stop reading
-    // error.subcode. ApiErrorInfo.code is the stable public error identifier.
-    #[deprecated(
-        since = "0.3.0",
-        note = "use ApiErrorInfo.code instead; subcode is kept only for transition compatibility"
-    )]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub subcode: Option<ApiSubcode>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retryable: Option<bool>,
+    pub retryable: bool,
 }
 
 /// 统一 API 响应格式
 ///
-/// 成功: `{ "code": 0, "msg": "", "data": {...} }`
-/// 失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+/// 成功: `{ "code": "success", "msg": "", "data": {...} }`
+/// 失败: `{ "code": "auth.credentials_failed", "msg": "Invalid Credentials" }`
 #[derive(Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ApiResponse<T: Serialize> {
-    pub code: ErrorCode,
+    pub code: ApiErrorCode,
     pub msg: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<T>,
@@ -42,7 +31,7 @@ pub struct ApiResponse<T: Serialize> {
 impl<T: Serialize> ApiResponse<T> {
     pub fn ok(data: T) -> Self {
         Self {
-            code: ErrorCode::Success,
+            code: ApiErrorCode::Success,
             msg: String::new(),
             data: Some(data),
             error: None,
@@ -51,19 +40,19 @@ impl<T: Serialize> ApiResponse<T> {
 
     pub fn ok_empty() -> ApiResponse<()> {
         ApiResponse {
-            code: ErrorCode::Success,
+            code: ApiErrorCode::Success,
             msg: String::new(),
             data: None,
             error: None,
         }
     }
 
-    pub fn error(code: ErrorCode, msg: &str) -> ApiResponse<()> {
-        Self::error_with_details(code, msg, None)
+    pub fn error(code: ApiErrorCode, msg: &str) -> ApiResponse<()> {
+        Self::error_with_details(code, msg, Some(ApiErrorInfo { retryable: false }))
     }
 
     pub fn error_with_details(
-        code: ErrorCode,
+        code: ApiErrorCode,
         msg: &str,
         error: Option<ApiErrorInfo>,
     ) -> ApiResponse<()> {

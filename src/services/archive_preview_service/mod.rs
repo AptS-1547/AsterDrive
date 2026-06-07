@@ -4,12 +4,12 @@ use std::path::Path;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob};
 use crate::errors::{
-    AsterError, MapAsterErr, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
+    AsterError, MapAsterErr, Result, auth_forbidden_with_code, validation_error_with_code,
 };
 use crate::runtime::{SharedRuntimeState, TaskRuntimeState};
 use crate::services::archive_service::format::{ArchiveFormat, detect_supported_archive_format};
@@ -122,7 +122,7 @@ fn ensure_user_preview_enabled(state: &impl SharedRuntimeState) -> Result<()> {
     ensure_preview_master_enabled(state)?;
     if !operations::archive_preview_user_enabled(state.runtime_config()) {
         return Err(archive_preview_forbidden_error(
-            ApiSubcode::ArchivePreviewUserDisabled,
+            ApiErrorCode::ArchivePreviewUserDisabled,
             "archive preview for user files is disabled",
         ));
     }
@@ -133,7 +133,7 @@ fn ensure_share_preview_enabled(state: &impl SharedRuntimeState) -> Result<()> {
     ensure_preview_master_enabled(state)?;
     if !operations::archive_preview_share_enabled(state.runtime_config()) {
         return Err(archive_preview_forbidden_error(
-            ApiSubcode::ArchivePreviewShareDisabled,
+            ApiErrorCode::ArchivePreviewShareDisabled,
             "archive preview for shared files is disabled",
         ));
     }
@@ -143,7 +143,7 @@ fn ensure_share_preview_enabled(state: &impl SharedRuntimeState) -> Result<()> {
 fn ensure_preview_master_enabled(state: &impl SharedRuntimeState) -> Result<()> {
     if !operations::archive_preview_enabled(state.runtime_config()) {
         return Err(archive_preview_forbidden_error(
-            ApiSubcode::ArchivePreviewDisabled,
+            ApiErrorCode::ArchivePreviewDisabled,
             "archive preview is disabled",
         ));
     }
@@ -170,7 +170,7 @@ async fn preview_verified_file(
 
     if source_file.size > limits.max_source_bytes {
         return Err(archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewSourceTooLarge,
+            ApiErrorCode::ArchivePreviewSourceTooLarge,
             format!(
                 "source archive size {} exceeds archive preview limit {}",
                 source_file.size, limits.max_source_bytes
@@ -270,7 +270,10 @@ pub(super) async fn download_blob_to_temp(
         crate::utils::numbers::i64_to_u64(source_file.size, "source archive size")?,
         "source archive",
         |message| {
-            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+            archive_preview_validation_error(
+                ApiErrorCode::ArchivePreviewSourceSizeMismatch,
+                message,
+            )
         },
     )
     .await?;
@@ -346,72 +349,37 @@ pub(crate) fn ensure_archive_preview_source_supported(
 ) -> Result<ArchiveFormat> {
     detect_supported_archive_format(source_file).ok_or_else(|| {
         archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewUnsupportedType,
+            ApiErrorCode::ArchivePreviewUnsupportedType,
             "archive preview currently supports .zip files only",
         )
     })
 }
 
-fn archive_preview_forbidden_error(subcode: ApiSubcode, message: impl Into<String>) -> AsterError {
-    auth_forbidden_with_subcode(subcode, message)
+fn archive_preview_forbidden_error(
+    api_code: ApiErrorCode,
+    message: impl Into<String>,
+) -> AsterError {
+    auth_forbidden_with_code(api_code, message)
 }
 
 pub(crate) fn archive_preview_validation_error(
-    subcode: ApiSubcode,
+    api_code: ApiErrorCode,
     message: impl Into<String>,
 ) -> AsterError {
-    validation_error_with_subcode(subcode, message)
+    validation_error_with_code(api_code, message)
 }
 
 pub(crate) fn map_failed_task_error(last_error: Option<&str>) -> AsterError {
-    let message = last_error.unwrap_or("archive preview generation failed");
-    match crate::errors::task_error_subcode_from_storage(message) {
-        Some(ApiSubcode::ArchivePreviewUnsupportedType) => {
-            return archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewUnsupportedType,
-                "archive preview currently supports .zip files only",
-            );
-        }
-        Some(ApiSubcode::ArchivePreviewSourceTooLarge) => {
-            return archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewSourceTooLarge,
-                crate::errors::task_error_display_message(message).to_string(),
-            );
-        }
-        Some(ApiSubcode::ArchivePreviewInvalidArchive) => {
-            return archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewInvalidArchive,
-                "invalid archive",
-            );
-        }
-        Some(ApiSubcode::ArchivePreviewManifestTooLarge) => {
-            return archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewManifestTooLarge,
-                crate::errors::task_error_display_message(message).to_string(),
-            );
-        }
-        Some(ApiSubcode::ArchivePreviewSourceSizeMismatch) => {
-            return archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewSourceSizeMismatch,
-                crate::errors::task_error_display_message(message).to_string(),
-            );
-        }
-        Some(ApiSubcode::ArchivePreviewRejected) => {
-            return archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewRejected,
-                crate::errors::task_error_display_message(message).to_string(),
-            );
-        }
-        _ => {}
-    }
+    let _ = last_error;
 
     AsterError::record_not_found("archive preview is unavailable for this file")
 }
 
 fn map_archive_preview_scan_error(error: AsterError) -> AsterError {
-    if matches!(error, AsterError::ValidationError(_)) && error.api_error_subcode().is_none() {
+    if matches!(error, AsterError::ValidationError(_)) && error.api_error_code_override().is_none()
+    {
         return archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewRejected,
+            ApiErrorCode::ArchivePreviewRejected,
             error.message().to_string(),
         );
     }
@@ -427,7 +395,10 @@ fn map_zip_preview_open_error(error: zip::result::ZipError) -> AsterError {
         return source.clone();
     }
 
-    archive_preview_validation_error(ApiSubcode::ArchivePreviewInvalidArchive, "invalid archive")
+    archive_preview_validation_error(
+        ApiErrorCode::ArchivePreviewInvalidArchive,
+        "invalid archive",
+    )
 }
 
 #[cfg(test)]

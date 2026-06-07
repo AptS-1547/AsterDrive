@@ -741,7 +741,7 @@ async fn admin_external_auth_provider_test_reports_discovery_failures_as_bad_req
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 1000);
+    assert_eq!(body["code"], "bad_request");
     assert!(
         body["msg"]
             .as_str()
@@ -773,7 +773,7 @@ async fn start_login_requires_public_site_url_for_callback_redirect_uri() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 1000);
+    assert_eq!(body["code"], "wopi.public_site_url_required");
     assert!(
         body["msg"].as_str().unwrap().contains("public_site_url"),
         "unexpected error message: {}",

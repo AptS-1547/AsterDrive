@@ -7,6 +7,7 @@ import {
 } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
+	ApiErrorCode,
 	ApiResponse,
 	ChunkUploadResponse,
 	CompletedPart,
@@ -15,7 +16,10 @@ import type {
 	RecoverableUploadSession,
 	UploadProgressResponse,
 } from "@/types/api";
-import { ErrorCode, isApiErrorCode, isApiSubcode } from "@/types/api-helpers";
+import {
+	ApiErrorCode as ApiErrorCodeValue,
+	isApiErrorCode,
+} from "@/types/api-helpers";
 import { CSRF_HEADER_NAME, getCsrfToken } from "./csrf";
 import { ApiError, api } from "./http";
 
@@ -66,7 +70,7 @@ function parseApiMessage(responseText: string): string | null {
 }
 
 function parseApiErrorResponse(responseText: string): {
-	code?: number;
+	code?: ApiErrorCode;
 	msg?: string;
 } | null {
 	if (!responseText) return null;
@@ -76,7 +80,10 @@ function parseApiErrorResponse(responseText: string): {
 			msg?: unknown;
 		};
 		return {
-			code: typeof parsed.code === "number" ? parsed.code : undefined,
+			code:
+				typeof parsed.code === "string" && isApiErrorCode(parsed.code)
+					? parsed.code
+					: undefined,
 			msg: typeof parsed.msg === "string" ? parsed.msg : undefined,
 		};
 	} catch {
@@ -84,12 +91,12 @@ function parseApiErrorResponse(responseText: string): {
 	}
 }
 
-function isTokenUploadErrorCode(code: number | undefined): boolean {
+function isTokenUploadErrorCode(code: ApiErrorCode | undefined): boolean {
 	return (
-		code === ErrorCode.TokenExpired ||
-		code === ErrorCode.TokenInvalid ||
-		code === ErrorCode.TokenMissing ||
-		code === ErrorCode.RefreshTokenReuseDetected
+		code === ApiErrorCodeValue.TokenExpired ||
+		code === ApiErrorCodeValue.TokenInvalid ||
+		code === ApiErrorCodeValue.TokenMissing ||
+		code === ApiErrorCodeValue.RefreshTokenReuseDetected
 	);
 }
 
@@ -156,11 +163,11 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 					if (xhr.status >= 200 && xhr.status < 300) {
 						try {
 							const resp = JSON.parse(xhr.responseText) as {
-								code?: number;
+								code?: ApiErrorCode;
 								msg?: string;
 								data?: ChunkUploadResponse;
 							};
-							if (resp.code === 0) {
+							if (resp.code === ApiErrorCodeValue.Success) {
 								resolve(resp.data as ChunkUploadResponse);
 							} else {
 								reject(
@@ -228,18 +235,8 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				parts ? { parts } : undefined,
 				{ timeout: 0 },
 			);
-			if (resp.data.code !== ErrorCode.Success) {
+			if (resp.data.code !== ApiErrorCodeValue.Success) {
 				throw new ApiError(resp.data.code, resp.data.msg, {
-					apiCode:
-						resp.data.error?.code && isApiErrorCode(resp.data.error.code)
-							? resp.data.error.code
-							: undefined,
-					internalCode: resp.data.error?.internal_code ?? undefined,
-					// TODO(0.3.0): remove subcode compatibility after API clients use error.code.
-					subcode:
-						resp.data.error?.subcode && isApiSubcode(resp.data.error.subcode)
-							? resp.data.error.subcode
-							: undefined,
 					retryable: resp.data.error?.retryable ?? undefined,
 				});
 			}

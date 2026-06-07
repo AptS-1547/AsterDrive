@@ -1,7 +1,7 @@
 import { ApiError } from "@/services/http";
 import { type CompletedPart, uploadService } from "@/services/uploadService";
 import type { FileInfo } from "@/types/api";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 import type { UploadMode } from "./uploadResume";
 
 export type UploadStatus =
@@ -64,8 +64,8 @@ export const MULTIPART_DRAIN_POLL_MS = 50;
 export function shouldRemovePersistedSession(error: unknown): boolean {
 	return (
 		error instanceof ApiError &&
-		(error.code === ErrorCode.UploadSessionNotFound ||
-			error.code === ErrorCode.UploadSessionExpired)
+		(error.code === ApiErrorCode.UploadSessionNotFound ||
+			error.code === ApiErrorCode.UploadSessionExpired)
 	);
 }
 
@@ -98,7 +98,7 @@ export async function completeWithRetry(
 		} catch (error) {
 			if (
 				error instanceof ApiError &&
-				error.code === ErrorCode.UploadAssembling &&
+				error.code === ApiErrorCode.UploadAssembling &&
 				i < MAX_POLL - 1
 			) {
 				await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));

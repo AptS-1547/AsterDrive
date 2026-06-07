@@ -1,3 +1,4 @@
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::response::ApiErrorInfo;
 use crate::errors::Result;
 use crate::storage::StorageCapacityInfo;
@@ -10,10 +11,10 @@ use std::fmt;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-pub const INTERNAL_STORAGE_PROTOCOL_VERSION: u16 = 3;
-pub const INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION: u16 = 2;
-pub const INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL: &str = "v3";
-pub const INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL: &str = "v2";
+pub const INTERNAL_STORAGE_PROTOCOL_VERSION: u16 = 4;
+pub const INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION: u16 = 4;
+pub const INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL: &str = "v4";
+pub const INTERNAL_STORAGE_MIN_SUPPORTED_PROTOCOL_VERSION_LABEL: &str = "v4";
 pub const REMOTE_BROWSER_PRESIGNED_CORS_ALLOWED_HEADERS: &str = "content-type, range";
 pub const REMOTE_BROWSER_PRESIGNED_CORS_GET_EXPOSE_HEADERS: &str = "Accept-Ranges, Cache-Control, Content-Disposition, Content-Length, Content-Range, Content-Type, ETag";
 pub const REMOTE_BROWSER_PRESIGNED_CORS_PUT_EXPOSE_HEADERS: &str = "ETag";
@@ -559,7 +560,7 @@ pub struct RemoteStorageComposeResponse {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct ApiEnvelope<T> {
-    pub(super) code: i32,
+    pub(super) code: ApiErrorCode,
     pub(super) msg: String,
     pub(super) data: Option<T>,
     #[allow(dead_code)]

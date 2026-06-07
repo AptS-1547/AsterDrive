@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FOLDER_LIMIT } from "@/lib/constants";
 import ShareViewPage, { SharePreviewElement } from "@/pages/ShareViewPage";
 import { ApiError } from "@/services/http";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 const TEST_SHARE_PASSWORD = "TEST_PASSWORD";
 
@@ -748,7 +748,7 @@ describe("ShareViewPage", () => {
 
 	it("renders an unavailable panel for expired shares", async () => {
 		mockState.getInfo.mockRejectedValueOnce(
-			new ApiError(ErrorCode.ShareExpired, "expired"),
+			new ApiError(ApiErrorCode.ShareExpired, "expired"),
 		);
 
 		render(<ShareViewPage />);
@@ -790,7 +790,7 @@ describe("ShareViewPage", () => {
 
 	it("maps share load errors to the public unavailable panel", async () => {
 		mockState.getInfo.mockRejectedValueOnce(
-			new ApiError(ErrorCode.ShareNotFound, "missing"),
+			new ApiError(ApiErrorCode.ShareNotFound, "missing"),
 		);
 
 		const { unmount } = render(<ShareViewPage />);
@@ -802,7 +802,7 @@ describe("ShareViewPage", () => {
 
 		mockState.getInfo.mockRejectedValueOnce(
 			new ApiError(
-				ErrorCode.ShareDownloadLimitReached,
+				ApiErrorCode.ShareDownloadLimitReached,
 				"download limit reached",
 			),
 		);
@@ -815,7 +815,7 @@ describe("ShareViewPage", () => {
 		limited.unmount();
 
 		mockState.getInfo.mockRejectedValueOnce(
-			new ApiError(ErrorCode.BadRequest, "bad request"),
+			new ApiError(ApiErrorCode.BadRequest, "bad request"),
 		);
 
 		const badRequest = render(<ShareViewPage />);
@@ -894,7 +894,10 @@ describe("ShareViewPage", () => {
 			},
 			share_type: "folder",
 		} as never);
-		const error = new ApiError(ErrorCode.CredentialsFailed, "wrong password");
+		const error = new ApiError(
+			ApiErrorCode.CredentialsFailed,
+			"wrong password",
+		);
 		mockState.verifyPassword.mockRejectedValueOnce(error);
 
 		render(<ShareViewPage />);
@@ -1480,7 +1483,7 @@ describe("ShareViewPage", () => {
 			folders: [{ id: 1, name: "Docs" }],
 			next_file_cursor: null,
 		} as never);
-		const error = new ApiError(ErrorCode.FolderNotFound, "missing folder");
+		const error = new ApiError(ApiErrorCode.FolderNotFound, "missing folder");
 		mockState.listSubfolderContent.mockRejectedValueOnce(error);
 
 		render(<ShareViewPage />);
@@ -1641,7 +1644,7 @@ describe("ShareViewPage", () => {
 					next_file_cursor: { id: 10, value: "alpha.txt" },
 				} as never)
 				.mockRejectedValueOnce(
-					new ApiError(ErrorCode.BadRequest, "page failed"),
+					new ApiError(ApiErrorCode.BadRequest, "page failed"),
 				)
 				.mockResolvedValueOnce({
 					files: [

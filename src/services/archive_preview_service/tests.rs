@@ -223,19 +223,17 @@ fn preview_test_raw_manifest() -> ArchiveRawManifest {
 }
 
 #[test]
-fn map_failed_task_error_reads_persisted_subcode_without_text_matching() {
-    let stored = crate::errors::encode_api_error_subcode_message(
-        ApiSubcode::ArchivePreviewInvalidArchive,
-        "worker changed this wording".to_string(),
-    );
+fn map_failed_task_error_no_longer_decodes_persisted_api_code_prefixes() {
+    let stored =
+        "__ASTER_API_ERROR_CODE__=archive_preview.invalid_archive::worker changed this wording";
 
-    let error = map_failed_task_error(Some(&stored));
+    let error = map_failed_task_error(Some(stored));
 
+    assert_eq!(error.api_error_code_override(), None);
     assert_eq!(
-        error.api_error_subcode(),
-        Some(ApiSubcode::ArchivePreviewInvalidArchive)
+        error.message(),
+        "archive preview is unavailable for this file"
     );
-    assert_eq!(error.message(), "invalid archive");
 }
 
 #[test]
@@ -482,8 +480,8 @@ fn raw_manifest_preserves_utf8_flag_validation_on_redecode() {
         .expect_err("UTF-8 flagged invalid raw names should still fail from raw cache");
 
     assert_eq!(
-        error.api_error_subcode(),
-        Some(ApiSubcode::ArchivePreviewRejected)
+        error.api_error_code_override(),
+        Some(ApiErrorCode::ArchivePreviewRejected)
     );
     assert!(error.message().contains("filename is not valid UTF-8"));
 }
@@ -599,7 +597,10 @@ async fn bounded_copy_accepts_exact_size_and_preserves_bytes() {
         3,
         "source archive",
         |message| {
-            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+            archive_preview_validation_error(
+                ApiErrorCode::ArchivePreviewSourceSizeMismatch,
+                message,
+            )
         },
     )
     .await
@@ -622,14 +623,17 @@ async fn bounded_copy_rejects_short_and_long_streams() {
         1,
         "source archive",
         |message| {
-            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+            archive_preview_validation_error(
+                ApiErrorCode::ArchivePreviewSourceSizeMismatch,
+                message,
+            )
         },
     )
     .await
     .expect_err("short stream should fail");
     assert_eq!(
-        short_error.api_error_subcode(),
-        Some(ApiSubcode::ArchivePreviewSourceSizeMismatch)
+        short_error.api_error_code_override(),
+        Some(ApiErrorCode::ArchivePreviewSourceSizeMismatch)
     );
     assert!(short_error.message().contains("downloaded 0 bytes"));
 
@@ -648,7 +652,10 @@ async fn bounded_copy_rejects_short_and_long_streams() {
         3,
         "source archive",
         |message| {
-            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+            archive_preview_validation_error(
+                ApiErrorCode::ArchivePreviewSourceSizeMismatch,
+                message,
+            )
         },
     )
     .await
@@ -656,8 +663,8 @@ async fn bounded_copy_rejects_short_and_long_streams() {
 
     producer.await.expect("producer should finish");
     assert_eq!(
-        long_error.api_error_subcode(),
-        Some(ApiSubcode::ArchivePreviewSourceSizeMismatch)
+        long_error.api_error_code_override(),
+        Some(ApiErrorCode::ArchivePreviewSourceSizeMismatch)
     );
     assert!(
         long_error
@@ -681,7 +688,10 @@ async fn bounded_copy_stops_before_reading_when_shutdown_requested() {
         0,
         "source archive",
         |message| {
-            archive_preview_validation_error(ApiSubcode::ArchivePreviewSourceSizeMismatch, message)
+            archive_preview_validation_error(
+                ApiErrorCode::ArchivePreviewSourceSizeMismatch,
+                message,
+            )
         },
     )
     .await

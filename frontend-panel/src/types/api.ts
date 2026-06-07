@@ -29,16 +29,12 @@ type OperationData<Operation extends keyof ApiOperations> =
 		: never;
 
 // Core responses
-export type ErrorCode = components["schemas"]["ErrorCode"];
 export type ApiErrorCode = components["schemas"]["ApiErrorCode"];
 export type ApiErrorInfo = components["schemas"]["ApiErrorInfo"];
-export type ApiSubcode = components["schemas"]["ApiSubcode"];
-// TODO(0.3.0): revisit this wrapper when the backend response envelope migrates
-// from numeric ErrorCode/subcode compatibility to ApiErrorCode-only responses.
 // OpenAPI expands Rust ApiResponse<T> into concrete ApiResponse_X schemas, so
 // the frontend keeps this thin generic alias as the single local entry point.
 export type ApiResponse<T = unknown> = {
-	code: ErrorCode;
+	code: ApiErrorCode;
 	msg: string;
 	data?: T | null;
 	error?: ApiErrorInfo | null;

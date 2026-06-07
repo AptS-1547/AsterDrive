@@ -3,10 +3,10 @@
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel, Set};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::cache::CacheExt;
 use crate::db::repository::{auth_session_repo, user_repo};
-use crate::errors::{AsterError, MapAsterErr, Result, auth_forbidden_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 
 use super::{AUTH_SNAPSHOT_TTL, AuthSessionInfo, AuthSnapshot, UserAuditInfo, user_audit_info};
@@ -116,8 +116,8 @@ pub async fn revoke_other_auth_sessions(
             .await?
             .ok_or_else(|| AsterError::auth_token_invalid("missing current session"))?;
         if current_session.user_id != user_id {
-            return Err(auth_forbidden_with_subcode(
-                ApiSubcode::AuthSessionUserMismatch,
+            return Err(auth_forbidden_with_code(
+                ApiErrorCode::AuthSessionUserMismatch,
                 "current session does not belong to user",
             ));
         }

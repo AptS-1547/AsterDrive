@@ -2,16 +2,19 @@
 
 use sea_orm::{ColumnTrait, Condition, DbErr, SqlErr};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::entities::folder;
-use crate::errors::{AsterError, validation_error_with_subcode};
+use crate::errors::{AsterError, validation_error_with_code};
 
 pub fn duplicate_name_message(name: &str) -> String {
     format!("folder '{name}' already exists in this location")
 }
 
 pub fn duplicate_name_error(name: &str) -> AsterError {
-    validation_error_with_subcode(ApiSubcode::FolderNameConflict, duplicate_name_message(name))
+    validation_error_with_code(
+        ApiErrorCode::FolderNameConflict,
+        duplicate_name_message(name),
+    )
 }
 
 pub fn is_name_conflict_db_err(err: &DbErr) -> bool {

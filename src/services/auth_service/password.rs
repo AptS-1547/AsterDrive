@@ -1,8 +1,8 @@
 //! 认证服务子模块：`password`。
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::user_repo;
-use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::utils::hash;
 
@@ -34,8 +34,8 @@ pub async fn login(
 
         if !user.status.is_active() {
             tracing::debug!(user_id = user.id, "login rejected: account disabled");
-            return Err(auth_forbidden_with_subcode(
-                ApiSubcode::AuthAccountDisabled,
+            return Err(auth_forbidden_with_code(
+                ApiErrorCode::AuthAccountDisabled,
                 "account is disabled",
             ));
         }
@@ -100,8 +100,8 @@ pub async fn change_password(
     let user = user_repo::find_by_id(state.writer_db(), user_id).await?;
 
     if !user.status.is_active() {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthAccountDisabled,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthAccountDisabled,
             "account is disabled",
         ));
     }

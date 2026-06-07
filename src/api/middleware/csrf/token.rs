@@ -3,8 +3,8 @@
 use actix_web::{HttpRequest, dev::ServiceRequest, http::header};
 use rand::RngExt;
 
-use crate::api::subcode::ApiSubcode;
-use crate::errors::{Result, auth_forbidden_with_subcode};
+use crate::api::api_error_code::ApiErrorCode;
+use crate::errors::{Result, auth_forbidden_with_code};
 
 use super::constants::CSRF_COOKIE;
 
@@ -21,7 +21,7 @@ pub fn ensure_double_submit_token(req: &HttpRequest) -> Result<()> {
         .cookie(CSRF_COOKIE)
         .map(|cookie| cookie.value().to_string())
         .ok_or_else(|| {
-            auth_forbidden_with_subcode(ApiSubcode::AuthCsrfCookieMissing, "missing CSRF cookie")
+            auth_forbidden_with_code(ApiErrorCode::AuthCsrfCookieMissing, "missing CSRF cookie")
         })?;
     let header_token = req
         .headers()
@@ -30,15 +30,15 @@ pub fn ensure_double_submit_token(req: &HttpRequest) -> Result<()> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            auth_forbidden_with_subcode(
-                ApiSubcode::AuthCsrfHeaderMissing,
+            auth_forbidden_with_code(
+                ApiErrorCode::AuthCsrfHeaderMissing,
                 "missing X-CSRF-Token header",
             )
         })?;
 
     if header_token != cookie_token {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthCsrfTokenInvalid,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthCsrfTokenInvalid,
             "invalid CSRF token",
         ));
     }

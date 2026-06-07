@@ -588,8 +588,8 @@ async fn task_execution_context_reports_shutdown_request() {
         .expect_err("cancelled shutdown token should stop the worker");
     assert!(is_task_worker_shutdown_requested(&error));
     assert_eq!(
-        error.api_error_subcode(),
-        Some(crate::api::subcode::ApiSubcode::TaskWorkerShutdownRequested)
+        error.api_error_code_override(),
+        Some(crate::api::api_error_code::ApiErrorCode::TaskWorkerShutdownRequested)
     );
 
     let error = context

@@ -1,6 +1,6 @@
 //! 归档预览任务子模块。
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::file_repo;
 use crate::entities::{background_task, file, file_blob};
 use crate::errors::{AsterError, Result};
@@ -129,13 +129,13 @@ pub(super) async fn process_archive_preview_task(
         )?;
         if limits.task_signature != payload.limit_signature {
             return Err(archive_preview_service::archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewRejected,
+                ApiErrorCode::ArchivePreviewRejected,
                 "archive preview limits changed before generation completed",
             ));
         }
         if source_file.size > limits.max_source_bytes {
             return Err(archive_preview_service::archive_preview_validation_error(
-                ApiSubcode::ArchivePreviewSourceTooLarge,
+                ApiErrorCode::ArchivePreviewSourceTooLarge,
                 format!(
                     "source archive size {} exceeds archive preview limit {}",
                     source_file.size, limits.max_source_bytes
@@ -315,7 +315,7 @@ fn ensure_source_file_matches_payload(
     }
     if source_file.blob_id != payload.source_blob_id {
         return Err(archive_preview_service::archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewRejected,
+            ApiErrorCode::ArchivePreviewRejected,
             "archive preview source changed before generation completed",
         ));
     }
@@ -328,7 +328,7 @@ fn ensure_source_blob_matches_payload(
 ) -> Result<()> {
     if blob.id != payload.source_blob_id || blob.hash != payload.source_hash {
         return Err(archive_preview_service::archive_preview_validation_error(
-            ApiSubcode::ArchivePreviewRejected,
+            ApiErrorCode::ArchivePreviewRejected,
             "archive preview source blob changed before generation completed",
         ));
     }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	applyFilePrefs: vi.fn(),
@@ -76,13 +76,13 @@ function createCachedUser() {
 	};
 }
 
-function tokenApiError(code = ErrorCode.TokenInvalid) {
+function tokenApiError(code = ApiErrorCode.TokenInvalid) {
 	return {
 		code,
 		message:
-			code === ErrorCode.TokenInvalid
+			code === ApiErrorCode.TokenInvalid
 				? "session revoked"
-				: code === ErrorCode.TokenMissing
+				: code === ApiErrorCode.TokenMissing
 					? "missing token"
 					: "token expired",
 	};
@@ -179,7 +179,7 @@ describe("useAuthStore edge cases", () => {
 			"aster-auth-expires-at",
 			String(Date.now() + 60_000),
 		);
-		mockState.me.mockRejectedValue(tokenApiError(ErrorCode.TokenMissing));
+		mockState.me.mockRejectedValue(tokenApiError(ApiErrorCode.TokenMissing));
 		mockState.isAxiosError.mockReturnValue(false);
 		const { useAuthStore } = await loadStore();
 
@@ -277,7 +277,7 @@ describe("useAuthStore edge cases", () => {
 
 		await expect(useAuthStore.getState().refreshToken()).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.TokenInvalid,
+				code: ApiErrorCode.TokenInvalid,
 				message: "session revoked",
 			}),
 		);
@@ -302,7 +302,7 @@ describe("useAuthStore edge cases", () => {
 		);
 		const nextExpiresAt = Math.floor(Date.now() / 1000) + 900;
 		mockState.refreshToken.mockRejectedValue({
-			code: ErrorCode.RefreshTokenStale,
+			code: ApiErrorCode.RefreshTokenStale,
 			message: "stale refresh token",
 		});
 		mockState.me.mockResolvedValue({

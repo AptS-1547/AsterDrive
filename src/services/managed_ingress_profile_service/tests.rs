@@ -6,7 +6,7 @@ use super::{
     paths::{normalize_relative_local_path, resolve_managed_local_path},
     resolve_effective_target, update,
 };
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{managed_ingress_profile_repo, master_binding_repo};
 use crate::entities::{managed_ingress_profile, master_binding};
 use crate::metrics_core::SharedMetricsRecorder;
@@ -519,8 +519,8 @@ async fn update_rejects_unsetting_current_default_directly() {
     .unwrap_err();
 
     assert_eq!(
-        error.api_error_subcode(),
-        Some(ApiSubcode::ManagedIngressDefaultUpdateRequiresReplacement)
+        error.api_error_code_override(),
+        Some(ApiErrorCode::ManagedIngressDefaultUpdateRequiresReplacement)
     );
 }
 
@@ -539,8 +539,8 @@ async fn delete_protects_default_when_other_profiles_exist_then_allows_after_rep
         .await
         .unwrap_err();
     assert_eq!(
-        error.api_error_subcode(),
-        Some(ApiSubcode::ManagedIngressDefaultDeleteRequiresReplacement)
+        error.api_error_code_override(),
+        Some(ApiErrorCode::ManagedIngressDefaultDeleteRequiresReplacement)
     );
 
     update(
@@ -569,8 +569,8 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
 
     let missing_error = expect_aster_err(resolve_effective_target(&state, &binding).await);
     assert_eq!(
-        missing_error.api_error_subcode(),
-        Some(ApiSubcode::ManagedIngressRequired)
+        missing_error.api_error_code_override(),
+        Some(ApiErrorCode::ManagedIngressRequired)
     );
 
     let profile = create(
@@ -595,8 +595,8 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
         .unwrap();
     let error = expect_aster_err(resolve_effective_target(&state, &binding).await);
     assert_eq!(
-        error.api_error_subcode(),
-        Some(ApiSubcode::ManagedIngressDefaultError)
+        error.api_error_code_override(),
+        Some(ApiErrorCode::ManagedIngressDefaultError)
     );
 
     stored = managed_ingress_profile_repo::find_by_binding_and_profile_key(
@@ -616,7 +616,7 @@ async fn resolve_effective_target_reports_required_default_and_pending_states() 
         .unwrap();
     let error = expect_aster_err(resolve_effective_target(&state, &binding).await);
     assert_eq!(
-        error.api_error_subcode(),
-        Some(ApiSubcode::ManagedIngressDefaultNotApplied)
+        error.api_error_code_override(),
+        Some(ApiErrorCode::ManagedIngressDefaultNotApplied)
     );
 }

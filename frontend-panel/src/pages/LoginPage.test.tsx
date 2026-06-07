@@ -12,8 +12,8 @@ import { useThemeStore } from "@/stores/themeStore";
 const MockApiError = vi.hoisted(
 	() =>
 		class MockApiError extends Error {
-			code: number;
-			constructor(code: number, message: string) {
+			code: string;
+			constructor(code: string, message: string) {
 				super(message);
 				this.code = code;
 			}
@@ -117,8 +117,8 @@ vi.mock("@/services/http", () => ({
 }));
 
 vi.mock("@/types/api-helpers", () => ({
-	ErrorCode: {
-		PendingActivation: 2004,
+	ApiErrorCode: {
+		PendingActivation: "auth.pending_activation",
 	},
 }));
 

@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::RuntimeConfig;
-use crate::errors::{AsterError, Result, validation_error_with_subcode};
+use crate::errors::{AsterError, Result, validation_error_with_code};
 use crate::utils::email::{email_domain, normalize_email};
 
 pub use crate::config::definitions::{
@@ -40,8 +40,8 @@ impl LocalEmailPolicy {
         }
 
         if !self.allowlist.is_empty() && !self.allowlist.matches(&normalized, &domain) {
-            return Err(validation_error_with_subcode(
-                ApiSubcode::AuthEmailNotAllowlisted,
+            return Err(validation_error_with_code(
+                ApiErrorCode::AuthEmailNotAllowlisted,
                 "email address is not allowed by local account policy",
             ));
         }
@@ -62,8 +62,8 @@ impl LocalEmailPolicy {
 }
 
 fn email_blocked_error() -> AsterError {
-    validation_error_with_subcode(
-        ApiSubcode::AuthEmailBlocked,
+    validation_error_with_code(
+        ApiErrorCode::AuthEmailBlocked,
         "email address is blocked by local account policy",
     )
 }

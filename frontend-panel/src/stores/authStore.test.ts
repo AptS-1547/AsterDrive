@@ -2,7 +2,7 @@ import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiResponse, createMeResponse } from "@/test/fixtures";
 import { server } from "@/test/server";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 const changeLanguage = vi.fn(async () => undefined);
 
@@ -100,7 +100,7 @@ describe("useAuthStore", () => {
 			http.post("*/api/v1/auth/login", () =>
 				HttpResponse.json(
 					{
-						code: ErrorCode.PendingActivation,
+						code: ApiErrorCode.PendingActivation,
 						msg: "account pending activation",
 						data: null,
 					},
@@ -115,7 +115,7 @@ describe("useAuthStore", () => {
 			useAuthStore.getState().login("alice@example.com", "secret"),
 		).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.PendingActivation,
+				code: ApiErrorCode.PendingActivation,
 				message: "account pending activation",
 			}),
 		);

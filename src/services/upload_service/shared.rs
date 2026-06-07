@@ -5,12 +5,12 @@ use sea_orm::{ConnectionTrait, Set};
 use std::future::Future;
 use std::time::Instant;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, upload_session};
 use crate::errors::{
-    AsterError, Result, chunk_upload_error_with_subcode, upload_assembly_error_with_subcode,
-    validation_error_with_subcode,
+    AsterError, Result, chunk_upload_error_with_code, upload_assembly_error_with_code,
+    validation_error_with_code,
 };
 use crate::runtime::SharedRuntimeState;
 use crate::storage::MultipartStorageDriver;
@@ -110,8 +110,8 @@ pub(super) fn upload_session_chunk_unavailable_error(
         UploadSessionStatus::Completed => {
             AsterError::upload_session_expired("session already completed")
         }
-        UploadSessionStatus::Presigned => validation_error_with_subcode(
-            ApiSubcode::UploadChunkTransportMismatch,
+        UploadSessionStatus::Presigned => validation_error_with_code(
+            ApiErrorCode::UploadChunkTransportMismatch,
             "session does not accept relay chunk uploads",
         ),
         UploadSessionStatus::Uploading => {
@@ -125,8 +125,8 @@ pub(super) fn expected_chunk_size_for_upload(
     chunk_number: i32,
 ) -> Result<i64> {
     if session.total_chunks <= 0 || session.chunk_size <= 0 {
-        return Err(chunk_upload_error_with_subcode(
-            ApiSubcode::UploadChunkSessionInvalid,
+        return Err(chunk_upload_error_with_code(
+            ApiErrorCode::UploadChunkSessionInvalid,
             format!(
                 "invalid upload session chunk metadata: total_chunks={}, chunk_size={}",
                 session.total_chunks, session.chunk_size
@@ -141,8 +141,8 @@ pub(super) fn expected_chunk_size_for_upload(
     let preceding = session.chunk_size * i64::from(session.total_chunks - 1);
     let expected = session.total_size - preceding;
     if expected <= 0 {
-        return Err(chunk_upload_error_with_subcode(
-            ApiSubcode::UploadChunkSessionInvalid,
+        return Err(chunk_upload_error_with_code(
+            ApiErrorCode::UploadChunkSessionInvalid,
             format!(
                 "invalid final chunk size for upload {}: total_size={}, preceding={preceding}",
                 session.id, session.total_size
@@ -182,8 +182,8 @@ pub(super) async fn transition_upload_session_to_assembling<C: ConnectionTrait>(
             if session.status == expected_status && session.expires_at <= now {
                 return Err(AsterError::upload_session_expired("session expired"));
             }
-            return Err(upload_assembly_error_with_subcode(
-                ApiSubcode::UploadStatusConflict,
+            return Err(upload_assembly_error_with_code(
+                ApiErrorCode::UploadStatusConflict,
                 format!(
                     "session status is '{:?}', expected '{}'",
                     session.status,
@@ -191,8 +191,8 @@ pub(super) async fn transition_upload_session_to_assembling<C: ConnectionTrait>(
                 ),
             ));
         }
-        return Err(upload_assembly_error_with_subcode(
-            ApiSubcode::UploadStatusConflict,
+        return Err(upload_assembly_error_with_code(
+            ApiErrorCode::UploadStatusConflict,
             format!(
                 "session status is '{:?}', expected '{}'",
                 actual_status,
@@ -266,8 +266,8 @@ pub(super) async fn find_file_by_session<C: ConnectionTrait>(
     session: &upload_session::Model,
 ) -> Result<file::Model> {
     let file_id = session.file_id.ok_or_else(|| {
-        upload_assembly_error_with_subcode(
-            ApiSubcode::UploadCompletedFileMissing,
+        upload_assembly_error_with_code(
+            ApiErrorCode::UploadCompletedFileMissing,
             "upload already completed but file_id not found; please refresh",
         )
     })?;
@@ -520,8 +520,8 @@ mod tests {
         let err = expected_chunk_size_for_upload(&session, 0).unwrap_err();
         assert_eq!(err.code(), "E056"); // ChunkUploadFailed
         assert_eq!(
-            err.api_error_subcode(),
-            Some(ApiSubcode::UploadChunkSessionInvalid)
+            err.api_error_code_override(),
+            Some(ApiErrorCode::UploadChunkSessionInvalid)
         );
     }
 
@@ -532,8 +532,8 @@ mod tests {
         let err = expected_chunk_size_for_upload(&session, 1).unwrap_err();
         assert_eq!(err.code(), "E056");
         assert_eq!(
-            err.api_error_subcode(),
-            Some(ApiSubcode::UploadChunkSessionInvalid)
+            err.api_error_code_override(),
+            Some(ApiErrorCode::UploadChunkSessionInvalid)
         );
     }
 
@@ -559,8 +559,8 @@ mod tests {
         let e = upload_session_chunk_unavailable_error(&session);
         assert_eq!(e.code(), "E005"); // ValidationError
         assert_eq!(
-            e.api_error_subcode(),
-            Some(ApiSubcode::UploadChunkTransportMismatch)
+            e.api_error_code_override(),
+            Some(ApiErrorCode::UploadChunkTransportMismatch)
         );
 
         session.status = Uploading;

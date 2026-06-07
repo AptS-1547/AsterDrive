@@ -19,7 +19,7 @@ import type {
 	FolderContents,
 	SharePublicInfo,
 } from "@/types/api";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 import type { ShareBreadcrumbItem } from "./types";
 
 const SHARE_PAGE_SIZE = 100;
@@ -219,13 +219,13 @@ function updateBreadcrumb(
 
 function errorMessageForShareLoad(error: unknown, t: (key: string) => string) {
 	if (error instanceof ApiError) {
-		if (error.code === ErrorCode.ShareExpired) {
+		if (error.code === ApiErrorCode.ShareExpired) {
 			return t("errors:share_expired");
 		}
-		if (error.code === ErrorCode.ShareNotFound) {
+		if (error.code === ApiErrorCode.ShareNotFound) {
 			return t("errors:share_not_found");
 		}
-		if (error.code === ErrorCode.ShareDownloadLimitReached) {
+		if (error.code === ApiErrorCode.ShareDownloadLimitReached) {
 			return t("share:download_limit_reached");
 		}
 		return error.message;

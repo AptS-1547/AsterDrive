@@ -84,8 +84,8 @@ pub(super) async fn revalidate_overwrite_target<C: ConnectionTrait>(
     crate::services::workspace_storage_service::ensure_active_file_scope(&current_file, scope)?;
 
     if current_file.blob_id != old_file.blob_id {
-        return Err(precondition_failed_with_subcode(
-            ApiSubcode::FileModifiedDuringWrite,
+        return Err(precondition_failed_with_code(
+            ApiErrorCode::FileModifiedDuringWrite,
             "file changed while upload body was being received",
         ));
     }

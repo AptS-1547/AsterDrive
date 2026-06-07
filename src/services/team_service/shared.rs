@@ -10,13 +10,11 @@ use std::collections::{HashMap, HashSet};
 use chrono::Utc;
 use sea_orm::{ConnectionTrait, DbErr, IntoActiveModel, Set, SqlErr};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::operations;
 use crate::db::repository::{policy_group_repo, team_member_repo, team_repo, user_repo};
 use crate::entities::{team, team_member, user};
-use crate::errors::{
-    AsterError, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
-};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code, validation_error_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::{profile_service, user_service};
 use crate::types::TeamMemberRole;
@@ -35,8 +33,8 @@ fn map_team_member_create_db_err(err: DbErr) -> AsterError {
 }
 
 pub(super) fn existing_team_member_error() -> AsterError {
-    validation_error_with_subcode(
-        ApiSubcode::TeamMemberExists,
+    validation_error_with_code(
+        ApiErrorCode::TeamMemberExists,
         "user is already a team member",
     )
 }
@@ -362,15 +360,15 @@ async fn require_team_membership_with_db<C: ConnectionTrait>(
     let membership = team_member_repo::find_by_team_and_user(db, team_id, user_id)
         .await?
         .ok_or_else(|| {
-            auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
+            auth_forbidden_with_code(ApiErrorCode::TeamNotMember, "not a member of this team")
         })?;
     Ok((team, membership))
 }
 
 pub(super) fn ensure_can_manage_team(role: TeamMemberRole) -> Result<()> {
     if !role.can_manage_team() {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::TeamAdminOrOwnerRequired,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::TeamAdminOrOwnerRequired,
             "team owner or admin role is required",
         ));
     }

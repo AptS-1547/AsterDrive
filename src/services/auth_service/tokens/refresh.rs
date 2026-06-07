@@ -41,10 +41,10 @@ use std::sync::{Arc, LazyLock, Weak};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use super::{ensure_token_type, issue_tokens_for_session_id, verify_token};
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{auth_session_repo, user_repo};
 use crate::entities::auth_session;
-use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::auth_service::Claims;
@@ -416,8 +416,8 @@ async fn rotate_refresh_in_transaction<C: ConnectionTrait>(
     // session_version means a previous password/session/security event already
     // invalidated this refresh token, even if the auth_session row still exists.
     if !user.status.is_active() {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthAccountDisabled,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthAccountDisabled,
             "account is disabled",
         ));
     }

@@ -57,7 +57,7 @@ import type {
 	StoragePolicyCapacityInfo,
 	StoragePolicyMigrationDryRun,
 } from "@/types/api";
-import { ApiSubcode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_POLICY_PAGE_SIZE = 20 as const;
@@ -75,8 +75,8 @@ const DEFAULT_POLICY_SORT_BY =
 	"created_at" as const satisfies AdminPolicySortBy;
 const DEFAULT_POLICY_SORT_ORDER = "desc" as const satisfies SortOrder;
 const CREATE_LAST_STEP = 2;
-const POLICY_UPLOAD_SESSION_BLOCKER_SUBCODE =
-	ApiSubcode.PolicyUploadSessionsExist;
+const POLICY_UPLOAD_SESSION_BLOCKER_CODE =
+	ApiErrorCode.PolicyUploadSessionsExist;
 
 function useAdminPoliciesPageContent() {
 	const { t } = useTranslation("admin");
@@ -258,7 +258,7 @@ function useAdminPoliciesPageContent() {
 				if (
 					!options?.force &&
 					error instanceof ApiError &&
-					error.subcode === POLICY_UPLOAD_SESSION_BLOCKER_SUBCODE
+					error.code === POLICY_UPLOAD_SESSION_BLOCKER_CODE
 				) {
 					clearDeletingPolicy();
 					requestForceDeleteConfirm(id);

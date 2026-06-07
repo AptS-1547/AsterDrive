@@ -82,7 +82,7 @@ impl KeyExtractor for AsterIpKeyExtractor {
         HttpResponse::TooManyRequests()
             .insert_header(("Retry-After", wait_time.to_string()))
             .json(ApiResponse::<()>::error(
-                crate::api::error_code::ErrorCode::RateLimited,
+                crate::api::api_error_code::ApiErrorCode::RateLimited,
                 &msg,
             ))
     }

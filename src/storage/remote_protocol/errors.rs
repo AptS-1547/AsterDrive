@@ -1,23 +1,14 @@
-use crate::api::error_code::ErrorCode;
-use crate::api::subcode::ApiSubcode;
-use crate::errors::{AsterError, precondition_failed_with_subcode};
+use crate::api::api_error_code::ApiErrorCode;
+use crate::errors::{AsterError, precondition_failed_with_code};
 use crate::storage::error::{
-    StorageErrorKind, storage_driver_error, storage_driver_error_with_subcode,
+    StorageErrorKind, storage_driver_error, storage_driver_error_with_code,
 };
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct RemoteErrorEnvelope {
-    code: i32,
+    code: ApiErrorCode,
     msg: String,
-    error: Option<RemoteErrorInfo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RemoteErrorInfo {
-    // TODO(0.3.0): accept remote ApiErrorCode here and remove legacy subcode
-    // parsing after follower/primary nodes no longer expose ApiSubcode.
-    subcode: Option<String>,
 }
 
 pub(super) fn map_reqwest_error(error: reqwest::Error) -> AsterError {
@@ -42,13 +33,7 @@ pub fn build_remote_status_error_from_parts(
 ) -> AsterError {
     let envelope = serde_json::from_str::<RemoteErrorEnvelope>(body).ok();
     let remote_code = envelope.as_ref().map(|value| value.code);
-    // TODO(0.3.0): read remote error.code as ApiErrorCode and drop this
-    // ApiSubcode compatibility path.
-    let remote_subcode = envelope
-        .as_ref()
-        .and_then(|value| value.error.as_ref())
-        .and_then(|value| value.subcode.as_deref())
-        .and_then(ApiSubcode::parse);
+    let remote_api_code = remote_code;
     let remote_message = envelope
         .as_ref()
         .map(|envelope| envelope.msg.as_str())
@@ -60,19 +45,22 @@ pub fn build_remote_status_error_from_parts(
     } else {
         format!("{context}: {remote_message}")
     };
-    if let Some(error) = remote_code.and_then(|code| remote_api_error(code, &message)) {
+    if let Some(error) = remote_api_code.and_then(|code| remote_api_error(code, &message)) {
         return error;
     }
-    let kind = remote_code
+    let kind = remote_api_code
         .and_then(remote_api_error_kind)
         .unwrap_or_else(|| remote_status_error_kind(status));
-    let is_not_found_remote_code = remote_code
+    let is_not_found_remote_code = remote_api_code
         .map(|code| {
-            [
-                ErrorCode::NotFound as i32,
-                ErrorCode::StorageObjectNotFound as i32,
-            ]
-            .contains(&code)
+            matches!(
+                code,
+                ApiErrorCode::NotFound
+                    | ApiErrorCode::FileNotFound
+                    | ApiErrorCode::UploadSessionNotFound
+                    | ApiErrorCode::StorageObjectNotFound
+                    | ApiErrorCode::StorageNotFound
+            )
         })
         .unwrap_or(false);
 
@@ -81,74 +69,60 @@ pub fn build_remote_status_error_from_parts(
             AsterError::record_not_found(message)
         }
         reqwest::StatusCode::PRECONDITION_FAILED => {
-            let subcode = remote_subcode.unwrap_or(ApiSubcode::StoragePrecondition);
-            precondition_failed_with_subcode(subcode, message)
+            let api_code = remote_api_code.unwrap_or(ApiErrorCode::StoragePrecondition);
+            precondition_failed_with_code(api_code, message)
         }
-        _ => remote_subcode
-            .map(|subcode| storage_driver_error_with_subcode(kind, subcode, message.clone()))
+        _ => remote_api_code
+            .map(|api_code| storage_driver_error_with_code(kind, api_code, message.clone()))
             .unwrap_or_else(|| storage_driver_error(kind, message)),
     }
 }
 
-pub(super) fn remote_api_error(code: i32, message: &str) -> Option<AsterError> {
+pub(super) fn remote_api_error(code: ApiErrorCode, message: &str) -> Option<AsterError> {
     match code {
-        code if code == ErrorCode::StorageQuotaExceeded as i32 => {
+        ApiErrorCode::StorageQuotaExceeded => {
             Some(AsterError::storage_quota_exceeded(message.to_string()))
         }
         _ => None,
     }
 }
 
-pub fn remote_api_error_kind(code: i32) -> Option<StorageErrorKind> {
+pub fn remote_api_error_kind(code: ApiErrorCode) -> Option<StorageErrorKind> {
     match code {
-        code if code == ErrorCode::BadRequest as i32 => Some(StorageErrorKind::Misconfigured),
-        code if code == ErrorCode::StoragePolicyNotFound as i32
-            || code == ErrorCode::StorageMisconfigured as i32 =>
-        {
-            Some(StorageErrorKind::Misconfigured)
-        }
-        code if code == ErrorCode::NotFound as i32
-            || code == ErrorCode::FileNotFound as i32
-            || code == ErrorCode::UploadSessionNotFound as i32
-            || code == ErrorCode::StorageObjectNotFound as i32 =>
-        {
-            Some(StorageErrorKind::NotFound)
-        }
-        code if code == ErrorCode::RateLimited as i32
-            || code == ErrorCode::StorageRateLimited as i32 =>
-        {
+        ApiErrorCode::BadRequest
+        | ApiErrorCode::StoragePolicyNotFound
+        | ApiErrorCode::StorageMisconfigured => Some(StorageErrorKind::Misconfigured),
+        ApiErrorCode::NotFound
+        | ApiErrorCode::FileNotFound
+        | ApiErrorCode::UploadSessionNotFound
+        | ApiErrorCode::StorageObjectNotFound
+        | ApiErrorCode::StorageNotFound => Some(StorageErrorKind::NotFound),
+        ApiErrorCode::RateLimited | ApiErrorCode::StorageRateLimited => {
             Some(StorageErrorKind::RateLimited)
         }
-        code if code == ErrorCode::AuthFailed as i32
-            || code == ErrorCode::TokenExpired as i32
-            || code == ErrorCode::TokenInvalid as i32
-            || code == ErrorCode::TokenMissing as i32
-            || code == ErrorCode::CredentialsFailed as i32
-            || code == ErrorCode::MfaFailed as i32
-            || code == ErrorCode::StorageAuthFailed as i32 =>
-        {
-            Some(StorageErrorKind::Auth)
-        }
-        code if code == ErrorCode::Forbidden as i32
-            || code == ErrorCode::StoragePermissionDenied as i32 =>
-        {
-            Some(StorageErrorKind::Permission)
-        }
-        code if code == ErrorCode::PreconditionFailed as i32 => {
-            Some(StorageErrorKind::Precondition)
-        }
-        code if code == ErrorCode::StoragePreconditionFailed as i32 => {
-            Some(StorageErrorKind::Precondition)
-        }
-        code if code == ErrorCode::UnsupportedDriver as i32
-            || code == ErrorCode::StorageOperationUnsupported as i32 =>
-        {
-            Some(StorageErrorKind::Unsupported)
-        }
-        code if code == ErrorCode::StorageTransientFailure as i32 => {
+        ApiErrorCode::AuthFailed
+        | ApiErrorCode::TokenExpired
+        | ApiErrorCode::TokenInvalid
+        | ApiErrorCode::TokenMissing
+        | ApiErrorCode::CredentialsFailed
+        | ApiErrorCode::MfaFailed
+        | ApiErrorCode::StorageAuthFailed
+        | ApiErrorCode::StorageAuth => Some(StorageErrorKind::Auth),
+        ApiErrorCode::Forbidden
+        | ApiErrorCode::StoragePermissionDenied
+        | ApiErrorCode::StoragePermission => Some(StorageErrorKind::Permission),
+        ApiErrorCode::PreconditionFailed
+        | ApiErrorCode::StoragePreconditionFailed
+        | ApiErrorCode::StoragePrecondition => Some(StorageErrorKind::Precondition),
+        ApiErrorCode::UnsupportedDriver
+        | ApiErrorCode::StorageOperationUnsupported
+        | ApiErrorCode::StorageUnsupported => Some(StorageErrorKind::Unsupported),
+        ApiErrorCode::StorageTransientFailure | ApiErrorCode::StorageTransient => {
             Some(StorageErrorKind::Transient)
         }
-        code if code == ErrorCode::StorageDriverError as i32 => Some(StorageErrorKind::Unknown),
+        ApiErrorCode::StorageDriverError | ApiErrorCode::StorageUnknown => {
+            Some(StorageErrorKind::Unknown)
+        }
         _ => None,
     }
 }

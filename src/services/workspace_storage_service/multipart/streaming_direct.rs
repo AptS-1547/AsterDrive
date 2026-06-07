@@ -2,9 +2,9 @@ use actix_multipart::Multipart;
 use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::entities::file;
-use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::workspace_storage_service::{
     StorePreuploadedNondedupParams, check_quota, cleanup_preuploaded_blob_upload,
@@ -86,8 +86,8 @@ pub(super) async fn upload_streaming_direct(
                         .put_reader(&upload_storage_path, Box::new(reader), declared_size)
                         .await;
                     let relay_result = relay_task.await.map_err(|err| {
-                        file_upload_error_with_subcode(
-                            ApiSubcode::UploadDirectRelayTaskFailed,
+                        file_upload_error_with_code(
+                            ApiErrorCode::UploadDirectRelayTaskFailed,
                             format!("relay direct task failed: {err}"),
                         )
                     })?;

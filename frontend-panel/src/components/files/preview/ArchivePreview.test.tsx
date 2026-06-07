@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ArchivePreview } from "@/components/files/preview/ArchivePreview";
 import { ApiError, ApiPendingError } from "@/services/http";
 import type { ArchivePreviewManifest } from "@/types/api";
-import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 vi.mock("@/lib/format", () => ({
 	formatBytes: (value: number) => `bytes:${value}`,
@@ -378,12 +378,8 @@ describe("ArchivePreview", () => {
 			>()
 			.mockRejectedValueOnce(
 				new ApiError(
-					ErrorCode.BadRequest,
+					ApiErrorCode.ArchivePreviewRejected,
 					"archive entry filename is not valid Big5",
-					{
-						internalCode: "E005",
-						subcode: ApiSubcode.ArchivePreviewRejected,
-					},
 				),
 			)
 			.mockResolvedValueOnce(manifest);
@@ -460,10 +456,10 @@ describe("ArchivePreview", () => {
 
 	it("shows a friendly disabled state without retry", async () => {
 		const loadManifest = vi.fn(async () => {
-			throw new ApiError(ErrorCode.Forbidden, "archive preview is disabled", {
-				internalCode: "E013",
-				subcode: ApiSubcode.ArchivePreviewDisabled,
-			});
+			throw new ApiError(
+				ApiErrorCode.ArchivePreviewDisabled,
+				"archive preview is disabled",
+			);
 		});
 		render(<ArchivePreview loadManifest={loadManifest} />);
 
@@ -479,18 +475,11 @@ describe("ArchivePreview", () => {
 	});
 
 	it.each([
-		ApiSubcode.ArchivePreviewUserDisabled,
-		ApiSubcode.ArchivePreviewShareDisabled,
-	])("shows disabled state for %s", async (subcode) => {
+		ApiErrorCode.ArchivePreviewUserDisabled,
+		ApiErrorCode.ArchivePreviewShareDisabled,
+	])("shows disabled state for %s", async (code) => {
 		const loadManifest = vi.fn(async () => {
-			throw new ApiError(
-				ErrorCode.Forbidden,
-				"archive preview for this surface is disabled",
-				{
-					internalCode: "E013",
-					subcode,
-				},
-			);
+			throw new ApiError(code, "archive preview for this surface is disabled");
 		});
 		render(<ArchivePreview loadManifest={loadManifest} />);
 
@@ -504,41 +493,38 @@ describe("ArchivePreview", () => {
 
 	it.each([
 		[
-			ApiSubcode.ArchivePreviewUnsupportedType,
+			ApiErrorCode.ArchivePreviewUnsupportedType,
 			"archive preview currently supports .zip files only",
 			"archive_preview_unsupported_type",
 		],
 		[
-			ApiSubcode.ArchivePreviewSourceTooLarge,
+			ApiErrorCode.ArchivePreviewSourceTooLarge,
 			"source archive size 135064658 exceeds archive preview limit 67108864",
 			"archive_preview_source_too_large",
 		],
 		[
-			ApiSubcode.ArchivePreviewInvalidArchive,
+			ApiErrorCode.ArchivePreviewInvalidArchive,
 			"invalid archive",
 			"archive_preview_invalid_archive",
 		],
 		[
-			ApiSubcode.ArchivePreviewRejected,
+			ApiErrorCode.ArchivePreviewRejected,
 			"archive contains 2 entries, exceeds server limit 1",
 			"archive_preview_rejected",
 		],
 		[
-			ApiSubcode.ArchivePreviewManifestTooLarge,
+			ApiErrorCode.ArchivePreviewManifestTooLarge,
 			"archive preview manifest exceeds server limit",
 			"archive_preview_rejected",
 		],
 		[
-			ApiSubcode.ArchivePreviewSourceSizeMismatch,
+			ApiErrorCode.ArchivePreviewSourceSizeMismatch,
 			"source archive size mismatch",
 			"archive_preview_rejected",
 		],
-	])("shows a friendly state without retry for %s", async (subcode, message, messageKey) => {
+	])("shows a friendly state without retry for %s", async (code, message, messageKey) => {
 		const loadManifest = vi.fn(async () => {
-			throw new ApiError(ErrorCode.BadRequest, message, {
-				internalCode: "E005",
-				subcode,
-			});
+			throw new ApiError(code, message);
 		});
 		render(<ArchivePreview loadManifest={loadManifest} />);
 
@@ -553,12 +539,8 @@ describe("ArchivePreview", () => {
 	it("explains filename encoding failures without a retry button", async () => {
 		const loadManifest = vi.fn(async () => {
 			throw new ApiError(
-				ErrorCode.BadRequest,
+				ApiErrorCode.ArchivePreviewRejected,
 				"archive entry 'x.drawio' filename is not valid Big5",
-				{
-					internalCode: "E005",
-					subcode: ApiSubcode.ArchivePreviewRejected,
-				},
 			);
 		});
 		render(<ArchivePreview loadManifest={loadManifest} />);

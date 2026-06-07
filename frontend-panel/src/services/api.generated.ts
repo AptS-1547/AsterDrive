@@ -4200,19 +4200,16 @@ export interface components {
         /** @enum {string} */
         ApiErrorCode: "success" | "bad_request" | "not_found" | "internal_server_error" | "database.error" | "config.error" | "endpoint.not_found" | "rate_limited" | "mail.not_configured" | "mail.delivery_failed" | "conflict" | "auth.failed" | "auth.token_expired" | "auth.token_invalid" | "forbidden" | "auth.pending_activation" | "auth.contact_verification_invalid" | "auth.contact_verification_expired" | "auth.token_missing" | "auth.credentials_failed" | "auth.mfa_failed" | "auth.refresh_token_stale" | "auth.refresh_token_reuse_detected" | "file.not_found" | "file.too_large" | "file.type_not_allowed" | "file.upload_failed" | "upload.session_not_found" | "upload.session_expired" | "upload.chunk_failed" | "upload.assembly_failed" | "thumbnail.failed" | "resource.locked" | "precondition_failed" | "upload.assembling" | "storage.policy_not_found" | "storage.driver_error" | "storage.quota_exceeded" | "storage.unsupported_driver" | "storage.auth_failed" | "storage.permission_denied" | "storage.misconfigured" | "storage.object_not_found" | "storage.rate_limited" | "storage.transient_failure" | "storage.precondition_failed" | "storage.operation_unsupported" | "folder.not_found" | "share.not_found" | "share.expired" | "share.password_required" | "share.download_limit_reached" | "archive_preview.disabled" | "archive_preview.user_disabled" | "archive_preview.share_disabled" | "archive_preview.source_too_large" | "archive_preview.invalid_archive" | "archive_preview.manifest_too_large" | "archive_preview.unsupported_type" | "archive_preview.rejected" | "archive_preview.source_size_mismatch" | "auth.username_exists" | "auth.email_exists" | "auth.identifier_exists" | "auth.admin_required" | "auth.account_disabled" | "auth.request_source_untrusted" | "auth.request_origin_untrusted" | "auth.request_referer_untrusted" | "auth.request_source_missing" | "auth.session_user_mismatch" | "auth.csrf_cookie_missing" | "auth.csrf_header_missing" | "auth.csrf_token_invalid" | "auth.passkey_login_disabled" | "auth.registration_disabled" | "auth.email_blocked" | "auth.email_not_allowlisted" | "auth.mfa_flow_invalid" | "auth.mfa_flow_expired" | "auth.mfa_code_invalid" | "auth.mfa_attempts_exceeded" | "auth.mfa_factor_required" | "auth.mfa_factor_already_exists" | "auth.mfa_recovery_code_used" | "auth.mfa_email_code_required" | "auth.mfa_email_code_expired" | "avatar.file_required" | "avatar.upload_read_failed" | "avatar.processor_unavailable" | "avatar.empty_image" | "avatar.render_failed" | "avatar.output_invalid" | "file.name_conflict" | "file.etag_mismatch" | "file.modified_during_write" | "folder.name_conflict" | "lock.not_owner" | "share.scope_denied" | "managed_ingress.binding_mismatch" | "managed_ingress.default_delete_requires_replacement" | "managed_ingress.default_error" | "managed_ingress.default_missing" | "managed_ingress.default_not_applied" | "managed_ingress.default_update_requires_replacement" | "managed_ingress.driver_unsupported" | "managed_ingress.local_path_invalid" | "managed_ingress.required" | "managed_ingress.single_primary_required" | "master_binding.disabled" | "passkey.name_invalid" | "passkey.name_too_long" | "passkey.not_discoverable" | "team.not_member" | "team.owner_required" | "team.admin_or_owner_required" | "policy.upload_sessions_exist" | "workspace.scope_denied" | "external_auth.provider_disabled" | "external_auth.policy_denied" | "offline_download.aria2_rpc_auth_failed" | "offline_download.aria2_rpc_probe_failed" | "remote_node.disabled" | "remote_node.enrollment_required" | "remote_node.unique_conflict" | "storage.auth" | "storage.not_found" | "storage.permission" | "storage.precondition" | "storage.transient" | "storage.unsupported" | "storage.unknown" | "task.lease_lost" | "task.lease_renewal_timed_out" | "task.worker_shutdown_requested" | "team.member_exists" | "thumbnail.format_guess_failed" | "thumbnail.decode_failed" | "thumbnail.encode_failed" | "thumbnail.source_open_failed" | "thumbnail.source_stream_failed" | "thumbnail.task_panicked" | "thumbnail.source_too_large" | "thumbnail.processor_unavailable" | "thumbnail.render_failed" | "thumbnail.output_invalid" | "thumbnail.source_temp_create_failed" | "thumbnail.source_temp_flush_failed" | "thumbnail.source_temp_copy_failed" | "wopi.public_site_url_required" | "wopi.app_disabled" | "wopi.request_origin_untrusted" | "wopi.request_referer_untrusted" | "upload.temp_dir_create_failed" | "upload.temp_file_create_failed" | "upload.temp_file_write_failed" | "upload.temp_file_flush_failed" | "upload.request_body_read_failed" | "upload.request_body_size_overflow" | "upload.request_size_mismatch" | "upload.hash_temp_open_failed" | "upload.hash_temp_read_failed" | "upload.field_read_failed" | "upload.local_staging_path_resolve_failed" | "upload.local_staging_dir_create_failed" | "upload.local_staging_file_create_failed" | "upload.local_staging_write_failed" | "upload.local_staging_flush_failed" | "upload.direct_relay_write_failed" | "upload.direct_relay_shutdown_failed" | "upload.direct_relay_task_failed" | "upload.body_size_overflow" | "upload.declared_size_invalid" | "upload.empty_file" | "upload.chunk_persist_failed" | "upload.chunk_relay_failed" | "upload.chunk_transport_mismatch" | "upload.chunk_session_invalid" | "upload.chunk_number_out_of_range" | "upload.chunk_size_mismatch" | "upload.chunk_too_large" | "upload.chunk_size_overflow" | "upload.status_conflict" | "upload.completed_file_missing" | "upload.previous_failure" | "upload.parts_required" | "upload.incomplete_chunks" | "upload.incomplete_parts" | "upload.missing_part" | "upload.temp_object_missing" | "upload.temp_object_size_mismatch" | "upload.final_object_size_mismatch" | "upload.session_corrupted" | "upload.part_numbers_empty" | "upload.part_numbers_too_many" | "upload.part_number_out_of_range" | "upload.assembly_io_failed" | "upload.assembly_size_overflow" | "webdav.username_exists" | "wopi.max_expected_size_exceeded" | "validation.request_origin_invalid" | "validation.request_referer_invalid" | "validation.request_host_invalid" | "validation.request_scheme_invalid" | "validation.request_header_value_invalid" | "validation.system_already_initialized";
         ApiErrorInfo: {
-            code: components["schemas"]["ApiErrorCode"];
-            internal_code: string;
-            retryable?: boolean | null;
-            subcode?: null | components["schemas"]["ApiSubcode"];
+            retryable: boolean;
         };
         /**
          * @description 统一 API 响应格式
          *
-         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
-         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         *     成功: `{ "code": "success", "msg": "", "data": {...} }`
+         *     失败: `{ "code": "auth.credentials_failed", "msg": "Invalid Credentials" }`
          */
         ApiResponse_RemoteEnrollmentBootstrap: {
-            code: components["schemas"]["ErrorCode"];
+            code: components["schemas"]["ApiErrorCode"];
             data?: {
                 access_key: string;
                 ack_token: string;
@@ -4229,11 +4226,11 @@ export interface components {
         /**
          * @description 统一 API 响应格式
          *
-         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
-         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         *     成功: `{ "code": "success", "msg": "", "data": {...} }`
+         *     失败: `{ "code": "auth.credentials_failed", "msg": "Invalid Credentials" }`
          */
         ApiResponse_RemoteEnrollmentCommandInfo: {
-            code: components["schemas"]["ErrorCode"];
+            code: components["schemas"]["ApiErrorCode"];
             data?: {
                 command: string;
                 expires_at: string;
@@ -4249,11 +4246,11 @@ export interface components {
         /**
          * @description 统一 API 响应格式
          *
-         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
-         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         *     成功: `{ "code": "success", "msg": "", "data": {...} }`
+         *     失败: `{ "code": "auth.credentials_failed", "msg": "Invalid Credentials" }`
          */
         ApiResponse_UploadProgressResponse: {
-            code: components["schemas"]["ErrorCode"];
+            code: components["schemas"]["ApiErrorCode"];
             data?: {
                 /** Format: int64 */
                 chunk_size: number;
@@ -4272,11 +4269,11 @@ export interface components {
         /**
          * @description 统一 API 响应格式
          *
-         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
-         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         *     成功: `{ "code": "success", "msg": "", "data": {...} }`
+         *     失败: `{ "code": "auth.credentials_failed", "msg": "Invalid Credentials" }`
          */
         ApiResponse_Vec_ConfigSchemaItem: {
-            code: components["schemas"]["ErrorCode"];
+            code: components["schemas"]["ApiErrorCode"];
             data?: {
                 category: string;
                 description: string;
@@ -4294,11 +4291,11 @@ export interface components {
         /**
          * @description 统一 API 响应格式
          *
-         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
-         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         *     成功: `{ "code": "success", "msg": "", "data": {...} }`
+         *     失败: `{ "code": "auth.credentials_failed", "msg": "Invalid Credentials" }`
          */
         ApiResponse_Vec_TemplateVariableGroup: {
-            code: components["schemas"]["ErrorCode"];
+            code: components["schemas"]["ApiErrorCode"];
             data?: {
                 category: string;
                 label_i18n_key: string;
@@ -4308,8 +4305,6 @@ export interface components {
             error?: null | components["schemas"]["ApiErrorInfo"];
             msg: string;
         };
-        /** @enum {string} */
-        ApiSubcode: "archive_preview.disabled" | "archive_preview.user_disabled" | "archive_preview.share_disabled" | "archive_preview.source_too_large" | "archive_preview.invalid_archive" | "archive_preview.manifest_too_large" | "archive_preview.unsupported_type" | "archive_preview.rejected" | "archive_preview.source_size_mismatch" | "auth.username_exists" | "auth.email_exists" | "auth.identifier_exists" | "auth.admin_required" | "auth.account_disabled" | "auth.request_source_untrusted" | "auth.request_origin_untrusted" | "auth.request_referer_untrusted" | "auth.request_source_missing" | "auth.session_user_mismatch" | "auth.csrf_cookie_missing" | "auth.csrf_header_missing" | "auth.csrf_token_invalid" | "auth.passkey_login_disabled" | "auth.registration_disabled" | "auth.email_blocked" | "auth.email_not_allowlisted" | "auth.mfa_flow_invalid" | "auth.mfa_flow_expired" | "auth.mfa_code_invalid" | "auth.mfa_attempts_exceeded" | "auth.mfa_factor_required" | "auth.mfa_factor_already_exists" | "auth.mfa_recovery_code_used" | "auth.mfa_email_code_required" | "auth.mfa_email_code_expired" | "avatar.file_required" | "avatar.upload_read_failed" | "avatar.processor_unavailable" | "avatar.empty_image" | "avatar.render_failed" | "avatar.output_invalid" | "file.name_conflict" | "file.etag_mismatch" | "file.modified_during_write" | "folder.name_conflict" | "lock.not_owner" | "share.scope_denied" | "managed_ingress.binding_mismatch" | "managed_ingress.default_delete_requires_replacement" | "managed_ingress.default_error" | "managed_ingress.default_missing" | "managed_ingress.default_not_applied" | "managed_ingress.default_update_requires_replacement" | "managed_ingress.driver_unsupported" | "managed_ingress.local_path_invalid" | "managed_ingress.required" | "managed_ingress.single_primary_required" | "master_binding.disabled" | "passkey.name_invalid" | "passkey.name_too_long" | "passkey.not_discoverable" | "team.not_member" | "team.owner_required" | "team.admin_or_owner_required" | "policy.upload_sessions_exist" | "workspace.scope_denied" | "external_auth.provider_disabled" | "external_auth.policy_denied" | "offline_download.aria2_rpc_auth_failed" | "offline_download.aria2_rpc_probe_failed" | "remote_node.disabled" | "remote_node.enrollment_required" | "remote_node.unique_conflict" | "storage.auth" | "storage.misconfigured" | "storage.not_found" | "storage.permission" | "storage.precondition" | "storage.rate_limited" | "storage.transient" | "storage.unsupported" | "storage.unknown" | "task.lease_lost" | "task.lease_renewal_timed_out" | "task.worker_shutdown_requested" | "team.member_exists" | "thumbnail.format_guess_failed" | "thumbnail.decode_failed" | "thumbnail.encode_failed" | "thumbnail.source_open_failed" | "thumbnail.source_stream_failed" | "thumbnail.task_panicked" | "thumbnail.source_too_large" | "thumbnail.processor_unavailable" | "thumbnail.render_failed" | "thumbnail.output_invalid" | "thumbnail.source_temp_create_failed" | "thumbnail.source_temp_flush_failed" | "thumbnail.source_temp_copy_failed" | "wopi.public_site_url_required" | "wopi.app_disabled" | "wopi.request_origin_untrusted" | "wopi.request_referer_untrusted" | "upload.temp_dir_create_failed" | "upload.temp_file_create_failed" | "upload.temp_file_write_failed" | "upload.temp_file_flush_failed" | "upload.request_body_read_failed" | "upload.request_body_size_overflow" | "upload.request_size_mismatch" | "upload.hash_temp_open_failed" | "upload.hash_temp_read_failed" | "upload.field_read_failed" | "upload.local_staging_path_resolve_failed" | "upload.local_staging_dir_create_failed" | "upload.local_staging_file_create_failed" | "upload.local_staging_write_failed" | "upload.local_staging_flush_failed" | "upload.direct_relay_write_failed" | "upload.direct_relay_shutdown_failed" | "upload.direct_relay_task_failed" | "upload.body_size_overflow" | "upload.declared_size_invalid" | "upload.empty_file" | "upload.chunk_persist_failed" | "upload.chunk_relay_failed" | "upload.chunk_transport_mismatch" | "upload.chunk_session_invalid" | "upload.chunk_number_out_of_range" | "upload.chunk_size_mismatch" | "upload.chunk_too_large" | "upload.chunk_size_overflow" | "upload.status_conflict" | "upload.completed_file_missing" | "upload.previous_failure" | "upload.parts_required" | "upload.incomplete_chunks" | "upload.incomplete_parts" | "upload.missing_part" | "upload.temp_object_missing" | "upload.temp_object_size_mismatch" | "upload.final_object_size_mismatch" | "upload.session_corrupted" | "upload.part_numbers_empty" | "upload.part_numbers_too_many" | "upload.part_number_out_of_range" | "upload.assembly_io_failed" | "upload.assembly_size_overflow" | "webdav.username_exists" | "wopi.max_expected_size_exceeded" | "validation.request_origin_invalid" | "validation.request_referer_invalid" | "validation.request_host_invalid" | "validation.request_scheme_invalid" | "validation.request_header_value_invalid" | "validation.system_already_initialized";
         /** @description Request an archive compression task for the selected files and folders. */
         ArchiveCompressReq: {
             archive_name?: string | null;
@@ -4857,12 +4852,6 @@ export interface components {
          * @enum {string}
          */
         EntityType: "file" | "folder";
-        /**
-         * @description API 错误码，序列化为数字
-         * @example 0
-         * @enum {integer}
-         */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 1006 | 1007 | 1008 | 1009 | 2000 | 2001 | 2002 | 2003 | 2004 | 2005 | 2006 | 2007 | 2008 | 2009 | 2010 | 2011 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 4004 | 4005 | 4006 | 4007 | 4008 | 4009 | 4010 | 4011 | 5000 | 6000 | 6001 | 6002 | 6003;
         /** @description Execute a config action (e.g., send test email). */
         ExecuteConfigActionReq: {
             action: components["schemas"]["ConfigActionType"];
@@ -7561,7 +7550,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 action: components["schemas"]["AuditAction"];
@@ -7625,7 +7614,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 category: string;
@@ -7759,7 +7748,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             category: string;
                             description: string;
@@ -7828,7 +7817,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             category: string;
                             description: string;
@@ -7939,7 +7928,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Response from a config action execution. */
                         data?: {
                             message: string;
@@ -8003,7 +7992,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             authorization_url_required: boolean;
                             default_scopes: string;
@@ -8059,7 +8048,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 allowed_domains: string[];
@@ -8141,7 +8130,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             allowed_domains: string[];
                             authorization_url?: string | null;
@@ -8222,7 +8211,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             authorization_endpoint?: string | null;
                             checks: components["schemas"]["ExternalAuthProviderTestCheck"][];
@@ -8279,7 +8268,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             allowed_domains: string[];
                             authorization_url?: string | null;
@@ -8405,7 +8394,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             allowed_domains: string[];
                             authorization_url?: string | null;
@@ -8492,7 +8481,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             authorization_endpoint?: string | null;
                             checks: components["schemas"]["ExternalAuthProviderTestCheck"][];
@@ -8565,7 +8554,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 /** Format: int64 */
@@ -8642,7 +8631,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: components["schemas"]["AdminFileBlobInfo"] & {
                             file_versions: components["schemas"]["AdminFileBlobReferenceVersion"][];
                             files: components["schemas"]["AdminFileBlobReferenceFile"][];
@@ -8702,7 +8691,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 blob: components["schemas"]["AdminFileBlobSummary"];
@@ -8779,7 +8768,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: components["schemas"]["AdminFileInfo"] & {
                             versions: components["schemas"]["AdminFileVersionSummary"][];
                         };
@@ -8832,7 +8821,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 created_at: string;
@@ -8886,7 +8875,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             removed: number;
@@ -8960,7 +8949,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             daily_reports: components["schemas"]["AdminOverviewDailyReport"][];
                             /** Format: int32 */
@@ -9014,7 +9003,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 allowed_types: string[];
@@ -9084,7 +9073,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             allowed_types: string[];
                             base_path: string;
@@ -9181,7 +9170,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             allowed_types: string[];
                             base_path: string;
@@ -9297,7 +9286,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             allowed_types: string[];
                             base_path: string;
@@ -9365,7 +9354,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_count: number;
@@ -9460,7 +9449,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 created_at: string;
@@ -9521,7 +9510,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             description: string;
@@ -9580,7 +9569,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             description: string;
@@ -9692,7 +9681,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             description: string;
@@ -9762,7 +9751,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             affected_teams: number;
@@ -9831,7 +9820,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 base_url: string;
@@ -9897,7 +9886,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             base_url: string;
                             capabilities: components["schemas"]["RemoteStorageCapabilities"];
@@ -9955,7 +9944,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             browser_cors?: components["schemas"]["RemoteStorageBrowserCorsContract"];
                             features?: components["schemas"]["RemoteStorageFeatureFlags"];
@@ -10015,7 +10004,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             base_url: string;
                             capabilities: components["schemas"]["RemoteStorageCapabilities"];
@@ -10125,7 +10114,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             base_url: string;
                             capabilities: components["schemas"]["RemoteStorageCapabilities"];
@@ -10233,7 +10222,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             applied_revision: number;
@@ -10310,7 +10299,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             applied_revision: number;
@@ -10440,7 +10429,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             applied_revision: number;
@@ -10513,7 +10502,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             base_url: string;
                             capabilities: components["schemas"]["RemoteStorageCapabilities"];
@@ -10593,7 +10582,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 created_at: string;
@@ -10703,7 +10692,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -10787,7 +10776,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             can_start: boolean;
                             /** Format: int64 */
@@ -10862,7 +10851,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -10956,7 +10945,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 /** Format: int32 */
@@ -11041,7 +11030,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             removed: number;
@@ -11097,7 +11086,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 archived_at?: string | null;
@@ -11165,7 +11154,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -11231,7 +11220,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -11343,7 +11332,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -11425,7 +11414,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 action: components["schemas"]["AuditAction"];
@@ -11501,7 +11490,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: components["schemas"]["TeamMemberInfo"][];
                             /** Format: int64 */
@@ -11566,7 +11555,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             email: string;
@@ -11678,7 +11667,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             email: string;
@@ -11740,7 +11729,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -11811,7 +11800,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 created_at: string;
@@ -11880,7 +11869,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
@@ -11948,7 +11937,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
@@ -12069,7 +12058,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
@@ -12322,7 +12311,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Response for the `/auth/check` endpoint. */
                         data?: {
                             allow_user_registration: boolean;
@@ -12376,7 +12365,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
@@ -12434,7 +12423,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Generic message-only response (used after email operations). */
                         data?: {
                             message: string;
@@ -12493,7 +12482,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             message: string;
                         };
@@ -12534,7 +12523,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             display_name_snapshot?: string | null;
@@ -12621,7 +12610,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             expires_in: number;
@@ -12672,7 +12661,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             display_name: string;
                             icon_url?: string | null;
@@ -12739,7 +12728,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             authorization_url: string;
                         };
@@ -12784,7 +12773,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             expires_in: number;
@@ -12849,7 +12838,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description /auth/me 响应：用户信息 + 偏好设置 */
                         data?: {
                             /** Format: int64 */
@@ -12903,7 +12892,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             enabled: boolean;
                             factors: components["schemas"]["MfaFactorInfo"][];
@@ -12944,7 +12933,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             expires_in: number;
@@ -12992,7 +12981,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             expires_in: number;
@@ -13079,7 +13068,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: string[];
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;
@@ -13115,7 +13104,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             factor: components["schemas"]["MfaFactorInfo"];
                             recovery_codes: string[];
@@ -13150,7 +13139,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             expires_in: number;
@@ -13188,7 +13177,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             backed_up: boolean;
                             backup_eligible: boolean;
@@ -13236,7 +13225,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Response body for token issuance (login / refresh / password change). */
                         data?: {
                             /** Format: int64 */
@@ -13276,7 +13265,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             flow_id: string;
                             public_key: unknown;
@@ -13315,7 +13304,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             backed_up: boolean;
                             backup_eligible: boolean;
@@ -13370,7 +13359,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             flow_id: string;
                             public_key: unknown;
@@ -13447,7 +13436,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             backed_up: boolean;
                             backup_eligible: boolean;
@@ -13509,7 +13498,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Response body for token issuance (login / refresh / password change). */
                         data?: {
                             /** Format: int64 */
@@ -13556,7 +13545,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Generic message-only response (used after email operations). */
                         data?: {
                             message: string;
@@ -13602,7 +13591,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Generic message-only response (used after email operations). */
                         data?: {
                             message: string;
@@ -13641,7 +13630,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description API-facing user preference payload: built-in preferences plus custom frontend KV entries. */
                         data?: {
                             browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
@@ -13691,7 +13680,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             avatar: components["schemas"]["AvatarInfo"];
                             display_name?: string | null;
@@ -13737,7 +13726,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             avatar: components["schemas"]["AvatarInfo"];
                             display_name?: string | null;
@@ -13784,7 +13773,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             avatar: components["schemas"]["AvatarInfo"];
                             display_name?: string | null;
@@ -13861,7 +13850,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Response body for token issuance (login / refresh / password change). */
                         data?: {
                             /** Format: int64 */
@@ -13901,7 +13890,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
@@ -13956,7 +13945,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description Generic message-only response (used after email operations). */
                         data?: {
                             message: string;
@@ -13984,7 +13973,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             expires_at: string;
@@ -14024,7 +14013,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             removed: number;
@@ -14098,7 +14087,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
@@ -14153,7 +14142,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -14230,7 +14219,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             download_path: string;
                             expires_at: string;
@@ -14312,7 +14301,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             errors: components["schemas"]["BatchItemError"][];
                             /** Format: int32 */
@@ -14361,7 +14350,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             errors: components["schemas"]["BatchItemError"][];
                             /** Format: int32 */
@@ -14410,7 +14399,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             errors: components["schemas"]["BatchItemError"][];
                             /** Format: int32 */
@@ -14459,7 +14448,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -14538,7 +14527,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -14605,7 +14594,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             chunk_size?: number | null;
@@ -14648,7 +14637,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             chunk_size: number;
@@ -14781,7 +14770,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -14858,7 +14847,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             [key: string]: string;
                         };
@@ -14908,7 +14897,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             received_count: number;
@@ -14955,7 +14944,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -15067,7 +15056,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -15142,7 +15131,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             directory_count: number;
@@ -15235,7 +15224,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -15326,7 +15315,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -15399,7 +15388,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             token: string;
                         };
@@ -15489,7 +15478,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -15646,7 +15635,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -15719,7 +15708,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             blob_hash: string;
                             /** Format: int64 */
@@ -15779,7 +15768,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             expires_at: string;
                             /** Format: int32 */
@@ -15896,7 +15885,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -15982,7 +15971,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -16059,7 +16048,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             access_token: string;
                             /**
@@ -16125,7 +16114,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
@@ -16169,7 +16158,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -16244,7 +16233,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
@@ -16333,7 +16322,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -16400,7 +16389,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             id: number;
@@ -16450,7 +16439,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -16517,7 +16506,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -16588,7 +16577,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -16657,7 +16646,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             entity_id: number;
@@ -16714,7 +16703,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             entity_id: number;
@@ -16817,7 +16806,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             allow_user_registration: boolean;
                             description: string;
@@ -16851,7 +16840,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             branding: components["schemas"]["PublicBranding"];
                             media: components["schemas"]["PublicFrontendMediaConfig"];
@@ -16881,7 +16870,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             enabled: boolean;
                             kinds: components["schemas"]["PublicMediaDataKindsSupport"];
@@ -16913,7 +16902,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             apps?: components["schemas"]["PublicPreviewAppDefinition"][];
                             /** Format: int32 */
@@ -16988,7 +16977,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             audio_thumbnail: components["schemas"]["PublicExtensionSupport"];
                             extensions?: string[];
@@ -17024,7 +17013,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             download_count: number;
@@ -17078,7 +17067,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             directory_count: number;
@@ -17212,7 +17201,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
@@ -17308,7 +17297,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             directory_count: number;
@@ -17508,7 +17497,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             blob_hash: string;
                             /** Format: int64 */
@@ -17570,7 +17559,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             expires_at: string;
                             /** Format: int32 */
@@ -17619,7 +17608,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             expires_at: string;
                             path: string;
@@ -17753,7 +17742,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
@@ -17873,7 +17862,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             blob_hash: string;
                             /** Format: int64 */
@@ -17933,7 +17922,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             expires_at: string;
                             /** Format: int32 */
@@ -17980,7 +17969,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             expires_at: string;
                             path: string;
@@ -18202,7 +18191,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["FileListItem"][];
                             folders: components["schemas"]["FolderListItem"][];
@@ -18244,7 +18233,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 created_at: string;
@@ -18310,7 +18299,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -18363,7 +18352,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             errors: components["schemas"]["BatchItemError"][];
                             /** Format: int32 */
@@ -18450,7 +18439,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -18516,7 +18505,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 /** Format: int32 */
@@ -18594,7 +18583,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -18670,7 +18659,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -18746,7 +18735,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -18831,7 +18820,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -18885,7 +18874,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -18952,7 +18941,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -19065,7 +19054,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -19141,7 +19130,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 action: components["schemas"]["AuditAction"];
@@ -19217,7 +19206,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: components["schemas"]["TeamMemberInfo"][];
                             /** Format: int64 */
@@ -19282,7 +19271,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             email: string;
@@ -19394,7 +19383,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             email: string;
@@ -19456,7 +19445,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             archived_at?: string | null;
                             created_at: string;
@@ -19527,7 +19516,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -19614,7 +19603,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             download_path: string;
                             expires_at: string;
@@ -19715,7 +19704,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             errors: components["schemas"]["BatchItemError"][];
                             /** Format: int32 */
@@ -19774,7 +19763,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             errors: components["schemas"]["BatchItemError"][];
                             /** Format: int32 */
@@ -19833,7 +19822,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             errors: components["schemas"]["BatchItemError"][];
                             /** Format: int32 */
@@ -19892,7 +19881,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -19974,7 +19963,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -20051,7 +20040,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             chunk_size?: number | null;
@@ -20104,7 +20093,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             chunk_size: number;
@@ -20169,7 +20158,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             chunk_size: number;
@@ -20280,7 +20269,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -20366,7 +20355,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             [key: string]: string;
                         };
@@ -20425,7 +20414,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             received_count: number;
@@ -20481,7 +20470,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -20611,7 +20600,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -20695,7 +20684,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             directory_count: number;
@@ -20790,7 +20779,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -20890,7 +20879,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -20972,7 +20961,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             token: string;
                         };
@@ -21080,7 +21069,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -21255,7 +21244,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -21337,7 +21326,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             blob_hash: string;
                             /** Format: int64 */
@@ -21406,7 +21395,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             expires_at: string;
                             /** Format: int32 */
@@ -21541,7 +21530,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -21645,7 +21634,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             blob_id: number;
@@ -21731,7 +21720,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             access_token: string;
                             /**
@@ -21807,7 +21796,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
@@ -21861,7 +21850,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -21945,7 +21934,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["FileListItem"][];
                             /** Format: int64 */
@@ -22052,7 +22041,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -22128,7 +22117,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int64 */
                             id: number;
@@ -22187,7 +22176,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -22263,7 +22252,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -22343,7 +22332,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -22442,7 +22431,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["FileListItem"][];
                             folders: components["schemas"]["FolderListItem"][];
@@ -22494,7 +22483,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 created_at: string;
@@ -22570,7 +22559,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -22633,7 +22622,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             errors: components["schemas"]["BatchItemError"][];
                             /** Format: int32 */
@@ -22738,7 +22727,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -22814,7 +22803,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 /** Format: int32 */
@@ -22902,7 +22891,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -22987,7 +22976,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -23072,7 +23061,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -23173,7 +23162,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["TrashFileItem"][];
                             /** Format: int64 */
@@ -23223,7 +23212,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -23394,7 +23383,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 created_at: string;
@@ -23457,7 +23446,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description 创建账号后返回的响应（包含一次性明文密码） */
                         data?: {
                             /** Format: int64 */
@@ -23541,7 +23530,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -23604,7 +23593,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             files: components["schemas"]["TrashFileItem"][];
                             /** Format: int64 */
@@ -23644,7 +23633,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             /** Format: int32 */
                             attempt_count: number;
@@ -23787,7 +23776,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             items: {
                                 created_at: string;
@@ -23847,7 +23836,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description 创建账号后返回的响应（包含一次性明文密码） */
                         data?: {
                             /** Format: int64 */
@@ -23889,7 +23878,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         /** @description WebDAV account settings for the current user. */
                         data?: {
                             endpoint: string;
@@ -23992,7 +23981,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             created_at: string;
                             /** Format: int64 */
@@ -24068,7 +24057,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             build_time: string;
                             status: string;
@@ -24097,7 +24086,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        code: components["schemas"]["ErrorCode"];
+                        code: components["schemas"]["ApiErrorCode"];
                         data?: {
                             build_time: string;
                             status: string;

@@ -10,10 +10,10 @@ use std::collections::HashMap;
 use chrono::Utc;
 use sea_orm::DatabaseConnection;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{file_repo, folder_repo, share_repo, team_repo};
 use crate::entities::share;
-use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::{
     file_service, folder_service,
@@ -39,8 +39,8 @@ fn ensure_share_scope(share: &share::Model, scope: WorkspaceStorageScope) -> Res
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             if share.team_id.is_some() {
-                return Err(auth_forbidden_with_subcode(
-                    ApiSubcode::ShareScopeDenied,
+                return Err(auth_forbidden_with_code(
+                    ApiErrorCode::ShareScopeDenied,
                     "share belongs to a team workspace",
                 ));
             }
@@ -48,8 +48,8 @@ fn ensure_share_scope(share: &share::Model, scope: WorkspaceStorageScope) -> Res
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
             if share.team_id != Some(team_id) {
-                return Err(auth_forbidden_with_subcode(
-                    ApiSubcode::ShareScopeDenied,
+                return Err(auth_forbidden_with_code(
+                    ApiErrorCode::ShareScopeDenied,
                     "share is outside team workspace",
                 ));
             }
@@ -134,8 +134,8 @@ pub(super) fn ensure_share_matches_file(
 ) -> Result<()> {
     if let Some(team_id) = share.team_id {
         if file.team_id != Some(team_id) {
-            return Err(auth_forbidden_with_subcode(
-                ApiSubcode::ShareScopeDenied,
+            return Err(auth_forbidden_with_code(
+                ApiErrorCode::ShareScopeDenied,
                 "file is outside shared scope",
             ));
         }
@@ -152,8 +152,8 @@ pub(super) fn ensure_share_matches_folder(
 ) -> Result<()> {
     if let Some(team_id) = share.team_id {
         if folder.team_id != Some(team_id) {
-            return Err(auth_forbidden_with_subcode(
-                ApiSubcode::ShareScopeDenied,
+            return Err(auth_forbidden_with_code(
+                ApiErrorCode::ShareScopeDenied,
                 "folder is outside shared scope",
             ));
         }
@@ -254,8 +254,8 @@ pub(super) async fn load_shared_folder_file_target(
     // 文件夹分享的授权边界不是“同一个 user/team 就行”，而是必须位于
     // share 根目录的子树内；否则同空间的任意文件都会被越权读到。
     let file_folder_id = file.folder_id.ok_or_else(|| {
-        auth_forbidden_with_subcode(
-            ApiSubcode::ShareScopeDenied,
+        auth_forbidden_with_code(
+            ApiErrorCode::ShareScopeDenied,
             "file is outside shared folder scope",
         )
     })?;
@@ -279,8 +279,8 @@ pub(crate) async fn load_shared_folder_file_target_ignoring_download_limit(
         )));
     }
     let file_folder_id = file.folder_id.ok_or_else(|| {
-        auth_forbidden_with_subcode(
-            ApiSubcode::ShareScopeDenied,
+        auth_forbidden_with_code(
+            ApiErrorCode::ShareScopeDenied,
             "file is outside shared folder scope",
         )
     })?;

@@ -1,5 +1,5 @@
-use crate::api::subcode::ApiSubcode;
-use crate::errors::{Result, precondition_failed_with_subcode};
+use crate::api::api_error_code::ApiErrorCode;
+use crate::errors::{Result, precondition_failed_with_code};
 use crate::storage::{NativeThumbnailRequest, StorageDriver};
 
 use crate::entities::file_blob;
@@ -10,8 +10,8 @@ pub(super) async fn render_thumbnail_with_storage_native(
     source_mime_type: &str,
 ) -> Result<Vec<u8>> {
     let native = driver.as_native_thumbnail().ok_or_else(|| {
-        precondition_failed_with_subcode(
-            ApiSubcode::ThumbnailProcessorUnavailable,
+        precondition_failed_with_code(
+            ApiErrorCode::ThumbnailProcessorUnavailable,
             "storage driver does not support native thumbnail processing",
         )
     })?;
@@ -24,8 +24,8 @@ pub(super) async fn render_thumbnail_with_storage_native(
         })
         .await?
         .ok_or_else(|| {
-            precondition_failed_with_subcode(
-                ApiSubcode::ThumbnailProcessorUnavailable,
+            precondition_failed_with_code(
+                ApiErrorCode::ThumbnailProcessorUnavailable,
                 "storage driver could not produce a native thumbnail",
             )
         })?;
@@ -44,8 +44,8 @@ pub(super) async fn render_image_preview_with_storage_native(
     source_mime_type: &str,
 ) -> Result<Vec<u8>> {
     let native = driver.as_native_thumbnail().ok_or_else(|| {
-        precondition_failed_with_subcode(
-            ApiSubcode::ThumbnailProcessorUnavailable,
+        precondition_failed_with_code(
+            ApiErrorCode::ThumbnailProcessorUnavailable,
             "storage driver does not support native thumbnail processing",
         )
     })?;
@@ -58,8 +58,8 @@ pub(super) async fn render_image_preview_with_storage_native(
         })
         .await?
         .ok_or_else(|| {
-            precondition_failed_with_subcode(
-                ApiSubcode::ThumbnailProcessorUnavailable,
+            precondition_failed_with_code(
+                ApiErrorCode::ThumbnailProcessorUnavailable,
                 "storage driver could not produce a native image preview",
             )
         })?;

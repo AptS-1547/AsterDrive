@@ -2,14 +2,14 @@
 
 use chrono::Utc;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::{
     auth_runtime::{RuntimeAuthPolicy, RuntimeContactVerificationPolicy},
     branding,
     local_email_policy::LocalEmailPolicy,
 };
 use crate::db::repository::user_repo;
-use crate::errors::{Result, auth_forbidden_with_subcode, validation_error_with_subcode};
+use crate::errors::{Result, auth_forbidden_with_code, validation_error_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::{mail_outbox_service, mail_template::MailTemplatePayload};
 use crate::types::{UserRole, UserStatus, VerificationPurpose};
@@ -60,8 +60,8 @@ pub async fn register(
         "registering user"
     );
     if !auth_policy.allow_user_registration {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthRegistrationDisabled,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthRegistrationDisabled,
             "new user registration is disabled",
         ));
     }
@@ -193,8 +193,8 @@ pub async fn setup(
 ) -> Result<AuthUserInfo> {
     tracing::debug!("running initial setup");
     if user_repo::count_all(state.writer_db()).await? > 0 {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::ValidationSystemAlreadyInitialized,
+        return Err(validation_error_with_code(
+            ApiErrorCode::ValidationSystemAlreadyInitialized,
             "system already initialized",
         ));
     }

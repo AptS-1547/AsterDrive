@@ -94,7 +94,7 @@ async fn test_audit_log_recorded_on_upload() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
 
     let items = body["data"]["items"].as_array().unwrap();
     let has_upload = items.iter().any(|item| item["action"] == "file_upload");

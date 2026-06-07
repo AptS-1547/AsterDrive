@@ -1,7 +1,7 @@
 //! 存储错误分类与编码。
 
-use crate::api::subcode::ApiSubcode;
-use crate::errors::{AsterError, encode_api_error_subcode_message};
+use crate::api::api_error_code::ApiErrorCode;
+use crate::errors::AsterError;
 
 const STORAGE_ERROR_KIND_PREFIX: &str = "__ASTER_STORAGE_KIND__=";
 const STORAGE_ERROR_KIND_SEPARATOR: &str = "::";
@@ -55,17 +55,12 @@ pub fn storage_driver_error(kind: StorageErrorKind, message: impl Into<String>) 
     AsterError::storage_driver_error(encode_storage_driver_error_message(kind, message.into()))
 }
 
-// TODO(0.3.0): replace callers with structured ApiErrorCode constructors.
-pub fn storage_driver_error_with_subcode(
+pub fn storage_driver_error_with_code(
     kind: StorageErrorKind,
-    subcode: ApiSubcode,
+    api_code: ApiErrorCode,
     message: impl Into<String>,
 ) -> AsterError {
-    // TODO(0.3.0): remove after storage errors carry structured ApiErrorCode.
-    storage_driver_error(
-        kind,
-        encode_api_error_subcode_message(subcode, message.into()),
-    )
+    storage_driver_error(kind, message).with_api_error_code(api_code)
 }
 
 pub fn storage_driver_error_display_message(raw_message: &str) -> &str {
@@ -277,10 +272,10 @@ mod tests {
     }
 
     #[test]
-    fn tagged_storage_error_preserves_nested_api_subcode() {
-        let error = storage_driver_error_with_subcode(
+    fn tagged_storage_error_preserves_nested_api_code() {
+        let error = storage_driver_error_with_code(
             StorageErrorKind::Transient,
-            ApiSubcode::StorageTransient,
+            ApiErrorCode::StorageTransient,
             "remote timeout",
         );
         assert_eq!(
@@ -288,8 +283,8 @@ mod tests {
             Some(StorageErrorKind::Transient)
         );
         assert_eq!(
-            error.api_error_subcode(),
-            Some(ApiSubcode::StorageTransient)
+            error.api_error_code_override(),
+            Some(ApiErrorCode::StorageTransient)
         );
         assert_eq!(error.message(), "remote timeout");
     }

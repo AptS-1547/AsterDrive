@@ -4,16 +4,14 @@ use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
 use serde::{Deserialize, Serialize};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::branding;
 use crate::db::repository::{
     mfa_email_code_repo, mfa_factor_repo, mfa_login_flow_repo, mfa_recovery_code_repo,
     mfa_totp_setup_flow_repo, user_repo,
 };
 use crate::entities::{mfa_factor, mfa_totp_setup_flow};
-use crate::errors::{
-    AsterError, Result, auth_forbidden_with_subcode, auth_mfa_failed_with_subcode,
-};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code, auth_mfa_failed_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::{audit_service, auth_service};
 use crate::types::MfaPersistentFactorMethod;
@@ -101,8 +99,8 @@ pub async fn start_totp_setup(
         .await?
         .is_some()
     {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthMfaFactorAlreadyExists,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthMfaFactorAlreadyExists,
             "TOTP MFA is already enabled",
         ));
     }
@@ -160,8 +158,8 @@ pub async fn verify_totp_setup(
             .await?
             .is_some()
         {
-            return Err(auth_forbidden_with_subcode(
-                ApiSubcode::AuthMfaFactorAlreadyExists,
+            return Err(auth_forbidden_with_code(
+                ApiErrorCode::AuthMfaFactorAlreadyExists,
                 "TOTP MFA is already enabled",
             ));
         }
@@ -181,8 +179,8 @@ pub async fn verify_totp_setup(
             &flow.secret_ciphertext,
         )?;
         if !totp::verify_code(&secret, &input.code, now)? {
-            return Err(auth_mfa_failed_with_subcode(
-                ApiSubcode::AuthMfaCodeInvalid,
+            return Err(auth_mfa_failed_with_code(
+                ApiErrorCode::AuthMfaCodeInvalid,
                 "invalid TOTP code",
             ));
         }
@@ -383,8 +381,8 @@ async fn verify_sensitive_mfa_code<C: sea_orm::ConnectionTrait>(
     code: Option<&str>,
 ) -> Result<()> {
     let Some(code) = code.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Err(auth_mfa_failed_with_subcode(
-            ApiSubcode::AuthMfaCodeInvalid,
+        return Err(auth_mfa_failed_with_code(
+            ApiErrorCode::AuthMfaCodeInvalid,
             "MFA code is required",
         ));
     };
@@ -406,8 +404,8 @@ async fn verify_sensitive_mfa_code<C: sea_orm::ConnectionTrait>(
     {
         return Ok(());
     }
-    Err(auth_mfa_failed_with_subcode(
-        ApiSubcode::AuthMfaCodeInvalid,
+    Err(auth_mfa_failed_with_code(
+        ApiErrorCode::AuthMfaCodeInvalid,
         "invalid MFA code",
     ))
 }

@@ -1155,7 +1155,7 @@ async fn test_admin_team_crud() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0, "{body}");
+    assert_eq!(body["code"], "success", "{body}");
     let team = &body["data"];
     let team_id = team["id"].as_i64().unwrap();
     assert_eq!(team["name"], "Operations");
@@ -2106,7 +2106,7 @@ async fn test_admin_policy_group_migration_updates_users_and_teams() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0, "{body}");
+    assert_eq!(body["code"], "success", "{body}");
     assert_eq!(body["data"]["affected_users"], 1);
     assert_eq!(body["data"]["affected_teams"], 2);
     assert_eq!(body["data"]["migrated_assignments"], 3);
@@ -2125,7 +2125,7 @@ async fn test_admin_policy_group_migration_updates_users_and_teams() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0, "{body}");
+    assert_eq!(body["code"], "success", "{body}");
     assert_eq!(body["data"]["affected_users"], 0);
     assert_eq!(body["data"]["affected_teams"], 0);
     assert_eq!(body["data"]["migrated_assignments"], 0);
@@ -3991,15 +3991,10 @@ async fn test_admin_config_action_tests_aria2_rpc_from_draft_and_returns_probe_c
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 1000);
-    assert_eq!(
-        body["error"]["code"],
-        "offline_download.aria2_rpc_probe_failed"
-    );
-    assert_eq!(
-        body["error"]["subcode"],
-        "offline_download.aria2_rpc_probe_failed"
-    );
+    assert_eq!(body["code"], "offline_download.aria2_rpc_probe_failed");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("code").is_none());
+    assert!(body["error"].get("subcode").is_none());
     let message = body["msg"]
         .as_str()
         .expect("aria2 probe failure should return a message");
@@ -4033,14 +4028,10 @@ async fn test_admin_config_action_tests_aria2_rpc_wrong_secret_returns_auth_code
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["error"]["code"],
-        "offline_download.aria2_rpc_auth_failed"
-    );
-    assert_eq!(
-        body["error"]["subcode"],
-        "offline_download.aria2_rpc_auth_failed"
-    );
+    assert_eq!(body["code"], "offline_download.aria2_rpc_auth_failed");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("code").is_none());
+    assert!(body["error"].get("subcode").is_none());
     let message = body["msg"]
         .as_str()
         .expect("aria2 auth failure should return a message");
@@ -4096,7 +4087,7 @@ async fn test_admin_config_action_tests_aria2_rpc_uses_redacted_secret_when_sent
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert!(
         body["data"]["message"]
             .as_str()

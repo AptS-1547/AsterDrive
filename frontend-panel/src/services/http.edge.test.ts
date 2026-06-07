@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 type MockAxiosError = {
 	config?: { _retry?: boolean; url?: string };
@@ -13,13 +13,15 @@ type MockRequestConfig = {
 	url?: string;
 };
 
-function tokenErrorResponse(code = ErrorCode.TokenExpired) {
+function tokenErrorResponse(code = ApiErrorCode.TokenExpired) {
 	return {
 		status: 401,
 		data: {
 			code,
 			msg:
-				code === ErrorCode.TokenInvalid ? "session revoked" : "token expired",
+				code === ApiErrorCode.TokenInvalid
+					? "session revoked"
+					: "token expired",
 		},
 	};
 }
@@ -208,14 +210,14 @@ describe("http refresh edge cases", () => {
 	it("forces logout when refresh fails with a token ApiError", async () => {
 		mockState.axiosModule.isAxiosError.mockReturnValue(false);
 		mockState.refreshToken.mockRejectedValue({
-			code: ErrorCode.TokenInvalid,
+			code: ApiErrorCode.TokenInvalid,
 			message: "session revoked",
 		});
 		await loadHttpModule();
 		const errorHandler = mockState.getErrorHandler();
 		const originalError = {
 			config: { url: "/files", _retry: false },
-			response: tokenErrorResponse(ErrorCode.TokenInvalid),
+			response: tokenErrorResponse(ApiErrorCode.TokenInvalid),
 		} satisfies MockAxiosError;
 
 		await expect(errorHandler(originalError)).rejects.toBe(originalError);
@@ -232,7 +234,7 @@ describe("http refresh edge cases", () => {
 		);
 		mockState.client.mockResolvedValue({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "ok",
 				data: { retried: true },
 			},
@@ -349,14 +351,14 @@ describe("http refresh edge cases", () => {
 				response: {
 					status: 403,
 					data: {
-						code: ErrorCode.PendingActivation,
+						code: ApiErrorCode.PendingActivation,
 						msg: "pending activation",
 					},
 				},
 			}),
 		).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.PendingActivation,
+				code: ApiErrorCode.PendingActivation,
 				message: "pending activation",
 			}),
 		);
@@ -366,7 +368,7 @@ describe("http refresh edge cases", () => {
 				response: {
 					status: 403,
 					data: {
-						code: ErrorCode.PendingActivation,
+						code: ApiErrorCode.PendingActivation,
 						msg: "pending activation",
 					},
 				},

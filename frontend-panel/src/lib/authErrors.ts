@@ -1,15 +1,15 @@
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode, isApiErrorCode } from "@/types/api-helpers";
 
-function readApiCode(value: unknown): number | string | null {
+function readApiCode(value: unknown): string | null {
 	if (typeof value !== "object" || value === null) {
 		return null;
 	}
 
 	const code = "code" in value ? value.code : null;
-	return typeof code === "number" || typeof code === "string" ? code : null;
+	return typeof code === "string" && isApiErrorCode(code) ? code : null;
 }
 
-function readApiResponseCode(error: unknown): number | string | null {
+function readApiResponseCode(error: unknown): string | null {
 	if (typeof error !== "object" || error === null || !("response" in error)) {
 		return null;
 	}
@@ -28,16 +28,15 @@ function readApiResponseCode(error: unknown): number | string | null {
 
 export function isTokenAuthError(error: unknown): boolean {
 	const code = readApiCode(error) ?? readApiResponseCode(error);
-	const numericCode = Number(code);
 	return (
-		numericCode === ErrorCode.TokenExpired ||
-		numericCode === ErrorCode.TokenInvalid ||
-		numericCode === ErrorCode.TokenMissing ||
-		numericCode === ErrorCode.RefreshTokenReuseDetected
+		code === ApiErrorCode.TokenExpired ||
+		code === ApiErrorCode.TokenInvalid ||
+		code === ApiErrorCode.TokenMissing ||
+		code === ApiErrorCode.RefreshTokenReuseDetected
 	);
 }
 
 export function isStaleRefreshTokenError(error: unknown): boolean {
 	const code = readApiCode(error) ?? readApiResponseCode(error);
-	return Number(code) === ErrorCode.RefreshTokenStale;
+	return code === ApiErrorCode.RefreshTokenStale;
 }

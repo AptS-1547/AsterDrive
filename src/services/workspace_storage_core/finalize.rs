@@ -2,10 +2,10 @@ use chrono::Utc;
 use sea_orm::ConnectionTrait;
 use std::time::Instant;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, file_blob, upload_session};
-use crate::errors::{Result, upload_assembly_error_with_subcode};
+use crate::errors::{Result, upload_assembly_error_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::storage_change_service;
 use crate::services::workspace_scope_service::WorkspaceStorageScope;
@@ -131,14 +131,14 @@ async fn mark_upload_session_completed<C: ConnectionTrait>(
 
     let session_fresh = upload_session_repo::find_by_id(db, session_id).await?;
     if session_fresh.status == crate::types::UploadSessionStatus::Failed {
-        return Err(upload_assembly_error_with_subcode(
-            ApiSubcode::UploadPreviousFailure,
+        return Err(upload_assembly_error_with_code(
+            ApiErrorCode::UploadPreviousFailure,
             "upload was canceled during assembly",
         ));
     }
 
-    Err(upload_assembly_error_with_subcode(
-        ApiSubcode::UploadStatusConflict,
+    Err(upload_assembly_error_with_code(
+        ApiErrorCode::UploadStatusConflict,
         format!(
             "session status is '{:?}', expected 'assembling'",
             session_fresh.status

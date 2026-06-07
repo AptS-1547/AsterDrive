@@ -5,7 +5,7 @@ use std::time::Instant;
 use base64::Engine as _;
 use chrono::Utc;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::services::archive_service::format::ArchiveFormat;
@@ -341,7 +341,7 @@ fn fit_manifest_to_limit(
     }
 
     Err(archive_preview_validation_error(
-        ApiSubcode::ArchivePreviewManifestTooLarge,
+        ApiErrorCode::ArchivePreviewManifestTooLarge,
         format!(
             "archive preview manifest for file #{file_id} exceeds server limit {max_manifest_bytes} bytes or entity property limit {ENTITY_PROPERTY_VALUE_MAX_BYTES} bytes"
         ),

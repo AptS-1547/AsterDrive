@@ -9,12 +9,12 @@ use chrono::Utc;
 use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
 use crate::errors::{
-    AsterError, MapAsterErr, Result, chunk_upload_error_with_subcode,
-    payload_too_large_with_subcode, validation_error_with_subcode,
+    AsterError, MapAsterErr, Result, chunk_upload_error_with_code, payload_too_large_with_code,
+    validation_error_with_code,
 };
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::ChunkUploadResponse;
@@ -78,8 +78,8 @@ async fn inspect_existing_local_chunk(
             return Ok(ExistingLocalChunk::Missing);
         }
         Err(error) => {
-            return Err(chunk_upload_error_with_subcode(
-                ApiSubcode::UploadChunkPersistFailed,
+            return Err(chunk_upload_error_with_code(
+                ApiErrorCode::UploadChunkPersistFailed,
                 format!("stat existing chunk file: {error}"),
             ));
         }
@@ -119,8 +119,8 @@ async fn write_local_chunk_temp(
             .open(temp_path)
             .await
             .map_err(|error| {
-                chunk_upload_error_with_subcode(
-                    ApiSubcode::UploadChunkPersistFailed,
+                chunk_upload_error_with_code(
+                    ApiErrorCode::UploadChunkPersistFailed,
                     format!("create temp chunk file: {error}"),
                 )
             })?;
@@ -128,12 +128,12 @@ async fn write_local_chunk_temp(
         file.write_all(data)
             .await
             .map_aster_err_ctx("write chunk", |message| {
-                chunk_upload_error_with_subcode(ApiSubcode::UploadChunkPersistFailed, message)
+                chunk_upload_error_with_code(ApiErrorCode::UploadChunkPersistFailed, message)
             })?;
         file.flush()
             .await
             .map_aster_err_ctx("flush chunk", |message| {
-                chunk_upload_error_with_subcode(ApiSubcode::UploadChunkPersistFailed, message)
+                chunk_upload_error_with_code(ApiErrorCode::UploadChunkPersistFailed, message)
             })?;
         Ok::<(), AsterError>(())
     }
@@ -147,29 +147,29 @@ async fn write_local_chunk_temp(
 }
 
 fn chunk_body_read_failed() -> AsterError {
-    validation_error_with_subcode(
-        ApiSubcode::UploadRequestBodyReadFailed,
+    validation_error_with_code(
+        ApiErrorCode::UploadRequestBodyReadFailed,
         "failed to read request body",
     )
 }
 
 fn chunk_body_size_mismatch(chunk_number: i32, expected_size: i64, actual_size: i64) -> AsterError {
-    chunk_upload_error_with_subcode(
-        ApiSubcode::UploadChunkSizeMismatch,
+    chunk_upload_error_with_code(
+        ApiErrorCode::UploadChunkSizeMismatch,
         format!("chunk {chunk_number} size mismatch: expected {expected_size}, got {actual_size}"),
     )
 }
 
 fn chunk_body_too_large(chunk_number: i32, expected_size: i64) -> AsterError {
-    payload_too_large_with_subcode(
-        ApiSubcode::UploadChunkTooLarge,
+    payload_too_large_with_code(
+        ApiErrorCode::UploadChunkTooLarge,
         format!("chunk {chunk_number} exceeds expected size {expected_size}"),
     )
 }
 
 fn chunk_body_size_overflow() -> AsterError {
-    payload_too_large_with_subcode(
-        ApiSubcode::UploadChunkSizeOverflow,
+    payload_too_large_with_code(
+        ApiErrorCode::UploadChunkSizeOverflow,
         "chunk body size exceeds supported range",
     )
 }
@@ -237,8 +237,8 @@ async fn write_local_chunk_temp_stream(
             .open(temp_path)
             .await
             .map_err(|error| {
-                chunk_upload_error_with_subcode(
-                    ApiSubcode::UploadChunkPersistFailed,
+                chunk_upload_error_with_code(
+                    ApiErrorCode::UploadChunkPersistFailed,
                     format!("create temp chunk file: {error}"),
                 )
             })?;
@@ -252,7 +252,7 @@ async fn write_local_chunk_temp_stream(
             file.write_all(&chunk)
                 .await
                 .map_aster_err_ctx("write chunk", |message| {
-                    chunk_upload_error_with_subcode(ApiSubcode::UploadChunkPersistFailed, message)
+                    chunk_upload_error_with_code(ApiErrorCode::UploadChunkPersistFailed, message)
                 })?;
         }
 
@@ -260,7 +260,7 @@ async fn write_local_chunk_temp_stream(
         file.flush()
             .await
             .map_aster_err_ctx("flush chunk", |message| {
-                chunk_upload_error_with_subcode(ApiSubcode::UploadChunkPersistFailed, message)
+                chunk_upload_error_with_code(ApiErrorCode::UploadChunkPersistFailed, message)
             })?;
         Ok::<(), AsterError>(())
     }
@@ -289,7 +289,7 @@ async fn pipe_payload_to_writer(
                 .write_all(&chunk)
                 .await
                 .map_aster_err_ctx("stream relay chunk", |message| {
-                    chunk_upload_error_with_subcode(ApiSubcode::UploadChunkRelayFailed, message)
+                    chunk_upload_error_with_code(ApiErrorCode::UploadChunkRelayFailed, message)
                 })?;
         }
         ensure_chunk_body_exact_size(size, expected_size, chunk_number)?;
@@ -297,7 +297,7 @@ async fn pipe_payload_to_writer(
             .shutdown()
             .await
             .map_aster_err_ctx("finish relay chunk stream", |message| {
-                chunk_upload_error_with_subcode(ApiSubcode::UploadChunkRelayFailed, message)
+                chunk_upload_error_with_code(ApiErrorCode::UploadChunkRelayFailed, message)
             })?;
         Ok::<(), AsterError>(())
     }
@@ -352,14 +352,14 @@ async fn upload_multipart_part_payload(
 }
 
 fn is_chunk_payload_error(error: &AsterError) -> bool {
-    let subcode = error.api_error_subcode();
+    let api_code = error.api_error_code_override();
     matches!(
-        subcode,
+        api_code,
         Some(
-            ApiSubcode::UploadChunkTooLarge
-                | ApiSubcode::UploadChunkSizeMismatch
-                | ApiSubcode::UploadChunkSizeOverflow
-                | ApiSubcode::UploadRequestBodyReadFailed
+            ApiErrorCode::UploadChunkTooLarge
+                | ApiErrorCode::UploadChunkSizeMismatch
+                | ApiErrorCode::UploadChunkSizeOverflow
+                | ApiErrorCode::UploadRequestBodyReadFailed
         )
     )
 }
@@ -420,8 +420,8 @@ async fn publish_local_chunk_temp(
             Err(error) => {
                 remove_local_chunk_file(temp_path, upload_id, chunk_number, "chunk publish error")
                     .await;
-                return Err(chunk_upload_error_with_subcode(
-                    ApiSubcode::UploadChunkPersistFailed,
+                return Err(chunk_upload_error_with_code(
+                    ApiErrorCode::UploadChunkPersistFailed,
                     format!("publish chunk file: {error}"),
                 ));
             }
@@ -435,8 +435,8 @@ async fn publish_local_chunk_temp(
         "chunk publish retry exhausted",
     )
     .await;
-    Err(chunk_upload_error_with_subcode(
-        ApiSubcode::UploadChunkPersistFailed,
+    Err(chunk_upload_error_with_code(
+        ApiErrorCode::UploadChunkPersistFailed,
         "publish chunk file: existing chunk stayed unavailable",
     ))
 }
@@ -464,8 +464,8 @@ async fn upload_chunk_impl(
         return Err(AsterError::upload_session_expired("session expired"));
     }
     if chunk_number < 0 || chunk_number >= session.total_chunks {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::UploadChunkNumberOutOfRange,
+        return Err(validation_error_with_code(
+            ApiErrorCode::UploadChunkNumberOutOfRange,
             format!(
                 "chunk_number {} out of range [0, {})",
                 chunk_number, session.total_chunks
@@ -476,8 +476,8 @@ async fn upload_chunk_impl(
     let expected_size = expected_chunk_size_for_upload(&session, chunk_number)?;
     let data_len = usize_to_i64(data.len(), "chunk data length")?;
     if data_len != expected_size {
-        return Err(chunk_upload_error_with_subcode(
-            ApiSubcode::UploadChunkSizeMismatch,
+        return Err(chunk_upload_error_with_code(
+            ApiErrorCode::UploadChunkSizeMismatch,
             format!("chunk {chunk_number} size mismatch: expected {expected_size}, got {data_len}"),
         ));
     }
@@ -671,8 +671,8 @@ async fn upload_chunk_payload_impl(
         return Err(AsterError::upload_session_expired("session expired"));
     }
     if chunk_number < 0 || chunk_number >= session.total_chunks {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::UploadChunkNumberOutOfRange,
+        return Err(validation_error_with_code(
+            ApiErrorCode::UploadChunkNumberOutOfRange,
             format!(
                 "chunk_number {} out of range [0, {})",
                 chunk_number, session.total_chunks
@@ -1022,15 +1022,15 @@ mod tests {
 
         let err = result.expect_err("oversized payload should fail");
         assert_eq!(
-            err.api_error_subcode(),
-            Some(ApiSubcode::UploadChunkTooLarge)
+            err.api_error_code_override(),
+            Some(ApiErrorCode::UploadChunkTooLarge)
         );
     }
 
     #[test]
     fn multipart_result_priority_prefers_payload_validation_errors() {
-        let upload_error = validation_error_with_subcode(
-            ApiSubcode::UploadStatusConflict,
+        let upload_error = validation_error_with_code(
+            ApiErrorCode::UploadStatusConflict,
             "provider upload failed",
         );
         let writer_error = chunk_body_size_mismatch(0, 4, 3);
@@ -1039,19 +1039,19 @@ mod tests {
             .expect_err("combined errors should fail");
 
         assert_eq!(
-            err.api_error_subcode(),
-            Some(ApiSubcode::UploadChunkSizeMismatch)
+            err.api_error_code_override(),
+            Some(ApiErrorCode::UploadChunkSizeMismatch)
         );
     }
 
     #[test]
     fn multipart_result_priority_prefers_upload_error_for_relay_failures() {
-        let upload_error = validation_error_with_subcode(
-            ApiSubcode::UploadStatusConflict,
+        let upload_error = validation_error_with_code(
+            ApiErrorCode::UploadStatusConflict,
             "provider upload failed",
         );
-        let writer_error = chunk_upload_error_with_subcode(
-            ApiSubcode::UploadChunkRelayFailed,
+        let writer_error = chunk_upload_error_with_code(
+            ApiErrorCode::UploadChunkRelayFailed,
             "duplex relay failed",
         );
 
@@ -1059,8 +1059,8 @@ mod tests {
             .expect_err("combined errors should fail");
 
         assert_eq!(
-            err.api_error_subcode(),
-            Some(ApiSubcode::UploadStatusConflict)
+            err.api_error_code_override(),
+            Some(ApiErrorCode::UploadStatusConflict)
         );
     }
 }

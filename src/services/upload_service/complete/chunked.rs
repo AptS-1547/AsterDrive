@@ -1,10 +1,10 @@
 use chrono::Utc;
 use std::time::Instant;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::file_repo;
 use crate::entities::{file, storage_policy, upload_session};
-use crate::errors::{AsterError, MapAsterErr, Result, upload_assembly_error_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, upload_assembly_error_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::shared::{
     cleanup_upload_temp_dir, run_upload_completion_stage,
@@ -148,8 +148,8 @@ async fn finalize_remote_chunked_upload_session(
     let upload_elapsed_ms = upload_started_at.elapsed().as_millis();
 
     let relay_result = relay_task.await.map_err(|error| {
-        upload_assembly_error_with_subcode(
-            ApiSubcode::UploadChunkRelayFailed,
+        upload_assembly_error_with_code(
+            ApiErrorCode::UploadChunkRelayFailed,
             format!("remote chunk relay task failed: {error}"),
         )
     })?;
@@ -194,7 +194,7 @@ async fn stream_local_chunks_into_writer(
         let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
             &format!("open chunk {chunk_number}"),
             |message| {
-                upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+                upload_assembly_error_with_code(ApiErrorCode::UploadAssemblyIoFailed, message)
             },
         )?;
 
@@ -202,7 +202,7 @@ async fn stream_local_chunks_into_writer(
             let read = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
                 &format!("read chunk {chunk_number}"),
                 |message| {
-                    upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+                    upload_assembly_error_with_code(ApiErrorCode::UploadAssemblyIoFailed, message)
                 },
             )?;
             if read == 0 {
@@ -211,7 +211,7 @@ async fn stream_local_chunks_into_writer(
             writer.write_all(&buffer[..read]).await.map_aster_err_ctx(
                 "relay remote chunk",
                 |message| {
-                    upload_assembly_error_with_subcode(ApiSubcode::UploadChunkRelayFailed, message)
+                    upload_assembly_error_with_code(ApiErrorCode::UploadChunkRelayFailed, message)
                 },
             )?;
         }
@@ -221,7 +221,7 @@ async fn stream_local_chunks_into_writer(
         .shutdown()
         .await
         .map_aster_err_ctx("shutdown remote chunk relay", |message| {
-            upload_assembly_error_with_subcode(ApiSubcode::UploadChunkRelayFailed, message)
+            upload_assembly_error_with_code(ApiErrorCode::UploadChunkRelayFailed, message)
         })?;
     Ok(())
 }
@@ -242,7 +242,7 @@ async fn assemble_local_chunks_to_temp_file(
     let mut out_file = tokio::fs::File::create(&assembled_path)
         .await
         .map_aster_err_ctx("create assembled file", |message| {
-            upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+            upload_assembly_error_with_code(ApiErrorCode::UploadAssemblyIoFailed, message)
         })?;
     let mut hasher = should_dedup.then(Sha256::new);
     let mut size: i64 = 0;
@@ -257,7 +257,7 @@ async fn assemble_local_chunks_to_temp_file(
         let mut chunk_file = tokio::fs::File::open(&chunk_path).await.map_aster_err_ctx(
             &format!("open chunk {i}"),
             |message| {
-                upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+                upload_assembly_error_with_code(ApiErrorCode::UploadAssemblyIoFailed, message)
             },
         )?;
 
@@ -265,7 +265,7 @@ async fn assemble_local_chunks_to_temp_file(
             let n = chunk_file.read(&mut buffer).await.map_aster_err_ctx(
                 &format!("read chunk {i}"),
                 |message| {
-                    upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+                    upload_assembly_error_with_code(ApiErrorCode::UploadAssemblyIoFailed, message)
                 },
             )?;
             if n == 0 {
@@ -278,8 +278,8 @@ async fn assemble_local_chunks_to_temp_file(
             }
             let chunk_len = usize_to_i64(n, "assembled chunk length")?;
             size = size.checked_add(chunk_len).ok_or_else(|| {
-                upload_assembly_error_with_subcode(
-                    ApiSubcode::UploadAssemblySizeOverflow,
+                upload_assembly_error_with_code(
+                    ApiErrorCode::UploadAssemblySizeOverflow,
                     "assembled upload size exceeds i64 range",
                 )
             })?;
@@ -287,7 +287,7 @@ async fn assemble_local_chunks_to_temp_file(
                 .write_all(data)
                 .await
                 .map_aster_err_ctx("write assembled", |message| {
-                    upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+                    upload_assembly_error_with_code(ApiErrorCode::UploadAssemblyIoFailed, message)
                 })?;
         }
     }
@@ -295,7 +295,7 @@ async fn assemble_local_chunks_to_temp_file(
         .flush()
         .await
         .map_aster_err_ctx("flush assembled", |message| {
-            upload_assembly_error_with_subcode(ApiSubcode::UploadAssemblyIoFailed, message)
+            upload_assembly_error_with_code(ApiErrorCode::UploadAssemblyIoFailed, message)
         })?;
     drop(out_file);
 

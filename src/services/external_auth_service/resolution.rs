@@ -1,13 +1,13 @@
 use base64::Engine as _;
 use chrono::Utc;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::db::repository::{external_auth_identity_repo, user_repo};
 use crate::entities::{
     external_auth_email_verification_flow, external_auth_identity, external_auth_provider, user,
 };
-use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::external_auth::ExternalAuthProfile;
 use crate::runtime::SharedRuntimeState;
 use crate::services::auth_service;
@@ -132,8 +132,8 @@ fn external_auth_username_candidate(base: &str, attempt: usize) -> String {
 
 fn external_auth_username_conflict(err: &AsterError) -> bool {
     matches!(
-        err.api_error_subcode(),
-        Some(crate::api::subcode::ApiSubcode::AuthUsernameExists)
+        err.api_error_code_override(),
+        Some(crate::api::api_error_code::ApiErrorCode::AuthUsernameExists)
     )
 }
 
@@ -238,8 +238,8 @@ async fn create_external_auth_user_and_identity(
 ) -> Result<ResolvedExternalAuthUser> {
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.runtime_config());
     if !auth_policy.allow_user_registration {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthRegistrationDisabled,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthRegistrationDisabled,
             "new user registration is disabled",
         ));
     }
@@ -329,8 +329,8 @@ async fn create_external_auth_user_and_identity_in_connection<C: sea_orm::Connec
 ) -> Result<user::Model> {
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.runtime_config());
     if !auth_policy.allow_user_registration {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthRegistrationDisabled,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthRegistrationDisabled,
             "new user registration is disabled",
         ));
     }

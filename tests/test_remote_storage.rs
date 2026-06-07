@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use actix_web::dev::Service;
 use actix_web::{App, HttpServer, test, web};
-use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::{
     file_repo, follower_enrollment_session_repo, managed_follower_repo, master_binding_repo,
     policy_repo, upload_session_part_repo, upload_session_repo, user_repo,
@@ -205,7 +204,7 @@ async fn spawn_capabilities_server(capabilities: serde_json::Value) -> TestHttpS
         capabilities: web::Data<serde_json::Value>,
     ) -> actix_web::HttpResponse {
         actix_web::HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": capabilities.get_ref().clone(),
         }))
@@ -1909,10 +1908,7 @@ async fn test_internal_storage_presigned_put_rejects_payload_exceeding_ingress_l
 
     assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
     let body: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["code"],
-        serde_json::json!(ErrorCode::FileTooLarge as i32)
-    );
+    assert_eq!(body["code"], "file.too_large");
     assert_eq!(body["msg"], "object size 16 exceeds limit 8");
 }
 
@@ -1973,7 +1969,7 @@ async fn test_internal_storage_presigned_put_ignores_bytes_beyond_declared_conte
     assert_eq!(response.headers.get("etag"), Some(&expected_etag));
     let response_body: serde_json::Value = serde_json::from_slice(&response.body)
         .expect("raw HTTP success response body should be valid json");
-    assert_eq!(response_body["code"], 0);
+    assert_eq!(response_body["code"], "success");
     assert!(
         response.trailing.is_empty(),
         "connection-close request should not emit a second HTTP response"
@@ -2071,10 +2067,7 @@ async fn test_internal_storage_compose_rejects_expected_size_exceeding_ingress_l
 
     assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
     let body: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["code"],
-        serde_json::json!(ErrorCode::FileTooLarge as i32)
-    );
+    assert_eq!(body["code"], "file.too_large");
     assert_eq!(body["msg"], "composed object size 16 exceeds limit 8");
 }
 
@@ -2381,7 +2374,7 @@ async fn test_internal_storage_capabilities_probe_does_not_require_ingress_profi
 
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     let body: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(
         body["data"]["protocol_version"],
         INTERNAL_STORAGE_PROTOCOL_VERSION_LABEL
@@ -2429,7 +2422,7 @@ async fn test_internal_storage_rejects_replayed_hmac_nonce() {
     let replay = test::call_service(&follower_app, signed_request()).await;
     assert_eq!(replay.status(), actix_web::http::StatusCode::UNAUTHORIZED);
     let body: serde_json::Value = test::read_body_json(replay).await;
-    assert_eq!(body["code"], 2002);
+    assert_eq!(body["code"], "auth.token_invalid");
     assert_eq!(body["msg"], "internal auth nonce has already been used");
 }
 
@@ -2460,7 +2453,7 @@ async fn test_internal_storage_invalid_signature_does_not_consume_hmac_nonce() {
 
     assert_eq!(bad_resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
     let body: serde_json::Value = test::read_body_json(bad_resp).await;
-    assert_eq!(body["code"], 2008);
+    assert_eq!(body["code"], "auth.credentials_failed");
     assert_eq!(body["msg"], "internal auth signature mismatch");
 
     let signature = sign_internal_request(&secret_key, "GET", path, timestamp, nonce, None);
@@ -3675,9 +3668,9 @@ async fn test_reverse_tunnel_completion_from_wrong_node_does_not_consume_pending
             status: 200,
             headers: Vec::new(),
             body: serde_json::to_vec(&serde_json::json!({
-                "code": 0,
-                "msg": "",
-                "data": RemoteStorageCapabilities::current(),
+            "code": "success",
+            "msg": "",
+            "data": RemoteStorageCapabilities::current(),
             }))
             .expect("capabilities response should serialize"),
         },
@@ -3770,9 +3763,9 @@ async fn test_reverse_tunnel_records_offline_error_and_clears_on_poll() {
             status: 200,
             headers: Vec::new(),
             body: serde_json::to_vec(&serde_json::json!({
-                "code": 0,
-                "msg": "",
-                "data": RemoteStorageCapabilities::current(),
+            "code": "success",
+            "msg": "",
+            "data": RemoteStorageCapabilities::current(),
             }))
             .expect("capabilities response should serialize"),
         },
@@ -3844,7 +3837,7 @@ async fn test_reverse_tunnel_polls_do_not_touch_updated_at() {
             status: 200,
             headers: Vec::new(),
             body: serde_json::to_vec(&serde_json::json!({
-                "code": 0,
+                "code": "success",
                 "msg": "",
                 "data": RemoteStorageCapabilities::current(),
             }))
@@ -6318,8 +6311,10 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
         actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
     );
     let error_body: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(error_body["error"]["internal_code"], "E024");
-    assert_eq!(error_body["error"]["subcode"], "upload.chunk_too_large");
+    assert_eq!(error_body["code"], "upload.chunk_too_large");
+    assert_eq!(error_body["error"]["retryable"], false);
+    assert!(error_body["error"].get("internal_code").is_none());
+    assert!(error_body["error"].get("subcode").is_none());
     assert!(
         upload_session_part_repo::list_by_upload(consumer_state.writer_db(), &oversized_upload_id)
             .await
@@ -6802,7 +6797,7 @@ async fn test_remote_presigned_upload_browser_cors_missing_access_key_passthroug
         "middleware should leave missing access_key requests to auth layer"
     );
     let body: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2002);
+    assert_eq!(body["code"], "auth.token_invalid");
     assert_eq!(body["msg"], "missing query parameter 'aster_access_key'");
 }
 
@@ -6846,7 +6841,7 @@ async fn test_remote_presigned_upload_browser_cors_invalid_origin_header_returns
         .expect("bad request body should be readable");
     let body: serde_json::Value =
         serde_json::from_slice(&body).expect("bad request body should be valid json");
-    assert_eq!(body["code"], 1000);
+    assert_eq!(body["code"], "validation.request_origin_invalid");
     assert_eq!(
         body["msg"],
         "CORS origin must not include a path: 'http://localhost:3000/admin'"
@@ -6888,7 +6883,7 @@ async fn test_remote_presigned_upload_browser_cors_invalid_preflight_header_name
         .expect("bad request body should be readable");
     let body: serde_json::Value =
         serde_json::from_slice(&body).expect("bad request body should be valid json");
-    assert_eq!(body["code"], 1000);
+    assert_eq!(body["code"], "validation.request_header_value_invalid");
     assert_eq!(body["msg"], "invalid Access-Control-Request-Headers");
 }
 
@@ -6942,7 +6937,7 @@ async fn test_remote_presigned_upload_browser_cors_keeps_headers_on_expired_sign
         .expect("expired presigned response should include Vary");
     assert!(vary.contains("Origin"));
     let body: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2002);
+    assert_eq!(body["code"], "auth.token_invalid");
     assert_eq!(body["msg"], "remote presigned URL has expired");
 }
 
@@ -6990,7 +6985,7 @@ async fn test_remote_presigned_upload_browser_cors_keeps_headers_on_signature_mi
         Some("ETag")
     );
     let body: serde_json::Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 2008);
+    assert_eq!(body["code"], "auth.credentials_failed");
     assert_eq!(body["msg"], "remote presigned signature mismatch");
 }
 

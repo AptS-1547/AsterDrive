@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isStaleRefreshTokenError, isTokenAuthError } from "@/lib/authErrors";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 describe("isTokenAuthError", () => {
 	it("returns false for primitive errors and responses without API data", () => {
@@ -11,48 +11,50 @@ describe("isTokenAuthError", () => {
 	});
 
 	it("detects token auth errors from direct and nested API codes", () => {
-		expect(isTokenAuthError({ code: ErrorCode.TokenExpired })).toBe(true);
-		expect(isTokenAuthError({ code: String(ErrorCode.TokenExpired) })).toBe(
+		expect(isTokenAuthError({ code: ApiErrorCode.TokenExpired })).toBe(true);
+		expect(isTokenAuthError({ code: String(ApiErrorCode.TokenExpired) })).toBe(
 			true,
 		);
-		expect(isTokenAuthError({ code: ErrorCode.TokenMissing })).toBe(true);
+		expect(isTokenAuthError({ code: ApiErrorCode.TokenMissing })).toBe(true);
 		expect(
 			isTokenAuthError({
 				response: {
 					data: {
-						code: ErrorCode.TokenInvalid,
+						code: ApiErrorCode.TokenInvalid,
 					},
 				},
 			}),
 		).toBe(true);
 		expect(
-			isTokenAuthError({ code: ErrorCode.RefreshTokenReuseDetected }),
+			isTokenAuthError({ code: ApiErrorCode.RefreshTokenReuseDetected }),
 		).toBe(true);
-		expect(isTokenAuthError({ code: ErrorCode.InvalidCredentials })).toBe(
+		expect(isTokenAuthError({ code: ApiErrorCode.CredentialsFailed })).toBe(
 			false,
 		);
-		expect(isTokenAuthError({ code: ErrorCode.RefreshTokenStale })).toBe(false);
+		expect(isTokenAuthError({ code: ApiErrorCode.RefreshTokenStale })).toBe(
+			false,
+		);
 	});
 
 	it("detects stale refresh token errors separately", () => {
 		expect(
-			isStaleRefreshTokenError({ code: ErrorCode.RefreshTokenStale }),
+			isStaleRefreshTokenError({ code: ApiErrorCode.RefreshTokenStale }),
 		).toBe(true);
 		expect(
 			isStaleRefreshTokenError({
-				code: String(ErrorCode.RefreshTokenStale),
+				code: String(ApiErrorCode.RefreshTokenStale),
 			}),
 		).toBe(true);
 		expect(
 			isStaleRefreshTokenError({
 				response: {
 					data: {
-						code: ErrorCode.RefreshTokenStale,
+						code: ApiErrorCode.RefreshTokenStale,
 					},
 				},
 			}),
 		).toBe(true);
-		expect(isStaleRefreshTokenError({ code: ErrorCode.TokenInvalid })).toBe(
+		expect(isStaleRefreshTokenError({ code: ApiErrorCode.TokenInvalid })).toBe(
 			false,
 		);
 	});

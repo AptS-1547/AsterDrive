@@ -43,7 +43,7 @@ import { ApiError } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
 import { useFrontendConfigStore } from "@/stores/frontendConfigStore";
 import type { ExternalAuthPublicProvider } from "@/types/api";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 import { LoginPageView } from "./login/LoginPageView";
 import {
 	authPanelReducer,
@@ -958,7 +958,7 @@ function useLoginPageController() {
 		} catch (error) {
 			if (
 				error instanceof ApiError &&
-				error.code === ErrorCode.PendingActivation
+				error.code === ApiErrorCode.PendingActivation
 			) {
 				dispatchAuthPanel({
 					type: "set_pending_activation",

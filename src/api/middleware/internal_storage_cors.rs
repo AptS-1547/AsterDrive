@@ -15,8 +15,9 @@ use reqwest::Url;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::constants::HOUR_SECS;
-use crate::errors::{AsterError, MapAsterErr, Result as AsterResult};
+use crate::errors::{AsterError, MapAsterErr, Result as AsterResult, validation_error_with_code};
 use crate::runtime::FollowerAppState;
 use crate::storage::remote_protocol::{
     PRESIGNED_AUTH_ACCESS_KEY_QUERY, REMOTE_BROWSER_PRESIGNED_CORS_ALLOWED_HEADERS,
@@ -124,11 +125,15 @@ fn resolve_presigned_cors_context(
         return Ok(None);
     };
     let origin = crate::config::cors::normalize_origin(
-        origin_header
-            .to_str()
-            .map_aster_err_with(|| AsterError::validation_error("invalid Origin header"))?,
+        origin_header.to_str().map_aster_err_with(|| {
+            validation_error_with_code(
+                ApiErrorCode::ValidationRequestOriginInvalid,
+                "invalid Origin header",
+            )
+        })?,
         false,
-    )?;
+    )
+    .map_err(|error| error.with_api_error_code(ApiErrorCode::ValidationRequestOriginInvalid))?;
 
     let access_key = web::Query::<HashMap<String, String>>::from_query(req.query_string())
         .map_err(|_| AsterError::validation_error("invalid query string"))?
@@ -199,9 +204,9 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> AsterResult<bool> {
         return Ok(true);
     };
 
-    let request_headers = request_headers.to_str().map_aster_err_with(|| {
-        AsterError::validation_error("invalid Access-Control-Request-Headers")
-    })?;
+    let request_headers = request_headers
+        .to_str()
+        .map_aster_err_with(invalid_access_control_request_headers)?;
     let allowed_headers = REMOTE_BROWSER_PRESIGNED_CORS_ALLOWED_HEADERS
         .split(',')
         .map(str::trim)
@@ -211,9 +216,7 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> AsterResult<bool> {
             normalized
                 .parse::<header::HeaderName>()
                 .map(|_| normalized)
-                .map_aster_err_with(|| {
-                    AsterError::validation_error("invalid Access-Control-Request-Headers")
-                })
+                .map_aster_err_with(invalid_access_control_request_headers)
         })
         .collect::<AsterResult<HashSet<_>>>()?;
 
@@ -223,9 +226,9 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> AsterResult<bool> {
             continue;
         }
 
-        let _: header::HeaderName = requested.parse().map_aster_err_with(|| {
-            AsterError::validation_error("invalid Access-Control-Request-Headers")
-        })?;
+        let _: header::HeaderName = requested
+            .parse()
+            .map_aster_err_with(invalid_access_control_request_headers)?;
 
         if !allowed_headers.contains(&requested) {
             return Ok(false);
@@ -233,6 +236,13 @@ fn requested_headers_are_allowed(req: &ServiceRequest) -> AsterResult<bool> {
     }
 
     Ok(true)
+}
+
+fn invalid_access_control_request_headers() -> AsterError {
+    validation_error_with_code(
+        ApiErrorCode::ValidationRequestHeaderValueInvalid,
+        "invalid Access-Control-Request-Headers",
+    )
 }
 
 fn apply_origin_headers(headers: &mut HeaderMap, origin: &str) -> AsterResult<()> {

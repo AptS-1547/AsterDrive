@@ -11,7 +11,7 @@ use crate::config::operations;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::task_service::types::TaskStepInfo;
-use crate::storage::error::{StorageErrorKind, storage_driver_error_with_subcode};
+use crate::storage::error::{StorageErrorKind, storage_driver_error_with_code};
 use crate::utils::numbers::u64_to_i64;
 
 use super::super::steps::{TASK_STEP_DOWNLOAD_SOURCE, set_task_step_active};
@@ -719,9 +719,9 @@ impl Aria2RpcCallError {
                 http_status,
             } => {
                 if aria2_rpc_error_is_unauthorized(method, code, &message, http_status) {
-                    return storage_driver_error_with_subcode(
+                    return storage_driver_error_with_code(
                         StorageErrorKind::Auth,
-                        crate::api::subcode::ApiSubcode::OfflineDownloadAria2RpcAuthFailed,
+                        crate::api::api_error_code::ApiErrorCode::OfflineDownloadAria2RpcAuthFailed,
                         "aria2 RPC authentication failed: check offline_download_aria2_rpc_secret",
                     );
                 }

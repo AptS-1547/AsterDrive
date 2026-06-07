@@ -5,10 +5,10 @@
 
 use std::collections::HashSet;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{team_member_repo, team_repo};
 use crate::entities::{team, team_member};
-use crate::errors::{Result, auth_forbidden_with_subcode};
+use crate::errors::{Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::types::TeamMemberRole;
 
@@ -155,8 +155,8 @@ pub async fn archive_team(
 ) -> Result<()> {
     let (team, membership) = require_team_membership(state, team_id, actor_user_id).await?;
     if !membership.role.is_owner() {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::TeamOwnerRequired,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::TeamOwnerRequired,
             "team owner role is required",
         ));
     }
@@ -175,7 +175,7 @@ pub async fn restore_team(
         team_member_repo::find_by_team_and_user(state.writer_db(), team_id, actor_user_id)
             .await?
             .ok_or_else(|| {
-                auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
+                auth_forbidden_with_code(ApiErrorCode::TeamNotMember, "not a member of this team")
             })?;
     ensure_can_manage_team(membership.role)?;
 

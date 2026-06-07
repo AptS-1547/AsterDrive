@@ -1,6 +1,6 @@
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::entities::managed_ingress_profile;
-use crate::errors::{AsterError, Result, validation_error_with_subcode};
+use crate::errors::{AsterError, Result, validation_error_with_code};
 use crate::storage::drivers::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::storage::remote_protocol::{
     RemoteCreateIngressProfileRequest, RemoteCreateLocalIngressProfileRequest,
@@ -155,8 +155,8 @@ fn normalize_profile_fields(fields: IngressProfileFields) -> Result<NormalizedIn
     }
 
     match driver_type {
-        DriverType::TencentCos | DriverType::Remote => Err(validation_error_with_subcode(
-            ApiSubcode::ManagedIngressDriverUnsupported,
+        DriverType::TencentCos | DriverType::Remote => Err(validation_error_with_code(
+            ApiErrorCode::ManagedIngressDriverUnsupported,
             "managed ingress profiles only support local and s3 drivers",
         )),
         DriverType::Local => Ok(NormalizedIngressProfileInput {

@@ -566,7 +566,7 @@ fn aria2_rpc_call_error_preserves_structured_code_until_conversion() {
     assert!(matches!(
         converted,
         AsterError::StorageDriverError(message)
-            if message.contains("aria2.forceRemove failed with code 10: other failure")
+            if message.to_string().contains("aria2.forceRemove failed with code 10: other failure")
     ));
 }
 
@@ -694,7 +694,7 @@ async fn aria2_output_dir_repairs_existing_parent_permissions() {
 }
 
 #[test]
-fn aria2_rpc_unauthorized_maps_to_auth_subcode() {
+fn aria2_rpc_unauthorized_maps_to_auth_api_code() {
     let error = Aria2RpcCallError::Rpc {
         method: Aria2RpcMethod::GetVersion,
         code: 1,
@@ -704,8 +704,8 @@ fn aria2_rpc_unauthorized_maps_to_auth_subcode() {
     .into_aster_error();
 
     assert_eq!(
-        error.api_error_subcode(),
-        Some(crate::api::subcode::ApiSubcode::OfflineDownloadAria2RpcAuthFailed)
+        error.api_error_code_override(),
+        Some(crate::api::api_error_code::ApiErrorCode::OfflineDownloadAria2RpcAuthFailed)
     );
     assert!(error.message().contains("authentication failed"));
 }

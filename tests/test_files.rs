@@ -146,7 +146,7 @@ async fn test_file_upload_download_delete() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201, "upload should return 201 Created");
     let upload_body: Value = test::read_body_json(resp).await;
-    assert_eq!(upload_body["code"], 0);
+    assert_eq!(upload_body["code"], "success");
     let file_id = upload_body["data"]["id"].as_i64().unwrap();
     assert_eq!(upload_body["data"]["name"], "hello.txt");
     assert_eq!(upload_body["data"]["mime_type"], "text/plain");

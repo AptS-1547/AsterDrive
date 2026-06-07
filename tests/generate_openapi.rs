@@ -3,7 +3,6 @@
 
 use aster_drive::api::api_error_code::ApiErrorCode;
 use aster_drive::api::openapi::ApiDoc;
-use aster_drive::api::subcode::ApiSubcode;
 use std::fs;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::OpenApi;
@@ -15,34 +14,6 @@ fn generate_openapi() {
     fs::create_dir_all("./frontend-panel/generated").expect("Unable to create directory");
     fs::write("./frontend-panel/generated/openapi.json", json)
         .expect("Unable to write OpenAPI spec");
-}
-
-#[test]
-fn api_subcode_openapi_schema_uses_wire_values() {
-    let value = serde_json::to_value(ApiDoc::openapi()).unwrap();
-    let schema = &value["components"]["schemas"]["ApiSubcode"];
-    let values = schema["enum"]
-        .as_array()
-        .expect("ApiSubcode schema should have enum values")
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .expect("ApiSubcode enum value should be string")
-        })
-        .collect::<Vec<_>>();
-
-    assert_eq!(schema["type"], "string");
-    assert_eq!(values.len(), ApiSubcode::ALL.len());
-    for subcode in ApiSubcode::ALL {
-        assert!(
-            values.contains(&subcode.as_str()),
-            "OpenAPI schema missing {}",
-            subcode.as_str()
-        );
-    }
-    assert!(!values.contains(&"ArchivePreviewDisabled"));
-    assert!(!values.contains(&"PolicyUploadSessionsExist"));
 }
 
 #[test]
@@ -91,28 +62,35 @@ fn api_error_code_openapi_schema_has_unique_values() {
 }
 
 #[test]
-fn api_error_info_openapi_code_references_api_error_code_schema() {
+fn api_error_info_openapi_exposes_retryable_only() {
     let value = serde_json::to_value(ApiDoc::openapi()).unwrap();
-    let code = &value["components"]["schemas"]["ApiErrorInfo"]["properties"]["code"];
+    let info = &value["components"]["schemas"]["ApiErrorInfo"];
+    let properties = info["properties"]
+        .as_object()
+        .expect("ApiErrorInfo should have properties");
+
+    assert!(properties.contains_key("retryable"));
+    assert!(!properties.contains_key("code"));
+    assert!(!properties.contains_key("internal_code"));
+    assert!(!properties.contains_key("subcode"));
+    assert!(!properties.contains_key("api_code"));
+}
+
+#[test]
+fn api_response_openapi_code_references_api_error_code_schema() {
+    let value = serde_json::to_value(ApiDoc::openapi()).unwrap();
+    let response = value["components"]["schemas"]
+        .as_object()
+        .expect("components schemas should be object")
+        .iter()
+        .find(|(name, _)| name.starts_with("ApiResponse_"))
+        .map(|(_, schema)| schema)
+        .expect("at least one ApiResponse schema should exist");
+    let code = &response["properties"]["code"];
 
     assert_eq!(
         code["$ref"],
         serde_json::json!("#/components/schemas/ApiErrorCode")
     );
     assert!(code.get("enum").is_none());
-}
-
-#[test]
-fn api_error_info_openapi_subcode_references_api_subcode_schema() {
-    let value = serde_json::to_value(ApiDoc::openapi()).unwrap();
-    let subcode = &value["components"]["schemas"]["ApiErrorInfo"]["properties"]["subcode"];
-
-    assert_eq!(
-        subcode["oneOf"],
-        serde_json::json!([
-            { "type": "null" },
-            { "$ref": "#/components/schemas/ApiSubcode" }
-        ])
-    );
-    assert!(subcode.get("enum").is_none());
 }

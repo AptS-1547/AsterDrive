@@ -5,7 +5,7 @@ use rand::RngExt;
 use sea_orm::{ActiveValue::Set, ConnectionTrait};
 use serde::Serialize;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::{
     auth_runtime::RuntimeEmailCodeLoginPolicy, branding, mail::RuntimeMailSettings,
 };
@@ -14,7 +14,7 @@ use crate::db::repository::{
     mfa_totp_setup_flow_repo, user_repo,
 };
 use crate::entities::{mfa_email_code, mfa_login_flow, user};
-use crate::errors::{AsterError, Result, auth_mfa_failed_with_subcode};
+use crate::errors::{AsterError, Result, auth_mfa_failed_with_code};
 use crate::runtime::{MailRuntimeState, SharedRuntimeState};
 use crate::services::{
     audit_service,
@@ -173,8 +173,8 @@ pub async fn send_email_code(
         ensure_flow_user_valid(&user, &flow)?;
         let methods = available_challenge_methods(&txn, state, &user).await?;
         if !methods.contains(&MfaMethod::EmailCode) {
-            return Err(auth_mfa_failed_with_subcode(
-                ApiSubcode::AuthMfaFactorRequired,
+            return Err(auth_mfa_failed_with_code(
+                ApiErrorCode::AuthMfaFactorRequired,
                 "email code MFA is not available for this login flow",
             ));
         }
@@ -331,8 +331,8 @@ pub async fn verify_challenge(
                 match verify_email_code(&txn, state, &flow, &user, code, now).await {
                     Ok(verified) => verified,
                     Err(error)
-                        if error.api_error_subcode()
-                            == Some(ApiSubcode::AuthMfaEmailCodeExpired) =>
+                        if error.api_error_code_override()
+                            == Some(ApiErrorCode::AuthMfaEmailCodeExpired) =>
                     {
                         return Ok(MfaChallengeAttempt {
                             user_id,
@@ -350,8 +350,8 @@ pub async fn verify_challenge(
             let consume_at = (next_attempt_count >= MFA_MAX_ATTEMPTS).then_some(now);
             mfa_login_flow_repo::increment_attempts(&txn, flow.id, consume_at).await?;
             let error = if next_attempt_count >= MFA_MAX_ATTEMPTS {
-                auth_mfa_failed_with_subcode(
-                    ApiSubcode::AuthMfaAttemptsExceeded,
+                auth_mfa_failed_with_code(
+                    ApiErrorCode::AuthMfaAttemptsExceeded,
                     "MFA attempts exceeded",
                 )
             } else {
@@ -408,11 +408,11 @@ pub async fn verify_challenge(
         }
         Err(error) => {
             if matches!(
-                error.api_error_subcode(),
+                error.api_error_code_override(),
                 Some(
-                    ApiSubcode::AuthMfaCodeInvalid
-                        | ApiSubcode::AuthMfaAttemptsExceeded
-                        | ApiSubcode::AuthMfaEmailCodeExpired
+                    ApiErrorCode::AuthMfaCodeInvalid
+                        | ApiErrorCode::AuthMfaAttemptsExceeded
+                        | ApiErrorCode::AuthMfaEmailCodeExpired
                 )
             ) {
                 crate::db::transaction::commit(txn).await?;
@@ -447,8 +447,8 @@ async fn verify_totp<C: sea_orm::ConnectionTrait>(
     now: chrono::DateTime<Utc>,
 ) -> Result<bool> {
     let Some(factor) = mfa_factor_repo::find_totp_for_user(db, user.id).await? else {
-        return Err(auth_mfa_failed_with_subcode(
-            ApiSubcode::AuthMfaFactorRequired,
+        return Err(auth_mfa_failed_with_code(
+            ApiErrorCode::AuthMfaFactorRequired,
             "TOTP factor is not enabled",
         ));
     };
@@ -478,15 +478,15 @@ async fn verify_email_code<C: ConnectionTrait>(
     // 每次校验前都重新确认策略可用，避免管理员关闭配置后旧 flow 继续使用 email code。
     let policy = RuntimeEmailCodeLoginPolicy::from_runtime_config(state.runtime_config());
     if !email_code_policy_ready(state, &policy) {
-        return Err(auth_mfa_failed_with_subcode(
-            ApiSubcode::AuthMfaFactorRequired,
+        return Err(auth_mfa_failed_with_code(
+            ApiErrorCode::AuthMfaFactorRequired,
             "email code MFA is not available",
         ));
     }
     let methods = available_challenge_methods(db, state, user).await?;
     if !methods.contains(&MfaMethod::EmailCode) {
-        return Err(auth_mfa_failed_with_subcode(
-            ApiSubcode::AuthMfaFactorRequired,
+        return Err(auth_mfa_failed_with_code(
+            ApiErrorCode::AuthMfaFactorRequired,
             "email code MFA is not available for this login flow",
         ));
     }
@@ -494,16 +494,16 @@ async fn verify_email_code<C: ConnectionTrait>(
     let Some(record) =
         mfa_email_code_repo::find_latest_unconsumed_for_flow(db, flow.id, user.id).await?
     else {
-        return Err(auth_mfa_failed_with_subcode(
-            ApiSubcode::AuthMfaEmailCodeRequired,
+        return Err(auth_mfa_failed_with_code(
+            ApiErrorCode::AuthMfaEmailCodeRequired,
             "email code has not been requested",
         ));
     };
 
     if record.expires_at <= now {
         mfa_email_code_repo::consume(db, record.id, now).await?;
-        return Err(auth_mfa_failed_with_subcode(
-            ApiSubcode::AuthMfaEmailCodeExpired,
+        return Err(auth_mfa_failed_with_code(
+            ApiErrorCode::AuthMfaEmailCodeExpired,
             "email code has expired",
         ));
     }
@@ -589,14 +589,14 @@ fn ensure_flow_active(flow: &mfa_login_flow::Model, now: chrono::DateTime<Utc>) 
         return Err(flow_invalid("MFA flow has already been consumed"));
     }
     if flow.expires_at <= now {
-        return Err(auth_mfa_failed_with_subcode(
-            ApiSubcode::AuthMfaFlowExpired,
+        return Err(auth_mfa_failed_with_code(
+            ApiErrorCode::AuthMfaFlowExpired,
             "MFA flow has expired",
         ));
     }
     if flow.attempt_count >= MFA_MAX_ATTEMPTS {
-        return Err(auth_mfa_failed_with_subcode(
-            ApiSubcode::AuthMfaAttemptsExceeded,
+        return Err(auth_mfa_failed_with_code(
+            ApiErrorCode::AuthMfaAttemptsExceeded,
             "MFA attempts exceeded",
         ));
     }
@@ -619,9 +619,9 @@ fn ensure_flow_user_valid(user: &user::Model, flow: &mfa_login_flow::Model) -> R
 }
 
 fn code_invalid() -> AsterError {
-    auth_mfa_failed_with_subcode(ApiSubcode::AuthMfaCodeInvalid, "invalid MFA code")
+    auth_mfa_failed_with_code(ApiErrorCode::AuthMfaCodeInvalid, "invalid MFA code")
 }
 
 fn flow_invalid(message: impl Into<String>) -> AsterError {
-    auth_mfa_failed_with_subcode(ApiSubcode::AuthMfaFlowInvalid, message)
+    auth_mfa_failed_with_code(ApiErrorCode::AuthMfaFlowInvalid, message)
 }

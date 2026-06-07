@@ -3,27 +3,27 @@ use std::time::Duration;
 
 use tokio::io::AsyncWriteExt;
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::constants::HOUR_SECS;
-use crate::api::subcode::ApiSubcode;
-use crate::errors::{AsterError, MapAsterErr, Result, thumbnail_generation_error_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, thumbnail_generation_error_with_code};
 use crate::storage::{PresignedDownloadOptions, StorageDriver};
 
 use super::shared::cli_source_temp_path;
 
 fn thumbnail_source_temp_create_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailSourceTempCreateFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailSourceTempCreateFailed, message)
 }
 
 fn thumbnail_source_stream_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailSourceStreamFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailSourceStreamFailed, message)
 }
 
 fn thumbnail_source_temp_flush_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailSourceTempFlushFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailSourceTempFlushFailed, message)
 }
 
 fn thumbnail_source_temp_copy_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailSourceTempCopyFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailSourceTempCopyFailed, message)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

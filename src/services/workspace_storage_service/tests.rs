@@ -1,6 +1,6 @@
 //! 工作空间存储服务测试。
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::cache;
 use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
 use crate::entities::{file, file_blob, storage_policy, user};
@@ -42,8 +42,8 @@ struct CancelFlagCheck {
 impl StorageCancellationCheck for CancelFlagCheck {
     fn checkpoint(&self) -> crate::errors::Result<()> {
         if self.cancelled.load(Ordering::SeqCst) {
-            return Err(crate::errors::precondition_failed_with_subcode(
-                ApiSubcode::TaskWorkerShutdownRequested,
+            return Err(crate::errors::precondition_failed_with_code(
+                ApiErrorCode::TaskWorkerShutdownRequested,
                 "test storage operation cancelled",
             ));
         }
@@ -62,8 +62,8 @@ struct CancelWhenStorageFileExistsCheck {
 impl StorageCancellationCheck for CancelWhenStorageFileExistsCheck {
     fn checkpoint(&self) -> crate::errors::Result<()> {
         if storage_root_has_file(&self.root) {
-            return Err(crate::errors::precondition_failed_with_subcode(
-                ApiSubcode::TaskWorkerShutdownRequested,
+            return Err(crate::errors::precondition_failed_with_code(
+                ApiErrorCode::TaskWorkerShutdownRequested,
                 "test storage operation cancelled after staging",
             ));
         }
@@ -1272,8 +1272,8 @@ async fn temp_store_cancellation_before_hash_does_not_touch_temp_file() {
     .expect_err("pre-cancelled temp import should stop before opening temp file");
 
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::TaskWorkerShutdownRequested)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::TaskWorkerShutdownRequested)
     );
     assert_eq!(
         file_blob::Entity::find()
@@ -1318,8 +1318,8 @@ async fn cancelled_before_hash_can_resume_from_same_temp_file() {
     .expect_err("first import should be interrupted before hash");
 
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::TaskWorkerShutdownRequested)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::TaskWorkerShutdownRequested)
     );
     assert!(temp_file.exists());
     assert_eq!(
@@ -1404,8 +1404,8 @@ async fn temp_store_cancellation_during_stream_upload_cleans_preuploaded_blob() 
     .expect_err("streaming temp import should surface cancellation");
 
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::TaskWorkerShutdownRequested)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::TaskWorkerShutdownRequested)
     );
     assert_eq!(driver.delete_count(), 1);
     assert_eq!(
@@ -1455,8 +1455,8 @@ async fn cancelled_during_stream_upload_can_resume_from_same_temp_file() {
     .expect_err("first stream upload should be interrupted");
 
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::TaskWorkerShutdownRequested)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::TaskWorkerShutdownRequested)
     );
     assert_eq!(driver.delete_count(), 1);
     assert!(temp_file.exists());
@@ -1593,8 +1593,8 @@ async fn cancelled_after_local_preupload_staging_can_resume_from_same_temp_file(
     .expect_err("first local preupload should be interrupted after staging");
 
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::TaskWorkerShutdownRequested)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::TaskWorkerShutdownRequested)
     );
     assert!(temp_file.exists());
     assert_eq!(
@@ -1689,8 +1689,8 @@ async fn temp_store_cancellation_after_dedup_staging_rolls_back_object() {
     .expect_err("dedup staging cancellation should stop before DB persist");
 
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::TaskWorkerShutdownRequested)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::TaskWorkerShutdownRequested)
     );
     assert_eq!(
         file_blob::Entity::find()
@@ -1742,8 +1742,8 @@ async fn cancelled_after_dedup_staging_can_resume_from_same_temp_file() {
     .expect_err("first dedup import should be interrupted after staging");
 
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::TaskWorkerShutdownRequested)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::TaskWorkerShutdownRequested)
     );
     assert!(temp_file.exists());
     assert_eq!(

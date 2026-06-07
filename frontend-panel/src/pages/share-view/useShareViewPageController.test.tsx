@@ -7,7 +7,7 @@ import type {
 	FolderContents,
 	SharePublicInfo,
 } from "@/types/api";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 import { useShareViewPageController } from "./useShareViewPageController";
 
 const TEST_SHARE_PASSWORD = "TEST_PASSWORD";
@@ -332,17 +332,17 @@ describe("useShareViewPageController", () => {
 	it.each([
 		[
 			"not found",
-			new ApiError(ErrorCode.ShareNotFound, "missing"),
+			new ApiError(ApiErrorCode.ShareNotFound, "missing"),
 			"t:errors:share_not_found",
 		],
 		[
 			"download limit",
-			new ApiError(ErrorCode.ShareDownloadLimitReached, "limited"),
+			new ApiError(ApiErrorCode.ShareDownloadLimitReached, "limited"),
 			"t:share:download_limit_reached",
 		],
 		[
 			"generic api error",
-			new ApiError(ErrorCode.BadRequest, "bad request"),
+			new ApiError(ApiErrorCode.BadRequest, "bad request"),
 			"bad request",
 		],
 		["unknown error", new Error("offline"), "t:share:failed_to_load_share"],

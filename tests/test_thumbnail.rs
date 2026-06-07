@@ -4,7 +4,6 @@
 mod common;
 
 use actix_web::test;
-use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::{background_task_repo, file_repo, policy_repo};
 use aster_drive::runtime::{PrimaryAppState, SharedRuntimeState};
 use aster_drive::types::{
@@ -529,7 +528,7 @@ async fn test_thumbnail_failed_task_returns_not_found_without_requeue() {
     let resp = request_thumbnail!(app, token, file_id);
     assert_eq!(resp.status(), 404);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], json!(ErrorCode::NotFound as i32));
+    assert_eq!(body["code"], json!("not_found"));
 
     for _ in 0..3 {
         let resp = request_thumbnail!(app, token, file_id);

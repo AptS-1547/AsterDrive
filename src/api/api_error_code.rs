@@ -1,12 +1,9 @@
-//! Stable string API error codes for the transition away from subcodes.
+//! Stable string API error codes.
 
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
-
-use crate::api::error_code::ErrorCode;
-use crate::api::subcode::ApiSubcode;
 
 macro_rules! define_api_error_codes {
     ($($variant:ident => $value:literal),+ $(,)?) => {
@@ -307,74 +304,6 @@ define_api_error_codes! {
     ValidationSystemAlreadyInitialized => "validation.system_already_initialized",
 }
 
-impl ApiErrorCode {
-    // TODO(0.3.0): remove this compatibility bridge when the top-level response
-    // code field is migrated from legacy numeric ErrorCode to ApiErrorCode.
-    pub fn from_legacy_code(code: ErrorCode) -> Self {
-        match code {
-            ErrorCode::Success => Self::Success,
-            ErrorCode::BadRequest => Self::BadRequest,
-            ErrorCode::NotFound => Self::NotFound,
-            ErrorCode::InternalServerError => Self::InternalServerError,
-            ErrorCode::DatabaseError => Self::DatabaseError,
-            ErrorCode::ConfigError => Self::ConfigError,
-            ErrorCode::EndpointNotFound => Self::EndpointNotFound,
-            ErrorCode::RateLimited => Self::RateLimited,
-            ErrorCode::MailNotConfigured => Self::MailNotConfigured,
-            ErrorCode::MailDeliveryFailed => Self::MailDeliveryFailed,
-            ErrorCode::Conflict => Self::Conflict,
-            ErrorCode::AuthFailed => Self::AuthFailed,
-            ErrorCode::TokenExpired => Self::TokenExpired,
-            ErrorCode::TokenInvalid => Self::TokenInvalid,
-            ErrorCode::Forbidden => Self::Forbidden,
-            ErrorCode::PendingActivation => Self::PendingActivation,
-            ErrorCode::ContactVerificationInvalid => Self::ContactVerificationInvalid,
-            ErrorCode::ContactVerificationExpired => Self::ContactVerificationExpired,
-            ErrorCode::TokenMissing => Self::TokenMissing,
-            ErrorCode::CredentialsFailed => Self::CredentialsFailed,
-            ErrorCode::MfaFailed => Self::MfaFailed,
-            ErrorCode::RefreshTokenStale => Self::RefreshTokenStale,
-            ErrorCode::RefreshTokenReuseDetected => Self::RefreshTokenReuseDetected,
-            ErrorCode::FileNotFound => Self::FileNotFound,
-            ErrorCode::FileTooLarge => Self::FileTooLarge,
-            ErrorCode::FileTypeNotAllowed => Self::FileTypeNotAllowed,
-            ErrorCode::FileUploadFailed => Self::FileUploadFailed,
-            ErrorCode::UploadSessionNotFound => Self::UploadSessionNotFound,
-            ErrorCode::UploadSessionExpired => Self::UploadSessionExpired,
-            ErrorCode::ChunkUploadFailed => Self::ChunkUploadFailed,
-            ErrorCode::UploadAssemblyFailed => Self::UploadAssemblyFailed,
-            ErrorCode::ThumbnailFailed => Self::ThumbnailFailed,
-            ErrorCode::ResourceLocked => Self::ResourceLocked,
-            ErrorCode::PreconditionFailed => Self::PreconditionFailed,
-            ErrorCode::UploadAssembling => Self::UploadAssembling,
-            ErrorCode::StoragePolicyNotFound => Self::StoragePolicyNotFound,
-            ErrorCode::StorageDriverError => Self::StorageDriverError,
-            ErrorCode::StorageQuotaExceeded => Self::StorageQuotaExceeded,
-            ErrorCode::UnsupportedDriver => Self::UnsupportedDriver,
-            ErrorCode::StorageAuthFailed => Self::StorageAuthFailed,
-            ErrorCode::StoragePermissionDenied => Self::StoragePermissionDenied,
-            ErrorCode::StorageMisconfigured => Self::StorageMisconfigured,
-            ErrorCode::StorageObjectNotFound => Self::StorageObjectNotFound,
-            ErrorCode::StorageRateLimited => Self::StorageRateLimited,
-            ErrorCode::StorageTransientFailure => Self::StorageTransientFailure,
-            ErrorCode::StoragePreconditionFailed => Self::StoragePreconditionFailed,
-            ErrorCode::StorageOperationUnsupported => Self::StorageOperationUnsupported,
-            ErrorCode::FolderNotFound => Self::FolderNotFound,
-            ErrorCode::ShareNotFound => Self::ShareNotFound,
-            ErrorCode::ShareExpired => Self::ShareExpired,
-            ErrorCode::SharePasswordRequired => Self::SharePasswordRequired,
-            ErrorCode::ShareDownloadLimitReached => Self::ShareDownloadLimitReached,
-        }
-    }
-
-    // TODO(0.3.0): remove after ApiSubcode stops being exposed in API responses.
-    // New code should construct or carry ApiErrorCode directly instead of
-    // deriving it from the legacy subcode compatibility layer.
-    pub fn from_subcode(subcode: ApiSubcode) -> Option<Self> {
-        Self::parse(subcode.as_str())
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParseApiErrorCodeError;
 
@@ -409,8 +338,6 @@ impl std::fmt::Display for ApiErrorCode {
 #[cfg(test)]
 mod tests {
     use super::ApiErrorCode;
-    use crate::api::error_code::ErrorCode;
-    use crate::api::subcode::ApiSubcode;
     use std::collections::HashSet;
 
     #[test]
@@ -495,168 +422,5 @@ mod tests {
 
         assert_eq!(code.to_string(), "remote_node.enrollment_required");
         assert_eq!(code.as_ref(), "remote_node.enrollment_required");
-    }
-
-    #[test]
-    fn legacy_error_codes_map_to_stable_api_error_codes() {
-        let cases = [
-            (ErrorCode::Success, ApiErrorCode::Success),
-            (ErrorCode::BadRequest, ApiErrorCode::BadRequest),
-            (ErrorCode::NotFound, ApiErrorCode::NotFound),
-            (
-                ErrorCode::InternalServerError,
-                ApiErrorCode::InternalServerError,
-            ),
-            (ErrorCode::DatabaseError, ApiErrorCode::DatabaseError),
-            (ErrorCode::ConfigError, ApiErrorCode::ConfigError),
-            (ErrorCode::EndpointNotFound, ApiErrorCode::EndpointNotFound),
-            (ErrorCode::RateLimited, ApiErrorCode::RateLimited),
-            (
-                ErrorCode::MailNotConfigured,
-                ApiErrorCode::MailNotConfigured,
-            ),
-            (
-                ErrorCode::MailDeliveryFailed,
-                ApiErrorCode::MailDeliveryFailed,
-            ),
-            (ErrorCode::Conflict, ApiErrorCode::Conflict),
-            (ErrorCode::AuthFailed, ApiErrorCode::AuthFailed),
-            (ErrorCode::TokenExpired, ApiErrorCode::TokenExpired),
-            (ErrorCode::TokenInvalid, ApiErrorCode::TokenInvalid),
-            (ErrorCode::Forbidden, ApiErrorCode::Forbidden),
-            (
-                ErrorCode::PendingActivation,
-                ApiErrorCode::PendingActivation,
-            ),
-            (
-                ErrorCode::ContactVerificationInvalid,
-                ApiErrorCode::ContactVerificationInvalid,
-            ),
-            (
-                ErrorCode::ContactVerificationExpired,
-                ApiErrorCode::ContactVerificationExpired,
-            ),
-            (ErrorCode::TokenMissing, ApiErrorCode::TokenMissing),
-            (
-                ErrorCode::CredentialsFailed,
-                ApiErrorCode::CredentialsFailed,
-            ),
-            (ErrorCode::MfaFailed, ApiErrorCode::MfaFailed),
-            (
-                ErrorCode::RefreshTokenStale,
-                ApiErrorCode::RefreshTokenStale,
-            ),
-            (
-                ErrorCode::RefreshTokenReuseDetected,
-                ApiErrorCode::RefreshTokenReuseDetected,
-            ),
-            (ErrorCode::FileNotFound, ApiErrorCode::FileNotFound),
-            (ErrorCode::FileTooLarge, ApiErrorCode::FileTooLarge),
-            (
-                ErrorCode::FileTypeNotAllowed,
-                ApiErrorCode::FileTypeNotAllowed,
-            ),
-            (ErrorCode::FileUploadFailed, ApiErrorCode::FileUploadFailed),
-            (
-                ErrorCode::UploadSessionNotFound,
-                ApiErrorCode::UploadSessionNotFound,
-            ),
-            (
-                ErrorCode::UploadSessionExpired,
-                ApiErrorCode::UploadSessionExpired,
-            ),
-            (
-                ErrorCode::ChunkUploadFailed,
-                ApiErrorCode::ChunkUploadFailed,
-            ),
-            (
-                ErrorCode::UploadAssemblyFailed,
-                ApiErrorCode::UploadAssemblyFailed,
-            ),
-            (ErrorCode::ThumbnailFailed, ApiErrorCode::ThumbnailFailed),
-            (ErrorCode::ResourceLocked, ApiErrorCode::ResourceLocked),
-            (
-                ErrorCode::PreconditionFailed,
-                ApiErrorCode::PreconditionFailed,
-            ),
-            (ErrorCode::UploadAssembling, ApiErrorCode::UploadAssembling),
-            (
-                ErrorCode::StoragePolicyNotFound,
-                ApiErrorCode::StoragePolicyNotFound,
-            ),
-            (
-                ErrorCode::StorageDriverError,
-                ApiErrorCode::StorageDriverError,
-            ),
-            (
-                ErrorCode::StorageQuotaExceeded,
-                ApiErrorCode::StorageQuotaExceeded,
-            ),
-            (
-                ErrorCode::UnsupportedDriver,
-                ApiErrorCode::UnsupportedDriver,
-            ),
-            (
-                ErrorCode::StorageAuthFailed,
-                ApiErrorCode::StorageAuthFailed,
-            ),
-            (
-                ErrorCode::StoragePermissionDenied,
-                ApiErrorCode::StoragePermissionDenied,
-            ),
-            (
-                ErrorCode::StorageMisconfigured,
-                ApiErrorCode::StorageMisconfigured,
-            ),
-            (
-                ErrorCode::StorageObjectNotFound,
-                ApiErrorCode::StorageObjectNotFound,
-            ),
-            (
-                ErrorCode::StorageRateLimited,
-                ApiErrorCode::StorageRateLimited,
-            ),
-            (
-                ErrorCode::StorageTransientFailure,
-                ApiErrorCode::StorageTransientFailure,
-            ),
-            (
-                ErrorCode::StoragePreconditionFailed,
-                ApiErrorCode::StoragePreconditionFailed,
-            ),
-            (
-                ErrorCode::StorageOperationUnsupported,
-                ApiErrorCode::StorageOperationUnsupported,
-            ),
-            (ErrorCode::FolderNotFound, ApiErrorCode::FolderNotFound),
-            (ErrorCode::ShareNotFound, ApiErrorCode::ShareNotFound),
-            (ErrorCode::ShareExpired, ApiErrorCode::ShareExpired),
-            (
-                ErrorCode::SharePasswordRequired,
-                ApiErrorCode::SharePasswordRequired,
-            ),
-            (
-                ErrorCode::ShareDownloadLimitReached,
-                ApiErrorCode::ShareDownloadLimitReached,
-            ),
-        ];
-
-        for (legacy_code, expected_api_code) in cases {
-            assert_eq!(
-                ApiErrorCode::from_legacy_code(legacy_code),
-                expected_api_code,
-                "{legacy_code:?} mapped to unexpected ApiErrorCode"
-            );
-        }
-    }
-
-    #[test]
-    fn every_legacy_subcode_maps_to_api_error_code_with_same_wire_value() {
-        for &subcode in ApiSubcode::ALL {
-            let code = ApiErrorCode::from_subcode(subcode)
-                .unwrap_or_else(|| panic!("ApiErrorCode missing {}", subcode.as_str()));
-
-            assert_eq!(code.as_str(), subcode.as_str());
-        }
     }
 }

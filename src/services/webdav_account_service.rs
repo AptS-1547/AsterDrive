@@ -6,11 +6,11 @@ use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::api::subcode::ApiSubcode;
 use crate::db::repository::webdav_account_repo;
 use crate::entities::webdav_account;
-use crate::errors::{AsterError, Result, validation_error_with_subcode};
+use crate::errors::{AsterError, Result, validation_error_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::{
     profile_service,
@@ -20,8 +20,8 @@ use crate::services::{
 use crate::utils::hash;
 
 fn webdav_username_exists_error() -> AsterError {
-    validation_error_with_subcode(
-        ApiSubcode::WebdavUsernameExists,
+    validation_error_with_code(
+        ApiErrorCode::WebdavUsernameExists,
         "WebDAV username already exists",
     )
 }

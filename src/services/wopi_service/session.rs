@@ -7,14 +7,12 @@ use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::cache::CacheExt;
 use crate::config::site_url;
 use crate::db::repository::wopi_session_repo;
 use crate::entities::{file, wopi_session};
-use crate::errors::{
-    AsterError, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
-};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code, validation_error_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::{
     auth_service, preview_app_service, workspace_storage_service,
@@ -183,8 +181,8 @@ pub(crate) struct RequestOrigin<'a> {
 
 fn require_public_origin(public_origin: Option<String>) -> Result<String> {
     public_origin.ok_or_else(|| {
-        validation_error_with_subcode(
-            ApiSubcode::WopiPublicSiteUrlRequired,
+        validation_error_with_code(
+            ApiErrorCode::WopiPublicSiteUrlRequired,
             "public_site_url is required for WOPI integration",
         )
     })
@@ -279,8 +277,8 @@ pub(crate) async fn resolve_access_token(
     let auth_snapshot = auth_service::get_auth_snapshot(state, payload.actor_user_id).await?;
     if !auth_snapshot.status.is_active() {
         delete_wopi_session(state, &token_hash, session.id).await?;
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthAccountDisabled,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthAccountDisabled,
             "account is disabled",
         ));
     }
@@ -294,15 +292,15 @@ pub(crate) async fn resolve_access_token(
         .find(|candidate| candidate.key == payload.app_key)
     else {
         delete_wopi_session(state, &token_hash, session.id).await?;
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::WopiAppDisabled,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::WopiAppDisabled,
             "WOPI app is no longer available",
         ));
     };
     if !app.enabled {
         delete_wopi_session(state, &token_hash, session.id).await?;
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::WopiAppDisabled,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::WopiAppDisabled,
             "WOPI app is disabled",
         ));
     }

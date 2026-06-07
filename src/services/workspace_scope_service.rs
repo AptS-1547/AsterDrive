@@ -4,10 +4,10 @@
 //! 这里负责把 scope 相关规则收口，避免每个上层 service 都自己拼一套
 //! `user_id` / `team_id` / `actor_user_id` 判断。
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{file_repo, folder_repo, team_member_repo, team_repo, user_repo};
 use crate::entities::{file, folder};
-use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::{cache::CacheExt, types::TeamMemberRole};
 use sea_orm::ConnectionTrait;
@@ -170,8 +170,8 @@ async fn load_team_access_from_database<C: ConnectionTrait>(
 
     // 保持旧语义：团队不存在或已归档时返回 not found；团队仍活跃但用户不是成员时返回 forbidden。
     team_repo::find_active_by_id(db, team_id).await?;
-    Err(auth_forbidden_with_subcode(
-        ApiSubcode::TeamNotMember,
+    Err(auth_forbidden_with_code(
+        ApiErrorCode::TeamNotMember,
         "not a member of this team",
     ))
 }
@@ -231,8 +231,8 @@ pub(crate) async fn load_scope_actor_username_cached(
 
 pub(crate) fn ensure_personal_file_scope(file: &file::Model) -> Result<()> {
     if file.team_id.is_some() {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::WorkspaceScopeDenied,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::WorkspaceScopeDenied,
             "file belongs to a team workspace",
         ));
     }
@@ -241,8 +241,8 @@ pub(crate) fn ensure_personal_file_scope(file: &file::Model) -> Result<()> {
 
 pub(crate) fn ensure_personal_folder_scope(folder: &folder::Model) -> Result<()> {
     if folder.team_id.is_some() {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::WorkspaceScopeDenied,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::WorkspaceScopeDenied,
             "folder belongs to a team workspace",
         ));
     }
@@ -262,8 +262,8 @@ pub(crate) fn ensure_file_resource_scope(
             ensure_personal_file_scope(file)?;
             crate::utils::verify_owner(
                 file.owner_user_id.ok_or_else(|| {
-                    auth_forbidden_with_subcode(
-                        ApiSubcode::WorkspaceScopeDenied,
+                    auth_forbidden_with_code(
+                        ApiErrorCode::WorkspaceScopeDenied,
                         "file has no personal owner",
                     )
                 })?,
@@ -273,8 +273,8 @@ pub(crate) fn ensure_file_resource_scope(
         }
         WorkspaceResourceScope::Team { team_id } => {
             if file.team_id != Some(team_id) {
-                return Err(auth_forbidden_with_subcode(
-                    ApiSubcode::WorkspaceScopeDenied,
+                return Err(auth_forbidden_with_code(
+                    ApiErrorCode::WorkspaceScopeDenied,
                     "file is outside team workspace",
                 ));
             }
@@ -316,8 +316,8 @@ pub(crate) fn ensure_folder_resource_scope(
             ensure_personal_folder_scope(folder)?;
             crate::utils::verify_owner(
                 folder.owner_user_id.ok_or_else(|| {
-                    auth_forbidden_with_subcode(
-                        ApiSubcode::WorkspaceScopeDenied,
+                    auth_forbidden_with_code(
+                        ApiErrorCode::WorkspaceScopeDenied,
                         "folder has no personal owner",
                     )
                 })?,
@@ -327,8 +327,8 @@ pub(crate) fn ensure_folder_resource_scope(
         }
         WorkspaceResourceScope::Team { team_id } => {
             if folder.team_id != Some(team_id) {
-                return Err(auth_forbidden_with_subcode(
-                    ApiSubcode::WorkspaceScopeDenied,
+                return Err(auth_forbidden_with_code(
+                    ApiErrorCode::WorkspaceScopeDenied,
                     "folder is outside team workspace",
                 ));
             }
@@ -415,8 +415,8 @@ pub(crate) async fn require_team_management_access(
 ) -> Result<()> {
     let access = load_team_access(state, state.reader_db(), team_id, user_id).await?;
     if !access.role.can_manage_team() {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::TeamAdminOrOwnerRequired,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::TeamAdminOrOwnerRequired,
             "team owner or admin role is required",
         ));
     }

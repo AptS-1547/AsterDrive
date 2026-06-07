@@ -204,7 +204,7 @@ async fn test_search_by_name() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["total_files"], 1);
     let files = body["data"]["files"].as_array().unwrap();
     assert_eq!(files.len(), 1);
@@ -373,7 +373,7 @@ async fn test_search_by_mime_type() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["total_files"], 1);
     let files = body["data"]["files"].as_array().unwrap();
     assert_eq!(files.len(), 1);
@@ -659,7 +659,7 @@ async fn test_search_folders() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["total_folders"], 1);
     assert_eq!(body["data"]["total_files"], 0);
     let folders = body["data"]["folders"].as_array().unwrap();
@@ -721,7 +721,7 @@ async fn test_search_excludes_deleted() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["total_files"], 0);
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
 }
@@ -806,7 +806,7 @@ async fn test_search_only_own_files() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     assert_eq!(body["data"]["total_files"], 1);
     let files = body["data"]["files"].as_array().unwrap();
     assert_eq!(files.len(), 1);

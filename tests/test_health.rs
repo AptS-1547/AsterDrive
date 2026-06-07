@@ -4,7 +4,6 @@
 mod common;
 
 use actix_web::test;
-use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::policy_repo;
 use aster_drive::entities::storage_policy;
 use aster_drive::runtime::SharedRuntimeState;
@@ -51,10 +50,7 @@ async fn test_health_ready_redacts_database_error() {
     assert_eq!(resp.status(), 503);
 
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["code"],
-        serde_json::json!(ErrorCode::DatabaseError as i32)
-    );
+    assert_eq!(body["code"], "database.error");
     assert_eq!(body["msg"], "Database unavailable");
 }
 
@@ -88,9 +84,13 @@ async fn test_health_ready_returns_503_when_default_storage_is_unavailable() {
 
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["msg"], "Storage unavailable");
-    // Local filesystem probe failures can classify into different storage subcodes
-    // depending on the OS errno, but they should always redact to E031 here.
-    assert_eq!(body["error"]["internal_code"], "E031");
+    // Local filesystem probe failures can classify into different storage codes
+    // depending on the OS errno, but they should still use the storage namespace.
+    assert!(
+        body["code"]
+            .as_str()
+            .is_some_and(|code| code.starts_with("storage."))
+    );
 }
 
 #[actix_web::test]
@@ -120,10 +120,7 @@ async fn test_health_ready_returns_503_when_default_storage_policy_is_missing() 
     assert_eq!(resp.status(), 503);
 
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["code"],
-        serde_json::json!(ErrorCode::StoragePolicyNotFound as i32)
-    );
+    assert_eq!(body["code"], "storage.policy_not_found");
     assert_eq!(body["msg"], "Storage unavailable");
 }
 

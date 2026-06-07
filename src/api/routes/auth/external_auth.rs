@@ -1,7 +1,6 @@
 //! 认证 API 路由：`external-auth`。
 
 use super::cookies::{build_access_cookie, build_csrf_cookie, build_refresh_cookie};
-use crate::api::error_code::ErrorCode;
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::response::ApiResponse;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
@@ -500,7 +499,7 @@ fn external_auth_error_redirect_response(
     } else {
         format!(
             "/login?external_auth=error&code={}",
-            ErrorCode::from(error) as u32
+            error.api_error_code().as_str()
         )
     };
     let redirect_url = site_url::public_app_url_or_path(state.runtime_config(), &path);

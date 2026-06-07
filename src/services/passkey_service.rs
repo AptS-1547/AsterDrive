@@ -11,13 +11,13 @@ use webauthn_rs::prelude::{
 };
 use webauthn_rs_proto::{ResidentKeyRequirement, UserVerificationPolicy};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::cache::CacheExt;
 use crate::config::{auth_runtime::RuntimeAuthPolicy, branding, site_url};
 use crate::db::repository::{passkey_repo, user_repo};
 use crate::entities::{passkey, user};
 use crate::errors::{
-    AsterError, MapAsterErr, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
+    AsterError, MapAsterErr, Result, auth_forbidden_with_code, validation_error_with_code,
 };
 use crate::runtime::SharedRuntimeState;
 use crate::services::auth_service::{self, LoginResult, is_email_verified};
@@ -122,14 +122,14 @@ fn normalize_passkey_name(name: Option<&str>) -> Result<String> {
     let trimmed = name.map(str::trim).filter(|value| !value.is_empty());
     let normalized = trimmed.unwrap_or("Passkey");
     if normalized.chars().count() > PASSKEY_NAME_MAX_LEN {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::PasskeyNameTooLong,
+        return Err(validation_error_with_code(
+            ApiErrorCode::PasskeyNameTooLong,
             format!("passkey name exceeds {PASSKEY_NAME_MAX_LEN} characters"),
         ));
     }
     if normalized.chars().any(char::is_control) {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::PasskeyNameInvalid,
+        return Err(validation_error_with_code(
+            ApiErrorCode::PasskeyNameInvalid,
             "passkey name cannot contain control characters",
         ));
     }
@@ -284,8 +284,8 @@ fn ensure_passkey_login_enabled(state: &impl SharedRuntimeState) -> Result<()> {
         return Ok(());
     }
 
-    Err(auth_forbidden_with_subcode(
-        ApiSubcode::AuthPasskeyLoginDisabled,
+    Err(auth_forbidden_with_code(
+        ApiErrorCode::AuthPasskeyLoginDisabled,
         "passkey login is disabled by administrator policy",
     ))
 }
@@ -388,8 +388,8 @@ fn ensure_discoverable_registration_result(credential: &RegisterPublicKeyCredent
         .and_then(|props| props.rk)
         == Some(false)
     {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::PasskeyNotDiscoverable,
+        return Err(validation_error_with_code(
+            ApiErrorCode::PasskeyNotDiscoverable,
             "passkey registration did not create a discoverable credential",
         ));
     }

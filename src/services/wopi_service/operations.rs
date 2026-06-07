@@ -4,9 +4,9 @@
 //! 重点不是重新实现一套文件系统，而是复用已有的文件主链路，同时补上
 //! WOPI 专用的 lock、rename、PUT_RELATIVE 语义。
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::file_repo;
-use crate::errors::{AsterError, MapAsterErr, Result, precondition_failed_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, precondition_failed_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
     audit_service::{self, AuditRequestInfo},
@@ -94,8 +94,8 @@ pub async fn get_file_contents(
     if let Some(max_expected_size) = max_expected_size
         && resolved.file.size > max_expected_size
     {
-        return Err(precondition_failed_with_subcode(
-            ApiSubcode::WopiMaxExpectedSizeExceeded,
+        return Err(precondition_failed_with_code(
+            ApiErrorCode::WopiMaxExpectedSizeExceeded,
             "file is larger than X-WOPI-MaxExpectedSize",
         ));
     }

@@ -323,11 +323,13 @@ async fn test_archive_preview_default_disabled() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.disabled");
+    assert_eq!(body["code"], "archive_preview.disabled");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("subcode").is_none());
 }
 
 #[actix_web::test]
-async fn test_archive_preview_user_toggle_disabled_reports_subcode() {
+async fn test_archive_preview_user_toggle_disabled_reports_api_code() {
     let state = common::setup().await;
     enable_archive_preview(&state, false, true).await;
     let app = create_test_app!(state.clone());
@@ -349,7 +351,9 @@ async fn test_archive_preview_user_toggle_disabled_reports_subcode() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.user_disabled");
+    assert_eq!(body["code"], "archive_preview.user_disabled");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("subcode").is_none());
 }
 
 #[actix_web::test]
@@ -380,7 +384,7 @@ async fn test_archive_preview_returns_manifest_and_caches_it() {
         Some("2")
     );
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
 
     let tasks =
         aster_drive::db::repository::background_task_repo::list_recent(state.writer_db(), 10)
@@ -745,7 +749,8 @@ async fn test_archive_preview_rejects_unsupported_type_and_source_limit() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.unsupported_type");
+    assert_eq!(body["code"], "archive_preview.unsupported_type");
+    assert_eq!(body["error"]["retryable"], false);
     assert!(
         archive_preview_tasks(&state).await.is_empty(),
         "unsupported files should fail before task creation"
@@ -767,7 +772,8 @@ async fn test_archive_preview_rejects_unsupported_type_and_source_limit() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.unsupported_type");
+    assert_eq!(body["code"], "archive_preview.unsupported_type");
+    assert_eq!(body["error"]["retryable"], false);
     assert!(
         archive_preview_tasks(&state).await.is_empty(),
         "MIME-only ZIP files should fail before source limit checks or task creation"
@@ -789,7 +795,8 @@ async fn test_archive_preview_rejects_unsupported_type_and_source_limit() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.source_too_large");
+    assert_eq!(body["code"], "archive_preview.source_too_large");
+    assert_eq!(body["error"]["retryable"], false);
     assert!(
         archive_preview_tasks(&state).await.is_empty(),
         "oversized sources should fail before task creation"
@@ -797,7 +804,7 @@ async fn test_archive_preview_rejects_unsupported_type_and_source_limit() {
 }
 
 #[actix_web::test]
-async fn test_archive_preview_reports_invalid_archive_with_subcode() {
+async fn test_archive_preview_reports_invalid_archive_with_api_code() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
     let app = create_test_app!(state.clone());
@@ -818,9 +825,10 @@ async fn test_archive_preview_reports_invalid_archive_with_subcode() {
         .await
         .expect("archive preview task should drain");
     let resp = request_personal_archive_preview(&app, &token, file_id).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.invalid_archive");
+    assert_eq!(body["code"], "not_found");
+    assert_eq!(body["error"]["retryable"], false);
 }
 
 #[actix_web::test]
@@ -872,9 +880,10 @@ async fn test_archive_preview_failed_task_is_reused_as_friendly_error_without_re
     );
 
     let resp = request_personal_archive_preview(&app, &token, file_id).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.invalid_archive");
+    assert_eq!(body["code"], "not_found");
+    assert_eq!(body["error"]["retryable"], false);
     assert_eq!(
         archive_preview_tasks(&state).await.len(),
         1,
@@ -883,7 +892,7 @@ async fn test_archive_preview_failed_task_is_reused_as_friendly_error_without_re
 }
 
 #[actix_web::test]
-async fn test_archive_preview_reports_scan_limit_rejection_with_subcode() {
+async fn test_archive_preview_reports_scan_limit_rejection_with_api_code() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
     aster_drive::services::config_service::set(&state, "archive_preview_max_entries", "1", 1)
@@ -910,9 +919,10 @@ async fn test_archive_preview_reports_scan_limit_rejection_with_subcode() {
         .await
         .expect("archive preview task should drain");
     let resp = request_personal_archive_preview(&app, &token, file_id).await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.rejected");
+    assert_eq!(body["code"], "not_found");
+    assert_eq!(body["error"]["retryable"], false);
 }
 
 #[actix_web::test]
@@ -1017,7 +1027,7 @@ async fn test_archive_preview_caps_high_manifest_limit_to_cache_storage_limit() 
 }
 
 #[actix_web::test]
-async fn test_archive_preview_reports_manifest_limit_too_small_with_subcode() {
+async fn test_archive_preview_reports_manifest_limit_too_small_with_api_code() {
     let state = common::setup().await;
     enable_archive_preview(&state, true, false).await;
     aster_drive::services::config_service::set(
@@ -1048,10 +1058,8 @@ async fn test_archive_preview_reports_manifest_limit_too_small_with_subcode() {
     let resp = request_personal_archive_preview(&app, &token, file_id).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["error"]["subcode"],
-        "archive_preview.manifest_too_large"
-    );
+    assert_eq!(body["code"], "archive_preview.manifest_too_large");
+    assert_eq!(body["error"]["retryable"], false);
 }
 
 #[actix_web::test]
@@ -1086,7 +1094,8 @@ async fn test_archive_preview_share_toggle_is_separate_from_user_toggle() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "archive_preview.share_disabled");
+    assert_eq!(body["code"], "archive_preview.share_disabled");
+    assert_eq!(body["error"]["retryable"], false);
 
     aster_drive::services::config_service::set(&state, "archive_preview_share_enabled", "true", 1)
         .await

@@ -958,7 +958,7 @@ async fn test_storage_migration_api_creates_task_and_checkpoint() {
 
     let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
 
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     let task_id = body["data"]["id"].as_i64().expect("task id should exist");
     assert_eq!(body["data"]["kind"], "storage_policy_migration");
     assert_eq!(
@@ -992,7 +992,7 @@ async fn test_storage_migration_dry_run_reports_preflight_summary() {
     let (status, body) = dry_run_migration_via_api(&app, &token, source.id, target.id).await;
 
     assert_eq!(status, actix_web::http::StatusCode::OK);
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     let data = &body["data"];
     assert_eq!(data["source_policy_id"], source.id);
     assert_eq!(data["target_policy_id"], target.id);
@@ -1046,7 +1046,7 @@ async fn test_storage_migration_capacity_preflight_uses_estimated_copy_bytes() {
     let (status, body) = dry_run_migration_via_api(&app, &token, source.id, target.id).await;
 
     assert_eq!(status, actix_web::http::StatusCode::OK);
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     let data = &body["data"];
     assert_eq!(data["source_blob_count"], 2);
     assert_eq!(
@@ -1111,7 +1111,7 @@ async fn test_storage_policy_capacity_api_reports_local_filesystem_capacity() {
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
     let body: Value = test::read_body_json(resp).await;
 
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     let data = &body["data"];
     assert_eq!(data["policy_id"], policy.id);
     assert_eq!(data["driver_type"], "local");
@@ -1364,7 +1364,7 @@ async fn test_storage_migration_local_to_rustfs_s3_e2e() {
     create_file_for_blob(&state, blob.id, "rustfs-e2e.txt").await;
 
     let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     let task_id = body["data"]["id"].as_i64().expect("task id should exist");
     let stats = task_service::drain(&state)
         .await
@@ -1423,7 +1423,7 @@ async fn test_storage_migration_local_to_rustfs_s3_resume_after_partial_failure_
     create_file_for_blob(&state, second.id, "resume-second.txt").await;
 
     let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     let task_id = body["data"]["id"].as_i64().expect("task id should exist");
 
     let second_source_path = std::path::Path::new(&source.base_path).join(&second.storage_path);
@@ -1552,7 +1552,7 @@ async fn test_storage_migration_crosses_batch_boundary_and_merges_existing_targe
         create_blob_with_object(&state, &target, &source_bytes[merge_index], 3).await;
 
     let body = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
     let task_id = body["data"]["id"].as_i64().expect("task id should exist");
     let stats = task_service::drain(&state)
         .await
@@ -2355,7 +2355,7 @@ async fn test_storage_migration_rejects_duplicate_active_pair() {
     let target = create_local_policy(&state, "target-duplicate").await;
 
     let first = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
-    assert_eq!(first["code"], 0);
+    assert_eq!(first["code"], "success");
     let (status, second) =
         create_migration_task_via_api_with_status(&app, &token, source.id, target.id, false).await;
     assert_conflicting_storage_migration_response(status, &second);
@@ -2372,7 +2372,7 @@ async fn test_storage_migration_active_conflict_matrix() {
     let other_for_out = create_local_policy(&state, "other-for-out").await;
     let first =
         create_migration_task_via_api(&app, &token, source_out.id, target_in.id, false).await;
-    assert_eq!(first["code"], 0);
+    assert_eq!(first["code"], "success");
 
     let (status, source_with_outgoing) = create_migration_task_via_api_with_status(
         &app,
@@ -2408,7 +2408,7 @@ async fn test_storage_migration_active_conflict_matrix() {
     let target_with_incoming =
         create_migration_task_via_api(&app, &token, allowed_second_source.id, target_in.id, false)
             .await;
-    assert_eq!(target_with_incoming["code"], 0);
+    assert_eq!(target_with_incoming["code"], "success");
 
     let (status, reverse) =
         create_migration_task_via_api_with_status(&app, &token, target_in.id, source_out.id, false)
@@ -2426,7 +2426,7 @@ async fn test_storage_migration_dry_run_uses_active_conflict_rules() {
     let other = create_local_policy(&state, "other-dry-conflict").await;
 
     let first = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
-    assert_eq!(first["code"], 0);
+    assert_eq!(first["code"], "success");
 
     let (blocked_status, blocked_body) =
         dry_run_migration_via_api(&app, &token, target.id, other.id).await;
@@ -2436,7 +2436,7 @@ async fn test_storage_migration_dry_run_uses_active_conflict_rules() {
     let (allowed_status, allowed_body) =
         dry_run_migration_via_api(&app, &token, allowed_source.id, target.id).await;
     assert_eq!(allowed_status, actix_web::http::StatusCode::OK);
-    assert_eq!(allowed_body["code"], 0);
+    assert_eq!(allowed_body["code"], "success");
 }
 
 #[actix_web::test]
@@ -2457,13 +2457,13 @@ async fn test_storage_migration_terminal_tasks_do_not_block_new_migrations() {
             create_local_policy(&state, &format!("terminal-new-target-{}", status.as_str())).await;
 
         let first = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
-        assert_eq!(first["code"], 0);
+        assert_eq!(first["code"], "success");
         let task_id = first["data"]["id"].as_i64().expect("task id should exist");
         set_background_task_status(&state, task_id, status).await;
 
         let second =
             create_migration_task_via_api(&app, &token, source.id, new_target.id, false).await;
-        assert_eq!(second["code"], 0);
+        assert_eq!(second["code"], "success");
     }
 }
 
@@ -2485,7 +2485,7 @@ async fn test_storage_migration_active_statuses_block_new_migrations() {
             create_local_policy(&state, &format!("active-new-target-{}", status.as_str())).await;
 
         let first = create_migration_task_via_api(&app, &token, source.id, target.id, false).await;
-        assert_eq!(first["code"], 0);
+        assert_eq!(first["code"], "success");
         let task_id = first["data"]["id"].as_i64().expect("task id should exist");
         set_background_task_status(&state, task_id, status).await;
 

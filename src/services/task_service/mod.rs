@@ -54,12 +54,12 @@ use std::sync::Arc;
 use std::time::{Duration as StdDuration, Instant};
 use tokio_util::sync::CancellationToken;
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::pagination::{AdminTaskSortBy, OffsetPage, SortOrder};
-use crate::api::subcode::ApiSubcode;
 use crate::config::operations;
 use crate::db::repository::background_task_repo;
 use crate::entities::background_task;
-use crate::errors::{AsterError, Result, precondition_failed_with_subcode};
+use crate::errors::{AsterError, Result, precondition_failed_with_code};
 use crate::runtime::{SharedRuntimeState, TaskRuntimeState};
 use crate::services::{
     audit_service::{self, AuditContext},
@@ -1145,8 +1145,8 @@ fn load_task_retention_hours(state: &impl SharedRuntimeState) -> i64 {
 }
 
 pub(super) fn task_lease_lost(lease: TaskLease) -> AsterError {
-    precondition_failed_with_subcode(
-        ApiSubcode::TaskLeaseLost,
+    precondition_failed_with_code(
+        ApiErrorCode::TaskLeaseLost,
         format!(
             "{TASK_LEASE_LOST_MESSAGE_PREFIX} for task #{} with token {}",
             lease.task_id, lease.processing_token
@@ -1155,8 +1155,8 @@ pub(super) fn task_lease_lost(lease: TaskLease) -> AsterError {
 }
 
 pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
-    precondition_failed_with_subcode(
-        ApiSubcode::TaskLeaseRenewalTimedOut,
+    precondition_failed_with_code(
+        ApiErrorCode::TaskLeaseRenewalTimedOut,
         format!(
             "{TASK_LEASE_RENEWAL_TIMEOUT_MESSAGE_PREFIX} for task #{} with token {}",
             lease.task_id, lease.processing_token
@@ -1165,8 +1165,8 @@ pub(super) fn task_lease_renewal_timed_out(lease: TaskLease) -> AsterError {
 }
 
 pub(super) fn task_worker_shutdown_requested(lease: TaskLease) -> AsterError {
-    precondition_failed_with_subcode(
-        ApiSubcode::TaskWorkerShutdownRequested,
+    precondition_failed_with_code(
+        ApiErrorCode::TaskWorkerShutdownRequested,
         format!(
             "{TASK_WORKER_SHUTDOWN_REQUESTED_MESSAGE_PREFIX} for task #{} with token {}",
             lease.task_id, lease.processing_token
@@ -1175,15 +1175,15 @@ pub(super) fn task_worker_shutdown_requested(lease: TaskLease) -> AsterError {
 }
 
 pub(super) fn is_task_lease_lost(error: &AsterError) -> bool {
-    error.api_error_subcode() == Some(ApiSubcode::TaskLeaseLost)
+    error.api_error_code_override() == Some(ApiErrorCode::TaskLeaseLost)
 }
 
 pub(super) fn is_task_lease_renewal_timed_out(error: &AsterError) -> bool {
-    error.api_error_subcode() == Some(ApiSubcode::TaskLeaseRenewalTimedOut)
+    error.api_error_code_override() == Some(ApiErrorCode::TaskLeaseRenewalTimedOut)
 }
 
 pub(super) fn is_task_worker_shutdown_requested(error: &AsterError) -> bool {
-    error.api_error_subcode() == Some(ApiSubcode::TaskWorkerShutdownRequested)
+    error.api_error_code_override() == Some(ApiErrorCode::TaskWorkerShutdownRequested)
 }
 
 fn task_lease_renewal_timeout() -> StdDuration {
@@ -1211,7 +1211,7 @@ mod tests {
         TypedTaskCreate, build_task_info_with_creator, ensure_task_in_scope, truncate_display_name,
         truncate_error, validate_admin_task_cleanup_status,
     };
-    use crate::api::subcode::ApiSubcode;
+    use crate::api::api_error_code::ApiErrorCode;
     use crate::config::operations::OfflineDownloadEngine;
     use crate::entities::background_task;
     use crate::services::task_service::spec::{self, SystemRuntimeTask};
@@ -1246,7 +1246,7 @@ mod tests {
     }
 
     #[test]
-    fn task_info_hides_persisted_error_subcode_wrapper() {
+    fn task_info_hides_persisted_error_api_code_wrapper() {
         let now = Utc::now();
         let task = background_task::Model {
             id: 41,
@@ -1280,10 +1280,7 @@ mod tests {
             lease_expires_at: None,
             started_at: None,
             finished_at: Some(now),
-            last_error: Some(crate::errors::encode_api_error_subcode_message(
-                ApiSubcode::ArchivePreviewInvalidArchive,
-                "invalid archive".to_string(),
-            )),
+            last_error: Some("invalid archive".to_string()),
             failure_can_retry: Some(false),
             expires_at: now + Duration::hours(1),
             created_at: now,
@@ -1969,20 +1966,16 @@ mod tests {
     }
 
     #[test]
-    fn task_error_encoding_preserves_subcode_before_truncation() {
-        let error = crate::errors::validation_error_with_subcode(
-            ApiSubcode::ArchivePreviewRejected,
+    fn task_error_storage_keeps_display_message_only() {
+        let error = crate::errors::validation_error_with_code(
+            ApiErrorCode::ArchivePreviewRejected,
             "archive contains unsafe path",
         );
         let stored = truncate_error(&crate::errors::encode_task_error_for_storage(&error));
 
         assert_eq!(
-            crate::errors::task_error_subcode_from_storage(&stored),
-            Some(ApiSubcode::ArchivePreviewRejected)
-        );
-        assert_eq!(
             crate::errors::task_error_display_message(&stored),
-            "archive contains unsafe path"
+            "Validation Error: archive contains unsafe path"
         );
     }
 

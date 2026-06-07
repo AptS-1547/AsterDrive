@@ -1,10 +1,10 @@
 use chrono::{Duration, Utc};
 use sea_orm::Set;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
-use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::audit_service::{self, AuditContext};
 use crate::types::EntityType;
@@ -125,8 +125,8 @@ pub async fn unlock(
                         && lock.owner_id != Some(user_id)
                 });
                 if has_foreign_active_lock {
-                    return Err(auth_forbidden_with_subcode(
-                        ApiSubcode::LockNotOwner,
+                    return Err(auth_forbidden_with_code(
+                        ApiErrorCode::LockNotOwner,
                         "not the lock owner",
                     ));
                 }

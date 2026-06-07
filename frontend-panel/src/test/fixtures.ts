@@ -1,9 +1,9 @@
 import type { ApiResponse, FolderContents, MeResponse } from "@/types/api";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 export function apiResponse<T>(data: T, message = "ok"): ApiResponse<T> {
 	return {
-		code: ErrorCode.Success,
+		code: ApiErrorCode.Success,
 		msg: message,
 		data,
 	};

@@ -1,6 +1,6 @@
 //! API 路由：`health`。
 
-use crate::api::error_code::ErrorCode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::response::{ApiResponse, HealthResponse, MemoryStatsResponse};
 use crate::runtime::{FollowerAppState, PrimaryAppState, SharedRuntimeState};
 use crate::services::health_service;
@@ -89,16 +89,15 @@ pub async fn follower_ready(state: web::Data<FollowerAppState>) -> HttpResponse 
 fn ready_database_error(error: crate::errors::AsterError) -> HttpResponse {
     tracing::error!(error = %error, "health readiness database ping failed");
     HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error(
-        ErrorCode::DatabaseError,
+        ApiErrorCode::DatabaseError,
         READY_DB_UNAVAILABLE_MESSAGE,
     ))
 }
 
 fn ready_storage_error(error: crate::errors::AsterError) -> HttpResponse {
     tracing::error!(error = %error, "health readiness storage probe failed");
-    let error_code: ErrorCode = (&error).into();
     HttpResponse::ServiceUnavailable().json(ApiResponse::<()>::error_with_details(
-        error_code,
+        error.api_error_code(),
         READY_STORAGE_UNAVAILABLE_MESSAGE,
         Some(error.api_error_info()),
     ))
@@ -152,7 +151,6 @@ fn status_response(status: &str) -> HealthResponse {
 #[cfg(test)]
 mod tests {
     use super::{READY_STORAGE_UNAVAILABLE_MESSAGE, ready};
-    use crate::api::error_code::ErrorCode;
     use crate::cache;
     use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
     use crate::entities::storage_policy;
@@ -350,10 +348,7 @@ mod tests {
             .expect("health response body should read");
         let payload: serde_json::Value =
             serde_json::from_slice(&body).expect("health response should be valid json");
-        assert_eq!(
-            payload["code"],
-            serde_json::json!(ErrorCode::StorageDriverError as i32)
-        );
+        assert_eq!(payload["code"], "storage.unknown");
         assert_eq!(payload["msg"], READY_STORAGE_UNAVAILABLE_MESSAGE);
     }
 
@@ -368,10 +363,7 @@ mod tests {
             .expect("health response body should read");
         let payload: serde_json::Value =
             serde_json::from_slice(&body).expect("health response should be valid json");
-        assert_eq!(
-            payload["code"],
-            serde_json::json!(ErrorCode::StoragePolicyNotFound as i32)
-        );
+        assert_eq!(payload["code"], "storage.policy_not_found");
         assert_eq!(payload["msg"], READY_STORAGE_UNAVAILABLE_MESSAGE);
     }
 }

@@ -10,7 +10,7 @@ import type {
 	ExternalAuthPublicProvider,
 	PasskeyInfo,
 } from "@/types/api";
-import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	clientPost: vi.fn(),
@@ -33,25 +33,19 @@ vi.mock("@/services/http", () => ({
 		put: mockState.put,
 	},
 	ApiError: class ApiError extends Error {
-		code: number;
-		internalCode?: string;
+		code: string;
 		retryable?: boolean;
-		subcode?: string;
 
 		constructor(
-			code: number,
+			code: string,
 			message: string,
 			options?: {
-				internalCode?: string;
 				retryable?: boolean;
-				subcode?: string;
 			},
 		) {
 			super(message);
 			this.code = code;
-			this.internalCode = options?.internalCode;
 			this.retryable = options?.retryable;
-			this.subcode = options?.subcode;
 		}
 	},
 }));
@@ -834,7 +828,7 @@ describe("authService", () => {
 		};
 		mockState.clientPost.mockResolvedValue({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				data: profile,
 				msg: "",
 			},
@@ -860,11 +854,9 @@ describe("authService", () => {
 	it("throws ApiError details when avatar upload returns an error envelope", async () => {
 		mockState.clientPost.mockResolvedValue({
 			data: {
-				code: 1000,
+				code: ApiErrorCode.AvatarRenderFailed,
 				error: {
-					internal_code: "E001",
 					retryable: true,
-					subcode: ApiSubcode.AvatarRenderFailed,
 				},
 				msg: "upload failed",
 			},
@@ -875,11 +867,9 @@ describe("authService", () => {
 				new File(["avatar"], "avatar.png", { type: "image/png" }),
 			),
 		).rejects.toMatchObject({
-			code: 1000,
-			internalCode: "E001",
+			code: ApiErrorCode.AvatarRenderFailed,
 			message: "upload failed",
 			retryable: true,
-			subcode: ApiSubcode.AvatarRenderFailed,
 		});
 	});
 });

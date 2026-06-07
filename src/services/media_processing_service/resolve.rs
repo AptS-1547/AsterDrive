@@ -1,8 +1,8 @@
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::media_processing as media_processing_config;
 use crate::entities::{file_blob, storage_policy};
 use crate::errors::{
-    AsterError, Result, precondition_failed_with_subcode, validation_error_with_subcode,
+    AsterError, Result, precondition_failed_with_code, validation_error_with_code,
 };
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::types::{MediaProcessorKind, parse_storage_policy_options};
@@ -27,10 +27,10 @@ pub(crate) fn map_thumbnail_request_error(error: AsterError) -> AsterError {
     if matches!(error, AsterError::PreconditionFailed(_))
         && thumbnail_precondition_is_user_fixable(&display_message)
     {
-        let subcode = error
-            .api_error_subcode()
-            .unwrap_or(ApiSubcode::ThumbnailProcessorUnavailable);
-        return validation_error_with_subcode(subcode, display_message);
+        let api_code = error
+            .api_error_code_override()
+            .unwrap_or(ApiErrorCode::ThumbnailProcessorUnavailable);
+        return validation_error_with_code(api_code, display_message);
     }
 
     error
@@ -403,13 +403,13 @@ fn thumbnail_precondition_is_user_fixable(message: &str) -> bool {
 }
 
 fn thumbnail_processor_unavailable_error(message: impl Into<String>) -> AsterError {
-    precondition_failed_with_subcode(ApiSubcode::ThumbnailProcessorUnavailable, message)
+    precondition_failed_with_code(ApiErrorCode::ThumbnailProcessorUnavailable, message)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{map_thumbnail_request_error, thumbnail_processor_unavailable_error};
-    use crate::api::subcode::ApiSubcode;
+    use crate::api::api_error_code::ApiErrorCode;
     use crate::errors::AsterError;
 
     #[test]
@@ -419,8 +419,8 @@ mod tests {
         ));
         assert!(matches!(error, AsterError::ValidationError(_)));
         assert_eq!(
-            error.api_error_subcode(),
-            Some(ApiSubcode::ThumbnailProcessorUnavailable)
+            error.api_error_code_override(),
+            Some(ApiErrorCode::ThumbnailProcessorUnavailable)
         );
     }
 
@@ -431,8 +431,8 @@ mod tests {
         ));
         assert!(matches!(error, AsterError::PreconditionFailed(_)));
         assert_eq!(
-            error.api_error_subcode(),
-            Some(ApiSubcode::ThumbnailProcessorUnavailable)
+            error.api_error_code_override(),
+            Some(ApiErrorCode::ThumbnailProcessorUnavailable)
         );
     }
 }

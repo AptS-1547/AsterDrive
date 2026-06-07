@@ -3,9 +3,9 @@
 use actix_multipart::Multipart;
 use futures::StreamExt;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::errors::{
-    AsterError, MapAsterErr, Result, file_upload_error_with_subcode, validation_error_with_subcode,
+    AsterError, MapAsterErr, Result, file_upload_error_with_code, validation_error_with_code,
 };
 
 pub(super) struct AvatarUploadData {
@@ -23,7 +23,7 @@ pub(super) async fn read_avatar_upload(
 
     while let Some(field) = payload.next().await {
         let mut field = field.map_aster_err(|message| {
-            file_upload_error_with_subcode(ApiSubcode::AvatarUploadReadFailed, message)
+            file_upload_error_with_code(ApiErrorCode::AvatarUploadReadFailed, message)
         })?;
         let Some(current_file_name) = field
             .content_disposition()
@@ -34,7 +34,7 @@ pub(super) async fn read_avatar_upload(
         else {
             while let Some(chunk) = field.next().await {
                 chunk.map_aster_err(|message| {
-                    file_upload_error_with_subcode(ApiSubcode::AvatarUploadReadFailed, message)
+                    file_upload_error_with_code(ApiErrorCode::AvatarUploadReadFailed, message)
                 })?;
             }
             continue;
@@ -44,7 +44,7 @@ pub(super) async fn read_avatar_upload(
         file_name = Some(current_file_name);
         while let Some(chunk) = field.next().await {
             let chunk = chunk.map_aster_err(|message| {
-                file_upload_error_with_subcode(ApiSubcode::AvatarUploadReadFailed, message)
+                file_upload_error_with_code(ApiErrorCode::AvatarUploadReadFailed, message)
             })?;
             if bytes.len() + chunk.len() > max_upload_size {
                 return Err(AsterError::file_too_large(format!(
@@ -58,8 +58,8 @@ pub(super) async fn read_avatar_upload(
     }
 
     if !saw_file || bytes.is_empty() {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::AvatarFileRequired,
+        return Err(validation_error_with_code(
+            ApiErrorCode::AvatarFileRequired,
             "avatar file is required",
         ));
     }

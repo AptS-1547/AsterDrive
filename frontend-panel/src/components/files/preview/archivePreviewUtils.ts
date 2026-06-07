@@ -1,7 +1,7 @@
 import { formatDateTime } from "@/lib/format";
 import { ApiError } from "@/services/http";
 import type { ArchivePreviewManifest } from "@/types/api";
-import { ApiSubcode, ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 import type {
 	ArchiveBreadcrumbItem,
 	ArchiveBrowserEntry,
@@ -10,16 +10,16 @@ import type {
 	ArchivePreviewErrorKind,
 } from "./archivePreviewTypes";
 
-const archivePreviewDisabledSubcodes = new Set<string>([
-	ApiSubcode.ArchivePreviewDisabled,
-	ApiSubcode.ArchivePreviewUserDisabled,
-	ApiSubcode.ArchivePreviewShareDisabled,
+const archivePreviewDisabledCodes = new Set<string>([
+	ApiErrorCode.ArchivePreviewDisabled,
+	ApiErrorCode.ArchivePreviewUserDisabled,
+	ApiErrorCode.ArchivePreviewShareDisabled,
 ]);
 
-const archivePreviewRejectedSubcodes = new Set<string>([
-	ApiSubcode.ArchivePreviewRejected,
-	ApiSubcode.ArchivePreviewManifestTooLarge,
-	ApiSubcode.ArchivePreviewSourceSizeMismatch,
+const archivePreviewRejectedCodes = new Set<string>([
+	ApiErrorCode.ArchivePreviewRejected,
+	ApiErrorCode.ArchivePreviewManifestTooLarge,
+	ApiErrorCode.ArchivePreviewSourceSizeMismatch,
 ]);
 
 function isArchiveFilenameEncodingError(message: string) {
@@ -33,36 +33,20 @@ export function classifyArchivePreviewError(
 		return "generic";
 	}
 
-	const subcode = error.subcode ?? "";
 	const message = error.message.toLowerCase();
-	if (
-		error.code === ErrorCode.Forbidden &&
-		archivePreviewDisabledSubcodes.has(subcode)
-	) {
+	if (archivePreviewDisabledCodes.has(error.code)) {
 		return "disabled";
 	}
-	if (
-		error.code === ErrorCode.BadRequest &&
-		subcode === ApiSubcode.ArchivePreviewUnsupportedType
-	) {
+	if (error.code === ApiErrorCode.ArchivePreviewUnsupportedType) {
 		return "unsupported";
 	}
-	if (
-		error.code === ErrorCode.BadRequest &&
-		subcode === ApiSubcode.ArchivePreviewSourceTooLarge
-	) {
+	if (error.code === ApiErrorCode.ArchivePreviewSourceTooLarge) {
 		return "sourceTooLarge";
 	}
-	if (
-		error.code === ErrorCode.BadRequest &&
-		subcode === ApiSubcode.ArchivePreviewInvalidArchive
-	) {
+	if (error.code === ApiErrorCode.ArchivePreviewInvalidArchive) {
 		return "invalid";
 	}
-	if (
-		error.code === ErrorCode.BadRequest &&
-		archivePreviewRejectedSubcodes.has(subcode)
-	) {
+	if (archivePreviewRejectedCodes.has(error.code)) {
 		if (isArchiveFilenameEncodingError(message)) {
 			return "encoding";
 		}
@@ -70,7 +54,7 @@ export function classifyArchivePreviewError(
 	}
 
 	if (
-		error.code === ErrorCode.BadRequest &&
+		error.code === ApiErrorCode.BadRequest &&
 		isArchiveFilenameEncodingError(message)
 	) {
 		return "encoding";

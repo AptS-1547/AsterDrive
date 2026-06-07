@@ -3,11 +3,11 @@
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::pagination::{AdminPolicySortBy, OffsetPage, SortOrder, load_offset_page};
-use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{file_repo, managed_follower_repo, policy_group_repo, policy_repo};
 use crate::entities::storage_policy;
-use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_code};
 use crate::runtime::{RemoteProtocolRuntimeState, SharedRuntimeState, TaskRuntimeState};
 use crate::storage::drivers::tencent_cos::TencentCosDriver;
 use crate::types::{
@@ -270,8 +270,8 @@ pub async fn delete(state: &impl TaskRuntimeState, id: i64, force: bool) -> Resu
         crate::db::repository::upload_session_repo::count_by_policy(state.writer_db(), id).await?;
     if upload_session_count > 0 {
         if !force {
-            return Err(validation_error_with_subcode(
-                ApiSubcode::PolicyUploadSessionsExist,
+            return Err(validation_error_with_code(
+                ApiErrorCode::PolicyUploadSessionsExist,
                 format!(
                     "cannot delete policy: {upload_session_count} upload session(s) still reference it"
                 ),

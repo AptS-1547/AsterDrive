@@ -108,7 +108,7 @@ pub(super) async fn process_storage_policy_temp_cleanup_task(
     )
     .await?;
 
-    let driver = driver_from_payload(state, &payload)?;
+    let driver = driver_from_payload(state, &payload).await?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_PREPARE_SOURCES,
@@ -272,10 +272,11 @@ async fn remote_node_snapshot_for_policy(
         transport_mode: remote.transport_mode,
         access_key: remote.access_key,
         secret_key: remote.secret_key,
+        last_capabilities: remote.last_capabilities,
     }))
 }
 
-fn driver_from_payload(
+async fn driver_from_payload(
     state: &impl RemoteProtocolRuntimeState,
     payload: &StoragePolicyTempCleanupTaskPayload,
 ) -> Result<Box<dyn StorageDriver>> {
@@ -316,7 +317,8 @@ fn driver_from_payload(
                 secret_key: remote.secret_key.clone(),
                 is_enabled: true,
                 transport_mode: remote.transport_mode,
-                last_capabilities: String::new(),
+                last_capabilities: remote_capabilities_from_snapshot_or_current(state, remote)
+                    .await?,
                 last_error: String::new(),
                 last_checked_at: None,
                 tunnel_last_error: String::new(),
@@ -331,6 +333,22 @@ fn driver_from_payload(
             ))
         }
     }
+}
+
+async fn remote_capabilities_from_snapshot_or_current(
+    state: &impl RemoteProtocolRuntimeState,
+    remote: &StoragePolicyCleanupRemoteNodeSnapshot,
+) -> Result<String> {
+    if !remote.last_capabilities.trim().is_empty() {
+        return Ok(remote.last_capabilities.clone());
+    }
+
+    // Pre-0.3.0 cleanup payloads did not store remote capabilities. Use the
+    // current node row only as a fallback so newly created cleanup tasks remain
+    // self-contained snapshots.
+    managed_follower_repo::find_by_id(state.writer_db(), remote.id)
+        .await
+        .map(|node| node.last_capabilities)
 }
 
 async fn delete_object_if_present(

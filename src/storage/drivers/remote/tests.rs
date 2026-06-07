@@ -52,7 +52,11 @@ fn build_policy(base_path: &str) -> storage_policy::Model {
 }
 
 fn build_follower(base_url: &str) -> managed_follower::Model {
-    build_follower_with_capabilities(base_url, "{}")
+    build_follower_with_capabilities(
+        base_url,
+        &serde_json::to_string(&RemoteStorageCapabilities::current())
+            .expect("current capabilities should serialize"),
+    )
 }
 
 fn build_follower_with_capabilities(
@@ -89,16 +93,18 @@ fn build_driver(base_url: &str, base_path: &str) -> RemoteDriver {
         .expect("remote driver should build")
 }
 
-fn build_driver_with_capabilities(
+fn build_driver_with_capabilities_err(
     base_url: &str,
     base_path: &str,
     last_capabilities: &str,
-) -> RemoteDriver {
-    RemoteDriver::new(
+) -> AsterError {
+    match RemoteDriver::new(
         &build_policy(base_path),
         &build_follower_with_capabilities(base_url, last_capabilities),
-    )
-    .expect("remote driver should build")
+    ) {
+        Ok(_) => panic!("remote driver should reject capabilities"),
+        Err(error) => error,
+    }
 }
 
 async fn spawn_list_server(
@@ -116,7 +122,7 @@ async fn spawn_list_server(
             .expect("seen_prefixes lock should not be poisoned")
             .push(prefix);
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": { "items": items.get_ref() }
         }))
@@ -271,8 +277,8 @@ async fn reverse_tunnel_driver_rejects_presigned_browser_urls() {
     let remote_protocol = crate::runtime::PrimaryAppState::new_remote_protocol();
     let follower = build_reverse_follower_with_capabilities(
         r#"{
-            "protocol_version":"v3",
-            "min_supported_protocol_version":"v2",
+            "protocol_version":"v4",
+            "min_supported_protocol_version":"v4",
             "supports_stream_upload":true,
             "supports_list":true,
             "supports_range_read":true
@@ -369,31 +375,9 @@ async fn get_range_forwards_offset_and_length_to_remote_object_request() {
 }
 
 #[tokio::test]
-async fn v3_remote_driver_can_use_v2_node_without_capacity_support() {
-    async fn get_object(query: web::Query<HashMap<String, String>>) -> HttpResponse {
-        assert!(query.get("offset").is_none());
-        assert!(query.get("length").is_none());
-        HttpResponse::Ok().body("v2-compatible")
-    }
-
-    let listener =
-        std::net::TcpListener::bind(("127.0.0.1", 0)).expect("test remote listener should bind");
-    let addr = listener
-        .local_addr()
-        .expect("test remote listener should expose local addr");
-    let server = HttpServer::new(move || {
-        App::new().route(
-            "/api/v1/internal/storage/objects/base/file.txt",
-            web::get().to(get_object),
-        )
-    })
-    .listen(listener)
-    .expect("test remote server should listen")
-    .run();
-    let handle = server.handle();
-    let task = tokio::spawn(server);
-    let driver = build_driver_with_capabilities(
-        &format!("http://127.0.0.1:{}", addr.port()),
+async fn v4_remote_driver_rejects_v2_node_without_capacity_support() {
+    let error = build_driver_with_capabilities_err(
+        "http://127.0.0.1:9",
         "base",
         r#"{
             "protocol_version":"v2",
@@ -403,29 +387,15 @@ async fn v3_remote_driver_can_use_v2_node_without_capacity_support() {
             "supports_range_read":true
         }"#,
     );
-
-    let body = driver
-        .get("file.txt")
-        .await
-        .expect("v3 client should keep v2 object operations usable");
-    assert_eq!(body, b"v2-compatible");
-
-    let capacity_error = driver
-        .capacity_info()
-        .await
-        .expect_err("v2 nodes should not expose v3 capacity endpoint");
     assert_eq!(
-        capacity_error.storage_error_kind(),
-        Some(StorageErrorKind::Unsupported)
+        error.storage_error_kind(),
+        Some(StorageErrorKind::Misconfigured)
     );
     assert!(
-        capacity_error
-            .message()
-            .contains("does not support capacity observability")
+        error.message().contains("local supports v4-v4"),
+        "unexpected error message: {}",
+        error.message()
     );
-
-    handle.stop(true).await;
-    let _ = task.await;
 }
 
 #[test]

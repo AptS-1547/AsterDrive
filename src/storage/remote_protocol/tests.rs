@@ -3,8 +3,7 @@ use super::errors::{
     remote_status_error_kind,
 };
 use super::*;
-use crate::api::error_code::ErrorCode;
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::errors::AsterError;
 use crate::storage::error::StorageErrorKind;
 use crate::storage::traits::driver::PresignedDownloadOptions;
@@ -91,7 +90,7 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
     async fn capabilities(req: HttpRequest, log: web::Data<Arc<ProtocolLog>>) -> HttpResponse {
         log_request(&req, &[], &log);
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": RemoteStorageCapabilities::current()
         }))
@@ -105,7 +104,7 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
         log_request(&req, &[], &log);
         let prefix = query.get("prefix").cloned().unwrap_or_default();
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": { "items": [format!("{prefix}/one.bin"), format!("{prefix}/two.bin")] }
         }))
@@ -114,7 +113,7 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
     async fn capacity(req: HttpRequest, log: web::Data<Arc<ProtocolLog>>) -> HttpResponse {
         log_request(&req, &[], &log);
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": {
                 "capacity": StorageCapacityInfo {
@@ -172,7 +171,7 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
     async fn metadata(req: HttpRequest, log: web::Data<Arc<ProtocolLog>>) -> HttpResponse {
         log_request(&req, &[], &log);
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": { "size": 42, "content_type": "text/plain" }
         }))
@@ -190,7 +189,7 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
     async fn list_profiles(req: HttpRequest, log: web::Data<Arc<ProtocolLog>>) -> HttpResponse {
         log_request(&req, &[], &log);
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": [profile_json("profile-a")]
         }))
@@ -203,7 +202,7 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
     ) -> HttpResponse {
         log_request(&req, &body, &log);
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": profile_json("created-profile")
         }))
@@ -216,7 +215,7 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
     ) -> HttpResponse {
         log_request(&req, &body, &log);
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": profile_json("updated-profile")
         }))
@@ -234,7 +233,7 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
     ) -> HttpResponse {
         log_request(&req, &body, &log);
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": { "bytes_written": 6 }
         }))
@@ -317,19 +316,19 @@ async fn spawn_protocol_server() -> (TestHttpServer, Arc<ProtocolLog>) {
 #[test]
 fn remote_api_error_kind_maps_auth_codes() {
     assert_eq!(
-        remote_api_error_kind(ErrorCode::CredentialsFailed as i32),
+        remote_api_error_kind(ApiErrorCode::CredentialsFailed),
         Some(StorageErrorKind::Auth)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::TokenExpired as i32),
+        remote_api_error_kind(ApiErrorCode::TokenExpired),
         Some(StorageErrorKind::Auth)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::TokenMissing as i32),
+        remote_api_error_kind(ApiErrorCode::TokenMissing),
         Some(StorageErrorKind::Auth)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::MfaFailed as i32),
+        remote_api_error_kind(ApiErrorCode::MfaFailed),
         Some(StorageErrorKind::Auth)
     );
 }
@@ -337,11 +336,11 @@ fn remote_api_error_kind_maps_auth_codes() {
 #[test]
 fn remote_api_error_kind_maps_unsupported_driver() {
     assert_eq!(
-        remote_api_error_kind(ErrorCode::UnsupportedDriver as i32),
+        remote_api_error_kind(ApiErrorCode::UnsupportedDriver),
         Some(StorageErrorKind::Unsupported)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::StorageOperationUnsupported as i32),
+        remote_api_error_kind(ApiErrorCode::StorageOperationUnsupported),
         Some(StorageErrorKind::Unsupported)
     );
 }
@@ -349,34 +348,33 @@ fn remote_api_error_kind_maps_unsupported_driver() {
 #[test]
 fn remote_api_error_kind_maps_storage_and_http_error_codes() {
     assert_eq!(
-        remote_api_error_kind(ErrorCode::BadRequest as i32),
+        remote_api_error_kind(ApiErrorCode::BadRequest),
         Some(StorageErrorKind::Misconfigured)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::StorageObjectNotFound as i32),
+        remote_api_error_kind(ApiErrorCode::StorageObjectNotFound),
         Some(StorageErrorKind::NotFound)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::StorageRateLimited as i32),
+        remote_api_error_kind(ApiErrorCode::StorageRateLimited),
         Some(StorageErrorKind::RateLimited)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::StoragePermissionDenied as i32),
+        remote_api_error_kind(ApiErrorCode::StoragePermissionDenied),
         Some(StorageErrorKind::Permission)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::StoragePreconditionFailed as i32),
+        remote_api_error_kind(ApiErrorCode::StoragePreconditionFailed),
         Some(StorageErrorKind::Precondition)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::StorageTransientFailure as i32),
+        remote_api_error_kind(ApiErrorCode::StorageTransientFailure),
         Some(StorageErrorKind::Transient)
     );
     assert_eq!(
-        remote_api_error_kind(ErrorCode::StorageDriverError as i32),
+        remote_api_error_kind(ApiErrorCode::StorageDriverError),
         Some(StorageErrorKind::Unknown)
     );
-    assert_eq!(remote_api_error_kind(999_999), None);
 }
 
 #[test]
@@ -422,7 +420,7 @@ fn remote_status_error_kind_maps_rate_limit_and_server_errors() {
 #[test]
 fn remote_api_error_maps_storage_quota_exceeded() {
     let err = remote_api_error(
-        ErrorCode::StorageQuotaExceeded as i32,
+        ApiErrorCode::StorageQuotaExceeded,
         "put remote storage object: quota exceeded",
     )
     .expect("quota error should map");
@@ -553,7 +551,7 @@ fn remote_presigned_url_normalizes_base_url_and_rejects_invalid_expiry() {
 #[test]
 fn not_found_record_error_uses_contextual_remote_message() {
     let body = serde_json::json!({
-        "code": ErrorCode::NotFound as i32,
+        "code": "not_found",
         "msg": "managed_ingress_profile 'profile-a'",
     })
     .to_string();
@@ -572,13 +570,11 @@ fn not_found_record_error_uses_contextual_remote_message() {
 }
 
 #[test]
-fn remote_status_error_preserves_known_subcodes_and_ignores_unknown_remote_values() {
+fn remote_status_error_preserves_known_api_codes_and_ignores_unknown_remote_values() {
     let body = serde_json::json!({
-        "code": ErrorCode::StoragePermissionDenied as i32,
+        "code": "storage.permission",
         "msg": "denied",
         "error": {
-            "internal_code": "E031",
-            "subcode": "storage.permission",
             "retryable": false
         }
     })
@@ -591,17 +587,18 @@ fn remote_status_error_preserves_known_subcodes_and_ignores_unknown_remote_value
     );
 
     assert_eq!(err.storage_error_kind(), Some(StorageErrorKind::Permission));
-    assert_eq!(err.api_error_subcode(), Some(ApiSubcode::StoragePermission));
+    assert_eq!(
+        err.api_error_code_override(),
+        Some(ApiErrorCode::StoragePermission)
+    );
     assert_eq!(err.message(), "get remote storage object: denied");
 
     let unknown = build_remote_status_error_from_parts(
         reqwest::StatusCode::FORBIDDEN,
         &serde_json::json!({
-            "code": ErrorCode::StoragePermissionDenied as i32,
+            "code": "storage.permission",
             "msg": "denied",
             "error": {
-                "internal_code": "E031",
-                "subcode": "storage.remote_permission",
                 "retryable": false
             }
         })
@@ -610,18 +607,16 @@ fn remote_status_error_preserves_known_subcodes_and_ignores_unknown_remote_value
         false,
     );
     assert_eq!(
-        unknown.api_error_subcode(),
-        Some(ApiSubcode::StoragePermission)
+        unknown.api_error_code_override(),
+        Some(ApiErrorCode::StoragePermission)
     );
 
     let precondition = build_remote_status_error_from_parts(
         reqwest::StatusCode::PRECONDITION_FAILED,
         &serde_json::json!({
-            "code": ErrorCode::PreconditionFailed as i32,
+            "code": "storage.precondition",
             "msg": "stale revision",
             "error": {
-                "internal_code": "E060",
-                "subcode": "remote.revision_stale",
                 "retryable": false
             }
         })
@@ -631,8 +626,8 @@ fn remote_status_error_preserves_known_subcodes_and_ignores_unknown_remote_value
     );
     assert!(matches!(precondition, AsterError::PreconditionFailed(_)));
     assert_eq!(
-        precondition.api_error_subcode(),
-        Some(ApiSubcode::StoragePrecondition)
+        precondition.api_error_code_override(),
+        Some(ApiErrorCode::StoragePrecondition)
     );
 
     let plain = build_remote_status_error_from_parts(
@@ -661,8 +656,8 @@ async fn remote_client_object_profile_and_compose_paths_roundtrip() {
         .probe_capabilities()
         .await
         .expect("capabilities should load");
-    assert_eq!(capabilities.protocol_version, "v3");
-    assert_eq!(capabilities.min_supported_protocol_version, "v2");
+    assert_eq!(capabilities.protocol_version, "v4");
+    assert_eq!(capabilities.min_supported_protocol_version, "v4");
     assert!(capabilities.features.object_get);
     assert!(capabilities.features.object_head);
     assert!(capabilities.features.range_get);
@@ -846,7 +841,7 @@ async fn remote_client_object_profile_and_compose_paths_roundtrip() {
 async fn remote_client_maps_envelope_errors_and_missing_data() {
     async fn capabilities_missing_data() -> HttpResponse {
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": null
         }))
@@ -854,7 +849,7 @@ async fn remote_client_maps_envelope_errors_and_missing_data() {
 
     async fn list_error() -> HttpResponse {
         HttpResponse::Ok().json(serde_json::json!({
-            "code": ErrorCode::StoragePermissionDenied as i32,
+            "code": "storage.permission",
             "msg": "list denied"
         }))
     }
@@ -938,10 +933,10 @@ async fn remote_client_maps_envelope_errors_and_missing_data() {
 }
 
 #[tokio::test]
-async fn remote_client_probe_accepts_v2_capabilities_without_capacity_support() {
+async fn remote_client_probe_rejects_v2_capabilities_without_capacity_support() {
     async fn capabilities_v2() -> HttpResponse {
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
             "data": {
                 "protocol_version": "v2",
@@ -982,11 +977,16 @@ async fn remote_client_probe_accepts_v2_capabilities_without_capacity_support() 
     let capabilities = client
         .probe_capabilities()
         .await
-        .expect("v3 client should accept v2 capabilities");
-    assert_eq!(capabilities.protocol_version, "v2");
-    assert_eq!(capabilities.min_supported_protocol_version, "v2");
-    assert!(capabilities.supports_stream_upload);
-    assert!(!capabilities.supports_capacity);
+        .expect_err("v4 client should reject v2 capabilities");
+    assert_eq!(
+        capabilities.storage_error_kind(),
+        Some(StorageErrorKind::Misconfigured)
+    );
+    assert!(
+        capabilities.message().contains("local supports v4-v4"),
+        "unexpected error message: {}",
+        capabilities.message()
+    );
 
     handle.stop(true).await;
     let _ = task.await;
@@ -996,14 +996,14 @@ async fn remote_client_probe_accepts_v2_capabilities_without_capacity_support() 
 async fn remote_client_capacity_maps_missing_data_and_unsupported_errors() {
     async fn capacity_missing_data() -> HttpResponse {
         HttpResponse::Ok().json(serde_json::json!({
-            "code": 0,
+            "code": "success",
             "msg": "",
         }))
     }
 
     async fn capacity_unsupported() -> HttpResponse {
         HttpResponse::BadRequest().json(serde_json::json!({
-            "code": ErrorCode::StorageOperationUnsupported as i32,
+            "code": "storage.operation_unsupported",
             "msg": "capacity unsupported"
         }))
     }
@@ -1105,14 +1105,14 @@ fn capabilities_validation_rejects_incompatible_protocol_versions() {
         error.message()
     );
     assert!(
-        error.message().contains("local supports v2-v3"),
+        error.message().contains("local supports v4-v4"),
         "unexpected error message: {}",
         error.message()
     );
 }
 
 #[test]
-fn capabilities_validation_accepts_v2_remote_nodes() {
+fn capabilities_validation_rejects_v2_remote_nodes() {
     let capabilities = RemoteStorageCapabilities {
         protocol_version: "v2".to_string(),
         min_supported_protocol_version: "v2".to_string(),
@@ -1120,9 +1120,14 @@ fn capabilities_validation_accepts_v2_remote_nodes() {
         ..RemoteStorageCapabilities::current()
     };
 
-    capabilities
+    let error = capabilities
         .validate_protocol("test remote node")
-        .expect("v2 discovery should remain compatible");
+        .expect_err("v2 discovery should be incompatible with v4");
+    assert!(
+        error.message().contains("local supports v4-v4"),
+        "unexpected error message: {}",
+        error.message()
+    );
 }
 
 #[test]

@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::constants::HOUR_SECS;
-use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{upload_session_part_repo, upload_session_repo};
 use crate::entities::upload_session;
-use crate::errors::{Result, validation_error_with_subcode};
+use crate::errors::{Result, validation_error_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::{
     RecoverableUploadPartResponse, RecoverableUploadSessionResponse, UploadProgressResponse,
@@ -210,8 +210,8 @@ async fn presign_parts_impl(
         "presigning multipart upload parts"
     );
     if session.status != UploadSessionStatus::Presigned {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::UploadStatusConflict,
+        return Err(validation_error_with_code(
+            ApiErrorCode::UploadStatusConflict,
             format!(
                 "session status is '{:?}', expected 'presigned'",
                 session.status
@@ -221,13 +221,13 @@ async fn presign_parts_impl(
     validate_presign_part_numbers(&session, &part_numbers)?;
 
     let multipart_id = session.s3_multipart_id.as_deref().ok_or_else(|| {
-        validation_error_with_subcode(
-            ApiSubcode::UploadChunkSessionInvalid,
+        validation_error_with_code(
+            ApiErrorCode::UploadChunkSessionInvalid,
             "not a multipart upload session",
         )
     })?;
     let temp_key = session.s3_temp_key.as_deref().ok_or_else(|| {
-        validation_error_with_subcode(ApiSubcode::UploadSessionCorrupted, "missing s3_temp_key")
+        validation_error_with_code(ApiErrorCode::UploadSessionCorrupted, "missing s3_temp_key")
     })?;
 
     let policy = state
@@ -256,22 +256,22 @@ fn validate_presign_part_numbers(
     part_numbers: &[i32],
 ) -> Result<()> {
     if part_numbers.is_empty() {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::UploadPartNumbersEmpty,
+        return Err(validation_error_with_code(
+            ApiErrorCode::UploadPartNumbersEmpty,
             "part_numbers cannot be empty",
         ));
     }
     if part_numbers.len() > PRESIGNED_PARTS_MAX_BATCH {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::UploadPartNumbersTooMany,
+        return Err(validation_error_with_code(
+            ApiErrorCode::UploadPartNumbersTooMany,
             format!("part_numbers cannot contain more than {PRESIGNED_PARTS_MAX_BATCH} entries"),
         ));
     }
 
     for part_number in part_numbers {
         if *part_number < 1 || *part_number > session.total_chunks {
-            return Err(validation_error_with_subcode(
-                ApiSubcode::UploadPartNumberOutOfRange,
+            return Err(validation_error_with_code(
+                ApiErrorCode::UploadPartNumberOutOfRange,
                 format!(
                     "part number {} is outside the valid range 1..={}",
                     part_number, session.total_chunks

@@ -7,11 +7,11 @@ use image::ImageFormat;
 use image::imageops::FilterType;
 use image::{ImageReader, Limits};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::entities::file_blob;
 use crate::errors::{
-    AsterError, MapAsterErr, Result, thumbnail_generation_error_with_subcode,
-    validation_error_with_subcode,
+    AsterError, MapAsterErr, Result, thumbnail_generation_error_with_code,
+    validation_error_with_code,
 };
 use crate::storage::StorageDriver;
 use crate::utils::raii::TempFileGuard;
@@ -28,27 +28,27 @@ pub(crate) const IMAGES_THUMBNAIL_PROCESSOR_NAMESPACE: &str = "images";
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 
 fn thumbnail_format_guess_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailFormatGuessFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailFormatGuessFailed, message)
 }
 
 fn thumbnail_decode_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailDecodeFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailDecodeFailed, message)
 }
 
 fn thumbnail_encode_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailEncodeFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailEncodeFailed, message)
 }
 
 fn thumbnail_source_open_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailSourceOpenFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailSourceOpenFailed, message)
 }
 
 fn thumbnail_source_stream_failed(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailSourceStreamFailed, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailSourceStreamFailed, message)
 }
 
 fn thumbnail_task_panicked(message: String) -> AsterError {
-    thumbnail_generation_error_with_subcode(ApiSubcode::ThumbnailTaskPanicked, message)
+    thumbnail_generation_error_with_code(ApiErrorCode::ThumbnailTaskPanicked, message)
 }
 
 /// 计算缩略图在存储驱动中的路径
@@ -309,8 +309,8 @@ pub(crate) fn ensure_source_size_supported(
     max_source_bytes: i64,
 ) -> Result<()> {
     if blob.size > max_source_bytes {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::ThumbnailSourceTooLarge,
+        return Err(validation_error_with_code(
+            ApiErrorCode::ThumbnailSourceTooLarge,
             format!(
                 "thumbnail source exceeds {} MiB limit",
                 max_source_bytes / 1024 / 1024
@@ -327,7 +327,7 @@ mod tests {
         CURRENT_IMAGE_PREVIEW_VERSION, ensure_source_size_supported, image_preview_etag_value_for,
         image_preview_path_for, render_thumbnail_bytes, thumb_path, thumbnail_etag_value_for,
     };
-    use crate::api::subcode::ApiSubcode;
+    use crate::api::api_error_code::ApiErrorCode;
     use crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES;
     use crate::entities::file_blob;
     use crate::errors::Result;
@@ -541,8 +541,8 @@ mod tests {
             ensure_source_size_supported(&blob_with_size(max_source_bytes + 1), max_source_bytes)
                 .unwrap_err();
         assert_eq!(
-            err.api_error_subcode(),
-            Some(ApiSubcode::ThumbnailSourceTooLarge)
+            err.api_error_code_override(),
+            Some(ApiErrorCode::ThumbnailSourceTooLarge)
         );
     }
 

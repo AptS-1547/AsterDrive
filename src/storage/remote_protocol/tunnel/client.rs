@@ -7,6 +7,7 @@ use super::server::{
     RemoteTunnelStreamFrameKind, decode_stream_frame, encode_stream_frame,
     tunnel_response_from_reqwest,
 };
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::master_binding_repo;
 use crate::entities::master_binding;
 use crate::errors::{AsterError, Result};
@@ -41,7 +42,7 @@ const REVERSE_TUNNEL_STREAM_REQUEST_BODY_CHANNEL_CAPACITY: usize = 16;
 
 #[derive(Debug, serde::Deserialize)]
 struct ApiEnvelope<T> {
-    code: i32,
+    code: ApiErrorCode,
     msg: String,
     data: Option<T>,
 }
@@ -1005,7 +1006,7 @@ async fn parse_api_response<T: for<'de> serde::Deserialize<'de>>(
             format!("failed to parse {action} response: {error}"),
         )
     })?;
-    if !status.is_success() || envelope.code != 0 {
+    if !status.is_success() || envelope.code != ApiErrorCode::Success {
         let message = if envelope.msg.trim().is_empty() {
             format!("{action} failed with HTTP {status}")
         } else {
@@ -1036,7 +1037,7 @@ async fn parse_empty_api_response(response: reqwest::Response, action: &str) -> 
                 format!("failed to parse {action} response: {error}"),
             )
         })?;
-    if !status.is_success() || envelope.code != 0 {
+    if !status.is_success() || envelope.code != ApiErrorCode::Success {
         let message = if envelope.msg.trim().is_empty() {
             format!("{action} failed with HTTP {status}")
         } else {

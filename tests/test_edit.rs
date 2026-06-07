@@ -73,7 +73,7 @@ async fn test_update_content_basic() {
     assert!(etag.is_some(), "response should have ETag header");
 
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 0);
+    assert_eq!(body["code"], "success");
 
     // 下载验证 ETag
     let req = test::TestRequest::get()

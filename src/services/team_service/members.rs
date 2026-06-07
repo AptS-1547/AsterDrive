@@ -8,10 +8,10 @@
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{team_member_repo, team_repo, user_repo};
 use crate::entities::team_member;
-use crate::errors::{AsterError, Result, auth_forbidden_with_subcode};
+use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service;
 use crate::types::TeamMemberRole;
@@ -223,13 +223,13 @@ pub async fn add_member(
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
         .await?
         .ok_or_else(|| {
-            auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
+            auth_forbidden_with_code(ApiErrorCode::TeamNotMember, "not a member of this team")
         })?;
     ensure_can_manage_team(actor_membership.role)?;
     // admin 可以添加普通成员 / admin，但不能凭空再造 owner。
     if !actor_membership.role.is_owner() && input.role.is_owner() {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::TeamOwnerRequired,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::TeamOwnerRequired,
             "only a team owner can assign owner role",
         ));
     }
@@ -276,7 +276,7 @@ pub async fn update_member_role(
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
         .await?
         .ok_or_else(|| {
-            auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
+            auth_forbidden_with_code(ApiErrorCode::TeamNotMember, "not a member of this team")
         })?;
     ensure_can_manage_team(actor_membership.role)?;
 
@@ -289,8 +289,8 @@ pub async fn update_member_role(
     // owner 相关角色变更比普通 admin 更严格：
     // 非 owner 既不能降 owner，也不能把别人升成 owner。
     if !actor_membership.role.is_owner() && (target_membership.role.is_owner() || role.is_owner()) {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::TeamOwnerRequired,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::TeamOwnerRequired,
             "only a team owner can manage owner memberships",
         ));
     }
@@ -329,7 +329,7 @@ pub async fn remove_member(
     let actor_membership = team_member_repo::find_by_team_and_user(&txn, team_id, actor_user_id)
         .await?
         .ok_or_else(|| {
-            auth_forbidden_with_subcode(ApiSubcode::TeamNotMember, "not a member of this team")
+            auth_forbidden_with_code(ApiErrorCode::TeamNotMember, "not a member of this team")
         })?;
     let target_membership = team_member_repo::find_by_team_and_user(&txn, team_id, member_user_id)
         .await?
@@ -341,8 +341,8 @@ pub async fn remove_member(
     if actor_user_id != member_user_id {
         ensure_can_manage_team(actor_membership.role)?;
         if !actor_membership.role.is_owner() && target_membership.role.is_owner() {
-            return Err(auth_forbidden_with_subcode(
-                ApiSubcode::TeamOwnerRequired,
+            return Err(auth_forbidden_with_code(
+                ApiErrorCode::TeamOwnerRequired,
                 "only a team owner can remove an owner",
             ));
         }

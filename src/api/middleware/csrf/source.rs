@@ -6,11 +6,9 @@ use actix_web::{
     http::{Method, header},
 };
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::{RuntimeConfig, cors, site_url};
-use crate::errors::{
-    MapAsterErr, Result, auth_forbidden_with_subcode, validation_error_with_subcode,
-};
+use crate::errors::{MapAsterErr, Result, auth_forbidden_with_code, validation_error_with_code};
 
 const MAX_REQUEST_SCHEME_LEN: usize = 16;
 const MAX_REQUEST_HOST_LEN: usize = 512;
@@ -80,7 +78,7 @@ pub(super) fn ensure_headers_allowed(
         sec_fetch_site,
         MAX_SEC_FETCH_SITE_LEN,
         "Sec-Fetch-Site",
-        ApiSubcode::ValidationRequestHeaderValueInvalid,
+        ApiErrorCode::ValidationRequestHeaderValueInvalid,
     )?
     .map(|value| value.to_ascii_lowercase());
 
@@ -89,8 +87,8 @@ pub(super) fn ensure_headers_allowed(
             "same-origin" => {}
             "same-site" => {}
             "cross-site" | "none" => {
-                return Err(auth_forbidden_with_subcode(
-                    ApiSubcode::AuthRequestSourceUntrusted,
+                return Err(auth_forbidden_with_code(
+                    ApiErrorCode::AuthRequestSourceUntrusted,
                     "untrusted request source for cookie-authenticated action",
                 ));
             }
@@ -103,21 +101,21 @@ pub(super) fn ensure_headers_allowed(
         origin,
         MAX_SOURCE_HEADER_LEN,
         "Origin",
-        ApiSubcode::ValidationRequestOriginInvalid,
+        ApiErrorCode::ValidationRequestOriginInvalid,
     )?
     .map(|value| cors::normalize_origin(value, false))
     .transpose()
     .map_aster_err_with(|| {
-        validation_error_with_subcode(
-            ApiSubcode::ValidationRequestOriginInvalid,
+        validation_error_with_code(
+            ApiErrorCode::ValidationRequestOriginInvalid,
             "invalid Origin header",
         )
     })? {
         if origin_is_trusted(&origin, request_origin, public_site_origins) {
             return Ok(());
         }
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthRequestOriginUntrusted,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthRequestOriginUntrusted,
             "untrusted request origin for cookie-authenticated action",
         ));
     }
@@ -127,23 +125,23 @@ pub(super) fn ensure_headers_allowed(
         if origin_is_trusted(&referer_origin, request_origin, public_site_origins) {
             return Ok(());
         }
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthRequestRefererUntrusted,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthRequestRefererUntrusted,
             "untrusted request referer for cookie-authenticated action",
         ));
     }
 
     if same_site_fetch {
-        return Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthRequestSourceUntrusted,
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthRequestSourceUntrusted,
             "missing trusted request source for same-site cookie-authenticated action",
         ));
     }
 
     match mode {
         RequestSourceMode::OptionalWhenPresent => Ok(()),
-        RequestSourceMode::Required => Err(auth_forbidden_with_subcode(
-            ApiSubcode::AuthRequestSourceMissing,
+        RequestSourceMode::Required => Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthRequestSourceMissing,
             "missing request source for cookie-authenticated action",
         )),
     }
@@ -160,17 +158,17 @@ fn request_origin(scheme: &str, host: &str) -> Result<String> {
         scheme,
         MAX_REQUEST_SCHEME_LEN,
         "request scheme",
-        ApiSubcode::ValidationRequestSchemeInvalid,
+        ApiErrorCode::ValidationRequestSchemeInvalid,
     )?;
     ensure_value_len(
         host,
         MAX_REQUEST_HOST_LEN,
         "request host",
-        ApiSubcode::ValidationRequestHostInvalid,
+        ApiErrorCode::ValidationRequestHostInvalid,
     )?;
     cors::normalize_origin(&format!("{scheme}://{host}"), false).map_aster_err_with(|| {
-        validation_error_with_subcode(
-            ApiSubcode::ValidationRequestHostInvalid,
+        validation_error_with_code(
+            ApiErrorCode::ValidationRequestHostInvalid,
             "invalid request host",
         )
     })
@@ -184,12 +182,12 @@ fn source_header_value<'a>(
     value: Option<&'a str>,
     max_len: usize,
     label: &str,
-    subcode: ApiSubcode,
+    api_code: ApiErrorCode,
 ) -> Result<Option<&'a str>> {
     let Some(value) = trimmed_header_value(value) else {
         return Ok(None);
     };
-    ensure_value_len(value, max_len, label, subcode)?;
+    ensure_value_len(value, max_len, label, api_code)?;
     Ok(Some(value))
 }
 
@@ -197,10 +195,15 @@ fn trimmed_header_value(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
 
-fn ensure_value_len(value: &str, max_len: usize, label: &str, subcode: ApiSubcode) -> Result<()> {
+fn ensure_value_len(
+    value: &str,
+    max_len: usize,
+    label: &str,
+    api_code: ApiErrorCode,
+) -> Result<()> {
     if value.len() > max_len {
-        return Err(validation_error_with_subcode(
-            subcode,
+        return Err(validation_error_with_code(
+            api_code,
             format!("{label} exceeds {max_len} bytes"),
         ));
     }
@@ -209,8 +212,8 @@ fn ensure_value_len(value: &str, max_len: usize, label: &str, subcode: ApiSubcod
 
 fn origin_from_url(url: &str) -> Result<String> {
     let scheme_end = url.find("://").ok_or_else(|| {
-        validation_error_with_subcode(
-            ApiSubcode::ValidationRequestSchemeInvalid,
+        validation_error_with_code(
+            ApiErrorCode::ValidationRequestSchemeInvalid,
             "invalid Referer header",
         )
     })?;
@@ -219,7 +222,7 @@ fn origin_from_url(url: &str) -> Result<String> {
         scheme,
         MAX_REQUEST_SCHEME_LEN,
         "Referer scheme",
-        ApiSubcode::ValidationRequestSchemeInvalid,
+        ApiErrorCode::ValidationRequestSchemeInvalid,
     )?;
 
     let authority_start = scheme_end + 3;
@@ -233,7 +236,7 @@ fn origin_from_url(url: &str) -> Result<String> {
         authority,
         MAX_REFERER_AUTHORITY_LEN,
         "Referer authority",
-        ApiSubcode::ValidationRequestRefererInvalid,
+        ApiErrorCode::ValidationRequestRefererInvalid,
     )?;
 
     cors::normalize_origin(
@@ -241,8 +244,8 @@ fn origin_from_url(url: &str) -> Result<String> {
         false,
     )
     .map_aster_err_with(|| {
-        validation_error_with_subcode(
-            ApiSubcode::ValidationRequestRefererInvalid,
+        validation_error_with_code(
+            ApiErrorCode::ValidationRequestRefererInvalid,
             "invalid Referer header",
         )
     })

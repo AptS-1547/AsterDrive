@@ -2417,8 +2417,10 @@ async fn test_team_chunk_upload_endpoint_rejects_oversized_chunk_with_413() {
         actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
     );
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["internal_code"], "E024");
-    assert_eq!(body["error"]["subcode"], "upload.chunk_too_large");
+    assert_eq!(body["code"], "upload.chunk_too_large");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("internal_code").is_none());
+    assert!(body["error"].get("subcode").is_none());
 }
 
 #[actix_web::test]
@@ -2488,8 +2490,10 @@ async fn test_team_chunk_upload_endpoint_keeps_duplicate_size_validation() {
     let resp = test::call_service(&app, req).await;
     assert!(resp.status().is_client_error());
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["internal_code"], "E056");
-    assert_eq!(body["error"]["subcode"], "upload.chunk_size_mismatch");
+    assert_eq!(body["code"], "upload.chunk_size_mismatch");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("internal_code").is_none());
+    assert!(body["error"].get("subcode").is_none());
 }
 
 #[actix_web::test]

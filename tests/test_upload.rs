@@ -4,7 +4,7 @@
 mod common;
 
 use actix_web::test;
-use aster_drive::api::subcode::ApiSubcode;
+use aster_drive::api::api_error_code::ApiErrorCode;
 use aster_drive::db::repository::policy_repo;
 use aster_drive::runtime::SharedRuntimeState;
 use serde_json::Value;
@@ -887,8 +887,6 @@ async fn test_chunked_upload_flow() {
 
 #[actix_web::test]
 async fn test_chunk_upload_endpoint_streams_and_rejects_oversized_chunk_with_413() {
-    use aster_drive::api::error_code::ErrorCode;
-
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -921,12 +919,10 @@ async fn test_chunk_upload_endpoint_streams_and_rejects_oversized_chunk_with_413
         actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
     );
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["code"],
-        serde_json::json!(ErrorCode::FileTooLarge as i32)
-    );
-    assert_eq!(body["error"]["internal_code"], "E024");
-    assert_eq!(body["error"]["subcode"], "upload.chunk_too_large");
+    assert_eq!(body["code"], "upload.chunk_too_large");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("internal_code").is_none());
+    assert!(body["error"].get("subcode").is_none());
 }
 
 #[actix_web::test]
@@ -969,8 +965,10 @@ async fn test_chunk_upload_endpoint_keeps_duplicate_size_validation() {
     let resp = test::call_service(&app, req).await;
     assert!(resp.status().is_client_error());
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["internal_code"], "E056");
-    assert_eq!(body["error"]["subcode"], "upload.chunk_size_mismatch");
+    assert_eq!(body["code"], "upload.chunk_size_mismatch");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("internal_code").is_none());
+    assert!(body["error"].get("subcode").is_none());
 }
 
 #[actix_web::test]
@@ -2743,27 +2741,21 @@ async fn test_upload_service_presign_parts_validates_part_number_batch() {
     let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![])
         .await
         .unwrap_err();
-    assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::UploadPartNumbersEmpty)
-    );
+    assert_eq!(err.api_error_code(), ApiErrorCode::UploadPartNumbersEmpty);
 
     let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![0])
         .await
         .unwrap_err();
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::UploadPartNumberOutOfRange)
+        err.api_error_code(),
+        ApiErrorCode::UploadPartNumberOutOfRange
     );
 
     let too_many = (1..=65).collect();
     let err = upload_service::presign_parts(&state, &upload_id, user.id, too_many)
         .await
         .unwrap_err();
-    assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::UploadPartNumbersTooMany)
-    );
+    assert_eq!(err.api_error_code(), ApiErrorCode::UploadPartNumbersTooMany);
 }
 
 #[actix_web::test]
@@ -4014,8 +4006,10 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
         actix_web::http::StatusCode::PAYLOAD_TOO_LARGE
     );
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["internal_code"], "E024");
-    assert_eq!(body["error"]["subcode"], "upload.chunk_too_large");
+    assert_eq!(body["code"], "upload.chunk_too_large");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("internal_code").is_none());
+    assert!(body["error"].get("subcode").is_none());
     assert!(
         upload_session_part_repo::list_by_upload(state.writer_db(), &oversized_upload_id)
             .await

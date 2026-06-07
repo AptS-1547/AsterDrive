@@ -7,9 +7,9 @@ mod streaming_direct;
 
 use actix_multipart::Multipart;
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::entities::file;
-use crate::errors::{Result, validation_error_with_subcode};
+use crate::errors::{Result, validation_error_with_code};
 use crate::runtime::PrimaryAppState;
 use crate::types::DriverType;
 
@@ -49,8 +49,8 @@ pub(crate) async fn upload_with_hints(
     if let Some(declared_size) = declared_size
         && declared_size < 0
     {
-        return Err(validation_error_with_subcode(
-            ApiSubcode::UploadDeclaredSizeInvalid,
+        return Err(validation_error_with_code(
+            ApiErrorCode::UploadDeclaredSizeInvalid,
             "declared_size cannot be negative",
         ));
     }

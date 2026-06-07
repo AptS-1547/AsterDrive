@@ -11,7 +11,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { passwordSchema } from "@/lib/validation";
 import { authService } from "@/services/authService";
 import { ApiError } from "@/services/http";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 type ResetStatus = "form" | "missing" | "invalid" | "expired";
 
@@ -71,11 +71,11 @@ export default function ResetPasswordPage() {
 			navigate("/login?password_reset=success", { replace: true });
 		} catch (error) {
 			if (error instanceof ApiError) {
-				if (error.code === ErrorCode.ContactVerificationInvalid) {
+				if (error.code === ApiErrorCode.ContactVerificationInvalid) {
 					setStatus("invalid");
 					return;
 				}
-				if (error.code === ErrorCode.ContactVerificationExpired) {
+				if (error.code === ApiErrorCode.ContactVerificationExpired) {
 					setStatus("expired");
 					return;
 				}

@@ -9,10 +9,10 @@ use super::error::storage_driver_error;
 use super::metrics_driver::{MetricsMultipartStorageDriver, MetricsStorageDriver};
 use super::traits::driver::StorageDriver;
 use super::traits::multipart::MultipartStorageDriver;
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{managed_follower_repo, master_binding_repo};
 use crate::entities::storage_policy;
-use crate::errors::{Result, precondition_failed_with_subcode};
+use crate::errors::{Result, precondition_failed_with_code};
 use crate::metrics_core::SharedMetricsRecorder;
 use crate::storage::remote_protocol::RemoteProtocolRuntime;
 use crate::types::{DriverType, parse_storage_policy_options};
@@ -243,8 +243,8 @@ impl DriverRegistry {
                     )
                 })?;
                 if !remote_node.is_enabled {
-                    return Err(precondition_failed_with_subcode(
-                        ApiSubcode::RemoteNodeDisabled,
+                    return Err(precondition_failed_with_code(
+                        ApiErrorCode::RemoteNodeDisabled,
                         format!("remote node #{remote_node_id} is disabled"),
                     ));
                 }
@@ -656,8 +656,8 @@ mod tests {
             Some(StorageErrorKind::Precondition)
         );
         assert_eq!(
-            error.api_error_subcode(),
-            Some(ApiSubcode::RemoteNodeDisabled)
+            error.api_error_code_override(),
+            Some(ApiErrorCode::RemoteNodeDisabled)
         );
         assert!(error.message().contains("remote node #7 is disabled"));
     }

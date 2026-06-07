@@ -322,7 +322,7 @@ async fn test_email_code_login_requires_verified_email() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body:#?}");
-    assert_eq!(body["code"], 2004);
+    assert_eq!(body["code"], "auth.pending_activation");
 }
 
 #[tokio::test]
@@ -346,13 +346,13 @@ async fn test_email_code_send_rejects_missing_invalid_and_unavailable_flows() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_flow_invalid");
+    assert_eq!(body["code"], "auth.mfa_flow_invalid");
 
     let resp = send_email_code(&app, "not-a-real-flow").await;
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_flow_invalid");
+    assert_eq!(body["code"], "auth.mfa_flow_invalid");
 
     let resp = login_raw(&app, "emailunavailable", "password123").await;
     let body: Value = test::read_body_json(resp).await;
@@ -365,7 +365,7 @@ async fn test_email_code_send_rejects_missing_invalid_and_unavailable_flows() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_factor_required");
+    assert_eq!(body["code"], "auth.mfa_factor_required");
 
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
         .expect("memory mail sender should be available in tests");
@@ -427,7 +427,7 @@ async fn test_email_code_login_send_and_verify_sets_cookies() {
     let resp = verify_mfa(&app, &flow_token, "email_code", &code).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "auth.mfa_flow_invalid");
+    assert_eq!(body["code"], "auth.mfa_flow_invalid");
 }
 
 #[tokio::test]
@@ -452,7 +452,7 @@ async fn test_email_code_verify_requires_prior_send_without_consuming_flow() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_email_code_required");
+    assert_eq!(body["code"], "auth.mfa_email_code_required");
 
     let resp = send_email_code(&app, &flow_token).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -489,7 +489,7 @@ async fn test_email_code_wrong_code_keeps_code_available_until_attempt_limit() {
     assert!(common::extract_cookie(&resp, "aster_access").is_none());
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_code_invalid");
+    assert_eq!(body["code"], "auth.mfa_code_invalid");
 
     let resp = verify_mfa(&app, &flow_token, "email_code", &code).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -527,9 +527,9 @@ async fn test_email_code_wrong_attempt_limit_consumes_flow() {
         let body: Value = test::read_body_json(resp).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
         if index < 4 {
-            assert_eq!(body["error"]["subcode"], "auth.mfa_code_invalid");
+            assert_eq!(body["code"], "auth.mfa_code_invalid");
         } else {
-            assert_eq!(body["error"]["subcode"], "auth.mfa_attempts_exceeded");
+            assert_eq!(body["code"], "auth.mfa_attempts_exceeded");
         }
     }
 
@@ -537,7 +537,7 @@ async fn test_email_code_wrong_attempt_limit_consumes_flow() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_flow_invalid");
+    assert_eq!(body["code"], "auth.mfa_flow_invalid");
 }
 
 #[tokio::test]
@@ -557,12 +557,12 @@ async fn test_email_code_resend_is_rate_limited() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body:#?}");
-    assert_eq!(body["code"], 1006);
+    assert_eq!(body["code"], "rate_limited");
     assert_eq!(body["error"]["retryable"], true);
 }
 
 #[tokio::test]
-async fn test_expired_email_code_returns_email_code_expired_subcode() {
+async fn test_expired_email_code_returns_email_code_expired_code() {
     let state = common::setup().await;
     apply_email_code_login_config(&state, false);
     let db = state.writer_db().clone();
@@ -601,7 +601,7 @@ async fn test_expired_email_code_returns_email_code_expired_subcode() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_email_code_expired");
+    assert_eq!(body["code"], "auth.mfa_email_code_expired");
 
     let consumed_row = aster_drive::entities::mfa_email_code::Entity::find_by_id(code_row_id)
         .one(&db)
@@ -614,7 +614,7 @@ async fn test_expired_email_code_returns_email_code_expired_subcode() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_email_code_required");
+    assert_eq!(body["code"], "auth.mfa_email_code_required");
 }
 
 #[tokio::test]
@@ -634,7 +634,7 @@ async fn test_email_code_delivery_failure_consumes_created_code() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body:#?}");
-    assert_eq!(body["code"], 1008);
+    assert_eq!(body["code"], "mail.delivery_failed");
 
     let flow = find_mfa_flow_by_token(&db, &flow_token).await;
     let code_row = aster_drive::entities::mfa_email_code::Entity::find()
@@ -725,9 +725,9 @@ async fn test_mfa_wrong_totp_attempts_eventually_consume_flow() {
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
         let body: Value = test::read_body_json(resp).await;
         if index < 4 {
-            assert_eq!(body["error"]["subcode"], "auth.mfa_code_invalid");
+            assert_eq!(body["code"], "auth.mfa_code_invalid");
         } else {
-            assert_eq!(body["error"]["subcode"], "auth.mfa_attempts_exceeded");
+            assert_eq!(body["code"], "auth.mfa_attempts_exceeded");
         }
     }
 }
@@ -760,7 +760,7 @@ async fn test_expired_mfa_flow_cannot_login() {
     assert!(common::extract_cookie(&resp, "aster_access").is_none());
     assert!(common::extract_cookie(&resp, "aster_refresh").is_none());
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "auth.mfa_flow_expired");
+    assert_eq!(body["code"], "auth.mfa_flow_expired");
 }
 
 #[tokio::test]
@@ -806,7 +806,7 @@ async fn test_totp_method_with_recovery_code_returns_mfa_code_invalid() {
     let resp = verify_mfa(&app, &flow_token, "totp", &recovery_code).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "auth.mfa_code_invalid");
+    assert_eq!(body["code"], "auth.mfa_code_invalid");
     assert_ne!(body["msg"], "TOTP code must be a 6 digit number");
 }
 
@@ -833,7 +833,7 @@ async fn test_regenerate_recovery_codes_accepts_recovery_code_without_password()
 }
 
 #[tokio::test]
-async fn test_regenerate_recovery_codes_wrong_code_returns_mfa_subcode() {
+async fn test_regenerate_recovery_codes_wrong_code_returns_mfa_error_code() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     register_user(&app, "regenbad", "regenbad@example.com", "password123").await;
@@ -850,8 +850,9 @@ async fn test_regenerate_recovery_codes_wrong_code_returns_mfa_subcode() {
     let status = resp.status();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED, "{body:#?}");
-    assert_eq!(body["error"]["internal_code"], "E018");
-    assert_eq!(body["error"]["subcode"], "auth.mfa_code_invalid");
+    assert_eq!(body["code"], "auth.mfa_code_invalid");
+    assert_eq!(body["error"]["retryable"], false);
+    assert!(body["error"].get("internal_code").is_none());
 }
 
 #[tokio::test]
@@ -915,7 +916,7 @@ async fn test_old_mfa_flow_cannot_login_after_password_reset() {
     let resp = verify_mfa(&app, &flow_token, "totp", &code).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["error"]["subcode"], "auth.mfa_flow_invalid");
+    assert_eq!(body["code"], "auth.mfa_flow_invalid");
 
     let active_sessions = aster_drive::entities::auth_session::Entity::find()
         .filter(aster_drive::entities::auth_session::Column::UserId.eq(stale_user_id))

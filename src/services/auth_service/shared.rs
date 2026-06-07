@@ -6,11 +6,11 @@ use sea_orm::{
     TryInsertResult, sea_query::OnConflict,
 };
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::config::auth_runtime::RuntimeContactVerificationPolicy;
 use crate::db::repository::{contact_verification_token_repo, user_repo};
 use crate::entities::{contact_verification_token, user};
-use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_subcode};
+use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::mail_service;
 use crate::types::{UserRole, UserStatus, VerificationChannel, VerificationPurpose};
@@ -25,16 +25,16 @@ fn is_unique_conflict_db_err(err: &DbErr) -> bool {
 }
 
 fn username_exists_error() -> AsterError {
-    validation_error_with_subcode(ApiSubcode::AuthUsernameExists, "username already exists")
+    validation_error_with_code(ApiErrorCode::AuthUsernameExists, "username already exists")
 }
 
 fn email_exists_error() -> AsterError {
-    validation_error_with_subcode(ApiSubcode::AuthEmailExists, "email already exists")
+    validation_error_with_code(ApiErrorCode::AuthEmailExists, "email already exists")
 }
 
 fn identifier_exists_error() -> AsterError {
-    validation_error_with_subcode(
-        ApiSubcode::AuthIdentifierExists,
+    validation_error_with_code(
+        ApiErrorCode::AuthIdentifierExists,
         "username or email already exists",
     )
 }

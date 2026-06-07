@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invalidateAdminRemoteNodeLookup } from "@/lib/adminRemoteNodeLookup";
 import AdminPoliciesPage from "@/pages/admin/AdminPoliciesPage";
 import { ApiError } from "@/services/http";
-import { ApiSubcode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
@@ -2082,9 +2082,10 @@ describe("AdminPoliciesPage", () => {
 		];
 		mockState.deletePolicy
 			.mockRejectedValueOnce(
-				new ApiError(1003, "upload sessions exist", {
-					subcode: ApiSubcode.PolicyUploadSessionsExist,
-				}),
+				new ApiError(
+					ApiErrorCode.PolicyUploadSessionsExist,
+					"upload sessions exist",
+				),
 			)
 			.mockImplementationOnce(async (id: number) => {
 				mockState.items = mockState.items.filter((policy) => policy.id !== id);

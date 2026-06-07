@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiErrorCode, ApiSubcode, ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 type MockAxiosError = {
 	config?: { _retry?: boolean; url?: string };
@@ -153,7 +153,7 @@ describe("http api helpers", () => {
 	it("unwraps successful responses from api.get", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "ok",
 				data: { id: 7 },
 			},
@@ -175,7 +175,7 @@ describe("http api helpers", () => {
 		const controller = new AbortController();
 		mockState.client.get.mockResolvedValue({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "ok",
 				data: { id: 8 },
 			},
@@ -196,7 +196,7 @@ describe("http api helpers", () => {
 	it("throws ApiError when the backend response code is not success", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {
-				code: ErrorCode.Forbidden,
+				code: ApiErrorCode.Forbidden,
 				msg: "forbidden",
 				data: null,
 			},
@@ -206,7 +206,7 @@ describe("http api helpers", () => {
 
 		await expect(api.get("/files")).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.Forbidden,
+				code: ApiErrorCode.Forbidden,
 				message: "forbidden",
 			}),
 		);
@@ -220,7 +220,7 @@ describe("http api helpers", () => {
 				"retry-after": "3",
 			},
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "",
 				data: null,
 			},
@@ -239,15 +239,12 @@ describe("http api helpers", () => {
 		);
 	});
 
-	it("preserves backend error details on ApiError", async () => {
+	it("preserves retryable backend error details on ApiError", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {
-				code: ErrorCode.StorageTransientFailure,
+				code: ApiErrorCode.StorageTransient,
 				msg: "Storage Driver Error",
 				error: {
-					code: ApiErrorCode.StorageTransient,
-					internal_code: "E031",
-					subcode: ApiSubcode.StorageTransient,
 					retryable: true,
 				},
 			},
@@ -257,25 +254,19 @@ describe("http api helpers", () => {
 
 		await expect(api.get("/files")).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.StorageTransientFailure,
+				code: ApiErrorCode.StorageTransient,
 				message: "Storage Driver Error",
-				apiCode: ApiErrorCode.StorageTransient,
-				internalCode: "E031",
-				subcode: ApiSubcode.StorageTransient,
 				retryable: true,
 			}),
 		);
 	});
 
-	it("preserves auth registration disabled structured codes on ApiError", async () => {
+	it("preserves specific auth error codes on ApiError", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {
-				code: ErrorCode.Forbidden,
+				code: ApiErrorCode.AuthRegistrationDisabled,
 				msg: "new user registration is disabled",
-				error: {
-					code: ApiErrorCode.AuthRegistrationDisabled,
-					internal_code: "E013",
-				},
+				error: { retryable: false },
 			},
 		});
 
@@ -283,25 +274,18 @@ describe("http api helpers", () => {
 
 		await expect(api.get("/auth/register")).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.Forbidden,
+				code: ApiErrorCode.AuthRegistrationDisabled,
 				message: "new user registration is disabled",
-				apiCode: ApiErrorCode.AuthRegistrationDisabled,
-				internalCode: "E013",
-				subcode: undefined,
+				retryable: false,
 			}),
 		);
 	});
 
-	it("drops unknown backend subcodes before constructing ApiError", async () => {
+	it("ignores unknown top-level API codes", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {
-				code: ErrorCode.Forbidden,
+				code: "remote.dynamic",
 				msg: "denied",
-				error: {
-					internal_code: "E013",
-					code: "remote.dynamic",
-					subcode: "remote.dynamic",
-				},
 			},
 		});
 
@@ -309,75 +293,18 @@ describe("http api helpers", () => {
 
 		await expect(api.get("/files")).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.Forbidden,
+				code: "remote.dynamic",
 				message: "denied",
-				apiCode: undefined,
-				internalCode: "E013",
-				subcode: undefined,
 			}),
 		);
 	});
 
-	it("keeps valid ApiErrorCode even when legacy subcode is unknown", async () => {
+	it("keeps valid top-level ApiErrorCode when error info is malformed", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {
-				code: ErrorCode.Forbidden,
+				code: ApiErrorCode.AuthRequestOriginUntrusted,
 				msg: "denied",
 				error: {
-					internal_code: "E013",
-					code: ApiErrorCode.AuthRequestOriginUntrusted,
-					subcode: "remote.dynamic",
-				},
-			},
-		});
-
-		const { api } = await loadHttpModule();
-
-		await expect(api.get("/files")).rejects.toEqual(
-			expect.objectContaining({
-				code: ErrorCode.Forbidden,
-				message: "denied",
-				apiCode: ApiErrorCode.AuthRequestOriginUntrusted,
-				internalCode: "E013",
-				subcode: undefined,
-			}),
-		);
-	});
-
-	it("falls back to legacy subcode when structured ApiErrorCode is absent", async () => {
-		mockState.client.get.mockResolvedValue({
-			data: {
-				code: ErrorCode.Forbidden,
-				msg: "denied",
-				error: {
-					internal_code: "E013",
-					subcode: ApiSubcode.AuthCsrfTokenInvalid,
-				},
-			},
-		});
-
-		const { api } = await loadHttpModule();
-
-		await expect(api.get("/files")).rejects.toEqual(
-			expect.objectContaining({
-				code: ErrorCode.Forbidden,
-				message: "denied",
-				apiCode: undefined,
-				internalCode: "E013",
-				subcode: ApiSubcode.AuthCsrfTokenInvalid,
-			}),
-		);
-	});
-
-	it("ignores malformed ApiErrorInfo fields without failing extraction", async () => {
-		mockState.client.get.mockResolvedValue({
-			data: {
-				code: ErrorCode.BadRequest,
-				msg: "bad request",
-				error: {
-					internal_code: 42,
-					code: 1000,
-					subcode: null,
 					retryable: "false",
 				},
 			},
@@ -387,11 +314,30 @@ describe("http api helpers", () => {
 
 		await expect(api.get("/files")).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.BadRequest,
+				code: ApiErrorCode.AuthRequestOriginUntrusted,
+				message: "denied",
+				retryable: undefined,
+			}),
+		);
+	});
+
+	it("ignores malformed ApiErrorInfo fields without failing extraction", async () => {
+		mockState.client.get.mockResolvedValue({
+			data: {
+				code: ApiErrorCode.BadRequest,
+				msg: "bad request",
+				error: {
+					retryable: "false",
+				},
+			},
+		});
+
+		const { api } = await loadHttpModule();
+
+		await expect(api.get("/files")).rejects.toEqual(
+			expect.objectContaining({
+				code: ApiErrorCode.BadRequest,
 				message: "bad request",
-				apiCode: undefined,
-				internalCode: undefined,
-				subcode: undefined,
 				retryable: undefined,
 			}),
 		);
@@ -436,7 +382,7 @@ describe("http api helpers", () => {
 	it("refreshes and retries a protected request after a 401", async () => {
 		mockState.client.mockResolvedValue({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "ok",
 				data: { retried: true },
 			},
@@ -452,15 +398,14 @@ describe("http api helpers", () => {
 				response: {
 					status: 401,
 					data: {
-						code: ErrorCode.TokenExpired,
+						code: ApiErrorCode.TokenExpired,
 						msg: "Token Expired",
-						error: { internal_code: "E011" },
 					},
 				},
 			}),
 		).resolves.toEqual({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "ok",
 				data: { retried: true },
 			},
@@ -477,7 +422,7 @@ describe("http api helpers", () => {
 	it("refreshes and retries when the protected request has no access token", async () => {
 		mockState.client.mockResolvedValue({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "ok",
 				data: { retried: true },
 			},
@@ -493,15 +438,14 @@ describe("http api helpers", () => {
 				response: {
 					status: 401,
 					data: {
-						code: ErrorCode.TokenMissing,
+						code: ApiErrorCode.TokenMissing,
 						msg: "missing token",
-						error: { internal_code: "E017" },
 					},
 				},
 			}),
 		).resolves.toEqual({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "ok",
 				data: { retried: true },
 			},
@@ -523,22 +467,16 @@ describe("http api helpers", () => {
 			response: {
 				status: 401,
 				data: {
-					code: ErrorCode.MfaFailed,
+					code: ApiErrorCode.AuthMfaCodeInvalid,
 					msg: "invalid MFA code",
-					error: {
-						internal_code: "E018",
-						subcode: ApiSubcode.AuthMfaCodeInvalid,
-					},
 				},
 			},
 		} satisfies MockAxiosError;
 
 		await expect(errorHandler(originalError)).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.MfaFailed,
+				code: ApiErrorCode.AuthMfaCodeInvalid,
 				message: "invalid MFA code",
-				internalCode: "E018",
-				subcode: ApiSubcode.AuthMfaCodeInvalid,
 			}),
 		);
 		expect(mockState.refreshToken).not.toHaveBeenCalled();

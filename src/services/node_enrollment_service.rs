@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::master_binding_repo;
 use crate::entities::master_binding;
 use crate::errors::{AsterError, Result};
@@ -36,7 +37,7 @@ pub enum NodeEnrollmentBootstrapOutcome {
 
 #[derive(Debug, Deserialize)]
 struct ApiEnvelope<T> {
-    code: i32,
+    code: ApiErrorCode,
     msg: String,
     data: Option<T>,
 }
@@ -251,7 +252,7 @@ async fn parse_api_response<T: for<'de> Deserialize<'de>>(
         AsterError::config_error(format!("failed to parse {action} response: {error}"))
     })?;
 
-    if !status.is_success() || envelope.code != 0 {
+    if !status.is_success() || envelope.code != ApiErrorCode::Success {
         let message = if envelope.msg.trim().is_empty() {
             format!("{action} failed with HTTP {status}")
         } else {
@@ -275,7 +276,7 @@ async fn parse_empty_api_response(response: reqwest::Response, action: &str) -> 
             AsterError::config_error(format!("failed to parse {action} response: {error}"))
         })?;
 
-    if !status.is_success() || envelope.code != 0 {
+    if !status.is_success() || envelope.code != ApiErrorCode::Success {
         let message = if envelope.msg.trim().is_empty() {
             format!("{action} failed with HTTP {status}")
         } else {
@@ -373,7 +374,7 @@ mod tests {
                         async move {
                             ack_count.fetch_add(1, Ordering::Relaxed);
                             HttpResponse::Ok().json(serde_json::json!({
-                                "code": 0,
+                                "code": "success",
                                 "msg": "",
                                 "data": null
                             }))
@@ -453,7 +454,7 @@ mod tests {
         let server = spawn_enrollment_server(
             actix_web::http::StatusCode::OK,
             serde_json::json!({
-                "code": 0,
+                "code": "success",
                 "msg": "",
                 "data": {
                     "remote_node_id": 7,
@@ -501,7 +502,7 @@ mod tests {
         let server = spawn_enrollment_server(
             actix_web::http::StatusCode::BAD_REQUEST,
             serde_json::json!({
-                "code": 2001,
+                "code": "auth.token_expired",
                 "msg": managed_follower_enrollment_service::ENROLLMENT_TOKEN_COMPLETED_MESSAGE,
                 "data": null
             }),

@@ -1,11 +1,11 @@
 //! 服务模块：`managed_follower_service`。
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::api::pagination::{AdminRemoteNodeSortBy, OffsetPage, SortOrder, load_offset_page};
-use crate::api::subcode::ApiSubcode;
 use crate::db::repository::{follower_enrollment_session_repo, managed_follower_repo, policy_repo};
 use crate::entities::{follower_enrollment_session, managed_follower};
 use crate::errors::{
-    AsterError, Result, precondition_failed_with_subcode, validation_error_with_subcode,
+    AsterError, Result, precondition_failed_with_code, validation_error_with_code,
 };
 use crate::runtime::RemoteProtocolRuntimeState;
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
@@ -282,8 +282,8 @@ pub async fn require_completed_enrollment<S: RemoteProtocolRuntimeState>(
 ) -> Result<managed_follower::Model> {
     let node = managed_follower_repo::find_by_id(state.writer_db(), remote_node_id).await?;
     if enrollment_status_for_node(state, node.id).await? != RemoteNodeEnrollmentStatus::Completed {
-        return Err(precondition_failed_with_subcode(
-            ApiSubcode::RemoteNodeEnrollmentRequired,
+        return Err(precondition_failed_with_code(
+            ApiErrorCode::RemoteNodeEnrollmentRequired,
             REMOTE_NODE_ENROLLMENT_REQUIRED_MESSAGE,
         ));
     }
@@ -672,8 +672,8 @@ async fn sync_remote_binding_config_with_timeout<S: RemoteProtocolRuntimeState>(
 
 fn map_remote_node_db_err(error: DbErr) -> AsterError {
     if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
-        validation_error_with_subcode(
-            ApiSubcode::RemoteNodeUniqueConflict,
+        validation_error_with_code(
+            ApiErrorCode::RemoteNodeUniqueConflict,
             "remote node unique field conflict",
         )
     } else {

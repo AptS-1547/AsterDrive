@@ -7,6 +7,7 @@ use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
 use reqwest::Method;
 use tokio::io::AsyncRead;
 
+use crate::api::api_error_code::ApiErrorCode;
 use crate::errors::Result;
 use crate::storage::StorageCapacityInfo;
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
@@ -76,7 +77,7 @@ impl RemoteStorageClient {
                     format!("decode remote storage capabilities response: {e}"),
                 )
             })?;
-        if envelope.code != 0 {
+        if envelope.code != ApiErrorCode::Success {
             return Err(storage_driver_error(
                 remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
                 format!("remote storage capabilities failed: {}", envelope.msg),
@@ -191,7 +192,7 @@ impl RemoteStorageClient {
                     format!("decode remote storage metadata response: {e}"),
                 )
             })?;
-        if envelope.code != 0 {
+        if envelope.code != ApiErrorCode::Success {
             return Err(storage_driver_error(
                 remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
                 format!("remote storage metadata failed: {}", envelope.msg),
@@ -225,7 +226,7 @@ impl RemoteStorageClient {
                     format!("decode remote storage list response: {e}"),
                 )
             })?;
-        if envelope.code != 0 {
+        if envelope.code != ApiErrorCode::Success {
             return Err(storage_driver_error(
                 remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
                 format!("remote storage list failed: {}", envelope.msg),
@@ -247,7 +248,7 @@ impl RemoteStorageClient {
                     format!("decode remote storage capacity response: {e}"),
                 )
             })?;
-        if envelope.code != 0 {
+        if envelope.code != ApiErrorCode::Success {
             return Err(storage_driver_error(
                 remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
                 format!("remote storage capacity failed: {}", envelope.msg),
@@ -293,7 +294,7 @@ impl RemoteStorageClient {
                     format!("decode remote ingress profile list response: {e}"),
                 )
             })?;
-        if envelope.code != 0 {
+        if envelope.code != ApiErrorCode::Success {
             return Err(storage_driver_error(
                 remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
                 format!("remote ingress profile list failed: {}", envelope.msg),
@@ -423,7 +424,7 @@ impl RemoteStorageClient {
                     format!("decode remote storage compose response: {e}"),
                 )
             })?;
-        if envelope.code != 0 {
+        if envelope.code != ApiErrorCode::Success {
             return Err(storage_driver_error(
                 remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
                 format!("remote storage compose failed: {}", envelope.msg),
@@ -488,7 +489,7 @@ async fn parse_ingress_profile_response(
                 format!("decode remote ingress profile response: {e}"),
             )
         })?;
-    if envelope.code != 0 {
+    if envelope.code != ApiErrorCode::Success {
         return Err(storage_driver_error(
             remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
             format!("{context} failed: {}", envelope.msg),

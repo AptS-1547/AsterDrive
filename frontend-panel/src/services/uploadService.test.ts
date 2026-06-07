@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ErrorCode } from "@/types/api-helpers";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => {
 	class MockApiError extends Error {
-		code: number;
+		code: string;
 
-		constructor(code: number, message: string) {
+		constructor(code: string, message: string) {
 			super(message);
 			this.code = code;
 		}
@@ -203,7 +203,7 @@ describe("uploadService", () => {
 		});
 		xhr.status = 200;
 		xhr.responseText = JSON.stringify({
-			code: 0,
+			code: ApiErrorCode.Success,
 			data: { chunk_number: 3, etag: "etag-3" },
 		});
 		xhr.onload?.();
@@ -235,7 +235,7 @@ describe("uploadService", () => {
 		const xhrApi = MockXMLHttpRequest.instances[0];
 		xhrApi.status = 200;
 		xhrApi.responseText = JSON.stringify({
-			code: 3003,
+			code: ApiErrorCode.FileUploadFailed,
 			msg: "upload failed",
 		});
 		xhrApi.onload?.();
@@ -261,7 +261,7 @@ describe("uploadService", () => {
 		const xhrAuth = MockXMLHttpRequest.instances[2];
 		xhrAuth.status = 401;
 		xhrAuth.responseText = JSON.stringify({
-			code: ErrorCode.TokenMissing,
+			code: ApiErrorCode.TokenMissing,
 			msg: "missing token",
 		});
 		xhrAuth.onload?.();
@@ -344,7 +344,7 @@ describe("uploadService", () => {
 	it("completes uploads with the expected payload and timeout policy", async () => {
 		mockState.clientPost.mockResolvedValue({
 			data: {
-				code: ErrorCode.Success,
+				code: ApiErrorCode.Success,
 				msg: "ok",
 				data: { id: 9, name: "done.txt" },
 			},
@@ -368,7 +368,7 @@ describe("uploadService", () => {
 	it("throws ApiError when upload completion fails", async () => {
 		mockState.clientPost.mockResolvedValue({
 			data: {
-				code: ErrorCode.FileUploadFailed,
+				code: ApiErrorCode.FileUploadFailed,
 				msg: "complete failed",
 				data: null,
 			},
@@ -377,7 +377,7 @@ describe("uploadService", () => {
 
 		await expect(uploadService.completeUpload("upload-1")).rejects.toEqual(
 			expect.objectContaining({
-				code: ErrorCode.FileUploadFailed,
+				code: ApiErrorCode.FileUploadFailed,
 				message: "complete failed",
 			}),
 		);

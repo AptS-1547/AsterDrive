@@ -373,6 +373,8 @@ pub(crate) struct StoragePolicyCleanupRemoteNodeSnapshot {
     pub transport_mode: RemoteNodeTransportMode,
     pub access_key: String,
     pub secret_key: String,
+    #[serde(default)]
+    pub last_capabilities: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

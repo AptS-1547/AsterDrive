@@ -12,8 +12,8 @@ mod s3;
 
 use chrono::{Duration, Utc};
 
-use crate::api::subcode::ApiSubcode;
-use crate::errors::{MapAsterErr, Result, chunk_upload_error_with_subcode};
+use crate::api::api_error_code::ApiErrorCode;
+use crate::errors::{MapAsterErr, Result, chunk_upload_error_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::scope::{personal_scope, team_scope};
@@ -207,7 +207,7 @@ async fn prepare_chunked_upload_temp_dir(state: &PrimaryAppState, upload_id: &st
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx("create temp dir", |message| {
-            chunk_upload_error_with_subcode(ApiSubcode::UploadTempDirCreateFailed, message)
+            chunk_upload_error_with_code(ApiErrorCode::UploadTempDirCreateFailed, message)
         })?;
     Ok(())
 }

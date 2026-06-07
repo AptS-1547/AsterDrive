@@ -1,7 +1,7 @@
 use super::audit::should_log_upload_completion;
 use super::plan::{CompletionPlan, determine_completion_plan};
 
-use crate::api::subcode::ApiSubcode;
+use crate::api::api_error_code::ApiErrorCode;
 use crate::entities::upload_session;
 use crate::types::UploadSessionStatus;
 
@@ -29,14 +29,14 @@ fn mock_session(status: UploadSessionStatus) -> upload_session::Model {
 }
 
 #[test]
-fn determine_completion_plan_marks_previous_failure_with_subcode() {
+fn determine_completion_plan_marks_previous_failure_with_code() {
     let err = determine_completion_plan(&mock_session(UploadSessionStatus::Failed), None)
         .expect_err("failed session should not continue");
 
     assert_eq!(err.code(), "E057");
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::UploadPreviousFailure)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::UploadPreviousFailure)
     );
 }
 
@@ -60,13 +60,13 @@ fn determine_completion_plan_requires_parts_for_presigned_multipart() {
 
     assert_eq!(err.code(), "E005");
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::UploadPartsRequired)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::UploadPartsRequired)
     );
 }
 
 #[test]
-fn determine_completion_plan_marks_incomplete_chunks_with_subcode() {
+fn determine_completion_plan_marks_incomplete_chunks_with_code() {
     let mut session = mock_session(UploadSessionStatus::Uploading);
     session.received_count = 2;
 
@@ -74,8 +74,8 @@ fn determine_completion_plan_marks_incomplete_chunks_with_subcode() {
 
     assert_eq!(err.code(), "E057");
     assert_eq!(
-        err.api_error_subcode(),
-        Some(ApiSubcode::UploadIncompleteChunks)
+        err.api_error_code_override(),
+        Some(ApiErrorCode::UploadIncompleteChunks)
     );
 }
 

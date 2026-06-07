@@ -2035,7 +2035,7 @@ async fn test_policy_create_and_params_reject_incomplete_s3_credentials_as_bad_r
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 1000);
+    assert_eq!(body["code"], "bad_request");
     assert_eq!(
         body["msg"],
         "access_key is required for S3-compatible storage policies"
@@ -2054,7 +2054,7 @@ async fn test_policy_create_and_params_reject_incomplete_s3_credentials_as_bad_r
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 1000);
+    assert_eq!(body["code"], "bad_request");
     assert_eq!(
         body["msg"],
         "access_key is required for S3-compatible storage policies"
@@ -2096,7 +2096,7 @@ async fn test_policy_update_rejects_clearing_existing_s3_secret_as_bad_request()
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], 1000);
+    assert_eq!(body["code"], "bad_request");
     assert_eq!(
         body["msg"],
         "secret_key is required for S3-compatible storage policies"
