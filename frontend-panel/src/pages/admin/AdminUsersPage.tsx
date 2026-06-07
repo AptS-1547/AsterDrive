@@ -1,10 +1,11 @@
 import type { FormEvent, SetStateAction } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { CreateUserDialog } from "@/components/admin/admin-users-page/CreateUserDialog";
+import { InviteUserDialog } from "@/components/admin/admin-users-page/InviteUserDialog";
 import { UsersTable } from "@/components/admin/admin-users-page/UsersTable";
 import { UsersToolbar } from "@/components/admin/admin-users-page/UsersToolbar";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
@@ -22,6 +23,7 @@ import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { usePendingId } from "@/hooks/usePendingId";
 import { loadAdminPolicyGroupLookup } from "@/lib/adminPolicyGroupLookup";
+import { writeTextToClipboard } from "@/lib/clipboard";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { runWhenIdle } from "@/lib/idleTask";
 import {
@@ -37,6 +39,8 @@ import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { adminUserService } from "@/services/adminService";
 import type { AdminUserSortBy } from "@/types/adminSort";
 import type {
+	AdminUserInvitationInfo,
+	CreateUserInvitationRequest,
 	CreateUserReq,
 	UpdateUserRequest,
 	UserRole,
@@ -150,6 +154,7 @@ function mergeManagedUserSearchParams(
 export default function AdminUsersPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("users"));
+	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const initialKeyword = searchParams.get("keyword") ?? "";
 	const initialRole = searchParams.get("role");
@@ -200,6 +205,16 @@ export default function AdminUsersPage() {
 		email: "",
 		password: "",
 	});
+	const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+	const [inviting, setInviting] = useState(false);
+	const [inviteErrors, setInviteErrors] = useState<
+		Partial<CreateUserInvitationRequest>
+	>({});
+	const [inviteForm, setInviteForm] = useState<CreateUserInvitationRequest>({
+		email: "",
+	});
+	const [createdInvitation, setCreatedInvitation] =
+		useState<AdminUserInvitationInfo | null>(null);
 	const lastWrittenSearchRef = useRef<string | null>(null);
 	const setOffset = (value: SetStateAction<number>) => {
 		setOffsetState((current) =>
@@ -424,6 +439,59 @@ export default function AdminUsersPage() {
 		setCreateForm((prev) => ({ ...prev, [key]: value }));
 	};
 
+	const resetInviteForm = () => {
+		setInviteForm({ email: "" });
+		setInviteErrors({});
+		setCreatedInvitation(null);
+	};
+
+	const validateInviteField = (
+		field: keyof CreateUserInvitationRequest,
+		value: string,
+	) => {
+		const result = emailSchema.safeParse(value);
+		setInviteErrors((prev) => {
+			if (result.success) {
+				const next = { ...prev };
+				delete next[field];
+				return next;
+			}
+			return { ...prev, [field]: result.error.issues[0]?.message ?? "" };
+		});
+	};
+
+	const validateInviteForm = () => {
+		const nextErrors: Partial<CreateUserInvitationRequest> = {};
+		const emailResult = emailSchema.safeParse(inviteForm.email.trim());
+		if (!emailResult.success) {
+			nextErrors.email = emailResult.error.issues[0]?.message ?? "";
+		}
+		setInviteErrors(nextErrors);
+		return Object.keys(nextErrors).length === 0;
+	};
+
+	const handleInviteFormChange = (
+		key: keyof CreateUserInvitationRequest,
+		value: string,
+	) => {
+		setInviteForm((prev) => ({ ...prev, [key]: value }));
+		if (createdInvitation) {
+			setCreatedInvitation(null);
+		}
+	};
+
+	const copyInvitationLink = async (value: string) => {
+		if (!value) {
+			return;
+		}
+		try {
+			await writeTextToClipboard(value);
+			toast.success(t("core:copied_to_clipboard"));
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
 	const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		if (!validateCreateForm()) return;
@@ -442,6 +510,24 @@ export default function AdminUsersPage() {
 			handleApiError(e);
 		} finally {
 			setCreating(false);
+		}
+	};
+
+	const handleInviteUser = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		if (!validateInviteForm()) return;
+		try {
+			setInviting(true);
+			const invitation = await adminUserService.createInvitation({
+				email: inviteForm.email.trim(),
+			});
+			setCreatedInvitation(invitation);
+			setInviteForm({ email: invitation.email });
+			toast.success(t("invitation_created"));
+		} catch (e) {
+			handleApiError(e);
+		} finally {
+			setInviting(false);
 		}
 	};
 
@@ -520,6 +606,24 @@ export default function AdminUsersPage() {
 					description={t("users_intro")}
 					actions={
 						<>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => setInviteDialogOpen(true)}
+							>
+								<Icon name="EnvelopeSimple" className="mr-1 size-4" />
+								{t("invite_user")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => navigate("/admin/users/invitations")}
+							>
+								<Icon name="ListBullets" className="mr-1 size-4" />
+								{t("invitation_records")}
+							</Button>
 							<Button
 								size="sm"
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
@@ -617,6 +721,23 @@ export default function AdminUsersPage() {
 				onFieldChange={handleCreateFormChange}
 				onFieldValidate={validateCreateField}
 				onSubmit={handleCreateUser}
+			/>
+			<InviteUserDialog
+				open={inviteDialogOpen}
+				onOpenChange={(open) => {
+					setInviteDialogOpen(open);
+					if (!open && !inviting) {
+						resetInviteForm();
+					}
+				}}
+				form={inviteForm}
+				errors={inviteErrors}
+				inviting={inviting}
+				createdInvitation={createdInvitation}
+				onCopyLink={(value) => void copyInvitationLink(value)}
+				onFieldChange={handleInviteFormChange}
+				onFieldValidate={validateInviteField}
+				onSubmit={handleInviteUser}
 			/>
 			<UserDetailDialog
 				user={selectedUser}

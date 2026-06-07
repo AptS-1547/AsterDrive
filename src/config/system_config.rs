@@ -116,6 +116,7 @@ where
         | auth_runtime::AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY
         | auth_runtime::AUTH_CONTACT_CHANGE_TTL_SECS_KEY
         | auth_runtime::AUTH_PASSWORD_RESET_TTL_SECS_KEY
+        | auth_runtime::AUTH_USER_INVITATION_TTL_SECS_KEY
         | auth_runtime::AUTH_EMAIL_CODE_LOGIN_TTL_SECS_KEY
         | auth_runtime::AUTH_EMAIL_CODE_LOGIN_RESEND_COOLDOWN_SECS_KEY
         | auth_runtime::AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY
@@ -236,7 +237,8 @@ where
         | mail::MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY
         | mail::MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY
         | mail::MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_SUBJECT_KEY
-        | mail::MAIL_TEMPLATE_LOGIN_EMAIL_CODE_SUBJECT_KEY => {
+        | mail::MAIL_TEMPLATE_LOGIN_EMAIL_CODE_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_USER_INVITATION_SUBJECT_KEY => {
             mail::normalize_mail_template_subject_config_value(key, value)
         }
         mail::MAIL_TEMPLATE_REGISTER_ACTIVATION_HTML_KEY
@@ -245,7 +247,8 @@ where
         | mail::MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY
         | mail::MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY
         | mail::MAIL_TEMPLATE_EXTERNAL_AUTH_EMAIL_VERIFICATION_HTML_KEY
-        | mail::MAIL_TEMPLATE_LOGIN_EMAIL_CODE_HTML_KEY => {
+        | mail::MAIL_TEMPLATE_LOGIN_EMAIL_CODE_HTML_KEY
+        | mail::MAIL_TEMPLATE_USER_INVITATION_HTML_KEY => {
             mail::normalize_mail_template_body_config_value(key, value)
         }
         site_url::PUBLIC_SITE_URL_KEY => site_url::normalize_public_site_url_config_value(value),
@@ -288,6 +291,10 @@ pub fn apply_definition(mut config: system_config::Model) -> system_config::Mode
 #[cfg(test)]
 mod tests {
     use super::{apply_definition, normalize_system_value, validate_value_type};
+    use crate::config::auth_runtime::AUTH_USER_INVITATION_TTL_SECS_KEY;
+    use crate::config::mail::{
+        MAIL_TEMPLATE_USER_INVITATION_HTML_KEY, MAIL_TEMPLATE_USER_INVITATION_SUBJECT_KEY,
+    };
     use crate::config::operations::{
         BACKGROUND_TASK_MAX_CONCURRENCY_KEY, DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY,
         MAX_SHARE_STREAM_SESSION_TTL_SECS, MIN_SHARE_STREAM_SESSION_TTL_SECS,
@@ -381,6 +388,44 @@ mod tests {
         );
         assert!(
             normalize_system_value(&lookup, BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "1024").is_err()
+        );
+    }
+
+    #[test]
+    fn normalize_system_value_enforces_user_invitation_ttl_is_positive() {
+        let lookup = HashMap::new();
+
+        assert_eq!(
+            normalize_system_value(&lookup, AUTH_USER_INVITATION_TTL_SECS_KEY, " 3600 ").unwrap(),
+            "3600"
+        );
+        assert!(normalize_system_value(&lookup, AUTH_USER_INVITATION_TTL_SECS_KEY, "0").is_err());
+        assert!(normalize_system_value(&lookup, AUTH_USER_INVITATION_TTL_SECS_KEY, "-1").is_err());
+        assert!(
+            normalize_system_value(&lookup, AUTH_USER_INVITATION_TTL_SECS_KEY, "forever").is_err()
+        );
+    }
+
+    #[test]
+    fn normalize_system_value_validates_user_invitation_mail_templates() {
+        let lookup = HashMap::new();
+
+        assert!(
+            normalize_system_value(
+                &lookup,
+                MAIL_TEMPLATE_USER_INVITATION_SUBJECT_KEY,
+                "Invite\n{{email}}"
+            )
+            .is_err()
+        );
+        assert_eq!(
+            normalize_system_value(
+                &lookup,
+                MAIL_TEMPLATE_USER_INVITATION_HTML_KEY,
+                "<p>line1\r\nline2</p>"
+            )
+            .unwrap(),
+            "<p>line1\nline2</p>"
         );
     }
 

@@ -19,6 +19,8 @@
 	"settings_item_auth_contact_change_ttl_secs_desc": "Controls how long email change confirmation links remain usable before they expire.",
 	"settings_item_auth_password_reset_ttl_secs_label": "Password reset lifetime",
 	"settings_item_auth_password_reset_ttl_secs_desc": "Controls how long password reset links remain usable before they expire.",
+	"settings_item_auth_user_invitation_ttl_secs_label": "User invitation lifetime",
+	"settings_item_auth_user_invitation_ttl_secs_desc": "Controls how long admin-created invitation links remain usable before they expire.",
 	"settings_item_auth_contact_verification_resend_cooldown_secs_label": "Verification resend cooldown",
 	"settings_item_auth_contact_verification_resend_cooldown_secs_desc": "The minimum wait between verification email resend attempts for the same user.",
 	"settings_item_auth_email_code_login_enabled_label": "Require email-code MFA",

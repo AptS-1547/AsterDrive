@@ -14,6 +14,9 @@ vi.mock("@/pages/WebdavAccountsPage", () => ({
 	default: "WebdavAccountsPage",
 }));
 vi.mock("@/pages/admin/AdminUsersPage", () => ({ default: "AdminUsersPage" }));
+vi.mock("@/pages/admin/AdminUserInvitationsPage", () => ({
+	default: "AdminUserInvitationsPage",
+}));
 vi.mock("@/pages/admin/AdminPoliciesPage", () => ({
 	default: "AdminPoliciesPage",
 }));
@@ -94,6 +97,7 @@ describe("pwaWarmupLoaders", () => {
 		]);
 		expect(adminRouteWarmupLoaders.map((loader) => loader.key)).toEqual([
 			"route:admin-users",
+			"route:admin-user-invitations",
 			"route:admin-policies",
 			"route:admin-external-auth",
 			"route:admin-settings",

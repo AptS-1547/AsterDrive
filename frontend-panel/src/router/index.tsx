@@ -10,9 +10,13 @@ import { TeamWorkspaceRoute } from "./TeamWorkspaceRoute";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
+const InviteRegisterPage = lazy(() => import("@/pages/InviteRegisterPage"));
 const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
 const AdminOverviewPage = lazy(() => import("@/pages/admin/AdminOverviewPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
+const AdminUserInvitationsPage = lazy(
+	() => import("@/pages/admin/AdminUserInvitationsPage"),
+);
 const AdminTeamsPage = lazy(() => import("@/pages/admin/AdminTeamsPage"));
 const AdminTeamDetailPage = lazy(
 	() => import("@/pages/admin/AdminTeamDetailPage"),
@@ -54,6 +58,15 @@ export const router = createBrowserRouter([
 		element: (
 			<Suspense fallback={<Loading />}>
 				<ResetPasswordPage />
+			</Suspense>
+		),
+	},
+	{
+		path: "/invite/:token",
+		errorElement: <ErrorPage />,
+		element: (
+			<Suspense fallback={<Loading />}>
+				<InviteRegisterPage />
 			</Suspense>
 		),
 	},
@@ -117,6 +130,10 @@ export const router = createBrowserRouter([
 		children: [
 			{ path: "/admin", element: <Navigate to="/admin/overview" replace /> },
 			{ path: "/admin/overview", element: <AdminOverviewPage /> },
+			{
+				path: "/admin/users/invitations",
+				element: <AdminUserInvitationsPage />,
+			},
 			{ path: "/admin/users", element: <AdminUsersPage /> },
 			{ path: "/admin/teams", element: <AdminTeamsPage /> },
 			{ path: "/admin/teams/:teamId", element: <AdminTeamDetailPage /> },

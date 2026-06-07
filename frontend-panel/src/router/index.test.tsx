@@ -101,6 +101,9 @@ describe("router", () => {
 			allRoutes.some((route) => route.path === "/admin/settings/mail"),
 		).toBe(true);
 		expect(allRoutes.some((route) => route.path === "/admin/tasks")).toBe(true);
+		expect(
+			allRoutes.some((route) => route.path === "/admin/users/invitations"),
+		).toBe(true);
 		expect(allRoutes.some((route) => route.path === "/tasks")).toBe(true);
 		expect(allRoutes.some((route) => route.path === "tasks")).toBe(true);
 		expect(allRoutes.some((route) => route.path === "/settings/:section")).toBe(
