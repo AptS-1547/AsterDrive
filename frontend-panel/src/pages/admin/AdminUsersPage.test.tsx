@@ -7,11 +7,13 @@ import type { UpdateUserRequest } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
+	createInvitation: vi.fn(),
 	deleteUser: vi.fn(),
 	handleApiError: vi.fn(),
 	list: vi.fn(),
 	toastSuccess: vi.fn(),
 	update: vi.fn(),
+	writeTextToClipboard: vi.fn(),
 }));
 
 vi.mock("i18next", () => ({
@@ -121,6 +123,16 @@ vi.mock("@/components/common/SkeletonTable", () => ({
 	SkeletonTable: ({ columns, rows }: { columns: number; rows: number }) => (
 		<div>{`skeleton:${columns}:${rows}`}</div>
 	),
+}));
+
+vi.mock("@/components/common/AnimatedCollapsible", () => ({
+	AnimatedCollapsible: ({
+		children,
+		open,
+	}: {
+		children: React.ReactNode;
+		open: boolean;
+	}) => (open ? <div>{children}</div> : null),
 }));
 
 vi.mock("@/components/common/UserAvatarImage", () => ({
@@ -459,8 +471,15 @@ vi.mock("@/hooks/useApiError", () => ({
 	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
 }));
 
+vi.mock("@/lib/clipboard", () => ({
+	writeTextToClipboard: (...args: unknown[]) =>
+		mockState.writeTextToClipboard(...args),
+}));
+
 vi.mock("@/lib/format", () => ({
 	formatBytes: (value: number) => `bytes:${value}`,
+	formatDateAbsolute: (value: string) => `date:${value}`,
+	formatDateAbsoluteWithOffset: (value: string) => `offset:${value}`,
 }));
 
 vi.mock("@/services/adminService", () => ({
@@ -469,6 +488,8 @@ vi.mock("@/services/adminService", () => ({
 	},
 	adminUserService: {
 		create: (...args: unknown[]) => mockState.create(...args),
+		createInvitation: (...args: unknown[]) =>
+			mockState.createInvitation(...args),
 		delete: (...args: unknown[]) => mockState.deleteUser(...args),
 		list: (...args: unknown[]) => mockState.list(...args),
 		update: (...args: unknown[]) => mockState.update(...args),
@@ -498,6 +519,24 @@ function createUser(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function createInvitation(overrides: Record<string, unknown> = {}) {
+	return {
+		accepted_at: null,
+		accepted_user_id: null,
+		created_at: "2026-06-07T10:00:00Z",
+		email: "invitee@example.com",
+		expires_at: "2026-06-10T10:00:00Z",
+		id: 101,
+		invitation_url: "https://drive.example.test/invite/token",
+		invited_by: 1,
+		mail_queued: false,
+		revoked_at: null,
+		status: "pending",
+		updated_at: "2026-06-07T10:00:00Z",
+		...overrides,
+	};
+}
+
 function renderPage(initialEntry = "/admin/users") {
 	return render(
 		<MemoryRouter initialEntries={[initialEntry]}>
@@ -510,19 +549,27 @@ function renderPage(initialEntry = "/admin/users") {
 function LocationProbe() {
 	const location = useLocation();
 
-	return <div data-testid="location-search">{location.search}</div>;
+	return (
+		<>
+			<div data-testid="location-path">{location.pathname}</div>
+			<div data-testid="location-search">{location.search}</div>
+		</>
+	);
 }
 
 describe("AdminUsersPage", () => {
 	beforeEach(() => {
 		mockState.create.mockReset();
+		mockState.createInvitation.mockReset();
 		mockState.deleteUser.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.list.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.update.mockReset();
+		mockState.writeTextToClipboard.mockReset();
 
 		mockState.create.mockResolvedValue(createUser());
+		mockState.createInvitation.mockResolvedValue(createInvitation());
 		mockState.deleteUser.mockResolvedValue(undefined);
 		mockState.list.mockResolvedValue({
 			items: [createUser()],
@@ -534,6 +581,7 @@ describe("AdminUsersPage", () => {
 				id,
 			}),
 		);
+		mockState.writeTextToClipboard.mockResolvedValue(undefined);
 	});
 
 	it("loads from search params, refreshes, opens the detail dialog, and updates the selected user", async () => {
@@ -572,7 +620,8 @@ describe("AdminUsersPage", () => {
 
 		expect(screen.getByText("detail:alice")).toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
+		const refreshButtons = screen.getAllByRole("button", { name: /refresh/i });
+		fireEvent.click(refreshButtons[0] as HTMLElement);
 
 		await waitFor(() => {
 			expect(mockState.list).toHaveBeenCalledTimes(2);
@@ -604,6 +653,23 @@ describe("AdminUsersPage", () => {
 		fireEvent.click(screen.getByRole("button", { name: "clear_filters" }));
 
 		expect(screen.getByTestId("location-search").textContent).toBe("");
+	});
+
+	it("links to the dedicated invitation management page without loading invitation records", async () => {
+		renderPage();
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenCalledTimes(1);
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /invitation_records/i }),
+		);
+
+		expect(screen.getByTestId("location-path").textContent).toBe(
+			"/admin/users/invitations",
+		);
+		expect(screen.queryByText("pending_invitations")).not.toBeInTheDocument();
 	});
 
 	it("validates the create form, trims inputs, creates the user, and reloads the list", async () => {

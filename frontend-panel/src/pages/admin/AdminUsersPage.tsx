@@ -1,12 +1,11 @@
 import type { FormEvent, SetStateAction } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { CreateUserDialog } from "@/components/admin/admin-users-page/CreateUserDialog";
 import { InviteUserDialog } from "@/components/admin/admin-users-page/InviteUserDialog";
-import { UserInvitationsTable } from "@/components/admin/admin-users-page/UserInvitationsTable";
 import { UsersTable } from "@/components/admin/admin-users-page/UsersTable";
 import { UsersToolbar } from "@/components/admin/admin-users-page/UsersToolbar";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
@@ -72,7 +71,6 @@ const USER_SORT_BY_OPTIONS = [
 ] as const satisfies readonly AdminUserSortBy[];
 const DEFAULT_USER_SORT_BY = "created_at" as const satisfies AdminUserSortBy;
 const DEFAULT_USER_SORT_ORDER = "desc" as const satisfies SortOrder;
-const INVITATION_PAGE_SIZE = 10;
 function normalizeOffset(offset: number) {
 	return Math.max(0, Math.floor(offset));
 }
@@ -156,6 +154,7 @@ function mergeManagedUserSearchParams(
 export default function AdminUsersPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("users"));
+	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const initialKeyword = searchParams.get("keyword") ?? "";
 	const initialRole = searchParams.get("role");
@@ -341,26 +340,8 @@ export default function AdminUsersPage() {
 			statusFilter,
 		],
 	);
-	const {
-		items: invitations,
-		loading: loadingInvitations,
-		reload: reloadInvitations,
-		setItems: setInvitations,
-		total: invitationTotal,
-	} = useApiList(
-		() =>
-			adminUserService.listInvitations({
-				limit: INVITATION_PAGE_SIZE,
-				offset: 0,
-			}),
-		[],
-	);
 	const { pendingId: deletingUserId, runWithPending: runWithDeletingUser } =
 		usePendingId<number>();
-	const {
-		pendingId: revokingInvitationId,
-		runWithPending: runWithRevokingInvitation,
-	} = usePendingId<number>();
 
 	const activeFilterCount =
 		(debouncedKeyword.trim().length > 0 ? 1 : 0) +
@@ -543,7 +524,6 @@ export default function AdminUsersPage() {
 			setCreatedInvitation(invitation);
 			setInviteForm({ email: invitation.email });
 			toast.success(t("invitation_created"));
-			await reloadInvitations();
 		} catch (e) {
 			handleApiError(e);
 		} finally {
@@ -603,29 +583,6 @@ export default function AdminUsersPage() {
 		() => users.find((user) => user.id === deleteUserId) ?? null,
 		[users, deleteUserId],
 	);
-	const {
-		confirmId: revokeInvitationId,
-		requestConfirm: requestRevokeInvitationConfirm,
-		dialogProps: revokeInvitationDialogProps,
-	} = useConfirmDialog<number>(async (id) => {
-		await runWithRevokingInvitation(id, async () => {
-			try {
-				const invitation = await adminUserService.revokeInvitation(id);
-				setInvitations((prev) =>
-					prev.map((item) => (item.id === id ? invitation : item)),
-				);
-				toast.success(t("invitation_revoked"));
-			} catch (e) {
-				handleApiError(e);
-			}
-		});
-	});
-	const revokeTargetInvitation = useMemo(
-		() =>
-			invitations.find((invitation) => invitation.id === revokeInvitationId) ??
-			null,
-		[invitations, revokeInvitationId],
-	);
 	const roleFilterOptions = [
 		{ label: t("all_roles"), value: "__all__" },
 		{ label: t("role_admin"), value: "admin" },
@@ -657,6 +614,15 @@ export default function AdminUsersPage() {
 							>
 								<Icon name="EnvelopeSimple" className="mr-1 size-4" />
 								{t("invite_user")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => navigate("/admin/users/invitations")}
+							>
+								<Icon name="ListBullets" className="mr-1 size-4" />
+								{t("invitation_records")}
 							</Button>
 							<Button
 								size="sm"
@@ -740,49 +706,6 @@ export default function AdminUsersPage() {
 					}
 					onNext={() => setOffset((current) => current + pageSize)}
 				/>
-
-				<div className="mt-6 space-y-3">
-					<div className="flex flex-wrap items-center justify-between gap-3">
-						<div className="min-w-0">
-							<h2 className="text-base font-semibold tracking-tight">
-								{t("invitations")}
-							</h2>
-							<p className="text-sm text-muted-foreground">
-								{t("invitations_desc", { count: invitationTotal })}
-							</p>
-						</div>
-						<Button
-							variant="outline"
-							size="sm"
-							className={ADMIN_CONTROL_HEIGHT_CLASS}
-							onClick={() => void reloadInvitations()}
-							disabled={loadingInvitations}
-						>
-							<Icon
-								name={loadingInvitations ? "Spinner" : "ArrowsClockwise"}
-								className={`mr-1 size-3.5 ${loadingInvitations ? "animate-spin" : ""}`}
-							/>
-							{t("core:refresh")}
-						</Button>
-					</div>
-					{loadingInvitations ? (
-						<SkeletonTable columns={6} rows={4} />
-					) : invitations.length === 0 ? (
-						<EmptyState
-							icon={<Icon name="EnvelopeSimple" className="size-10" />}
-							title={t("no_invitations")}
-						/>
-					) : (
-						<UserInvitationsTable
-							invitations={invitations}
-							revokingInvitationId={revokingInvitationId}
-							onCopyLink={(value) => void copyInvitationLink(value)}
-							onRevokeInvitation={(invitation) =>
-								requestRevokeInvitationConfirm(invitation.id)
-							}
-						/>
-					)}
-				</div>
 			</AdminPageShell>
 			<CreateUserDialog
 				open={createDialogOpen}
@@ -833,15 +756,6 @@ export default function AdminUsersPage() {
 						: t("confirm_force_delete")
 				}
 				confirmLabel={t("core:delete")}
-				variant="destructive"
-			/>
-			<ConfirmDialog
-				{...revokeInvitationDialogProps}
-				title={t("revoke_invitation")}
-				description={t("confirm_revoke_invitation", {
-					email: revokeTargetInvitation?.email ?? "",
-				})}
-				confirmLabel={t("revoke_invitation")}
 				variant="destructive"
 			/>
 		</AdminLayout>

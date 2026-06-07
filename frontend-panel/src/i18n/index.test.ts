@@ -1,5 +1,6 @@
 import type { ReportNamespaces } from "react-i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiErrorCode } from "@/types/api-helpers";
 
 const mockState = vi.hoisted(() => ({
 	idleCallbacks: [] as Array<() => void>,
@@ -100,5 +101,21 @@ describe("i18n", () => {
 		await module.ensureI18nNamespaces(["webdav"], "en");
 
 		expect(i18n.t("webdav:webdav_endpoint")).toBe("WebDAV Endpoint");
+	});
+
+	it.each([
+		"en",
+		"zh",
+	] as const)("includes translated error messages for auth API codes in %s", async (language) => {
+		localStorage.setItem("aster-language", language);
+		const module = await loadI18nModule();
+		const i18n = module.default;
+
+		for (const code of Object.values(ApiErrorCode)) {
+			if (!code.startsWith("auth.")) continue;
+
+			const key = `errors:${code.replaceAll(".", "_")}`;
+			expect(i18n.exists(key), key).toBe(true);
+		}
 	});
 });

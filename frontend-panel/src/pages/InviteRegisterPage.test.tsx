@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import InviteRegisterPage from "@/pages/InviteRegisterPage";
+import { createMeResponse } from "@/test/fixtures";
+import type { MeResponse } from "@/types/api";
 
 const MockApiError = vi.hoisted(
 	() =>
@@ -15,7 +17,9 @@ const MockApiError = vi.hoisted(
 
 const mockState = vi.hoisted(() => ({
 	acceptInvitation: vi.fn(),
+	authUser: null as MeResponse | null,
 	handleApiError: vi.fn(),
+	logout: vi.fn(),
 	navigate: vi.fn(),
 	params: {} as { token?: string },
 	verifyInvitation: vi.fn(),
@@ -52,6 +56,19 @@ vi.mock("@/hooks/useApiError", () => ({
 
 vi.mock("@/hooks/usePageTitle", () => ({
 	usePageTitle: vi.fn(),
+}));
+
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: (
+		selector: (state: {
+			logout: typeof mockState.logout;
+			user: MeResponse | null;
+		}) => unknown,
+	) =>
+		selector({
+			logout: mockState.logout,
+			user: mockState.authUser,
+		}),
 }));
 
 vi.mock("@/components/common/AsterDriveWordmark", () => ({
@@ -143,7 +160,10 @@ describe("InviteRegisterPage", () => {
 	beforeEach(() => {
 		mockState.acceptInvitation.mockReset();
 		mockState.acceptInvitation.mockResolvedValue(undefined);
+		mockState.authUser = null;
 		mockState.handleApiError.mockReset();
+		mockState.logout.mockReset();
+		mockState.logout.mockResolvedValue(undefined);
 		mockState.navigate.mockReset();
 		mockState.params = {};
 		mockState.verifyInvitation.mockReset();
@@ -168,11 +188,13 @@ describe("InviteRegisterPage", () => {
 
 		render(<InviteRegisterPage />);
 
+		expect(screen.getByText("invitation_page_title")).toBeInTheDocument();
 		expect(
 			await screen.findByText("invitation_register_title"),
 		).toBeInTheDocument();
 		expect(mockState.verifyInvitation).toHaveBeenCalledWith("invite-token");
-		expect(screen.getByDisplayValue("invitee@example.com")).toBeInTheDocument();
+		expect(screen.getByText("invitation_invited_account")).toBeInTheDocument();
+		expect(screen.getByText("invitee@example.com")).toBeInTheDocument();
 
 		fireEvent.change(screen.getByLabelText("username"), {
 			target: { value: "invitee" },
@@ -194,6 +216,38 @@ describe("InviteRegisterPage", () => {
 			"/login?invitation=accepted",
 			{ replace: true },
 		);
+	});
+
+	it("expands the content area while showing the unauthenticated registration form", async () => {
+		let resolveVerify:
+			| ((value: { email: string; expires_at: string }) => void)
+			| undefined;
+		mockState.params = { token: "invite-token" };
+		mockState.verifyInvitation.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					resolveVerify = resolve;
+				}),
+		);
+
+		render(<InviteRegisterPage />);
+
+		expect(screen.getByTestId("invite-content")).toHaveClass("h-32");
+		expect(screen.getByText("invitation_loading_title")).toBeInTheDocument();
+
+		resolveVerify?.({
+			email: "invitee@example.com",
+			expires_at: "2026-06-10T00:00:00Z",
+		});
+
+		await waitFor(() => {
+			expect(screen.getByTestId("invite-content")).toHaveClass("h-[16rem]");
+		});
+		expect(screen.getByLabelText("username")).toBeInTheDocument();
+		expect(screen.getByLabelText("password")).toBeInTheDocument();
+		await waitFor(() => {
+			expect(screen.getByTestId("invite-content")).toHaveClass("min-h-[16rem]");
+		});
 	});
 
 	it("validates username and password before accepting", async () => {
@@ -256,5 +310,88 @@ describe("InviteRegisterPage", () => {
 			await screen.findByText("invitation_revoked_title"),
 		).toBeInTheDocument();
 		expect(mockState.navigate).not.toHaveBeenCalled();
+	});
+
+	it("shows an already-signed-in state when the current account matches the invitation", async () => {
+		mockState.params = { token: "invite-token" };
+		mockState.authUser = createMeResponse({
+			email: "INVITEE@example.com",
+		});
+
+		render(<InviteRegisterPage />);
+
+		expect(
+			await screen.findByText("invitation_same_account_title"),
+		).toBeInTheDocument();
+		expect(screen.getByText("invitation_invited_account")).toBeInTheDocument();
+		expect(screen.getByText("invitee@example.com")).toBeInTheDocument();
+		expect(screen.getByText("invitation_current_account")).toBeInTheDocument();
+		expect(screen.getByText("INVITEE@example.com")).toBeInTheDocument();
+		expect(screen.queryByLabelText("username")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("password")).not.toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "invitation_go_to_current_account" }),
+		);
+
+		expect(mockState.navigate).toHaveBeenCalledWith("/");
+		expect(mockState.logout).not.toHaveBeenCalled();
+	});
+
+	it("starts the invite transition immediately before logout finishes", async () => {
+		let resolveLogout: (() => void) | undefined;
+		mockState.params = { token: "invite-token" };
+		mockState.authUser = createMeResponse({
+			email: "current@example.com",
+		});
+		mockState.logout.mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveLogout = resolve;
+				}),
+		);
+
+		render(<InviteRegisterPage />);
+
+		expect(
+			await screen.findByText("invitation_account_mismatch_title"),
+		).toBeInTheDocument();
+		expect(screen.getByText("invitation_invited_account")).toBeInTheDocument();
+		expect(screen.getByText("invitee@example.com")).toBeInTheDocument();
+		expect(screen.getByText("invitation_current_account")).toBeInTheDocument();
+		expect(screen.getByText("current@example.com")).toBeInTheDocument();
+		expect(screen.getByTestId("invite-account-status")).toBeInTheDocument();
+		expect(screen.queryByLabelText("username")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("password")).not.toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "invitation_logout_and_continue" }),
+		);
+
+		expect(mockState.logout).toHaveBeenCalledTimes(1);
+		expect(screen.getByTestId("invite-content")).toHaveClass("h-[16rem]");
+		expect(screen.getByTestId("invite-content")).toHaveClass(
+			"transition-[height]",
+		);
+		expect(
+			screen.queryByTestId("invite-account-status"),
+		).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("username")).not.toBeInTheDocument();
+		expect(screen.queryByLabelText("password")).not.toBeInTheDocument();
+		expect(
+			await screen.findByText("invitation_switching_title"),
+		).toBeInTheDocument();
+
+		resolveLogout?.();
+
+		await waitFor(() => {
+			expect(screen.getByText("invitation_register_title")).toBeInTheDocument();
+		});
+		expect(screen.getByTestId("invite-content")).toHaveClass("min-h-[16rem]");
+		expect(screen.getByTestId("invite-content")).toHaveClass(
+			"overflow-visible",
+		);
+		expect(screen.getByLabelText("username")).toBeInTheDocument();
+		expect(screen.getByLabelText("password")).toBeInTheDocument();
 	});
 });
