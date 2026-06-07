@@ -230,4 +230,80 @@ mod tests {
             AuditLogRuntimeSettings::from_raw_values(Some("false"), Some(r#"["user_login"]"#));
         assert!(!disabled.should_record(AuditAction::UserLogin));
     }
+
+    #[test]
+    fn runtime_settings_preserve_full_scope_missing_mail_actions() {
+        let legacy_values: Vec<&'static str> = AuditAction::ALL
+            .iter()
+            .copied()
+            .filter(|action| {
+                !matches!(
+                    action,
+                    AuditAction::MailSend | AuditAction::MailDeliveryFailed
+                )
+            })
+            .map(|action| action.as_str())
+            .collect();
+        let legacy_raw =
+            serde_json::to_string(&legacy_values).expect("legacy values should serialize");
+
+        let settings = AuditLogRuntimeSettings::from_raw_values(Some("true"), Some(&legacy_raw));
+
+        assert!(!settings.should_record(AuditAction::MailSend));
+        assert!(!settings.should_record(AuditAction::MailDeliveryFailed));
+    }
+
+    #[test]
+    fn runtime_settings_do_not_expand_custom_action_scope_missing_mail_actions() {
+        let settings = AuditLogRuntimeSettings::from_raw_values(
+            Some("true"),
+            Some(r#"["user_login","config_update"]"#),
+        );
+
+        assert!(settings.should_record(AuditAction::UserLogin));
+        assert!(settings.should_record(AuditAction::ConfigUpdate));
+        assert!(!settings.should_record(AuditAction::MailSend));
+        assert!(!settings.should_record(AuditAction::MailDeliveryFailed));
+    }
+
+    #[test]
+    fn runtime_settings_do_not_treat_partial_legacy_scope_as_full_scope() {
+        let values: Vec<&'static str> = AuditAction::ALL
+            .iter()
+            .copied()
+            .filter(|action| {
+                !matches!(
+                    action,
+                    AuditAction::UserLogin
+                        | AuditAction::MailSend
+                        | AuditAction::MailDeliveryFailed
+                )
+            })
+            .map(|action| action.as_str())
+            .collect();
+        let raw = serde_json::to_string(&values).expect("values should serialize");
+
+        let settings = AuditLogRuntimeSettings::from_raw_values(Some("true"), Some(&raw));
+
+        assert!(!settings.should_record(AuditAction::UserLogin));
+        assert!(!settings.should_record(AuditAction::MailSend));
+        assert!(!settings.should_record(AuditAction::MailDeliveryFailed));
+        assert!(settings.should_record(AuditAction::FileUpload));
+    }
+
+    #[test]
+    fn runtime_settings_do_not_expand_when_one_new_mail_action_is_selected() {
+        let values: Vec<&'static str> = AuditAction::ALL
+            .iter()
+            .copied()
+            .filter(|action| !matches!(action, AuditAction::MailDeliveryFailed))
+            .map(|action| action.as_str())
+            .collect();
+        let raw = serde_json::to_string(&values).expect("values should serialize");
+
+        let settings = AuditLogRuntimeSettings::from_raw_values(Some("true"), Some(&raw));
+
+        assert!(settings.should_record(AuditAction::MailSend));
+        assert!(!settings.should_record(AuditAction::MailDeliveryFailed));
+    }
 }

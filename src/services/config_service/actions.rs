@@ -5,7 +5,8 @@ use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_code}
 use crate::runtime::{MailRuntimeState, SharedRuntimeState};
 use crate::services::{
     audit_service::{self, AuditContext},
-    mail_service, media_processing_service, preview_app_service, task_service, wopi_service,
+    mail_audit_service, mail_service, media_processing_service, preview_app_service, task_service,
+    wopi_service,
 };
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -61,9 +62,10 @@ pub struct ExecuteConfigActionInput<'a> {
     pub discovery_url: Option<&'a str>,
 }
 
-pub async fn execute_action(
+pub async fn execute_action_with_audit(
     state: &impl MailRuntimeState,
     input: ExecuteConfigActionInput<'_>,
+    audit_ctx: &AuditContext,
 ) -> Result<ConfigActionResult> {
     let ExecuteConfigActionInput {
         key,
@@ -74,9 +76,9 @@ pub async fn execute_action(
         value,
         discovery_url,
     } = input;
-    match key {
+    let action_result = match key {
         MAIL_CONFIG_ACTION_KEY => {
-            execute_mail_action(state, action, actor_user_id, target_email).await
+            execute_mail_action(state, action, actor_user_id, target_email, audit_ctx).await
         }
         preview_app_service::PREVIEW_APPS_CONFIG_KEY => {
             execute_preview_app_action(state, action, actor_user_id, value, discovery_url).await
@@ -90,15 +92,7 @@ pub async fn execute_action(
         _ => Err(AsterError::record_not_found(format!(
             "config action target '{key}'"
         ))),
-    }
-}
-
-pub async fn execute_action_with_audit(
-    state: &impl MailRuntimeState,
-    input: ExecuteConfigActionInput<'_>,
-    audit_ctx: &AuditContext,
-) -> Result<ConfigActionResult> {
-    let action_result = execute_action(state, input).await?;
+    }?;
     audit_service::log_with_details(
         state,
         audit_ctx,
@@ -236,6 +230,7 @@ async fn execute_mail_action(
     action: ConfigActionType,
     actor_user_id: i64,
     target_email: Option<&str>,
+    audit_ctx: &AuditContext,
 ) -> Result<ConfigActionResult> {
     match action {
         ConfigActionType::SendTestEmail => {
@@ -254,7 +249,52 @@ async fn execute_mail_action(
                 "config: executing mail action"
             );
 
-            mail_service::send_test_email(state, &normalized_target, Some(&actor.username)).await?;
+            let result =
+                mail_service::send_test_email(state, &normalized_target, Some(&actor.username))
+                    .await;
+            let ip_address = audit_ctx.ip_address.as_deref();
+            let user_agent = audit_ctx.user_agent.as_deref();
+            match &result {
+                Ok(()) => {
+                    mail_audit_service::log_send(
+                        state,
+                        mail_audit_service::MailAuditInput {
+                            actor_user_id,
+                            ip_address,
+                            user_agent,
+                            to_address: &normalized_target,
+                            to_name: None,
+                            template_code: "smtp_test",
+                            subject: Some("AsterDrive SMTP test"),
+                            outbox_id: None,
+                            attempt_count: None,
+                            error: None,
+                        },
+                    )
+                    .await;
+                }
+                Err(error) => {
+                    let error_message = error.to_string();
+                    mail_audit_service::log_delivery_failed_with_db(
+                        state.writer_db(),
+                        state.runtime_config(),
+                        mail_audit_service::MailAuditInput {
+                            actor_user_id,
+                            ip_address,
+                            user_agent,
+                            to_address: &normalized_target,
+                            to_name: None,
+                            template_code: "smtp_test",
+                            subject: Some("AsterDrive SMTP test"),
+                            outbox_id: None,
+                            attempt_count: None,
+                            error: Some(&error_message),
+                        },
+                    )
+                    .await;
+                }
+            }
+            result?;
 
             Ok(ConfigActionResult {
                 message: format!("Test email sent to {normalized_target}"),
