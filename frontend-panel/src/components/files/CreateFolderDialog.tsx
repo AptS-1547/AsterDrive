@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,17 +25,25 @@ export function CreateFolderDialog({
 	const { t } = useTranslation("files");
 	const createFolder = useFileStore((s) => s.createFolder);
 	const [name, setName] = useState("");
+	const [submitting, setSubmitting] = useState(false);
+	const submittingRef = useRef(false);
 
 	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
-		if (!name.trim()) return;
+		const trimmedName = name.trim();
+		if (!trimmedName || submittingRef.current) return;
+		submittingRef.current = true;
+		setSubmitting(true);
 		try {
-			await createFolder(name.trim());
+			await createFolder(trimmedName);
 			toast.success(t("create_folder_success"));
 			setName("");
 			onOpenChange(false);
 		} catch (error) {
 			handleApiError(error);
+		} finally {
+			submittingRef.current = false;
+			setSubmitting(false);
 		}
 	};
 
@@ -52,7 +60,7 @@ export function CreateFolderDialog({
 						onChange={(e) => setName(e.target.value)}
 						autoFocus
 					/>
-					<Button type="submit" className="w-full">
+					<Button type="submit" className="w-full" disabled={submitting}>
 						{t("create_folder")}
 					</Button>
 				</form>

@@ -207,6 +207,24 @@ describe("http refresh edge cases", () => {
 		expect(window.location.href).toBe("/login");
 	});
 
+	it("does not force logout when refresh fails with a transient gateway response", async () => {
+		mockState.axiosModule.isAxiosError.mockReturnValue(true);
+		mockState.refreshToken.mockRejectedValue({
+			isAxiosError: true,
+			response: { status: 502 },
+		});
+		await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+		const originalError = {
+			config: { url: "/files", _retry: false },
+			response: tokenErrorResponse(),
+		} satisfies MockAxiosError;
+
+		await expect(errorHandler(originalError)).rejects.toBe(originalError);
+		expect(mockState.forceLogout).not.toHaveBeenCalled();
+		expect(window.location.href).toBe("http://localhost/");
+	});
+
 	it("forces logout when refresh fails with a token ApiError", async () => {
 		mockState.axiosModule.isAxiosError.mockReturnValue(false);
 		mockState.refreshToken.mockRejectedValue({
@@ -374,5 +392,30 @@ describe("http refresh edge cases", () => {
 				},
 			}),
 		).rejects.toBeInstanceOf(ApiError);
+	});
+
+	it("preserves HTTP status when converting API payloads into ApiError", async () => {
+		const { ApiError } = await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+
+		const converted = await errorHandler({
+			config: { url: "/auth/login" },
+			response: {
+				status: 403,
+				data: {
+					code: ApiErrorCode.PendingActivation,
+					msg: "pending activation",
+				},
+			},
+		}).catch((error: unknown) => error);
+
+		expect(converted).toBeInstanceOf(ApiError);
+		expect(converted).toEqual(
+			expect.objectContaining({
+				code: ApiErrorCode.PendingActivation,
+				message: "pending activation",
+				status: 403,
+			}),
+		);
 	});
 });

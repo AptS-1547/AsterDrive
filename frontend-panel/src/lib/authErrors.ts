@@ -36,6 +36,41 @@ export function isTokenAuthError(error: unknown): boolean {
 	);
 }
 
+function readHttpStatus(error: unknown): number | null {
+	if (typeof error !== "object" || error === null) {
+		return null;
+	}
+
+	const status = "status" in error ? error.status : null;
+	if (typeof status === "number") {
+		return status;
+	}
+
+	if (!("response" in error)) {
+		return null;
+	}
+
+	const response = error.response;
+	if (
+		typeof response !== "object" ||
+		response === null ||
+		!("status" in response)
+	) {
+		return null;
+	}
+
+	return typeof response.status === "number" ? response.status : null;
+}
+
+export function isSessionAuthFailure(error: unknown): boolean {
+	if (isTokenAuthError(error)) {
+		return true;
+	}
+
+	const status = readHttpStatus(error);
+	return status === 401 || status === 403;
+}
+
 export function isStaleRefreshTokenError(error: unknown): boolean {
 	const code = readApiCode(error) ?? readApiResponseCode(error);
 	return code === ApiErrorCode.RefreshTokenStale;
