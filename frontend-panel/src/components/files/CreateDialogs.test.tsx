@@ -131,6 +131,37 @@ describe("Create dialogs", () => {
 		});
 	});
 
+	it("ignores duplicate file submits while creation is pending", async () => {
+		const onOpenChange = vi.fn();
+		let resolveCreate: (() => void) | undefined;
+		mockState.createFile.mockReturnValueOnce(
+			new Promise<void>((resolve) => {
+				resolveCreate = resolve;
+			}),
+		);
+
+		render(<CreateFileDialog open onOpenChange={onOpenChange} />);
+
+		fireEvent.change(screen.getByPlaceholderText("file_name"), {
+			target: { value: "notes.md" },
+		});
+		const button = screen.getByRole("button", { name: "create_file" });
+
+		fireEvent.click(button);
+		fireEvent.click(button);
+
+		expect(mockState.createFile).toHaveBeenCalledTimes(1);
+		expect(button).toBeDisabled();
+
+		resolveCreate?.();
+
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"create_file_success",
+			);
+		});
+	});
+
 	it("reports file creation failures and keeps the dialog open", async () => {
 		const onOpenChange = vi.fn();
 		const error = new Error("cannot create file");
@@ -185,6 +216,37 @@ describe("Create dialogs", () => {
 			);
 			expect(onOpenChange).toHaveBeenCalledWith(false);
 			expect(input).toHaveValue("");
+		});
+	});
+
+	it("ignores duplicate folder submits while creation is pending", async () => {
+		const onOpenChange = vi.fn();
+		let resolveCreate: (() => void) | undefined;
+		mockState.createFolder.mockReturnValueOnce(
+			new Promise<void>((resolve) => {
+				resolveCreate = resolve;
+			}),
+		);
+
+		render(<CreateFolderDialog open onOpenChange={onOpenChange} />);
+
+		fireEvent.change(screen.getByPlaceholderText("folder_name"), {
+			target: { value: "Projects" },
+		});
+		const button = screen.getByRole("button", { name: "create_folder" });
+
+		fireEvent.click(button);
+		fireEvent.click(button);
+
+		expect(mockState.createFolder).toHaveBeenCalledTimes(1);
+		expect(button).toBeDisabled();
+
+		resolveCreate?.();
+
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"create_folder_success",
+			);
 		});
 	});
 

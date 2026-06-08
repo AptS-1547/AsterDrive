@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isStaleRefreshTokenError, isTokenAuthError } from "@/lib/authErrors";
+import {
+	isSessionAuthFailure,
+	isStaleRefreshTokenError,
+	isTokenAuthError,
+} from "@/lib/authErrors";
 import { ApiErrorCode } from "@/types/api-helpers";
 
 describe("isTokenAuthError", () => {
@@ -57,5 +61,46 @@ describe("isTokenAuthError", () => {
 		expect(isStaleRefreshTokenError({ code: ApiErrorCode.TokenInvalid })).toBe(
 			false,
 		);
+	});
+
+	it("treats only explicit auth failures as session auth failures", () => {
+		expect(
+			isSessionAuthFailure({ code: ApiErrorCode.RefreshTokenReuseDetected }),
+		).toBe(true);
+		expect(
+			isSessionAuthFailure({
+				response: {
+					status: 502,
+				},
+			}),
+		).toBe(false);
+		expect(
+			isSessionAuthFailure({
+				response: {
+					status: 503,
+				},
+			}),
+		).toBe(false);
+		expect(
+			isSessionAuthFailure({
+				response: {
+					status: 504,
+				},
+			}),
+		).toBe(false);
+		expect(
+			isSessionAuthFailure({
+				response: {
+					status: 401,
+				},
+			}),
+		).toBe(true);
+		expect(
+			isSessionAuthFailure({
+				response: {
+					status: 403,
+				},
+			}),
+		).toBe(true);
 	});
 });

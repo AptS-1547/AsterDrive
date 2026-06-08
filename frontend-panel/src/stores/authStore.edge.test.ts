@@ -170,6 +170,34 @@ describe("useAuthStore edge cases", () => {
 		expect(localStorage.getItem("aster-cached-user")).toBeNull();
 	});
 
+	it("keeps cached auth state stale on transient auth check responses", async () => {
+		const cachedUser = createCachedUser();
+		localStorage.setItem("aster-cached-user", JSON.stringify(cachedUser));
+		sessionStorage.setItem(
+			"aster-auth-expires-at",
+			String(Date.now() + 60_000),
+		);
+		mockState.me.mockRejectedValue({
+			response: { status: 502 },
+		});
+		mockState.isAxiosError.mockReturnValue(true);
+		const { useAuthStore } = await loadStore();
+
+		await useAuthStore.getState().checkAuth();
+
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: true,
+			isChecking: false,
+			isAuthStale: true,
+			bootOffline: false,
+			user: cachedUser,
+		});
+		expect(localStorage.getItem("aster-cached-user")).toBe(
+			JSON.stringify(cachedUser),
+		);
+		useAuthStore.getState().stopAutoRefresh();
+	});
+
 	it("clears cached auth state on token ApiError auth checks", async () => {
 		localStorage.setItem(
 			"aster-cached-user",
@@ -260,6 +288,37 @@ describe("useAuthStore edge cases", () => {
 		});
 		expect(localStorage.getItem("aster-cached-user")).toBeNull();
 		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
+	});
+
+	it("keeps local session state when refresh fails with a transient gateway response", async () => {
+		const cachedUser = createCachedUser();
+		localStorage.setItem("aster-cached-user", JSON.stringify(cachedUser));
+		sessionStorage.setItem(
+			"aster-auth-expires-at",
+			String(Date.now() + 60_000),
+		);
+		mockState.refreshToken.mockRejectedValue({
+			response: { status: 502 },
+		});
+		mockState.isAxiosError.mockReturnValue(true);
+		const { useAuthStore } = await loadStore();
+
+		await expect(useAuthStore.getState().refreshToken()).rejects.toEqual(
+			expect.objectContaining({
+				response: { status: 502 },
+			}),
+		);
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: true,
+			isAuthStale: true,
+			bootOffline: false,
+			user: cachedUser,
+		});
+		expect(localStorage.getItem("aster-cached-user")).toBe(
+			JSON.stringify(cachedUser),
+		);
+		expect(sessionStorage.getItem("aster-auth-expires-at")).not.toBeNull();
+		useAuthStore.getState().stopAutoRefresh();
 	});
 
 	it("clears local session state when refresh fails with a token ApiError", async () => {

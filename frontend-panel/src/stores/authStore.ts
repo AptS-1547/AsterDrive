@@ -1,7 +1,9 @@
-import axios from "axios";
 import { create } from "zustand";
 import i18n from "@/i18n";
-import { isStaleRefreshTokenError, isTokenAuthError } from "@/lib/authErrors";
+import {
+	isSessionAuthFailure,
+	isStaleRefreshTokenError,
+} from "@/lib/authErrors";
 import {
 	isCrossTabRefreshAuthFailure,
 	runWithCrossTabRefreshLock,
@@ -338,10 +340,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 			}
 		} catch (error) {
 			// 网络错误（离线）时用缓存的用户信息保持登录态
-			if (
-				!isTokenAuthError(error) &&
-				(!axios.isAxiosError(error) || !error.response)
-			) {
+			if (!isSessionAuthFailure(error)) {
 				const cached = getCachedUser();
 				const expiresAt =
 					getExpiresAtFromUser(cached) ??
@@ -392,9 +391,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 					},
 					{
 						classifyError: (error) =>
-							isStaleRefreshTokenError(error) ||
-							isTokenAuthError(error) ||
-							(axios.isAxiosError(error) && error.response)
+							isStaleRefreshTokenError(error) || isSessionAuthFailure(error)
 								? "auth"
 								: "transient",
 					},
@@ -405,8 +402,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 			} catch (error) {
 				if (
 					isCrossTabRefreshAuthFailure(error) ||
-					isTokenAuthError(error) ||
-					(axios.isAxiosError(error) && error.response)
+					isSessionAuthFailure(error)
 				) {
 					applyLoggedOutState(set);
 				} else {

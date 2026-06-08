@@ -207,6 +207,24 @@ describe("http refresh edge cases", () => {
 		expect(window.location.href).toBe("/login");
 	});
 
+	it("does not force logout when refresh fails with a transient gateway response", async () => {
+		mockState.axiosModule.isAxiosError.mockReturnValue(true);
+		mockState.refreshToken.mockRejectedValue({
+			isAxiosError: true,
+			response: { status: 502 },
+		});
+		await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+		const originalError = {
+			config: { url: "/files", _retry: false },
+			response: tokenErrorResponse(),
+		} satisfies MockAxiosError;
+
+		await expect(errorHandler(originalError)).rejects.toBe(originalError);
+		expect(mockState.forceLogout).not.toHaveBeenCalled();
+		expect(window.location.href).toBe("http://localhost/");
+	});
+
 	it("forces logout when refresh fails with a token ApiError", async () => {
 		mockState.axiosModule.isAxiosError.mockReturnValue(false);
 		mockState.refreshToken.mockRejectedValue({

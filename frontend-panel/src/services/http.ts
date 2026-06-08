@@ -5,7 +5,7 @@ import type {
 } from "axios";
 import axios, { AxiosHeaders } from "axios";
 import { config } from "@/config/app";
-import { isTokenAuthError } from "@/lib/authErrors";
+import { isSessionAuthFailure, isTokenAuthError } from "@/lib/authErrors";
 import { isCrossTabRefreshAuthFailure } from "@/lib/crossTabRefresh";
 import type {
 	ApiErrorCode,
@@ -174,8 +174,7 @@ client.interceptors.response.use(
 				// 网络错误（离线）时不强制登出
 				if (
 					!isCrossTabRefreshAuthFailure(refreshError) &&
-					!isTokenAuthError(refreshError) &&
-					(!axios.isAxiosError(refreshError) || !refreshError.response)
+					!isSessionAuthFailure(refreshError)
 				) {
 					return Promise.reject(error);
 				}
