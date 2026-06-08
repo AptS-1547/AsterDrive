@@ -66,9 +66,9 @@ export interface FileBrowserSelectionToolbarState {
 	hasDisplayedItems: boolean;
 	onArchiveCompress?: () => void;
 	onClearSelection: () => void;
-	onCopy: () => void;
+	onCopy?: () => void;
 	onDelete: () => void;
 	onManageTags: () => void;
-	onMove: () => void;
+	onMove?: () => void;
 	onToggleDisplayedSelection: () => void;
 }

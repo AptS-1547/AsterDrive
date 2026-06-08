@@ -6750,6 +6750,8 @@ export interface components {
             offset?: number | null;
             /** @description Name search pattern (case-insensitive substring match) */
             q?: string | null;
+            sort_by?: null | components["schemas"]["SortBy"];
+            sort_order?: null | components["schemas"]["SortOrder"];
             /** @description Comma-separated tag ids, e.g. "1,2,3" */
             tag_ids?: string | null;
             /** @description Tag filter mode: "any" or "all" (default any) */
@@ -18708,6 +18710,10 @@ export interface operations {
                 tag_ids?: string | null;
                 /** @description Tag filter mode: "any" or "all" (default any) */
                 tag_match?: string | null;
+                /** @description Sort field (default name) */
+                sort_by?: null | components["schemas"]["SortBy"];
+                /** @description Sort direction (default asc) */
+                sort_order?: null | components["schemas"]["SortOrder"];
                 /** @description Max results per type (default 50, max 100) */
                 limit?: number | null;
                 /** @description Offset for pagination */
@@ -23173,6 +23179,10 @@ export interface operations {
                 tag_ids?: string | null;
                 /** @description Tag filter mode: "any" or "all" (default any) */
                 tag_match?: string | null;
+                /** @description Sort field (default name) */
+                sort_by?: null | components["schemas"]["SortBy"];
+                /** @description Sort direction (default asc) */
+                sort_order?: null | components["schemas"]["SortOrder"];
                 /** @description Max results per type (default 50, max 100) */
                 limit?: number | null;
                 /** @description Offset for pagination */

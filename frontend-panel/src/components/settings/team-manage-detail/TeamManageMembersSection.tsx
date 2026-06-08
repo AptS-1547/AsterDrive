@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
@@ -55,13 +55,13 @@ interface MembersSectionProps {
 	mutating: boolean;
 	nextMemberPageDisabled: boolean;
 	onAddMember: (event: FormEvent<HTMLFormElement>) => void;
+	onRemoveMember: (memberUserId: number) => Promise<void>;
 	onUpdateMemberRole: (
 		memberUserId: number,
 		role: TeamMemberRole,
 	) => void | Promise<void>;
 	ownerCount: number;
 	prevMemberPageDisabled: boolean;
-	requestRemoveConfirm: (memberUserId: number) => void;
 	roleFilterOptions: ReadonlyArray<{
 		label: string;
 		value: "__all__" | TeamMemberRole;
@@ -103,10 +103,10 @@ export function TeamManageMembersSection({
 	mutating,
 	nextMemberPageDisabled,
 	onAddMember,
+	onRemoveMember,
 	onUpdateMemberRole,
 	ownerCount,
 	prevMemberPageDisabled,
-	requestRemoveConfirm,
 	roleFilterOptions,
 	roleLabel,
 	roleOptions,
@@ -123,6 +123,18 @@ export function TeamManageMembersSection({
 	const { t } = useTranslation(["core", "settings"]);
 	const prevMemberOffset = Math.max(0, memberOffset - memberPageSize);
 	const nextMemberOffset = memberOffset + memberPageSize;
+	const [pendingRemoveUserId, setPendingRemoveUserId] = useState<number | null>(
+		null,
+	);
+	const memberUserIds = useMemo(
+		() => new Set(members.map((member) => member.user_id)),
+		[members],
+	);
+
+	const activePendingRemoveUserId =
+		pendingRemoveUserId != null && memberUserIds.has(pendingRemoveUserId)
+			? pendingRemoveUserId
+			: null;
 
 	return (
 		<section className="rounded-2xl border bg-background/60 p-6">
@@ -312,6 +324,11 @@ export function TeamManageMembersSection({
 										canManageTeam && canManageOwner && !mutating;
 									const canRemove =
 										(canManageTeam && canManageOwner) || canRemoveSelf;
+									const isConfirmingRemove =
+										activePendingRemoveUserId === member.user_id;
+									const removeLabel = isSelf
+										? t("settings:settings_team_leave")
+										: t("settings:settings_team_remove_member");
 
 									return (
 										<TableRow key={member.id}>
@@ -391,18 +408,44 @@ export function TeamManageMembersSection({
 											</TableCell>
 											<TableCell>
 												{canRemove ? (
-													<Button
-														type="button"
-														variant="ghost"
-														size="sm"
-														className="text-destructive"
-														disabled={mutating}
-														onClick={() => requestRemoveConfirm(member.user_id)}
-													>
-														{isSelf
-															? t("settings:settings_team_leave")
-															: t("settings:settings_team_remove_member")}
-													</Button>
+													isConfirmingRemove ? (
+														<div className="flex flex-wrap items-center gap-2 duration-150 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
+															<Button
+																type="button"
+																variant="destructive"
+																size="sm"
+																disabled={mutating}
+																onClick={() => {
+																	setPendingRemoveUserId(null);
+																	void onRemoveMember(member.user_id);
+																}}
+															>
+																{removeLabel}
+															</Button>
+															<Button
+																type="button"
+																variant="ghost"
+																size="sm"
+																disabled={mutating}
+																onClick={() => setPendingRemoveUserId(null)}
+															>
+																{t("core:cancel")}
+															</Button>
+														</div>
+													) : (
+														<Button
+															type="button"
+															variant="ghost"
+															size="sm"
+															className="text-destructive"
+															disabled={mutating}
+															onClick={() =>
+																setPendingRemoveUserId(member.user_id)
+															}
+														>
+															{removeLabel}
+														</Button>
+													)
 												) : (
 													<span className="text-xs text-muted-foreground">
 														-

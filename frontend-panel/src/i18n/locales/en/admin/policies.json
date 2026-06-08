@@ -83,6 +83,8 @@
 	"remote_upload_strategy": "Remote Upload Strategy",
 	"s3_endpoint_hint": "For Cloudflare R2, use the account-level S3 endpoint such as https://<account>.r2.cloudflarestorage.com. Do not use a public .r2.dev URL; enter the bucket separately. If /<bucket> is included by mistake, the app will split and validate it automatically.",
 	"cos_endpoint_hint": "For Tencent COS, use the bucket domain such as https://<bucket-appid>.cos.<region>.myqcloud.com; enter the bucket separately, for example <bucket-appid>. If /<bucket> is included by mistake, the app will split and validate it automatically.",
+	"policy_wizard_endpoint_required": "Endpoint is required.",
+	"s3_endpoint_protocol_required_error": "S3 endpoint must include http:// or https://.",
 	"s3_endpoint_public_r2_dev_error": "Detected a public r2.dev URL. This field must use the account-level Cloudflare R2 S3 API endpoint, not a public bucket domain.",
 	"download_strategy_relay_stream": "Server Relay Download",
 	"download_strategy_relay_stream_desc": "AsterDrive fetches the object from the storage backend and streams it back to the browser. Use this when you need the app node to fully control response headers, same-origin delivery, or downstream network policy.",

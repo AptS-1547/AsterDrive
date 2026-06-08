@@ -17,31 +17,6 @@ vi.mock("react-i18next", () => ({
 	}),
 }));
 
-vi.mock("@/components/common/ConfirmDialog", () => ({
-	ConfirmDialog: ({
-		confirmLabel,
-		description,
-		onConfirm,
-		open,
-		title,
-	}: {
-		confirmLabel: string;
-		description: string;
-		onConfirm: () => void;
-		open: boolean;
-		title: string;
-	}) =>
-		open ? (
-			<div role="dialog">
-				<h2>{title}</h2>
-				<p>{description}</p>
-				<button type="button" onClick={onConfirm}>
-					{confirmLabel}
-				</button>
-			</div>
-		) : null,
-}));
-
 vi.mock("@/components/ui/badge", () => ({
 	Badge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
@@ -443,17 +418,22 @@ describe("RemoteNodeManagedIngressSection", () => {
 			/>,
 		);
 		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
-		expect(
-			screen.getByText(
-				"remote_node_ingress_profile_delete_title:Local ingress",
-			),
-		).toBeInTheDocument();
-		const dialog = screen.getByRole("dialog");
+		const deleteNotice = screen.getByText(
+			"remote_node_ingress_profile_delete_title:Local ingress",
+		).parentElement;
+		expect(deleteNotice).toHaveClass(
+			"animate-in",
+			"motion-reduce:animate-none",
+		);
 		fireEvent.click(
-			within(dialog).getByRole("button", {
-				name: "core:delete",
+			within(deleteNotice?.parentElement ?? document.body).getByRole("button", {
+				name: "core:cancel",
 			}),
 		);
+		expect(onDeleteProfile).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+		fireEvent.click(screen.getAllByRole("button", { name: "core:delete" })[0]);
 
 		await waitFor(() => {
 			expect(onDeleteProfile).toHaveBeenCalledWith(existing);

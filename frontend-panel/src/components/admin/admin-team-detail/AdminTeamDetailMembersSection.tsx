@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	AdminSortableTableHead,
@@ -58,7 +58,6 @@ interface MembersSectionProps {
 	nextMemberPageDisabled: boolean;
 	ownerCount: number;
 	prevMemberPageDisabled: boolean;
-	requestRemoveConfirm: (memberUserId: number) => void;
 	roleFilterOptions: ReadonlyArray<{
 		label: string;
 		value: "__all__" | TeamMemberRole;
@@ -81,6 +80,7 @@ interface MembersSectionProps {
 		sortBy: AdminTeamMemberSortBy,
 		sortOrder: SortOrder,
 	) => void;
+	onRemoveMember: (memberUserId: number) => Promise<void>;
 	onUpdateMemberRole: (
 		memberUserId: number,
 		role: TeamMemberRole,
@@ -107,7 +107,6 @@ export function AdminTeamDetailMembersSection({
 	nextMemberPageDisabled,
 	ownerCount,
 	prevMemberPageDisabled,
-	requestRemoveConfirm,
 	roleFilterOptions,
 	roleLabel,
 	roleOptions,
@@ -121,9 +120,22 @@ export function AdminTeamDetailMembersSection({
 	team,
 	onAddMember,
 	onMemberSortChange,
+	onRemoveMember,
 	onUpdateMemberRole,
 }: MembersSectionProps) {
 	const { t } = useTranslation(["admin", "core", "settings"]);
+	const [pendingRemoveUserId, setPendingRemoveUserId] = useState<number | null>(
+		null,
+	);
+	const memberUserIds = useMemo(
+		() => new Set(members.map((member) => member.user_id)),
+		[members],
+	);
+
+	const activePendingRemoveUserId =
+		pendingRemoveUserId != null && memberUserIds.has(pendingRemoveUserId)
+			? pendingRemoveUserId
+			: null;
 
 	return (
 		<section className="rounded-2xl border bg-background/60 p-6">
@@ -350,6 +362,8 @@ export function AdminTeamDetailMembersSection({
 								{members.map((member) => {
 									const canEditRole = canMutateTeam && !memberMutating;
 									const canRemove = canMutateTeam && !memberMutating;
+									const isConfirmingRemove =
+										activePendingRemoveUserId === member.user_id;
 
 									return (
 										<TableRow key={member.id}>
@@ -422,16 +436,44 @@ export function AdminTeamDetailMembersSection({
 											</TableCell>
 											<TableCell>
 												{canRemove ? (
-													<Button
-														type="button"
-														variant="ghost"
-														size="sm"
-														className="text-destructive"
-														disabled={memberMutating}
-														onClick={() => requestRemoveConfirm(member.user_id)}
-													>
-														{t("settings:settings_team_remove_member")}
-													</Button>
+													isConfirmingRemove ? (
+														<div className="flex flex-wrap items-center gap-2 duration-150 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
+															<Button
+																type="button"
+																variant="destructive"
+																size="sm"
+																disabled={memberMutating}
+																onClick={() => {
+																	setPendingRemoveUserId(null);
+																	void onRemoveMember(member.user_id);
+																}}
+															>
+																{t("core:confirm")}
+															</Button>
+															<Button
+																type="button"
+																variant="ghost"
+																size="sm"
+																disabled={memberMutating}
+																onClick={() => setPendingRemoveUserId(null)}
+															>
+																{t("core:cancel")}
+															</Button>
+														</div>
+													) : (
+														<Button
+															type="button"
+															variant="ghost"
+															size="sm"
+															className="text-destructive"
+															disabled={memberMutating}
+															onClick={() =>
+																setPendingRemoveUserId(member.user_id)
+															}
+														>
+															{t("settings:settings_team_remove_member")}
+														</Button>
+													)
 												) : (
 													<span className="text-xs text-muted-foreground">
 														-

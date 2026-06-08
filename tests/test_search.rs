@@ -527,6 +527,50 @@ async fn test_search_by_category_and_extensions() {
 }
 
 #[actix_web::test]
+async fn test_search_sorts_file_results() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    upload_search_file(
+        &app,
+        &token,
+        "/api/v1/files/upload",
+        "small-photo.jpg",
+        "tiny",
+        "image/jpeg",
+    )
+    .await;
+    upload_search_file(
+        &app,
+        &token,
+        "/api/v1/files/upload",
+        "large-photo.jpg",
+        "large image content",
+        "image/jpeg",
+    )
+    .await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/search?type=file&category=image&sort_by=size&sort_order=desc")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let files = body["data"]["files"].as_array().unwrap();
+    let names: Vec<&str> = files
+        .iter()
+        .map(|file| file["name"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(names, vec!["large-photo.jpg", "small-photo.jpg"]);
+    assert_eq!(body["data"]["total_files"], 2);
+    assert_eq!(body["data"]["total_folders"], 0);
+}
+
+#[actix_web::test]
 async fn test_search_category_combines_with_folder_scope_and_rename_updates_fields() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -665,6 +709,42 @@ async fn test_search_folders() {
     let folders = body["data"]["folders"].as_array().unwrap();
     assert_eq!(folders.len(), 1);
     assert_eq!(folders[0]["name"], "Documents");
+}
+
+#[actix_web::test]
+async fn test_search_sorts_folder_results() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    for name in ["Alpha", "Zulu"] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/folders")
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .set_json(serde_json::json!({ "name": name, "parent_id": null }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/search?type=folder&sort_by=name&sort_order=desc")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let folders = body["data"]["folders"].as_array().unwrap();
+    let names: Vec<&str> = folders
+        .iter()
+        .map(|folder| folder["name"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(names, vec!["Zulu", "Alpha"]);
+    assert_eq!(body["data"]["total_folders"], 2);
+    assert_eq!(body["data"]["total_files"], 0);
 }
 
 #[actix_web::test]

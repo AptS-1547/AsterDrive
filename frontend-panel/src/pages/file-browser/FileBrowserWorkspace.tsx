@@ -12,6 +12,10 @@ import { FileTable } from "@/components/files/FileTable";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+	type BottomOverlayOffset,
+	getBottomOverlayPaddingClass,
+} from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { CurrentFolderContextMenuContent } from "@/pages/file-browser/CurrentFolderActionsMenu";
 import { FileInfoDialog } from "@/pages/file-browser/fileBrowserLazy";
@@ -29,19 +33,21 @@ interface FileBrowserWorkspaceProps {
 		name: string;
 	}>;
 	contentDragOver: boolean;
+	currentFolderActions?: "full" | "refresh-only";
 	error: string | null;
 	fileBrowserContextValue: FileBrowserContextValue;
 	hasMoreFiles: boolean;
 	infoPanelOpen: boolean;
 	infoTarget: FileBrowserInfoTarget | null;
 	isEmpty: boolean;
-	isSearching: boolean;
 	loading: boolean;
 	loadingMore: boolean;
 	scrollViewport: HTMLDivElement | null;
 	sentinelRef: RefObject<HTMLDivElement | null>;
+	suppressLoadMore?: boolean;
 	uploadReady: boolean;
 	viewMode: "grid" | "list";
+	bottomOverlayOffset?: BottomOverlayOffset;
 	onContentDragLeave: (event: DragEvent<HTMLElement>) => void;
 	onContentDragOver: (event: DragEvent<HTMLElement>) => void;
 	onContentDrop: (event: DragEvent<HTMLElement>) => Promise<void>;
@@ -74,19 +80,21 @@ interface FileBrowserWorkspaceProps {
 export function FileBrowserWorkspace({
 	breadcrumb,
 	contentDragOver,
+	currentFolderActions = "full",
 	error,
 	fileBrowserContextValue,
 	hasMoreFiles,
 	infoPanelOpen,
 	infoTarget,
 	isEmpty,
-	isSearching,
 	loading,
 	loadingMore,
 	scrollViewport,
 	sentinelRef,
+	suppressLoadMore = false,
 	uploadReady,
 	viewMode,
+	bottomOverlayOffset = "none",
 	onContentDragLeave,
 	onContentDragOver,
 	onContentDrop,
@@ -141,7 +149,15 @@ export function FileBrowserWorkspace({
 				)}
 				<ContextMenu>
 					<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
-						<ScrollArea ref={onScrollViewportRef} className="min-h-0 flex-1">
+						<ScrollArea
+							ref={onScrollViewportRef}
+							className="min-h-0 flex-1"
+							viewportProps={{
+								className: cn(
+									getBottomOverlayPaddingClass(bottomOverlayOffset),
+								),
+							}}
+						>
 							{loading ? (
 								viewMode === "grid" ? (
 									<SkeletonFileGrid />
@@ -169,7 +185,7 @@ export function FileBrowserWorkspace({
 									)}
 								</FileBrowserProvider>
 							)}
-							{!isSearching && hasMoreFiles && (
+							{!suppressLoadMore && hasMoreFiles && (
 								<div ref={sentinelRef} className="flex justify-center py-4">
 									{loadingMore && (
 										<div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
@@ -179,6 +195,7 @@ export function FileBrowserWorkspace({
 						</ScrollArea>
 					</ContextMenuTrigger>
 					<CurrentFolderContextMenuContent
+						mode={currentFolderActions}
 						uploadReady={uploadReady}
 						onCreateFile={onCreateFile}
 						onCreateFolder={onCreateFolder}

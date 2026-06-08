@@ -3,12 +3,15 @@ import {
 	buildCreatePolicyPayload,
 	buildPolicyTestPayload,
 	buildUpdatePolicyPayload,
+	getEndpointValidationMessage,
 	getPolicyForm,
 	hasConnectionFieldChanges,
 } from "@/components/admin/storagePolicyDialogShared";
 import type { StoragePolicy } from "@/types/api";
 
 describe("storagePolicyDialogShared", () => {
+	const t = (key: string) => key;
+
 	it("maps an existing policy into form state", () => {
 		expect(
 			getPolicyForm({
@@ -98,6 +101,68 @@ describe("storagePolicyDialogShared", () => {
 				s3_download_strategy: "relay_stream",
 			},
 		});
+	});
+
+	it("validates S3-compatible endpoint protocols without blocking remote policies", () => {
+		const baseForm = {
+			name: "Media",
+			driver_type: "s3" as const,
+			endpoint: "s3.example.com",
+			bucket: "bucket-a",
+			access_key: "",
+			secret_key: "",
+			base_path: "",
+			remote_node_id: "",
+			max_file_size: "",
+			chunk_size: "5",
+			is_default: false,
+			content_dedup: false,
+			remote_download_strategy: "relay_stream" as const,
+			remote_upload_strategy: "relay_stream" as const,
+			s3_upload_strategy: "relay_stream" as const,
+			s3_download_strategy: "relay_stream" as const,
+			storage_native_processing_enabled: false,
+			thumbnail_processor: null,
+			thumbnail_extensions: [],
+			storage_native_media_metadata_enabled: false,
+			media_metadata_extensions: [],
+		};
+
+		expect(getEndpointValidationMessage(baseForm, t)).toBe(
+			"s3_endpoint_protocol_required_error",
+		);
+		expect(
+			getEndpointValidationMessage(
+				{ ...baseForm, endpoint: "http://s3.example.com" },
+				t,
+			),
+		).toBeNull();
+		expect(
+			getEndpointValidationMessage(
+				{ ...baseForm, endpoint: "https://s3.example.com" },
+				t,
+			),
+		).toBeNull();
+		expect(
+			getEndpointValidationMessage(
+				{
+					...baseForm,
+					driver_type: "tencent_cos",
+					endpoint: "cos.ap-guangzhou.myqcloud.com",
+				},
+				t,
+			),
+		).toBe("s3_endpoint_protocol_required_error");
+		expect(
+			getEndpointValidationMessage(
+				{
+					...baseForm,
+					driver_type: "remote",
+					endpoint: "edge-node-without-protocol",
+				},
+				t,
+			),
+		).toBeNull();
 	});
 
 	it("omits empty credentials from update payloads", () => {

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { useEnteredViewport } from "@/hooks/useEnteredViewport";
-import { supportsThumbnailExtension } from "@/lib/thumbnailSupport";
+import { supportsGeneratedThumbnailFile } from "@/lib/thumbnailSupport";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import { useThumbnailSupportStore } from "@/stores/thumbnailSupportStore";
@@ -40,10 +40,7 @@ export function FileThumbnail({
 	const loadThumbnailSupport = useThumbnailSupportStore((state) => state.load);
 	const canRequestThumbnail =
 		thumbnailSupportLoaded &&
-		supportsThumbnailExtension(
-			file.name,
-			thumbnailSupport?.image_thumbnail?.extensions,
-		);
+		supportsGeneratedThumbnailFile(file.name, thumbnailSupport);
 
 	useEffect(() => {
 		if (!thumbnailSupportLoaded) {

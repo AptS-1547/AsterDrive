@@ -32,6 +32,7 @@ import { fileService } from "@/services/fileService";
 import { useFileStore } from "@/stores/fileStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useThumbnailSupportStore } from "@/stores/thumbnailSupportStore";
+import { useUploadAreaControlsStore } from "@/stores/uploadAreaControlsStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 export default function FileBrowserPage() {
@@ -55,7 +56,6 @@ export default function FileBrowserPage() {
 	const navigateTo = useFileStore((s) => s.navigateTo);
 	const refresh = useFileStore((s) => s.refresh);
 	const moveToFolder = useFileStore((s) => s.moveToFolder);
-	const search = useFileStore((s) => s.search);
 	const previewAppsLoaded = usePreviewAppStore((s) => s.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((s) => s.load);
 	const thumbnailSupport = useThumbnailSupportStore((s) => s.config);
@@ -66,9 +66,6 @@ export default function FileBrowserPage() {
 	const viewMode = useFileStore((s) => s.viewMode);
 	const browserOpenMode = useFileStore((s) => s.browserOpenMode);
 	const setViewMode = useFileStore((s) => s.setViewMode);
-	const searchQuery = useFileStore((s) => s.searchQuery);
-	const searchFolders = useFileStore((s) => s.searchFolders);
-	const searchFiles = useFileStore((s) => s.searchFiles);
 	const error = useFileStore((s) => s.error);
 	const clearSelection = useFileStore((s) => s.clearSelection);
 	const loadMoreFiles = useFileStore((s) => s.loadMoreFiles);
@@ -78,10 +75,12 @@ export default function FileBrowserPage() {
 	const setSortBy = useFileStore((s) => s.setSortBy);
 	const setSortOrder = useFileStore((s) => s.setSortOrder);
 	const hasMoreFiles = useFileStore((s) => s.hasMoreFiles());
+	const uploadPanelPresence = useUploadAreaControlsStore(
+		(s) => s.uploadPanelPresence,
+	);
 
-	const isSearching = searchQuery !== null;
-	const displayFolders = isSearching ? searchFolders : folders;
-	const displayFiles = isSearching ? searchFiles : files;
+	const displayFolders = folders;
+	const displayFiles = files;
 	const currentBreadcrumbItem = breadcrumb[breadcrumb.length - 1];
 	const currentFolderName = currentBreadcrumbItem?.name;
 	const isRootFolder =
@@ -89,9 +88,8 @@ export default function FileBrowserPage() {
 			? currentBreadcrumbItem.id == null
 			: folderId == null;
 	const isCompactBreadcrumb = useMediaQuery("(max-width: 639px)");
-	const pageTitle = isSearching
-		? `${t("core:search")}: ${searchQuery}`
-		: folderId == null
+	const pageTitle =
+		folderId == null
 			? t("core:all_files")
 			: (currentFolderName ?? t("core:all_files"));
 
@@ -116,7 +114,7 @@ export default function FileBrowserPage() {
 	}, []);
 
 	useEffect(() => {
-		if (isSearching || !hasMoreFiles || loadingMore) return;
+		if (!hasMoreFiles || loadingMore) return;
 		const el = sentinelRef.current;
 		if (!el) return;
 		const observer = new IntersectionObserver(
@@ -129,7 +127,7 @@ export default function FileBrowserPage() {
 		);
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, [hasMoreFiles, isSearching, loadingMore, loadMoreFiles, scrollViewport]);
+	}, [hasMoreFiles, loadingMore, loadMoreFiles, scrollViewport]);
 
 	const {
 		copyTarget,
@@ -241,11 +239,9 @@ export default function FileBrowserPage() {
 		breadcrumb,
 		clearSelection,
 		folderId,
-		isSearching,
+		isSearching: false,
 		moveToFolder,
 		refresh,
-		search,
-		searchQuery,
 		t,
 	});
 
@@ -289,6 +285,13 @@ export default function FileBrowserPage() {
 
 	const isEmpty =
 		!loading && displayFolders.length === 0 && displayFiles.length === 0;
+	const bottomOverlayOffset = uploadPanelPresence.open
+		? "expanded"
+		: uploadPanelPresence.visible
+			? "upload-compact"
+			: selectionToolbar
+				? "selection-compact"
+				: "none";
 	const handleUploadAreaReady = useCallback(
 		(instance: UploadAreaHandle | null) => {
 			uploadAreaRef.current = instance;
@@ -322,8 +325,8 @@ export default function FileBrowserPage() {
 				dragOverBreadcrumbIndex={dragOverBreadcrumbIndex}
 				isCompactBreadcrumb={isCompactBreadcrumb}
 				isRootFolder={isRootFolder}
-				isSearching={isSearching}
-				searchQuery={searchQuery}
+				isSearching={false}
+				searchQuery={null}
 				selectionToolbar={selectionToolbar}
 				sortBy={sortBy}
 				sortOrder={sortOrder}
@@ -355,13 +358,13 @@ export default function FileBrowserPage() {
 				infoPanelOpen={infoPanelOpen}
 				infoTarget={infoTarget}
 				isEmpty={isEmpty}
-				isSearching={isSearching}
 				loading={loading}
 				loadingMore={loadingMore}
 				scrollViewport={scrollViewport}
 				sentinelRef={sentinelRef}
 				uploadReady={uploadReady}
 				viewMode={viewMode}
+				bottomOverlayOffset={bottomOverlayOffset}
 				onContentDragLeave={handleContentDragLeave}
 				onContentDragOver={handleContentDragOver}
 				onContentDrop={handleContentDrop}

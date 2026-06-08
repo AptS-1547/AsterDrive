@@ -211,10 +211,10 @@ function createProps(
 		mutating: false,
 		nextMemberPageDisabled: false,
 		onAddMember: vi.fn((event) => event.preventDefault()),
+		onRemoveMember: vi.fn(),
 		onUpdateMemberRole: vi.fn(),
 		ownerCount: 1,
 		prevMemberPageDisabled: true,
-		requestRemoveConfirm: vi.fn(),
 		roleFilterOptions: [
 			{ label: "all", value: "__all__" },
 			{ label: "member", value: "member" },
@@ -282,11 +282,31 @@ describe("TeamManageMembersSection", () => {
 		fireEvent.click(
 			screen.getByRole("button", { name: "settings:settings_team_leave" }),
 		);
-		expect(props.requestRemoveConfirm).toHaveBeenCalledWith(2);
+		expect(props.onRemoveMember).not.toHaveBeenCalled();
+		fireEvent.click(
+			screen.getByRole("button", { name: "settings:settings_team_leave" }),
+		);
+		expect(props.onRemoveMember).toHaveBeenCalledWith(2);
 		const nextPageButton = screen.getByText("CaretRight").closest("button");
 		if (!nextPageButton) throw new Error("Expected next page button");
 		fireEvent.click(nextPageButton);
 		expect(props.setMemberOffset).toHaveBeenCalledWith(10);
+	});
+
+	it("can cancel inline member removal confirmation", () => {
+		const props = renderSection();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "settings:settings_team_leave" }),
+		);
+		expect(screen.getByRole("button", { name: "core:cancel" })).toBeVisible();
+
+		fireEvent.click(screen.getByRole("button", { name: "core:cancel" }));
+
+		expect(props.onRemoveMember).not.toHaveBeenCalled();
+		expect(
+			screen.getByRole("button", { name: "settings:settings_team_leave" }),
+		).toBeVisible();
 	});
 
 	it("shows loading and filtered empty states", () => {

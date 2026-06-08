@@ -1,3 +1,8 @@
+import type {
+	PublicExtensionSupport,
+	PublicThumbnailSupport,
+} from "@/types/api";
+
 export function getThumbnailExtension(fileName: string) {
 	const trimmed = fileName.trim().toLowerCase();
 	const dot = trimmed.lastIndexOf(".");
@@ -13,6 +18,27 @@ export function supportsThumbnailExtension(
 ) {
 	const extension = getThumbnailExtension(fileName);
 	return supportsNormalizedThumbnailExtension(extension, extensions);
+}
+
+function supportsExtensionGroup(
+	fileName: string,
+	support?: PublicExtensionSupport,
+) {
+	return (
+		support?.enabled === true &&
+		supportsThumbnailExtension(fileName, support.extensions)
+	);
+}
+
+export function supportsGeneratedThumbnailFile(
+	fileName: string,
+	config?: PublicThumbnailSupport | null,
+) {
+	return (
+		supportsExtensionGroup(fileName, config?.image_thumbnail) ||
+		supportsExtensionGroup(fileName, config?.audio_thumbnail) ||
+		supportsExtensionGroup(fileName, config?.video_thumbnail)
+	);
 }
 
 function supportsNormalizedThumbnailExtension(

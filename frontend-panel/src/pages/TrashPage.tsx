@@ -18,12 +18,19 @@ import { STORAGE_KEYS } from "@/config/app";
 import { handleApiError } from "@/hooks/useApiError";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingAction } from "@/hooks/usePendingAction";
 import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
-import { FOLDER_LIMIT } from "@/lib/constants";
+import {
+	type BottomOverlayOffset,
+	FOLDER_LIMIT,
+	getBottomOverlayPaddingClass,
+} from "@/lib/constants";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { subscribeStorageChange } from "@/lib/storageChangeBus";
+import { cn } from "@/lib/utils";
 import { trashService } from "@/services/trashService";
 import { useAuthStore } from "@/stores/authStore";
+import { useUploadAreaControlsStore } from "@/stores/uploadAreaControlsStore";
 import type { TrashContents } from "@/types/api";
 import type { TrashItem } from "@/types/api-helpers";
 
@@ -72,6 +79,9 @@ export default function TrashPage() {
 	const { t } = useTranslation(["core", "files", "admin", "tasks"]);
 	usePageTitle(t("core:trash"));
 	const refreshUser = useAuthStore((s) => s.refreshUser);
+	const uploadPanelPresence = useUploadAreaControlsStore(
+		(s) => s.uploadPanelPresence,
+	);
 	const [contents, setContents] = useState<TrashContents>({
 		files: [],
 		folders: [],
@@ -85,6 +95,8 @@ export default function TrashPage() {
 	const [pendingState, setPendingState] = useState<PendingTrashState | null>(
 		null,
 	);
+	const { pending: purgeAllPending, runWithPending: runPurgeAllWithPending } =
+		usePendingAction();
 	const pendingRef = useRef(false);
 	const syncInFlightRef = useRef(false);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -102,7 +114,16 @@ export default function TrashPage() {
 	const isEmpty = !loading && totalItems === 0;
 	const pendingKeys = pendingState?.keys ?? new Set<string>();
 	const pendingOperation = pendingState?.operation ?? null;
-	const isBusy = pendingState !== null;
+	const isBusy = pendingState !== null || purgeAllPending;
+	const bottomOverlayOffset: BottomOverlayOffset = uploadPanelPresence.open
+		? "expanded"
+		: uploadPanelPresence.visible
+			? "upload-compact"
+			: selectionCount > 0
+				? "selection-compact"
+				: "none";
+	const bottomOverlayPadding =
+		getBottomOverlayPaddingClass(bottomOverlayOffset);
 
 	const TRASH_PAGE_SIZE = 100;
 
@@ -196,7 +217,7 @@ export default function TrashPage() {
 	};
 
 	const toggleSelect = (item: TrashItem) => {
-		if (pendingRef.current) return;
+		if (pendingRef.current || purgeAllPending) return;
 
 		const key = getItemKey(item);
 		setSelectedKeys((prev) => {
@@ -208,16 +229,16 @@ export default function TrashPage() {
 	};
 
 	const clearSelection = useCallback(() => {
-		if (pendingRef.current) return;
+		if (pendingRef.current || purgeAllPending) return;
 
 		setSelectedKeys(new Set());
-	}, []);
+	}, [purgeAllPending]);
 
 	const selectAllItems = useCallback(() => {
-		if (pendingRef.current) return;
+		if (pendingRef.current || purgeAllPending) return;
 
 		setSelectedKeys(new Set(items.map(getItemKey)));
-	}, [items]);
+	}, [items, purgeAllPending]);
 
 	const toggleSelectAll = useCallback(() => {
 		if (allSelected) {
@@ -312,22 +333,24 @@ export default function TrashPage() {
 	const handlePurgeAll = async () => {
 		if (pendingRef.current) return;
 
-		pendingRef.current = true;
-		setPendingState({
-			keys: new Set(items.map(getItemKey)),
-			operation: "purge-all",
-		});
-		try {
-			const task = await trashService.purgeAll();
-			toast.success(t("tasks:task_created_success"), {
-				description: task.display_name,
+		const result = await runPurgeAllWithPending(async () => {
+			setPendingState({
+				keys: new Set(items.map(getItemKey)),
+				operation: "purge-all",
 			});
-		} catch (err) {
-			handleApiError(err);
-		} finally {
-			pendingRef.current = false;
-			setPendingState(null);
-		}
+			try {
+				const task = await trashService.purgeAll();
+				toast.success(t("tasks:task_created_success"), {
+					description: task.display_name,
+				});
+			} catch (err) {
+				handleApiError(err);
+			} finally {
+				setPendingState(null);
+			}
+		});
+
+		if (!result.entered) return;
 	};
 	const {
 		confirmId: purgeTargets,
@@ -346,9 +369,7 @@ export default function TrashPage() {
 	});
 
 	return (
-		<AppLayout
-			actions={<ViewToggle value={viewMode} onChange={handleViewModeChange} />}
-		>
+		<AppLayout>
 			<div className="flex flex-1 flex-col gap-4 overflow-hidden p-4">
 				<div className="rounded-xl border bg-muted/20 p-4">
 					<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -363,23 +384,27 @@ export default function TrashPage() {
 								</p>
 							</div>
 						</div>
-						{!isEmpty && !loading ? (
-							<Button
-								variant="destructive"
-								size="sm"
-								className="self-start"
-								disabled={isBusy}
-								onClick={() => requestPurgeAllConfirm(true)}
-							>
-								<Icon
-									name={pendingOperation === "purge-all" ? "Spinner" : "Trash"}
-									className={`mr-1 size-4 ${pendingOperation === "purge-all" ? "animate-spin" : ""}`}
-								/>
-								{pendingOperation === "purge-all"
-									? t("files:trash_purging")
-									: t("admin:empty_trash")}
-							</Button>
-						) : null}
+						<div className="flex shrink-0 items-center gap-2 self-start">
+							<ViewToggle value={viewMode} onChange={handleViewModeChange} />
+							{!isEmpty && !loading ? (
+								<Button
+									variant="destructive"
+									size="sm"
+									disabled={isBusy}
+									onClick={() => requestPurgeAllConfirm(true)}
+								>
+									<Icon
+										name={
+											pendingOperation === "purge-all" ? "Spinner" : "Trash"
+										}
+										className={`mr-1 size-4 ${pendingOperation === "purge-all" ? "animate-spin" : ""}`}
+									/>
+									{pendingOperation === "purge-all"
+										? t("files:trash_purging")
+										: t("admin:empty_trash")}
+								</Button>
+							) : null}
+						</div>
 					</div>
 				</div>
 
@@ -398,9 +423,6 @@ export default function TrashPage() {
 									: t("items_count", { count: totalItems })}
 							</span>
 						</div>
-						<span className="hidden text-sm text-muted-foreground md:inline">
-							{t("files:trash_page_desc")}
-						</span>
 					</div>
 				) : null}
 
@@ -418,7 +440,12 @@ export default function TrashPage() {
 							description={t("files:trash_empty_desc")}
 						/>
 					) : (
-						<ScrollArea className="min-h-0 flex-1">
+						<ScrollArea
+							className="min-h-0 flex-1"
+							viewportProps={{
+								className: cn(bottomOverlayPadding),
+							}}
+						>
 							{viewMode === "grid" ? (
 								<TrashGrid
 									items={items}

@@ -139,6 +139,7 @@ function useAdminPoliciesPageContent() {
 	);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
 	const [submitting, setSubmitting] = useState(false);
+	const [saveAnywayConfirmOpen, setSaveAnywayConfirmOpen] = useState(false);
 	const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
 	const [migrationPolicies, setMigrationPolicies] = useState<StoragePolicy[]>(
 		[],
@@ -281,12 +282,6 @@ function useAdminPoliciesPageContent() {
 	} = useConfirmDialog<number>(async (id) => {
 		await handleDelete(id, { force: true });
 	});
-	const {
-		requestConfirm: requestSaveAnywayConfirm,
-		dialogProps: saveConfirmDialogProps,
-	} = useConfirmDialog<true>(async () => {
-		await submitPolicy(true);
-	});
 	const requestDeleteConfirm = (id: number) => {
 		if (id === PROTECTED_POLICY_ID) return;
 		requestConfirm(id);
@@ -294,7 +289,7 @@ function useAdminPoliciesPageContent() {
 
 	const resetDialogState = () => {
 		policyCapacityRequestSerial.current += 1;
-		saveConfirmDialogProps.onOpenChange(false);
+		setSaveAnywayConfirmOpen(false);
 		setPolicyCapacity(null);
 		setPolicyCapacityLoading(false);
 		setValidatedConnectionKey(null);
@@ -386,7 +381,8 @@ function useAdminPoliciesPageContent() {
 	const setField = <K extends keyof PolicyFormData>(
 		key: K,
 		value: PolicyFormData[K],
-	) =>
+	) => {
+		setSaveAnywayConfirmOpen(false);
 		setForm((prev) => {
 			if (key === "storage_native_processing_enabled") {
 				const enabled = value as boolean;
@@ -413,8 +409,10 @@ function useAdminPoliciesPageContent() {
 
 			return { ...prev, [key]: value };
 		});
+	};
 
 	const setDriverType = (driverType: DriverType) => {
+		setSaveAnywayConfirmOpen(false);
 		setValidatedConnectionKey(null);
 		setCreateStepTouched(false);
 		setForm((prev) => {
@@ -498,6 +496,18 @@ function useAdminPoliciesPageContent() {
 		showFailureError?: boolean;
 	} = {}) => {
 		const currentForm = syncNormalizedS3Form();
+		const currentEndpointValidationMessage = getEndpointValidationMessage(
+			currentForm,
+			t,
+		);
+		if (currentEndpointValidationMessage) {
+			if (showFailureError) {
+				toast.error(currentEndpointValidationMessage);
+			}
+			setValidatedConnectionKey(null);
+			return false;
+		}
+
 		const shouldUseParamTest =
 			editingId === null ||
 			hasConnectionFieldChanges(currentForm, editingPolicy);
@@ -592,15 +602,25 @@ function useAdminPoliciesPageContent() {
 					showFailureError: false,
 				});
 				if (!testPassed) {
-					requestSaveAnywayConfirm(true);
+					setSaveAnywayConfirmOpen(true);
 					return;
 				}
 			}
 
+			setSaveAnywayConfirmOpen(false);
 			await persistPolicy();
 		} finally {
 			setSubmitting(false);
 		}
+	};
+
+	const cancelSaveAnyway = () => {
+		setSaveAnywayConfirmOpen(false);
+	};
+
+	const confirmSaveAnyway = () => {
+		setSaveAnywayConfirmOpen(false);
+		void submitPolicy(true);
 	};
 
 	const handleCreateBack = () => {
@@ -630,6 +650,10 @@ function useAdminPoliciesPageContent() {
 		}
 
 		if (isS3CompatibleDriver(form.driver_type) && !form.bucket.trim()) {
+			return;
+		}
+
+		if (isS3CompatibleDriver(form.driver_type) && !form.endpoint.trim()) {
 			return;
 		}
 
@@ -845,7 +869,9 @@ function useAdminPoliciesPageContent() {
 					createStep={createStep}
 					createStepTouched={createStepTouched}
 					endpointValidationMessage={endpointValidationMessage}
-					saveConfirmDialogProps={saveConfirmDialogProps}
+					saveAnywayConfirmOpen={saveAnywayConfirmOpen}
+					onCancelSaveAnyway={cancelSaveAnyway}
+					onConfirmSaveAnyway={confirmSaveAnyway}
 					onDialogOpenChange={handleDialogOpenChange}
 					onSubmit={handleSubmit}
 					onRunConnectionTest={() => runConnectionTest()}

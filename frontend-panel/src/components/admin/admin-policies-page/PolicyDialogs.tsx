@@ -29,6 +29,10 @@ interface PolicyDialogsProps {
 	policyCapacity: StoragePolicyCapacityInfo | null;
 	policyCapacityLoading: boolean;
 	remoteNodes: RemoteNodeInfo[];
+	saveAnywayConfirmOpen: boolean;
+	submitting: boolean;
+	onCancelSaveAnyway: () => void;
+	onConfirmSaveAnyway: () => void;
 	onCreateBack: () => void;
 	onCreateNext: () => void;
 	onCreateStepChange: (step: number) => void;
@@ -41,11 +45,6 @@ interface PolicyDialogsProps {
 	onRunConnectionTest: () => Promise<boolean>;
 	onSubmit: () => void;
 	onSyncNormalizedS3Form: () => void;
-	saveConfirmDialogProps: Pick<
-		ConfirmDialogProps,
-		"onConfirm" | "onOpenChange" | "open"
-	>;
-	submitting: boolean;
 }
 
 export function PolicyDialogs({
@@ -62,6 +61,10 @@ export function PolicyDialogs({
 	policyCapacity,
 	policyCapacityLoading,
 	remoteNodes,
+	saveAnywayConfirmOpen,
+	submitting,
+	onCancelSaveAnyway,
+	onConfirmSaveAnyway,
 	onCreateBack,
 	onCreateNext,
 	onCreateStepChange,
@@ -71,8 +74,6 @@ export function PolicyDialogs({
 	onRunConnectionTest,
 	onSubmit,
 	onSyncNormalizedS3Form,
-	saveConfirmDialogProps,
-	submitting,
 }: PolicyDialogsProps) {
 	const { t } = useTranslation("admin");
 
@@ -92,12 +93,6 @@ export function PolicyDialogs({
 				confirmLabel={t("force_delete_policy_confirm")}
 				variant="destructive"
 			/>
-			<ConfirmDialog
-				{...saveConfirmDialogProps}
-				title={t("connection_test_failed")}
-				description={t("policy_test_failed_confirm_desc")}
-				confirmLabel={t("save_anyway")}
-			/>
 			<StoragePolicyDialog
 				open={dialogOpen}
 				mode={editMode ? "edit" : "create"}
@@ -109,7 +104,10 @@ export function PolicyDialogs({
 				createStep={createStep}
 				createStepTouched={createStepTouched}
 				endpointValidationMessage={endpointValidationMessage}
+				saveAnywayConfirmOpen={saveAnywayConfirmOpen}
 				onOpenChange={onDialogOpenChange}
+				onCancelSaveAnyway={onCancelSaveAnyway}
+				onConfirmSaveAnyway={onConfirmSaveAnyway}
 				onSubmit={onSubmit}
 				onRunConnectionTest={onRunConnectionTest}
 				onFieldChange={onFieldChange}

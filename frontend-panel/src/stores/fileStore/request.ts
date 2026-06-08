@@ -2,12 +2,7 @@ import { FILE_PAGE_SIZE, FOLDER_LIMIT } from "@/lib/constants";
 import { readLocalStorage, writeLocalStorage } from "@/lib/storage";
 import { fileService } from "@/services/fileService";
 import { isRequestCanceled } from "@/services/http";
-import { searchService } from "@/services/searchService";
-import type {
-	FolderListParams,
-	SearchParams,
-	SearchResults,
-} from "@/types/api";
+import type { FolderListParams } from "@/types/api";
 import type {
 	BreadcrumbItem,
 	FileState,
@@ -76,13 +71,6 @@ export async function resolveBreadcrumb(
 		...createRootBreadcrumb(),
 		...ancestors.map((item) => ({ id: item.id, name: item.name })),
 	];
-}
-
-export async function runSearch(
-	params: SearchParams,
-	signal: AbortSignal,
-): Promise<SearchResults> {
-	return await searchService.search(params, { signal });
 }
 
 export function beginWorkspaceRequest(

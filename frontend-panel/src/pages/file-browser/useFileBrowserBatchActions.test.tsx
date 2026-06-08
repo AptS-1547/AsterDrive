@@ -156,11 +156,13 @@ const mockStore = {
 };
 
 function Harness({
+	allowCopyMove,
 	onArchiveCompress,
 	onArchiveDownload,
 	onDownload,
 	onMoveToFolder,
 }: {
+	allowCopyMove?: boolean;
 	onArchiveCompress?: (fileIds: number[], folderIds: number[]) => void;
 	onArchiveDownload?: (fileIds: number[], folderIds: number[]) => void;
 	onDownload?: (fileId: number, fileName: string) => void;
@@ -171,6 +173,7 @@ function Harness({
 	) => Promise<unknown> | unknown;
 } = {}) {
 	const { dialogs, selectionToolbar } = useFileBrowserBatchActions({
+		allowCopyMove,
 		displayFiles: [
 			{ id: 1, name: "alpha.txt" },
 			{ id: 2, name: "beta.txt" },
@@ -196,12 +199,16 @@ function Harness({
 					<button type="button" onClick={selectionToolbar.onDelete}>
 						delete-selected
 					</button>
-					<button type="button" onClick={selectionToolbar.onCopy}>
-						copy-selected
-					</button>
-					<button type="button" onClick={selectionToolbar.onMove}>
-						move-selected
-					</button>
+					{selectionToolbar.onCopy ? (
+						<button type="button" onClick={selectionToolbar.onCopy}>
+							copy-selected
+						</button>
+					) : null}
+					{selectionToolbar.onMove ? (
+						<button type="button" onClick={selectionToolbar.onMove}>
+							move-selected
+						</button>
+					) : null}
 					<button type="button" onClick={selectionToolbar.onManageTags}>
 						manage-tags
 					</button>
@@ -296,6 +303,19 @@ describe("useFileBrowserBatchActions", () => {
 		expect(onDownload).toHaveBeenCalledWith(1, "alpha.txt");
 		expect(onArchiveDownload).not.toHaveBeenCalled();
 		expect(mockState.clearSelection).toHaveBeenCalledTimes(1);
+	});
+
+	it("can hide copy and move actions for category-style views", () => {
+		mockState.selectedFileIds = new Set([1]);
+		mockStore.selectedFileIds = mockState.selectedFileIds;
+
+		render(<Harness allowCopyMove={false} />);
+
+		expect(screen.getByText("count:1")).toBeInTheDocument();
+		expect(screen.queryByText("copy-selected")).not.toBeInTheDocument();
+		expect(screen.queryByText("move-selected")).not.toBeInTheDocument();
+		expect(screen.getByText("manage-tags")).toBeInTheDocument();
+		expect(screen.getByText("delete-selected")).toBeInTheDocument();
 	});
 
 	it("keeps archive download for multiple selected items", async () => {

@@ -29,12 +29,6 @@ vi.mock("@/services/batchService", () => ({
 	},
 }));
 
-vi.mock("@/services/searchService", () => ({
-	searchService: {
-		search: vi.fn(),
-	},
-}));
-
 vi.mock("@/stores/authStore", () => ({
 	useAuthStore: {
 		getState: () => ({

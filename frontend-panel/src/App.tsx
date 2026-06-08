@@ -113,7 +113,12 @@ function App() {
 			) : (
 				<RouterProvider router={router} />
 			)}
-			<Toaster position="bottom-right" richColors swipeDirections={["right"]} />
+			<Toaster
+				position="bottom-right"
+				richColors
+				swipeDirections={["right"]}
+				style={{ zIndex: "var(--z-toast)" }}
+			/>
 			<MusicPlayerHost />
 		</>
 	);

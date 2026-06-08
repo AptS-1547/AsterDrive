@@ -12,6 +12,8 @@ const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
 const InviteRegisterPage = lazy(() => import("@/pages/InviteRegisterPage"));
 const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
+const CategoryBrowserPage = lazy(() => import("@/pages/CategoryBrowserPage"));
+const SearchBrowserPage = lazy(() => import("@/pages/SearchBrowserPage"));
 const AdminOverviewPage = lazy(() => import("@/pages/admin/AdminOverviewPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
 const AdminUserInvitationsPage = lazy(
@@ -79,6 +81,8 @@ export const router = createBrowserRouter([
 				children: [
 					{ path: "/", element: <FileBrowserPage /> },
 					{ path: "/folder/:folderId", element: <FileBrowserPage /> },
+					{ path: "/category/:category", element: <CategoryBrowserPage /> },
+					{ path: "/search", element: <SearchBrowserPage /> },
 					{ path: "/shares", element: <MySharesPage /> },
 					{ path: "/tasks", element: <TasksPage /> },
 					{ path: "/trash", element: <TrashPage /> },
@@ -90,6 +94,8 @@ export const router = createBrowserRouter([
 				children: [
 					{ index: true, element: <FileBrowserPage /> },
 					{ path: "folder/:folderId", element: <FileBrowserPage /> },
+					{ path: "category/:category", element: <CategoryBrowserPage /> },
+					{ path: "search", element: <SearchBrowserPage /> },
 					{ path: "shares", element: <MySharesPage /> },
 					{ path: "tasks", element: <TasksPage /> },
 					{ path: "trash", element: <TrashPage /> },

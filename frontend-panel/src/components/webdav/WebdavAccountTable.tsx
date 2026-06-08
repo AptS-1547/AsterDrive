@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { Icon } from "@/components/ui/icon";
 import type { WebdavAccountInfo } from "@/types/api";
@@ -10,6 +10,7 @@ interface WebdavAccountTableLabels {
 	actions: string;
 	active: string;
 	allFiles: string;
+	cancel: string;
 	createdAt: string;
 	delete: string;
 	deleting: string;
@@ -45,6 +46,11 @@ export function WebdavAccountTable({
 	onToggle,
 	togglingAccountId,
 }: WebdavAccountTableProps) {
+	const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+	const accountIds = useMemo(
+		() => new Set(accounts.map((account) => account.id)),
+		[accounts],
+	);
 	const headerRow = useMemo(
 		() => (
 			<WebdavAccountHeaderRow
@@ -58,6 +64,11 @@ export function WebdavAccountTable({
 		),
 		[canManageTeam, labels],
 	);
+
+	const activePendingDeleteId =
+		pendingDeleteId != null && accountIds.has(pendingDeleteId)
+			? pendingDeleteId
+			: null;
 
 	return (
 		<AdminTableList
@@ -73,6 +84,7 @@ export function WebdavAccountTable({
 				const deleting = deletingAccountId === account.id;
 				const toggling = togglingAccountId === account.id;
 				const canMutate = canManageTeam || account.user_id === currentUserId;
+				const confirmingDelete = activePendingDeleteId === account.id;
 				const deleteLabel = deleting ? labels.deleting : labels.delete;
 				const toggleLabel = toggling
 					? labels.toggleUpdating
@@ -88,11 +100,18 @@ export function WebdavAccountTable({
 						allFilesLabel={labels.allFiles}
 						canShowOwner={canManageTeam}
 						canMutate={canMutate}
+						cancelLabel={labels.cancel}
 						deleteLabel={deleteLabel}
 						disabledLabel={labels.disabled}
 						deleting={deleting}
+						confirmingDelete={confirmingDelete}
 						toggling={toggling}
-						onDelete={onDelete}
+						onCancelDelete={() => setPendingDeleteId(null)}
+						onConfirmDelete={() => {
+							setPendingDeleteId(null);
+							onDelete(account.id);
+						}}
+						onRequestDelete={() => setPendingDeleteId(account.id)}
 						onToggle={onToggle}
 						toggleLabel={toggleLabel}
 					/>

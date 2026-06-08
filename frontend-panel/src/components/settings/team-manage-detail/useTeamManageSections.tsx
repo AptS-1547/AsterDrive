@@ -32,7 +32,8 @@ interface UseTeamManageSectionsArgs {
 	currentUserId: number | null;
 	detailLoading: boolean;
 	displayTeam: TeamInfo | null;
-	handleArchiveDialogOpenChange: (nextOpen: boolean) => void;
+	handleArchiveTeam: () => Promise<void>;
+	handleRemoveMember: (memberUserId: number) => Promise<void>;
 	handleUpdateMemberRole: (
 		memberUserId: number,
 		role: TeamMemberRole,
@@ -58,7 +59,6 @@ interface UseTeamManageSectionsArgs {
 	ownerCount: number;
 	prevAuditPageDisabled: boolean;
 	prevMemberPageDisabled: boolean;
-	requestRemoveConfirm: (memberUserId: number) => void;
 	roleFilterOptions: ReadonlyArray<{
 		label: string;
 		value: "__all__" | TeamMemberRole;
@@ -100,7 +100,8 @@ export function buildTeamManageSections({
 	currentUserId,
 	detailLoading,
 	displayTeam,
-	handleArchiveDialogOpenChange,
+	handleArchiveTeam,
+	handleRemoveMember,
 	handleUpdateMemberRole,
 	hasMemberFilters,
 	managerCount,
@@ -123,7 +124,6 @@ export function buildTeamManageSections({
 	ownerCount,
 	prevAuditPageDisabled,
 	prevMemberPageDisabled,
-	requestRemoveConfirm,
 	roleFilterOptions,
 	roleLabel,
 	roleOptions,
@@ -179,10 +179,10 @@ export function buildTeamManageSections({
 			mutating={mutating}
 			nextMemberPageDisabled={nextMemberPageDisabled}
 			onAddMember={(event) => void onAddMember(event)}
+			onRemoveMember={handleRemoveMember}
 			onUpdateMemberRole={handleUpdateMemberRole}
 			ownerCount={ownerCount}
 			prevMemberPageDisabled={prevMemberPageDisabled}
-			requestRemoveConfirm={requestRemoveConfirm}
 			roleFilterOptions={roleFilterOptions}
 			roleLabel={roleLabel}
 			roleOptions={roleOptions}
@@ -219,8 +219,8 @@ export function buildTeamManageSections({
 			mutating={mutating}
 			ownerCount={ownerCount}
 			setArchiveConfirmValue={setArchiveConfirmValue}
-			setArchiveDialogOpen={handleArchiveDialogOpenChange}
 			team={displayTeam}
+			onArchive={handleArchiveTeam}
 		/>
 	) : null;
 	const webdavSection = (

@@ -13,7 +13,10 @@ import {
 interface RemoteNodeManagedIngressProfilesListProps {
 	errorMessage: string | null;
 	loading: boolean;
-	onDeleteProfile: (profile: RemoteIngressProfileInfo) => void;
+	pendingDeleteProfileKey: string | null;
+	onCancelDelete: () => void;
+	onConfirmDeleteProfile: (profile: RemoteIngressProfileInfo) => void;
+	onRequestDeleteProfile: (profile: RemoteIngressProfileInfo) => void;
 	onEditProfile: (profile: RemoteIngressProfileInfo) => void;
 	profiles: RemoteIngressProfileInfo[];
 }
@@ -21,7 +24,10 @@ interface RemoteNodeManagedIngressProfilesListProps {
 export function RemoteNodeManagedIngressProfilesList({
 	errorMessage,
 	loading,
-	onDeleteProfile,
+	pendingDeleteProfileKey,
+	onCancelDelete,
+	onConfirmDeleteProfile,
+	onRequestDeleteProfile,
 	onEditProfile,
 	profiles,
 }: RemoteNodeManagedIngressProfilesListProps) {
@@ -49,7 +55,10 @@ export function RemoteNodeManagedIngressProfilesList({
 				profiles.map((profile) => (
 					<RemoteNodeManagedIngressProfileCard
 						key={profile.profile_key}
-						onDelete={() => onDeleteProfile(profile)}
+						deleteConfirming={pendingDeleteProfileKey === profile.profile_key}
+						onCancelDelete={onCancelDelete}
+						onConfirmDelete={() => onConfirmDeleteProfile(profile)}
+						onRequestDelete={() => onRequestDeleteProfile(profile)}
 						onEdit={() => onEditProfile(profile)}
 						profile={profile}
 					/>
@@ -60,13 +69,19 @@ export function RemoteNodeManagedIngressProfilesList({
 }
 
 interface RemoteNodeManagedIngressProfileCardProps {
-	onDelete: () => void;
+	deleteConfirming: boolean;
+	onCancelDelete: () => void;
+	onConfirmDelete: () => void;
+	onRequestDelete: () => void;
 	onEdit: () => void;
 	profile: RemoteIngressProfileInfo;
 }
 
 function RemoteNodeManagedIngressProfileCard({
-	onDelete,
+	deleteConfirming,
+	onCancelDelete,
+	onConfirmDelete,
+	onRequestDelete,
 	onEdit,
 	profile,
 }: RemoteNodeManagedIngressProfileCardProps) {
@@ -120,19 +135,53 @@ function RemoteNodeManagedIngressProfileCard({
 					>
 						<Icon name="PencilSimple" className="size-3.5" />
 					</Button>
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon"
-						className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-						onClick={onDelete}
-						aria-label={t("core:delete")}
-						title={t("core:delete")}
-					>
-						<Icon name="Trash" className="size-3.5" />
-					</Button>
+					{deleteConfirming ? (
+						<div className="flex items-center gap-1 duration-150 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
+							<Button
+								type="button"
+								variant="destructive"
+								size="sm"
+								onClick={onConfirmDelete}
+							>
+								{t("core:delete")}
+							</Button>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onClick={onCancelDelete}
+							>
+								{t("core:cancel")}
+							</Button>
+						</div>
+					) : (
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+							onClick={onRequestDelete}
+							aria-label={t("core:delete")}
+							title={t("core:delete")}
+						>
+							<Icon name="Trash" className="size-3.5" />
+						</Button>
+					)}
 				</div>
 			</div>
+
+			{deleteConfirming ? (
+				<div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm duration-150 animate-in fade-in slide-in-from-top-1 motion-reduce:animate-none">
+					<p className="font-medium text-destructive">
+						{t("remote_node_ingress_profile_delete_title", {
+							name: profile.name,
+						})}
+					</p>
+					<p className="mt-1 text-muted-foreground">
+						{t("remote_node_ingress_profile_delete_desc")}
+					</p>
+				</div>
+			) : null}
 
 			<dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
 				<div>

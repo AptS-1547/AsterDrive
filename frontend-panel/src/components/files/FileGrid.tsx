@@ -2,7 +2,10 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useFileBrowserContext } from "@/components/files/FileBrowserContext";
-import { FileBrowserItemContextMenu } from "@/components/files/FileBrowserItemContextMenu";
+import {
+	FileBrowserItemActionMenu,
+	FileBrowserItemContextMenu,
+} from "@/components/files/FileBrowserItemContextMenu";
 import { FileCard } from "@/components/files/FileCard";
 import { getCurrentSelectionDragData } from "@/components/files/selectionDragData";
 import type { BrowserOpenMode } from "@/stores/fileStore";
@@ -80,6 +83,10 @@ const FolderGridCard = memo(function FolderGridCard({
 		() => [...breadcrumbPathIds, folder.id],
 		[breadcrumbPathIds, folder.id],
 	);
+	const actionMenu = useMemo(
+		() => <FileBrowserItemActionMenu item={folder} isFolder />,
+		[folder],
+	);
 
 	return (
 		<FileBrowserItemContextMenu item={folder} isFolder>
@@ -105,6 +112,7 @@ const FolderGridCard = memo(function FolderGridCard({
 				onDrop={onMoveToFolder}
 				targetPathIds={targetPathIds}
 				fading={fading}
+				actionMenu={actionMenu}
 			/>
 		</FileBrowserItemContextMenu>
 	);
@@ -127,6 +135,10 @@ const FileGridCard = memo(function FileGridCard({
 	const selected = useFileStore((s) => s.selectedFileIds.has(file.id));
 	const selectOnlyFile = useFileStore((s) => s.selectOnlyFile);
 	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
+	const actionMenu = useMemo(
+		() => <FileBrowserItemActionMenu item={file} isFolder={false} />,
+		[file],
+	);
 
 	return (
 		<FileBrowserItemContextMenu item={file} isFolder={false}>
@@ -150,6 +162,7 @@ const FileGridCard = memo(function FileGridCard({
 				}
 				resolveDragData={() => getCurrentSelectionDragData(file.id, false)}
 				fading={fading}
+				actionMenu={actionMenu}
 			/>
 		</FileBrowserItemContextMenu>
 	);

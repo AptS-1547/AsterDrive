@@ -27,6 +27,7 @@ import type { BatchResult, FileListItem, FolderListItem } from "@/types/api";
 import type { FileBrowserSelectionToolbarState } from "./types";
 
 interface UseFileBrowserBatchActionsOptions {
+	allowCopyMove?: boolean;
 	displayFiles: FileListItem[];
 	displayFolders: FolderListItem[];
 	onChanged?: () => Promise<void> | void;
@@ -52,6 +53,7 @@ interface UseFileBrowserBatchActionsResult {
 }
 
 export function useFileBrowserBatchActions({
+	allowCopyMove = true,
 	displayFiles,
 	displayFolders,
 	onChanged,
@@ -276,10 +278,10 @@ export function useFileBrowserBatchActions({
 						? handleArchiveCompress
 						: undefined,
 					onClearSelection: clearSelection,
-					onCopy: handleCopy,
+					onCopy: allowCopyMove ? handleCopy : undefined,
 					onDelete: () => requestDeleteConfirm(true),
 					onManageTags: handleManageTags,
-					onMove: handleMove,
+					onMove: allowCopyMove ? handleMove : undefined,
 					onToggleDisplayedSelection: handleToggleDisplayedSelection,
 				}
 			: null;

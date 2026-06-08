@@ -4,7 +4,6 @@ import { createCrudSlice } from "@/stores/fileStore/crudSlice";
 import { createNavigationSlice } from "@/stores/fileStore/navigationSlice";
 import { createPreferencesSlice } from "@/stores/fileStore/preferencesSlice";
 import { createRequestSlice } from "@/stores/fileStore/requestSlice";
-import { createSearchSlice } from "@/stores/fileStore/searchSlice";
 import { createSelectionSlice } from "@/stores/fileStore/selectionSlice";
 import type { FileState } from "@/stores/fileStore/types";
 
@@ -22,7 +21,6 @@ export const useFileStore = create<FileState>()((...args) => ({
 	...createNavigationSlice(...args),
 	...createPreferencesSlice(...args),
 	...createSelectionSlice(...args),
-	...createSearchSlice(...args),
 	...createClipboardSlice(...args),
 	...createCrudSlice(...args),
 }));

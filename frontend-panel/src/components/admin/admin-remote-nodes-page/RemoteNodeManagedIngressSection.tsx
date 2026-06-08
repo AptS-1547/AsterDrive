@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	buildCreateManagedIngressProfilePayload,
@@ -7,10 +7,8 @@ import {
 	getManagedIngressProfileForm,
 	type ManagedIngressProfileFormData,
 } from "@/components/admin/managedIngressProfileDialogShared";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import type {
 	RemoteCreateIngressProfileRequest,
@@ -51,26 +49,22 @@ export function RemoteNodeManagedIngressSection({
 		emptyManagedIngressProfileForm,
 	);
 	const [submitting, setSubmitting] = useState(false);
+	const [pendingDeleteProfileKey, setPendingDeleteProfileKey] = useState<
+		string | null
+	>(null);
 	const editingProfile =
 		draftMode === "edit"
 			? (profiles.find(
 					(profile) => profile.profile_key === editingProfileKey,
 				) ?? null)
 			: null;
-
-	useEffect(() => {
-		if (draftMode !== "edit" || editingProfileKey == null) {
-			return;
-		}
-
-		if (
-			!profiles.some((profile) => profile.profile_key === editingProfileKey)
-		) {
-			setDraftMode(null);
-			setEditingProfileKey(null);
-			setForm(emptyManagedIngressProfileForm);
-		}
-	}, [draftMode, editingProfileKey, profiles]);
+	const activeDraftMode =
+		draftMode === "edit" && editingProfile == null ? null : draftMode;
+	const activePendingDeleteProfileKey = profiles.some(
+		(profile) => profile.profile_key === pendingDeleteProfileKey,
+	)
+		? pendingDeleteProfileKey
+		: null;
 
 	const startCreate = () => {
 		setDraftMode("create");
@@ -129,7 +123,7 @@ export function RemoteNodeManagedIngressSection({
 			: null;
 	const requiresS3Credentials =
 		form.driver_type === "s3" &&
-		(draftMode === "create" || editingProfile?.driver_type !== "s3");
+		(activeDraftMode === "create" || editingProfile?.driver_type !== "s3");
 	const accessKeyError =
 		requiresS3Credentials && !form.access_key.trim()
 			? t("remote_node_ingress_profile_access_key_required")
@@ -139,7 +133,7 @@ export function RemoteNodeManagedIngressSection({
 			? t("remote_node_ingress_profile_secret_key_required")
 			: null;
 	const defaultToggleLocked =
-		draftMode === "edit" && editingProfile?.is_default;
+		activeDraftMode === "edit" && editingProfile?.is_default;
 	const submitDisabled =
 		submitting ||
 		Boolean(errorMessage) ||
@@ -154,13 +148,13 @@ export function RemoteNodeManagedIngressSection({
 		);
 
 	const handleSubmit = async () => {
-		if (draftMode == null || submitDisabled) {
+		if (activeDraftMode == null || submitDisabled) {
 			return;
 		}
 
 		setSubmitting(true);
 		try {
-			if (draftMode === "create") {
+			if (activeDraftMode === "create") {
 				await onCreateProfile(buildCreateManagedIngressProfilePayload(form));
 			} else if (editingProfile != null) {
 				await onUpdateProfile(
@@ -174,25 +168,13 @@ export function RemoteNodeManagedIngressSection({
 		}
 	};
 
-	const {
-		confirmId: deleteProfileKey,
-		requestConfirm: requestDeleteConfirm,
-		dialogProps: deleteDialogProps,
-	} = useConfirmDialog<string>(async (profileKey) => {
-		const profile = profiles.find((item) => item.profile_key === profileKey);
-		if (!profile) {
-			return;
-		}
+	const handleDeleteProfile = async (profile: RemoteIngressProfileInfo) => {
+		setPendingDeleteProfileKey(null);
 		await onDeleteProfile(profile);
-		if (editingProfileKey === profileKey) {
+		if (editingProfileKey === profile.profile_key) {
 			resetDraft();
 		}
-	});
-	const deleteProfile =
-		deleteProfileKey != null
-			? (profiles.find((profile) => profile.profile_key === deleteProfileKey) ??
-				null)
-			: null;
+	};
 
 	return (
 		<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
@@ -205,7 +187,7 @@ export function RemoteNodeManagedIngressSection({
 						{t("remote_node_ingress_profiles_desc")}
 					</p>
 				</div>
-				{draftMode == null ? (
+				{activeDraftMode == null ? (
 					<Button
 						type="button"
 						size="sm"
@@ -225,12 +207,12 @@ export function RemoteNodeManagedIngressSection({
 				</div>
 			) : null}
 
-			{draftMode != null ? (
+			{activeDraftMode != null ? (
 				<RemoteNodeManagedIngressForm
 					accessKeyError={accessKeyError}
 					bucketError={bucketError}
 					defaultToggleLocked={Boolean(defaultToggleLocked)}
-					draftMode={draftMode}
+					draftMode={activeDraftMode}
 					editingProfile={editingProfile}
 					endpointError={endpointError}
 					form={form}
@@ -249,25 +231,14 @@ export function RemoteNodeManagedIngressSection({
 			<RemoteNodeManagedIngressProfilesList
 				errorMessage={errorMessage}
 				loading={loading}
-				onDeleteProfile={(profile) => requestDeleteConfirm(profile.profile_key)}
+				pendingDeleteProfileKey={activePendingDeleteProfileKey}
+				onCancelDelete={() => setPendingDeleteProfileKey(null)}
+				onConfirmDeleteProfile={(profile) => void handleDeleteProfile(profile)}
+				onRequestDeleteProfile={(profile) =>
+					setPendingDeleteProfileKey(profile.profile_key)
+				}
 				onEditProfile={startEdit}
 				profiles={profiles}
-			/>
-
-			<ConfirmDialog
-				{...deleteDialogProps}
-				title={
-					deleteProfile
-						? t("remote_node_ingress_profile_delete_title", {
-								name: deleteProfile.name,
-							})
-						: t("remote_node_ingress_profile_delete_title", {
-								name: "",
-							})
-				}
-				description={t("remote_node_ingress_profile_delete_desc")}
-				confirmLabel={t("core:delete")}
-				variant="destructive"
 			/>
 		</section>
 	);

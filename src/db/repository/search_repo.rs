@@ -1,9 +1,11 @@
 //! 仓储模块：`search_repo`。
 
+use crate::api::pagination::{SortBy, SortOrder};
 use crate::db::repository::search_query::{
     escape_like_query, lower_like_condition, mysql_boolean_mode_query, sqlite_fts_match_condition,
     sqlite_match_query,
 };
+use crate::db::repository::sort::order_by_column_with_id;
 use crate::entities::{
     entity_property::{self, Entity as EntityProperty},
     file::{self, Entity as File},
@@ -77,6 +79,8 @@ pub struct FileSearchFilters<'a> {
     pub created_before: Option<DateTime<Utc>>,
     pub folder_id: Option<i64>,
     pub tag_filter: Option<TagSearchFilter<'a>>,
+    pub sort_by: SortBy,
+    pub sort_order: SortOrder,
     pub limit: u64,
     pub offset: u64,
 }
@@ -88,6 +92,8 @@ pub struct FolderSearchFilters<'a> {
     pub created_before: Option<DateTime<Utc>>,
     pub parent_id: Option<i64>,
     pub tag_filter: Option<TagSearchFilter<'a>>,
+    pub sort_by: SortBy,
+    pub sort_order: SortOrder,
     pub limit: u64,
     pub offset: u64,
 }
@@ -167,6 +173,50 @@ fn tag_search_condition(
     }
 
     Some(Expr::col(entity_id_column).in_subquery(subquery.to_owned()))
+}
+
+fn apply_file_search_order<E>(query: E, sort_by: SortBy, sort_order: SortOrder) -> E
+where
+    E: QueryOrder,
+{
+    match sort_by {
+        SortBy::Name => {
+            order_by_column_with_id(query, file::Column::Name, sort_order, file::Column::Id)
+        }
+        SortBy::Size => {
+            order_by_column_with_id(query, file::Column::Size, sort_order, file::Column::Id)
+        }
+        SortBy::CreatedAt => {
+            order_by_column_with_id(query, file::Column::CreatedAt, sort_order, file::Column::Id)
+        }
+        SortBy::UpdatedAt => {
+            order_by_column_with_id(query, file::Column::UpdatedAt, sort_order, file::Column::Id)
+        }
+        SortBy::Type => {
+            order_by_column_with_id(query, file::Column::MimeType, sort_order, file::Column::Id)
+        }
+    }
+}
+
+fn apply_folder_search_order<E>(query: E, sort_by: SortBy, sort_order: SortOrder) -> E
+where
+    E: QueryOrder,
+{
+    match sort_by {
+        SortBy::CreatedAt => order_by_column_with_id(
+            query,
+            folder::Column::CreatedAt,
+            sort_order,
+            folder::Column::Id,
+        ),
+        SortBy::UpdatedAt => order_by_column_with_id(
+            query,
+            folder::Column::UpdatedAt,
+            sort_order,
+            folder::Column::Id,
+        ),
+        _ => order_by_column_with_id(query, folder::Column::Name, sort_order, folder::Column::Id),
+    }
 }
 
 /// Search files with optional filters. JOINs file_blobs to include size.
@@ -268,7 +318,7 @@ async fn search_files_in_scope<C: ConnectionTrait>(
         return Ok((vec![], 0));
     }
 
-    let items = File::find()
+    let query = File::find()
         .join(JoinType::InnerJoin, file::Relation::FileBlob.def())
         .filter(file_condition)
         .filter(blob_condition)
@@ -287,8 +337,9 @@ async fn search_files_in_scope<C: ConnectionTrait>(
         .column_as(file_blob::Column::Size, "size")
         .column(file::Column::CreatedAt)
         .column(file::Column::UpdatedAt)
-        .column(file::Column::IsLocked)
-        .order_by_asc(file::Column::Name)
+        .column(file::Column::IsLocked);
+
+    let items = apply_file_search_order(query, filters.sort_by, filters.sort_order)
         .limit(filters.limit)
         .offset(filters.offset)
         .into_model::<FileSearchItem>()
@@ -377,8 +428,7 @@ async fn search_folders_in_scope<C: ConnectionTrait>(
         return Ok((vec![], 0));
     }
 
-    let items = base
-        .order_by_asc(folder::Column::Name)
+    let items = apply_folder_search_order(base, filters.sort_by, filters.sort_order)
         .limit(filters.limit)
         .offset(filters.offset)
         .all(db)

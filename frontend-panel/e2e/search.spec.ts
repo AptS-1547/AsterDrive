@@ -38,37 +38,49 @@ test.describe
 			await searchDialog
 				.getByPlaceholder("Search files and folders...")
 				.fill(token);
-			await expect(
-				searchDialog.getByText(file.name, { exact: true }),
-			).toBeVisible({
-				timeout: 30_000,
-			});
-			await expect(
-				searchDialog.getByText(folderName, { exact: true }),
-			).toBeVisible();
-
-			await searchDialog.getByRole("button", { name: "Files only" }).click();
-			await expect(
-				searchDialog.getByText(file.name, { exact: true }),
-			).toBeVisible({
-				timeout: 30_000,
-			});
-			await expect(
-				searchDialog.getByText(folderName, { exact: true }),
-			).toHaveCount(0);
-
-			await searchDialog.getByRole("button", { name: "Folders only" }).click();
-			await expect(
-				searchDialog.getByText(folderName, { exact: true }),
-			).toBeVisible({
-				timeout: 30_000,
-			});
-			await expect(
-				searchDialog.getByText(file.name, { exact: true }),
-			).toHaveCount(0);
-
-			await searchDialog.getByText(folderName, { exact: true }).click();
+			await searchDialog
+				.getByRole("button", { exact: true, name: "Search" })
+				.click();
 			await expect(searchDialog).toBeHidden();
+			await expect(page).toHaveURL(/\/search\?q=.*&type=all/);
+			await expect(fileNameCell(page, file.name)).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(fileNameCell(page, folderName)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await page.getByRole("button", { name: "Open search" }).first().click();
+			await expect(searchDialog).toBeVisible();
+			await searchDialog
+				.getByPlaceholder("Search files and folders...")
+				.fill(token);
+			await searchDialog.getByRole("button", { name: "Files only" }).click();
+			await searchDialog
+				.getByRole("button", { exact: true, name: "Search" })
+				.click();
+			await expect(page).toHaveURL(/\/search\?q=.*&type=file/);
+			await expect(fileNameCell(page, file.name)).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(fileNameCell(page, folderName)).toHaveCount(0);
+
+			await page.getByRole("button", { name: "Open search" }).first().click();
+			await expect(searchDialog).toBeVisible();
+			await searchDialog
+				.getByPlaceholder("Search files and folders...")
+				.fill(token);
+			await searchDialog.getByRole("button", { name: "Folders only" }).click();
+			await searchDialog
+				.getByRole("button", { exact: true, name: "Search" })
+				.click();
+			await expect(page).toHaveURL(/\/search\?q=.*&type=folder/);
+			await expect(fileNameCell(page, folderName)).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(fileNameCell(page, file.name)).toHaveCount(0);
+
+			await openFolder(page, folderName);
 			await expect(page).toHaveURL(/\/folder\/\d+/);
 			await expect(
 				page

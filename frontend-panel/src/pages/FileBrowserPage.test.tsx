@@ -83,10 +83,6 @@ const mockState = vi.hoisted(() => ({
 		moveToFolder: vi.fn(),
 		navigateTo: vi.fn(),
 		refresh: vi.fn(),
-		search: vi.fn(),
-		searchFiles: [] as Array<Record<string, unknown>>,
-		searchFolders: [] as Array<Record<string, unknown>>,
-		searchQuery: null as string | null,
 		browserOpenMode: "single_click" as "single_click" | "double_click",
 		setSortBy: vi.fn(),
 		setSortOrder: vi.fn(),
@@ -1076,7 +1072,6 @@ describe("FileBrowserPage", () => {
 		mockState.store.moveToFolder.mockReset();
 		mockState.store.navigateTo.mockReset();
 		mockState.store.refresh.mockReset();
-		mockState.store.search.mockReset();
 		mockState.store.setSortBy.mockReset();
 		mockState.store.setSortOrder.mockReset();
 		mockState.store.setViewMode.mockReset();
@@ -1106,10 +1101,6 @@ describe("FileBrowserPage", () => {
 		mockState.store.moveToFolder.mockResolvedValue({ ok: true });
 		mockState.store.navigateTo.mockResolvedValue(undefined);
 		mockState.store.refresh.mockResolvedValue(undefined);
-		mockState.store.search.mockResolvedValue(undefined);
-		mockState.store.searchFiles = [];
-		mockState.store.searchFolders = [];
-		mockState.store.searchQuery = null;
 		mockState.store.sortBy = "name";
 		mockState.store.sortOrder = "asc";
 		mockState.store.viewMode = "grid";
@@ -1143,18 +1134,13 @@ describe("FileBrowserPage", () => {
 		);
 	});
 
-	it("navigates on mount, renders search results in grid view, and wires sort and view controls", async () => {
-		mockState.store.searchQuery = "budget";
-		mockState.store.searchFolders = [createFolder({ id: 8, name: "Reports" })];
-		mockState.store.searchFiles = [createFile({ id: 9, name: "budget.csv" })];
-
+	it("navigates on mount, renders folder contents in grid view, and wires sort and view controls", async () => {
 		render(<FileBrowserPage />);
 
 		await waitFor(() => {
 			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
 		});
 		expect(mockState.previewAppStore.load).toHaveBeenCalledTimes(1);
-		expect(screen.getByText(/core:search:\s*"budget"/)).toBeInTheDocument();
 		expect(screen.getByText("grid:1:1")).toBeInTheDocument();
 		expect(screen.getByText("view:grid")).toBeInTheDocument();
 		expect(screen.getByText("sort:name:asc")).toBeInTheDocument();
@@ -1936,9 +1922,7 @@ describe("FileBrowserPage", () => {
 		expect(await screen.findByText("info:Docs Updated")).toBeInTheDocument();
 	});
 
-	it("uses search refresh after trash drops while searching and skips empty archive batches", async () => {
-		mockState.store.searchQuery = "budget";
-
+	it("refreshes after trash drops and skips empty archive batches", async () => {
 		render(<FileBrowserPage />);
 
 		fireEvent.click(
@@ -1958,8 +1942,7 @@ describe("FileBrowserPage", () => {
 		await Promise.resolve();
 		vi.useRealTimers();
 
-		expect(mockState.store.search).toHaveBeenCalledWith("budget");
-		expect(mockState.store.refresh).not.toHaveBeenCalled();
+		expect(mockState.store.refresh).toHaveBeenCalledTimes(1);
 		expect(mockState.refreshUser).not.toHaveBeenCalled();
 	});
 

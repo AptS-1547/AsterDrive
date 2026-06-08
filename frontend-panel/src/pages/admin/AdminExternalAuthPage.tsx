@@ -1,10 +1,13 @@
+import { useMemo } from "react";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { ExternalAuthCallbackDialog } from "@/components/admin/admin-external-auth-page/ExternalAuthCallbackDialog";
 import { ExternalAuthProviderDialog } from "@/components/admin/admin-external-auth-page/ExternalAuthProviderDialog";
-import { ExternalAuthProvidersTable } from "@/components/admin/admin-external-auth-page/ExternalAuthProvidersTable";
+import {
+	ExternalAuthProvidersTableHeader,
+	ExternalAuthProvidersTableRow,
+} from "@/components/admin/admin-external-auth-page/ExternalAuthProvidersTable";
+import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { EmptyState } from "@/components/common/EmptyState";
-import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -60,6 +63,43 @@ export default function AdminExternalAuthPage() {
 		total,
 		totalPages,
 	} = controller;
+	const providersEmptyIcon = useMemo(
+		() => <Icon name="Globe" className="size-5" />,
+		[],
+	);
+	const providersHeaderRow = useMemo(
+		() => <ExternalAuthProvidersTableHeader />,
+		[],
+	);
+	const providersPagination = useMemo(
+		() => (
+			<AdminOffsetPagination
+				total={total}
+				currentPage={currentPage}
+				totalPages={totalPages}
+				pageSize={String(pageSize)}
+				pageSizeOptions={pageSizeOptions}
+				onPageSizeChange={handlePageSizeChange}
+				prevDisabled={prevPageDisabled}
+				nextDisabled={nextPageDisabled}
+				onPrevious={() =>
+					setOffset((current) => Math.max(0, current - pageSize))
+				}
+				onNext={() => setOffset((current) => current + pageSize)}
+			/>
+		),
+		[
+			currentPage,
+			handlePageSizeChange,
+			nextPageDisabled,
+			pageSize,
+			pageSizeOptions,
+			prevPageDisabled,
+			setOffset,
+			total,
+			totalPages,
+		],
+	);
 
 	return (
 		<AdminLayout>
@@ -100,40 +140,29 @@ export default function AdminExternalAuthPage() {
 					</div>
 				) : null}
 
-				{loading ? (
-					<SkeletonTable columns={6} rows={6} />
-				) : providers.length === 0 ? (
-					<EmptyState
-						icon={<Icon name="Globe" className="size-5" />}
-						title={t("external_auth_providers_empty")}
-						description={t("external_auth_providers_empty_desc")}
-					/>
-				) : (
-					<ExternalAuthProvidersTable
-						deletingId={deletingId}
-						items={providers}
-						onCopyCallbackUrl={(value) => void copyCallbackUrl(value)}
-						onEdit={openEdit}
-						onRequestDelete={requestConfirm}
-						onTestProvider={(provider) => void testProvider(provider)}
-						providerKinds={providerKinds}
-						testingId={testingId}
-					/>
-				)}
-
-				<AdminOffsetPagination
-					total={total}
-					currentPage={currentPage}
-					totalPages={totalPages}
-					pageSize={String(pageSize)}
-					pageSizeOptions={pageSizeOptions}
-					onPageSizeChange={handlePageSizeChange}
-					prevDisabled={prevPageDisabled}
-					nextDisabled={nextPageDisabled}
-					onPrevious={() =>
-						setOffset((current) => Math.max(0, current - pageSize))
-					}
-					onNext={() => setOffset((current) => current + pageSize)}
+				<AdminTableList
+					loading={loading}
+					items={providers}
+					columns={6}
+					rows={6}
+					emptyIcon={providersEmptyIcon}
+					emptyTitle={t("external_auth_providers_empty")}
+					emptyDescription={t("external_auth_providers_empty_desc")}
+					headerRow={providersHeaderRow}
+					pagination={providersPagination}
+					renderRow={(provider) => (
+						<ExternalAuthProvidersTableRow
+							key={provider.id}
+							deletingId={deletingId}
+							onCopyCallbackUrl={(value) => void copyCallbackUrl(value)}
+							onEdit={openEdit}
+							onRequestDelete={requestConfirm}
+							onTestProvider={(item) => void testProvider(item)}
+							provider={provider}
+							providerKinds={providerKinds}
+							testingId={testingId}
+						/>
+					)}
 				/>
 
 				<ExternalAuthProviderDialog

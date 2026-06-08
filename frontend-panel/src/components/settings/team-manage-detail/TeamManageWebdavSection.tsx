@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { useWebdavAccountDialogState } from "@/components/webdav/useWebdavAccountDialogState";
@@ -11,7 +10,6 @@ import { WebdavCreateAccountDialog } from "@/components/webdav/WebdavCreateAccou
 import { WebdavCredentialsDialog } from "@/components/webdav/WebdavCredentialsDialog";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePendingId } from "@/hooks/usePendingId";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { writeTextToClipboard } from "@/lib/clipboard";
@@ -158,8 +156,6 @@ export function TeamManageWebdavSection({
 		});
 	};
 
-	const { requestConfirm, dialogProps } = useConfirmDialog(handleDelete);
-
 	const handleToggle = async (id: number) => {
 		await runWithTogglingAccount(id, async () => {
 			try {
@@ -234,13 +230,14 @@ export function TeamManageWebdavSection({
 				currentUserId={currentUserId}
 				deletingAccountId={deletingAccountId}
 				togglingAccountId={togglingAccountId}
-				onDelete={requestConfirm}
+				onDelete={(accountId) => void handleDelete(accountId)}
 				onToggle={(accountId) => void handleToggle(accountId)}
 				labels={{
 					accessScope: t("webdav:access_scope"),
 					actions: t("core:actions"),
 					active: t("core:active"),
 					allFiles: t("core:all_files"),
+					cancel: t("core:cancel"),
 					createdAt: t("core:created_at"),
 					delete: t("core:delete"),
 					deleting: t("admin:webdav_account_deleting"),
@@ -304,14 +301,6 @@ export function TeamManageWebdavSection({
 				connectionSuccessLabel={t("admin:connection_success")}
 				connectionFailedLabel={t("admin:connection_test_failed")}
 				testConnectionLabel={t("admin:test_connection")}
-			/>
-
-			<ConfirmDialog
-				{...dialogProps}
-				title={t("core:are_you_sure")}
-				description={t("core:cannot_undo")}
-				confirmLabel={t("core:delete")}
-				variant="destructive"
 			/>
 		</section>
 	);

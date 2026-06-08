@@ -6,12 +6,14 @@ import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { CreateUserDialog } from "@/components/admin/admin-users-page/CreateUserDialog";
 import { InviteUserDialog } from "@/components/admin/admin-users-page/InviteUserDialog";
-import { UsersTable } from "@/components/admin/admin-users-page/UsersTable";
+import {
+	UsersTableHeader,
+	UsersTableRow,
+} from "@/components/admin/admin-users-page/UsersTable";
 import { UsersToolbar } from "@/components/admin/admin-users-page/UsersToolbar";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
+import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { EmptyState } from "@/components/common/EmptyState";
-import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
@@ -597,6 +599,33 @@ export default function AdminUsersPage() {
 		label: t("page_size_option", { count: size }),
 		value: String(size),
 	}));
+	const usersEmptyIcon = <Icon name="ListBullets" className="size-10" />;
+	const usersFilteredEmptyAction = (
+		<Button variant="outline" onClick={resetFilters}>
+			{t("clear_filters")}
+		</Button>
+	);
+	const usersTableHeader = (
+		<UsersTableHeader
+			sortBy={sortBy}
+			sortOrder={sortOrder}
+			onSortChange={handleSortChange}
+		/>
+	);
+	const usersPagination = (
+		<AdminOffsetPagination
+			total={total}
+			currentPage={currentPage}
+			totalPages={totalPages}
+			pageSize={String(pageSize)}
+			pageSizeOptions={pageSizeOptions}
+			onPageSizeChange={handlePageSizeChange}
+			prevDisabled={prevPageDisabled}
+			nextDisabled={nextPageDisabled}
+			onPrevious={() => setOffset((current) => Math.max(0, current - pageSize))}
+			onNext={() => setOffset((current) => current + pageSize)}
+		/>
+	);
 
 	return (
 		<AdminLayout>
@@ -663,48 +692,28 @@ export default function AdminUsersPage() {
 						/>
 					}
 				/>
-				{loading ? (
-					<SkeletonTable columns={7} rows={6} />
-				) : users.length === 0 ? (
-					hasServerFilters ? (
-						<EmptyState
-							icon={<Icon name="ListBullets" className="size-10" />}
-							title={t("no_filtered_users")}
-							description={t("no_filtered_users_desc")}
-							action={
-								<Button variant="outline" onClick={resetFilters}>
-									{t("clear_filters")}
-								</Button>
-							}
+				<AdminTableList
+					loading={loading}
+					items={users}
+					columns={7}
+					rows={6}
+					emptyIcon={usersEmptyIcon}
+					emptyTitle={t("no_users")}
+					filtered={hasServerFilters}
+					filteredEmptyTitle={t("no_filtered_users")}
+					filteredEmptyDescription={t("no_filtered_users_desc")}
+					filteredEmptyAction={usersFilteredEmptyAction}
+					headerRow={usersTableHeader}
+					pagination={usersPagination}
+					renderRow={(user) => (
+						<UsersTableRow
+							key={user.id}
+							deletingUserId={deletingUserId}
+							onDeleteUser={requestDeleteUserConfirm}
+							onOpenUserDetail={setDetailDialogUserId}
+							user={user}
 						/>
-					) : (
-						<EmptyState title={t("no_users")} />
-					)
-				) : (
-					<UsersTable
-						users={users}
-						deletingUserId={deletingUserId}
-						onDeleteUser={requestDeleteUserConfirm}
-						onOpenUserDetail={setDetailDialogUserId}
-						sortBy={sortBy}
-						sortOrder={sortOrder}
-						onSortChange={handleSortChange}
-					/>
-				)}
-
-				<AdminOffsetPagination
-					total={total}
-					currentPage={currentPage}
-					totalPages={totalPages}
-					pageSize={String(pageSize)}
-					pageSizeOptions={pageSizeOptions}
-					onPageSizeChange={handlePageSizeChange}
-					prevDisabled={prevPageDisabled}
-					nextDisabled={nextPageDisabled}
-					onPrevious={() =>
-						setOffset((current) => Math.max(0, current - pageSize))
-					}
-					onNext={() => setOffset((current) => current + pageSize)}
+					)}
 				/>
 			</AdminPageShell>
 			<CreateUserDialog

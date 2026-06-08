@@ -24,7 +24,6 @@ import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { resolveApiResourceUrl } from "@/lib/apiUrl";
 import { formatBytes } from "@/lib/format";
 import { logger } from "@/lib/logger";
-import { parseMusicMetadataFromSource } from "@/lib/musicPlayer";
 import { supportsThumbnailExtension } from "@/lib/thumbnailSupport";
 import { cn } from "@/lib/utils";
 import { ApiPendingError } from "@/services/http";
@@ -712,12 +711,9 @@ export function MusicPlayerHost() {
 
 		const controller = new AbortController();
 		const trackId = track.id;
-		const fallbackMetadata = track.metadata;
 		const loadBackendMetadata = track.loadBackendMetadata;
-		const mimeType = track.mimeType;
 		const name = track.name;
 		const retryTimers = new Set<number>();
-		const size = track.size;
 		const updateBackendMetadataWhenReady = (
 			attempt: number,
 			delayMs: number,
@@ -763,58 +759,38 @@ export function MusicPlayerHost() {
 			retryTimers.add(timer);
 		};
 		const loadMetadata = async () => {
-			let pendingRetryDelayMs: number | null = null;
-			if (loadBackendMetadata) {
-				try {
-					const backendMetadata = await loadBackendMetadata(controller.signal);
-					if (hasUsefulMusicMetadata(backendMetadata)) {
-						return backendMetadata;
-					}
-				} catch (metadataError) {
-					if (controller.signal.aborted) throw metadataError;
-					pendingRetryDelayMs = metadataPendingRetryDelay(metadataError);
-					if (pendingRetryDelayMs !== null) {
-						logger.debug("backend music metadata pending", name, metadataError);
-					} else {
-						logger.debug(
-							"backend music metadata unavailable",
-							name,
-							metadataError,
-						);
-					}
-				}
-			}
+			if (!loadBackendMetadata) return null;
 
 			try {
-				return await parseMusicMetadataFromSource({
-					fallbackMetadata,
-					mimeType,
-					name,
-					signal: controller.signal,
-					size,
-					source,
-				});
-			} finally {
-				if (
-					loadBackendMetadata &&
-					pendingRetryDelayMs !== null &&
-					!controller.signal.aborted
-				) {
-					updateBackendMetadataWhenReady(1, pendingRetryDelayMs);
+				const backendMetadata = await loadBackendMetadata(controller.signal);
+				return hasUsefulMusicMetadata(backendMetadata) ? backendMetadata : null;
+			} catch (metadataError) {
+				if (controller.signal.aborted) throw metadataError;
+				const retryDelayMs = metadataPendingRetryDelay(metadataError);
+				if (retryDelayMs !== null) {
+					logger.debug("backend music metadata pending", name, metadataError);
+					updateBackendMetadataWhenReady(1, retryDelayMs);
+					return null;
 				}
+				logger.debug("backend music metadata unavailable", name, metadataError);
+				return null;
 			}
 		};
 
 		void loadMetadata()
 			.then((metadata) => {
-				if (controller.signal.aborted || latestTrackIdRef.current !== trackId) {
+				if (
+					!metadata ||
+					controller.signal.aborted ||
+					latestTrackIdRef.current !== trackId
+				) {
 					return;
 				}
 				updateTrackMetadata(trackId, metadata);
 			})
 			.catch((metadataError) => {
 				if (controller.signal.aborted) return;
-				logger.debug("music metadata parse failed", name, metadataError);
+				logger.debug("backend music metadata unavailable", name, metadataError);
 			});
 
 		return () => {
@@ -1109,7 +1085,7 @@ export function MusicPlayerHost() {
 				data-state={isPanelOpen ? "open" : "closed"}
 				inert={isPanelOpen ? undefined : true}
 				className={cn(
-					"fixed top-[calc(var(--spacing)*16+0.5rem)] right-3 z-40 w-[calc(100vw-1.5rem)] max-w-[26rem] origin-top-right transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none sm:right-4",
+					"fixed top-[calc(var(--spacing)*16+0.5rem)] right-3 z-(--z-fixed) w-[calc(100vw-1.5rem)] max-w-[26rem] origin-top-right transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none sm:right-4",
 					isPanelOpen
 						? "translate-y-0 scale-100 opacity-100"
 						: "pointer-events-none -translate-y-2 scale-[0.98] opacity-0",

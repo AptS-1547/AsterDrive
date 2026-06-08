@@ -12,11 +12,15 @@ interface WebdavAccountRowProps {
 	allFilesLabel: string;
 	canShowOwner?: boolean;
 	canMutate?: boolean;
+	cancelLabel: string;
+	confirmingDelete: boolean;
 	deleteLabel: string;
 	disabledLabel: string;
 	deleting: boolean;
 	toggling: boolean;
-	onDelete: (id: number) => void;
+	onCancelDelete: () => void;
+	onConfirmDelete: () => void;
+	onRequestDelete: () => void;
 	onToggle: (id: number) => void;
 	toggleLabel: string;
 }
@@ -27,11 +31,15 @@ export function WebdavAccountRow({
 	allFilesLabel,
 	canShowOwner = false,
 	canMutate = true,
+	cancelLabel,
+	confirmingDelete,
 	deleteLabel,
 	disabledLabel,
 	deleting,
 	toggling,
-	onDelete,
+	onCancelDelete,
+	onConfirmDelete,
+	onRequestDelete,
 	onToggle,
 	toggleLabel,
 }: WebdavAccountRowProps) {
@@ -94,20 +102,43 @@ export function WebdavAccountRow({
 							className={`size-3.5 ${toggling ? "animate-spin" : ""}`}
 						/>
 					</Button>
-					<Button
-						type="button"
-						variant="destructive"
-						size="icon-sm"
-						onClick={() => onDelete(account.id)}
-						title={deleteLabel}
-						aria-label={deleteLabel}
-						disabled={!canMutate || deleting || toggling}
-					>
-						<Icon
-							name={deleting ? "Spinner" : "Trash"}
-							className={`size-3.5 ${deleting ? "animate-spin" : ""}`}
-						/>
-					</Button>
+					{confirmingDelete ? (
+						<div className="flex items-center gap-2 duration-150 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
+							<Button
+								type="button"
+								variant="destructive"
+								size="sm"
+								onClick={onConfirmDelete}
+								disabled={!canMutate || deleting || toggling}
+							>
+								{deleteLabel}
+							</Button>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onClick={onCancelDelete}
+								disabled={deleting || toggling}
+							>
+								{cancelLabel}
+							</Button>
+						</div>
+					) : (
+						<Button
+							type="button"
+							variant="destructive"
+							size="icon-sm"
+							onClick={onRequestDelete}
+							title={deleteLabel}
+							aria-label={deleteLabel}
+							disabled={!canMutate || deleting || toggling}
+						>
+							<Icon
+								name={deleting ? "Spinner" : "Trash"}
+								className={`size-3.5 ${deleting ? "animate-spin" : ""}`}
+							/>
+						</Button>
+					)}
 				</div>
 			</TableCell>
 		</TableRow>

@@ -13,7 +13,6 @@ export function SidebarContent({
 	navLinks,
 	onMobileClose,
 	onMoveToFolder,
-	onSearchCategoryOpen,
 	onScrollViewport,
 	onTrashDragLeave,
 	onTrashDragOver,
@@ -45,7 +44,7 @@ export function SidebarContent({
 						<Separator />
 						<SidebarQuickCategories
 							onMobileClose={onMobileClose}
-							onSearchCategoryOpen={onSearchCategoryOpen}
+							workspace={workspace}
 						/>
 						<Separator />
 						<SidebarNavigation

@@ -97,6 +97,17 @@ describe("CurrentFolderActionsMenu", () => {
 		expect(menuProps.onManageTagLibrary).toHaveBeenCalledTimes(1);
 		expect(menuProps.onRefresh).toHaveBeenCalledTimes(1);
 		expect(screen.getAllByTestId("context-separator")).toHaveLength(3);
+		expect(
+			screen.getAllByRole("button").map((button) => button.textContent),
+		).toEqual([
+			"Uploadupload_file",
+			"FolderOpenupload_folder",
+			"LinkSimpletasks:offline_download_action",
+			"FolderPlusnew_folder",
+			"FilePlusnew_file",
+			"Tagtag_library_manage",
+			"ArrowsClockwiserefresh",
+		]);
 	});
 
 	it("renders dropdown actions with disabled upload entries when upload is not ready", () => {
@@ -127,5 +138,20 @@ describe("CurrentFolderActionsMenu", () => {
 			screen.queryByRole("button", { name: "tag_library_manage" }),
 		).not.toBeInTheDocument();
 		expect(screen.getAllByTestId("context-separator")).toHaveLength(2);
+	});
+
+	it("can render a refresh-only context menu for category views", () => {
+		const menuProps = props();
+
+		render(
+			<CurrentFolderContextMenuContent {...menuProps} mode="refresh-only" />,
+		);
+
+		expect(
+			screen.getAllByRole("button").map((button) => button.textContent),
+		).toEqual(["ArrowsClockwiserefresh"]);
+		expect(screen.queryByRole("button", { name: "upload_file" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "new_folder" })).toBeNull();
+		expect(screen.queryAllByTestId("context-separator")).toHaveLength(0);
 	});
 });

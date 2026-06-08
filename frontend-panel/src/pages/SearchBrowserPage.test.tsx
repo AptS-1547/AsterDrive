@@ -1,0 +1,363 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import SearchBrowserPage from "@/pages/SearchBrowserPage";
+import type { FileListItem, FolderListItem } from "@/types/api";
+
+const mockState = vi.hoisted(() => ({
+	clearSelection: vi.fn(),
+	downloadUrl: vi.fn(),
+	getFile: vi.fn(),
+	handleApiError: vi.fn(),
+	loadPreviewApps: vi.fn(),
+	navigate: vi.fn(),
+	search: vi.fn(),
+	searchParams: new URLSearchParams("q=report&type=all"),
+	setPageTitle: vi.fn(),
+	setSortBy: vi.fn(),
+	setSortOrder: vi.fn(),
+	setViewMode: vi.fn(),
+	selectItems: vi.fn(),
+	streamArchiveDownload: vi.fn(),
+	previewAppsLoaded: true,
+	thumbnailSupport: null,
+	workspace: { kind: "personal" as const },
+}));
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		t: (key: string) => key,
+	}),
+}));
+
+vi.mock("react-router-dom", () => ({
+	useNavigate: () => mockState.navigate,
+	useSearchParams: () => [mockState.searchParams, vi.fn()],
+}));
+
+vi.mock("sonner", () => ({
+	toast: {
+		success: vi.fn(),
+	},
+}));
+
+vi.mock("@/hooks/useApiError", () => ({
+	handleApiError: mockState.handleApiError,
+}));
+
+vi.mock("@/hooks/usePageTitle", () => ({
+	usePageTitle: (title: string) => mockState.setPageTitle(title),
+}));
+
+vi.mock("@/stores/workspaceStore", () => ({
+	useWorkspaceStore: (
+		selector: (state: { workspace: typeof mockState.workspace }) => unknown,
+	) => selector({ workspace: mockState.workspace }),
+}));
+
+vi.mock("@/stores/previewAppStore", () => ({
+	usePreviewAppStore: (
+		selector: (state: {
+			isLoaded: boolean;
+			load: typeof mockState.loadPreviewApps;
+		}) => unknown,
+	) =>
+		selector({
+			isLoaded: mockState.previewAppsLoaded,
+			load: mockState.loadPreviewApps,
+		}),
+}));
+
+vi.mock("@/stores/thumbnailSupportStore", () => ({
+	useThumbnailSupportStore: (
+		selector: (state: { config: typeof mockState.thumbnailSupport }) => unknown,
+	) => selector({ config: mockState.thumbnailSupport }),
+}));
+
+vi.mock("@/stores/fileStore", () => ({
+	useFileStore: (
+		selector: (state: {
+			browserOpenMode: "single_click";
+			viewMode: "grid";
+			sortBy: "name";
+			sortOrder: "asc";
+			setViewMode: typeof mockState.setViewMode;
+			setSortBy: typeof mockState.setSortBy;
+			setSortOrder: typeof mockState.setSortOrder;
+			clearSelection: typeof mockState.clearSelection;
+			selectItems: typeof mockState.selectItems;
+		}) => unknown,
+	) =>
+		selector({
+			browserOpenMode: "single_click",
+			viewMode: "grid",
+			sortBy: "name",
+			sortOrder: "asc",
+			setViewMode: mockState.setViewMode,
+			setSortBy: mockState.setSortBy,
+			setSortOrder: mockState.setSortOrder,
+			clearSelection: mockState.clearSelection,
+			selectItems: mockState.selectItems,
+		}),
+}));
+
+vi.mock("@/pages/file-browser/useFileBrowserBatchActions", () => ({
+	useFileBrowserBatchActions: () => ({
+		dialogs: null,
+		selectionToolbar: {
+			allDisplayedSelected: false,
+			count: 2,
+			downloadAction: undefined,
+			hasDisplayedItems: true,
+			onArchiveCompress: undefined,
+			onClearSelection: vi.fn(),
+			onCopy: undefined,
+			onDelete: vi.fn(),
+			onManageTags: vi.fn(),
+			onMove: undefined,
+			onToggleDisplayedSelection: vi.fn(),
+		},
+	}),
+}));
+
+vi.mock("@/services/searchService", () => ({
+	searchService: {
+		search: mockState.search,
+	},
+}));
+
+vi.mock("@/services/batchService", () => ({
+	batchService: {
+		streamArchiveDownload: mockState.streamArchiveDownload,
+	},
+}));
+
+vi.mock("@/services/fileService", () => ({
+	fileService: {
+		deleteFile: vi.fn(),
+		deleteFolder: vi.fn(),
+		downloadUrl: mockState.downloadUrl,
+		getFile: mockState.getFile,
+		setFileLock: vi.fn(),
+		setFolderLock: vi.fn(),
+		createPreviewLink: vi.fn(),
+		getArchivePreview: vi.fn(),
+		createWopiSession: vi.fn(),
+	},
+}));
+
+vi.mock("@/components/layout/AppLayout", () => ({
+	AppLayout: ({ children }: { children: ReactNode }) => (
+		<div data-testid="app-layout">{children}</div>
+	),
+}));
+
+vi.mock("@/pages/file-browser/FileBrowserToolbar", () => ({
+	FileBrowserToolbar: ({
+		currentFolderActions,
+		searchQuery,
+		selectionToolbar,
+	}: {
+		currentFolderActions?: "full" | "refresh-only";
+		searchQuery: string | null;
+		selectionToolbar: unknown;
+	}) => (
+		<div
+			data-testid="toolbar"
+			data-current-folder-actions={currentFolderActions ?? "full"}
+			data-search-query={searchQuery ?? ""}
+			data-selection={String(Boolean(selectionToolbar))}
+		/>
+	),
+}));
+
+vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
+	FileBrowserWorkspace: ({
+		currentFolderActions,
+		fileBrowserContextValue,
+		hasMoreFiles,
+	}: {
+		currentFolderActions?: "full" | "refresh-only";
+		fileBrowserContextValue: {
+			files: FileListItem[];
+			folders: FolderListItem[];
+			onCopy?: unknown;
+			onFolderOpen: (id: number, name: string) => void;
+			onGoToLocation?: (file: FileListItem) => void;
+			onMove?: unknown;
+		};
+		hasMoreFiles: boolean;
+	}) => (
+		<div
+			data-testid="workspace"
+			data-current-folder-actions={currentFolderActions ?? "full"}
+			data-copy={String(Boolean(fileBrowserContextValue.onCopy))}
+			data-has-more={String(hasMoreFiles)}
+			data-location={String(Boolean(fileBrowserContextValue.onGoToLocation))}
+			data-move={String(Boolean(fileBrowserContextValue.onMove))}
+		>
+			{fileBrowserContextValue.files.map((file) => (
+				<button
+					key={file.id}
+					type="button"
+					onClick={() => fileBrowserContextValue.onGoToLocation?.(file)}
+				>
+					{file.name}
+				</button>
+			))}
+			{fileBrowserContextValue.folders.map((folder) => (
+				<button
+					key={folder.id}
+					type="button"
+					onClick={() =>
+						fileBrowserContextValue.onFolderOpen(folder.id, folder.name)
+					}
+				>
+					{folder.name}
+				</button>
+			))}
+		</div>
+	),
+}));
+
+vi.mock("@/components/files/TagManagerDialog", () => ({
+	TagManagerDialog: () => null,
+}));
+
+vi.mock("@/components/files/TagLibraryManagerDialog", () => ({
+	TagLibraryManagerDialog: () => null,
+}));
+
+vi.mock("@/pages/file-browser/FileBrowserDialogs", () => ({
+	FileBrowserDialogs: () => null,
+}));
+
+vi.mock("@/components/files/preview/imagePreviewNavigation", () => ({
+	getImagePreviewNavigation: () => ({}),
+}));
+
+function fileItem(id: number, name: string): FileListItem {
+	return {
+		compound_extension: null,
+		extension: name.split(".").pop() ?? "",
+		file_category: "document",
+		is_locked: false,
+		is_shared: false,
+		mime_type: "text/plain",
+		name,
+		size: 1024,
+		tags: [],
+		updated_at: "2026-06-08T00:00:00Z",
+		id,
+	};
+}
+
+function folderItem(id: number, name: string): FolderListItem {
+	return {
+		id,
+		is_locked: false,
+		is_shared: false,
+		name,
+		tags: [],
+		updated_at: "2026-06-08T00:00:00Z",
+	};
+}
+
+describe("SearchBrowserPage", () => {
+	beforeEach(() => {
+		mockState.clearSelection.mockReset();
+		mockState.downloadUrl.mockReset();
+		mockState.downloadUrl.mockReturnValue("/api/v1/files/1/download");
+		mockState.getFile.mockReset();
+		mockState.handleApiError.mockReset();
+		mockState.loadPreviewApps.mockReset();
+		mockState.navigate.mockReset();
+		mockState.search.mockReset();
+		mockState.search.mockResolvedValue({
+			files: [fileItem(1, "report.txt")],
+			folders: [folderItem(2, "Reports")],
+			total_files: 2,
+			total_folders: 1,
+		});
+		mockState.searchParams = new URLSearchParams("q=report&type=all");
+		mockState.setPageTitle.mockReset();
+		mockState.selectItems.mockReset();
+		mockState.streamArchiveDownload.mockReset();
+		mockState.workspace = { kind: "personal" };
+	});
+
+	it("loads search results through the file-browser surface", async () => {
+		render(<SearchBrowserPage />);
+
+		await waitFor(() => {
+			expect(mockState.search).toHaveBeenCalledWith({
+				q: "report",
+				type: "all",
+				sort_by: "name",
+				sort_order: "asc",
+				limit: 100,
+				offset: 0,
+			});
+		});
+
+		expect(await screen.findByText("report.txt")).toBeInTheDocument();
+		expect(screen.getByText("Reports")).toBeInTheDocument();
+		expect(screen.getByTestId("toolbar")).toHaveAttribute(
+			"data-current-folder-actions",
+			"refresh-only",
+		);
+		expect(screen.getByTestId("workspace")).toHaveAttribute(
+			"data-current-folder-actions",
+			"refresh-only",
+		);
+		expect(screen.getByTestId("workspace")).toHaveAttribute(
+			"data-copy",
+			"false",
+		);
+		expect(screen.getByTestId("workspace")).toHaveAttribute(
+			"data-move",
+			"false",
+		);
+		expect(screen.getByTestId("workspace")).toHaveAttribute(
+			"data-location",
+			"true",
+		);
+		expect(screen.getByTestId("workspace")).toHaveAttribute(
+			"data-has-more",
+			"true",
+		);
+	});
+
+	it("selects all visible search results with Command+A", async () => {
+		render(<SearchBrowserPage />);
+
+		await screen.findByText("report.txt");
+
+		fireEvent.keyDown(document, {
+			cancelable: true,
+			key: "a",
+			metaKey: true,
+		});
+
+		expect(mockState.selectItems).toHaveBeenCalledWith([1], [2]);
+	});
+
+	it("can go to a result file location and open folder results", async () => {
+		mockState.getFile.mockResolvedValue({ folder_id: 42 });
+
+		render(<SearchBrowserPage />);
+
+		fireEvent.click(await screen.findByText("report.txt"));
+		await waitFor(() => {
+			expect(mockState.getFile).toHaveBeenCalledWith(1);
+		});
+		expect(mockState.navigate).toHaveBeenCalledWith("/folder/42", {
+			viewTransition: false,
+		});
+
+		fireEvent.click(screen.getByText("Reports"));
+		expect(mockState.navigate).toHaveBeenCalledWith("/folder/2?name=Reports", {
+			viewTransition: false,
+		});
+	});
+});

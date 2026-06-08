@@ -30,7 +30,7 @@ function DialogOverlay({
 			data-slot="dialog-overlay"
 			data-theme-surface="overlay"
 			className={cn(
-				"fixed inset-0 isolate z-50 bg-slate-950/18 duration-100 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 dark:bg-black/35",
+				"fixed inset-0 isolate z-(--z-dialog) bg-slate-950/18 duration-100 supports-backdrop-filter:backdrop-blur-sm data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 dark:bg-black/35",
 				className,
 			)}
 			{...props}
@@ -61,7 +61,7 @@ function DialogContent({
 				data-slot="dialog-content"
 				data-theme-surface="overlay"
 				className={cn(
-					"fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-border/70 bg-popover p-4 text-sm shadow-2xl shadow-black/12 ring-1 ring-foreground/5 outline-none sm:max-w-sm dark:shadow-none",
+					"fixed top-1/2 left-1/2 z-(--z-dialog) grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl border border-border/70 bg-popover p-4 text-sm shadow-2xl shadow-black/12 ring-1 ring-foreground/5 outline-none sm:max-w-sm dark:shadow-none",
 					animated &&
 						"duration-100 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
 					className,

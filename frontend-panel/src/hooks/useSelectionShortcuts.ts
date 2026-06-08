@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
 	isImeComposingKeyEvent,
 	shouldIgnoreKeyboardTarget,
@@ -17,6 +17,14 @@ export function useSelectionShortcuts({
 	clearSelection,
 	enabled = true,
 }: UseSelectionShortcutsOptions) {
+	const selectAllRef = useRef(selectAll);
+	const clearSelectionRef = useRef(clearSelection);
+
+	useEffect(() => {
+		selectAllRef.current = selectAll;
+		clearSelectionRef.current = clearSelection;
+	}, [clearSelection, selectAll]);
+
 	useEffect(() => {
 		if (!enabled) return;
 
@@ -28,15 +36,15 @@ export function useSelectionShortcuts({
 			const mod = e.metaKey || e.ctrlKey;
 			if (mod && e.key.toLowerCase() === "a") {
 				e.preventDefault();
-				selectAll();
+				selectAllRef.current();
 			}
 
 			if (e.key === "Escape") {
-				clearSelection();
+				clearSelectionRef.current();
 			}
 		}
 
 		document.addEventListener("keydown", handleKeyDown);
 		return () => document.removeEventListener("keydown", handleKeyDown);
-	}, [clearSelection, enabled, selectAll]);
+	}, [enabled]);
 }

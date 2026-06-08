@@ -70,16 +70,15 @@ test.describe
 			await searchDialog
 				.getByPlaceholder("Search files and folders...")
 				.fill(file.name);
-			await expect(
-				searchDialog.getByText(file.name, { exact: true }),
-			).toBeVisible({
+			await searchDialog
+				.getByRole("button", { exact: true, name: "Search" })
+				.click();
+			await expect(searchDialog).toBeHidden();
+			await expect(page).toHaveURL(new RegExp(`${workspacePath}/search\\?`));
+			await expect(fileNameCell(page, file.name)).toBeVisible({
 				timeout: 30_000,
 			});
-			await expect(
-				searchDialog.getByText(folderName, { exact: true }),
-			).toHaveCount(0);
-			await page.keyboard.press("Escape");
-			await expect(searchDialog).toBeHidden();
+			await expect(fileNameCell(page, folderName)).toHaveCount(0);
 
 			const shareUrl = await createPageShare(page, file.name);
 			expect(shareUrl).toContain("/s/");

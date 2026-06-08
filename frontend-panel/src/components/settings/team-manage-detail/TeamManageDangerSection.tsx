@@ -11,8 +11,8 @@ interface DangerSectionProps {
 	mutating: boolean;
 	ownerCount: number;
 	setArchiveConfirmValue: (value: string) => void;
-	setArchiveDialogOpen: (open: boolean) => void;
 	team: TeamInfo | null;
+	onArchive: () => Promise<void>;
 }
 
 export function TeamManageDangerSection({
@@ -21,8 +21,8 @@ export function TeamManageDangerSection({
 	mutating,
 	ownerCount,
 	setArchiveConfirmValue,
-	setArchiveDialogOpen,
 	team,
+	onArchive,
 }: DangerSectionProps) {
 	const { t } = useTranslation(["core", "settings"]);
 
@@ -86,7 +86,7 @@ export function TeamManageDangerSection({
 						disabled={
 							mutating || archiveConfirmValue.trim() !== (team?.name ?? "")
 						}
-						onClick={() => setArchiveDialogOpen(true)}
+						onClick={() => void onArchive()}
 					>
 						{t("settings:settings_team_archive")}
 					</Button>

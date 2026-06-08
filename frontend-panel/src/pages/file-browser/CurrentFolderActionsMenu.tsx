@@ -13,6 +13,7 @@ import {
 import { Icon, type IconName } from "@/components/ui/icon";
 
 export interface CurrentFolderActionsMenuProps {
+	mode?: "full" | "refresh-only";
 	uploadReady: boolean;
 	onCreateFile: () => void;
 	onCreateFolder: () => void;
@@ -48,8 +49,21 @@ function buildCurrentFolderActions(
 		onTriggerFileUpload,
 		onTriggerFolderUpload,
 		uploadReady,
+		mode = "full",
 	}: CurrentFolderActionsMenuProps,
 ): CurrentFolderAction[] {
+	if (mode === "refresh-only") {
+		return [
+			{
+				type: "item",
+				key: "refresh",
+				icon: "ArrowsClockwise",
+				label: t("core:refresh"),
+				onSelect: () => void onRefresh(),
+			},
+		];
+	}
+
 	return [
 		{
 			type: "item",
@@ -67,6 +81,13 @@ function buildCurrentFolderActions(
 			disabled: !uploadReady,
 			onSelect: onTriggerFolderUpload,
 		},
+		{
+			type: "item",
+			key: "offline-download",
+			icon: "LinkSimple",
+			label: t("tasks:offline_download_action"),
+			onSelect: onOfflineDownload,
+		},
 		{ type: "separator", key: "create-separator" },
 		{
 			type: "item",
@@ -81,13 +102,6 @@ function buildCurrentFolderActions(
 			icon: "FilePlus",
 			label: t("new_file"),
 			onSelect: onCreateFile,
-		},
-		{
-			type: "item",
-			key: "offline-download",
-			icon: "LinkSimple",
-			label: t("tasks:offline_download_action"),
-			onSelect: onOfflineDownload,
 		},
 		...(onManageTagLibrary
 			? [

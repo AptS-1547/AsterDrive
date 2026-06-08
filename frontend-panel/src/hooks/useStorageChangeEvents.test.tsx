@@ -30,7 +30,6 @@ const mockState = vi.hoisted(() => ({
 			{ id: null, name: "Root" },
 			{ id: 7, name: "Docs" },
 		],
-		searchQuery: null as string | null,
 		navigateTo: vi.fn(),
 	},
 	invalidateBlobUrl: vi.fn(),
@@ -161,7 +160,6 @@ vi.mock("@/stores/fileStore", () => {
 				breadcrumb: typeof mockState.fileStore.breadcrumb;
 				currentFolderId: number | null;
 				navigateTo: typeof mockState.fileStore.navigateTo;
-				searchQuery: string | null;
 			}) => T,
 		) => selector(mockState.fileStore),
 		{
@@ -190,7 +188,7 @@ describe("useStorageChangeEvents", () => {
 			{ id: null, name: "Root" },
 			{ id: 7, name: "Docs" },
 		];
-		mockState.fileStore.searchQuery = null;
+		window.history.replaceState(null, "", "/");
 		mockState.fileStore.navigateTo.mockReset();
 		mockState.fileStore.navigateTo.mockResolvedValue(undefined);
 		mockState.invalidateBlobUrl.mockReset();
@@ -249,7 +247,7 @@ describe("useStorageChangeEvents", () => {
 	});
 
 	it("handles sync.required without refreshing during search", async () => {
-		mockState.fileStore.searchQuery = "report";
+		window.history.replaceState(null, "", "/search?q=report");
 		const { useStorageChangeEvents } = await import(
 			"@/hooks/useStorageChangeEvents"
 		);
@@ -274,6 +272,36 @@ describe("useStorageChangeEvents", () => {
 			expect(mockState.invalidateBlobUrl).toHaveBeenCalledWith();
 		});
 		expect(mockState.invalidateTextContent).toHaveBeenCalledWith();
+		expect(mockState.auth.refreshUser).toHaveBeenCalledTimes(1);
+		expect(mockState.teamStore.reload).toHaveBeenCalledWith(100);
+		expect(mockState.fileStore.navigateTo).not.toHaveBeenCalled();
+	});
+
+	it("handles sync.required without refreshing on subpath search routes", async () => {
+		window.history.replaceState(null, "", "/asterdrive/search?q=report");
+		const { useStorageChangeEvents } = await import(
+			"@/hooks/useStorageChangeEvents"
+		);
+
+		renderHook(() => useStorageChangeEvents());
+
+		await connectStorageEvents();
+
+		MockEventSource.instances[0]?.emit({
+			kind: "sync.required",
+			workspace: null,
+			file_ids: [],
+			folder_ids: [],
+			affected_parent_ids: [],
+			root_affected: false,
+			affects_quota: true,
+			storage_delta: null,
+			at: "2026-04-08T00:00:00Z",
+		});
+
+		await waitFor(() => {
+			expect(mockState.invalidateBlobUrl).toHaveBeenCalledWith();
+		});
 		expect(mockState.auth.refreshUser).toHaveBeenCalledTimes(1);
 		expect(mockState.teamStore.reload).toHaveBeenCalledWith(100);
 		expect(mockState.fileStore.navigateTo).not.toHaveBeenCalled();

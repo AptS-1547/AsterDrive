@@ -1,17 +1,19 @@
 import { useTranslation } from "react-i18next";
+import { NavLink } from "react-router-dom";
 import { Icon } from "@/components/ui/icon";
 import { sidebarNavItemClass } from "@/lib/utils";
-import type { FileCategory } from "@/types/api";
+import type { Workspace } from "@/lib/workspace";
+import { workspaceCategoryPath } from "@/lib/workspace";
 import { QUICK_CATEGORY_LINKS } from "./sidebarLinks";
 
 interface SidebarQuickCategoriesProps {
 	onMobileClose: () => void;
-	onSearchCategoryOpen?: (category: FileCategory) => void;
+	workspace: Workspace;
 }
 
 export function SidebarQuickCategories({
 	onMobileClose,
-	onSearchCategoryOpen,
+	workspace,
 }: SidebarQuickCategoriesProps) {
 	const { t } = useTranslation();
 
@@ -21,18 +23,19 @@ export function SidebarQuickCategories({
 				{t("search:quick_categories")}
 			</p>
 			{QUICK_CATEGORY_LINKS.map((link) => (
-				<button
+				<NavLink
 					key={link.category}
-					type="button"
+					to={workspaceCategoryPath(workspace, link.category)}
 					onClick={() => {
-						onSearchCategoryOpen?.(link.category);
 						onMobileClose();
 					}}
-					className={sidebarNavItemClass(false, "w-full text-left")}
+					className={({ isActive }) =>
+						sidebarNavItemClass(isActive, "w-full text-left")
+					}
 				>
 					<Icon name={link.icon} className="size-4 shrink-0" />
 					{t(`search:${link.labelKey}`)}
-				</button>
+				</NavLink>
 			))}
 		</div>
 	);
