@@ -8,6 +8,7 @@ const mockState = vi.hoisted(() => ({
 	getFile: vi.fn(),
 	handleApiError: vi.fn(),
 	intersectionCallback: null as IntersectionObserverCallback | null,
+	listTags: vi.fn(),
 	navigate: vi.fn(),
 	search: vi.fn(),
 	workspace: { kind: "personal" as const },
@@ -46,6 +47,12 @@ vi.mock("@/services/fileService", () => ({
 	},
 }));
 
+vi.mock("@/services/tagService", () => ({
+	createTagService: () => ({
+		listTags: mockState.listTags,
+	}),
+}));
+
 vi.mock("@/components/ui/dialog", () => ({
 	Dialog: ({
 		open,
@@ -62,6 +69,9 @@ vi.mock("@/components/ui/dialog", () => ({
 		<div>{children}</div>
 	),
 	DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+	DialogDescription: ({ children }: { children: ReactNode }) => (
+		<div>{children}</div>
+	),
 }));
 
 vi.mock("@/components/ui/icon", () => ({
@@ -103,6 +113,13 @@ describe("GlobalSearchDialog", () => {
 		mockState.getFile.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.intersectionCallback = null;
+		mockState.listTags.mockReset();
+		mockState.listTags.mockResolvedValue({
+			items: [],
+			limit: 100,
+			offset: 0,
+			total: 0,
+		});
 		mockState.navigate.mockReset();
 		mockState.search.mockReset();
 

@@ -108,6 +108,9 @@ vi.mock("@/stores/fileStore", () => ({
 }));
 
 vi.mock("@/stores/workspaceStore", () => ({
+	bindWorkspaceService: (
+		factory: (workspace: { kind: "personal" }) => unknown,
+	) => factory({ kind: "personal" }),
 	useWorkspaceStore: {
 		getState: () => ({ workspace: { kind: "personal" } }),
 	},

@@ -61,6 +61,7 @@ pub struct FileSearchFilters<'a> {
     pub created_after: Option<DateTime<Utc>>,
     pub created_before: Option<DateTime<Utc>>,
     pub folder_id: Option<i64>,
+    pub entity_ids: Option<&'a [i64]>,
     pub limit: u64,
     pub offset: u64,
 }
@@ -71,6 +72,7 @@ pub struct FolderSearchFilters<'a> {
     pub created_after: Option<DateTime<Utc>>,
     pub created_before: Option<DateTime<Utc>>,
     pub parent_id: Option<i64>,
+    pub entity_ids: Option<&'a [i64]>,
     pub limit: u64,
     pub offset: u64,
 }
@@ -194,6 +196,13 @@ async fn search_files_in_scope<C: ConnectionTrait>(
         file_condition = file_condition.add(file::Column::FolderId.eq(folder_id));
     }
 
+    if let Some(entity_ids) = filters.entity_ids {
+        if entity_ids.is_empty() {
+            return Ok((vec![], 0));
+        }
+        file_condition = file_condition.add(file::Column::Id.is_in(entity_ids.iter().copied()));
+    }
+
     let needs_blob_filters = filters.min_size.is_some() || filters.max_size.is_some();
 
     let mut count_query = File::find().filter(file_condition.clone());
@@ -301,6 +310,13 @@ async fn search_folders_in_scope<C: ConnectionTrait>(
 
     if let Some(parent_id) = filters.parent_id {
         condition = condition.add(folder::Column::ParentId.eq(parent_id));
+    }
+
+    if let Some(entity_ids) = filters.entity_ids {
+        if entity_ids.is_empty() {
+            return Ok((vec![], 0));
+        }
+        condition = condition.add(folder::Column::Id.is_in(entity_ids.iter().copied()));
     }
 
     let base = Folder::find().filter(condition);

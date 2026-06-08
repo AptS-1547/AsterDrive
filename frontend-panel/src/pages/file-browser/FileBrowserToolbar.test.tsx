@@ -206,6 +206,7 @@ describe("FileBrowserToolbar", () => {
 			onClearSelection: vi.fn(),
 			onCopy: vi.fn(),
 			onDelete: vi.fn(),
+			onManageTags: vi.fn(),
 			onMove: vi.fn(),
 			onToggleDisplayedSelection: vi.fn(),
 		};
@@ -223,6 +224,7 @@ describe("FileBrowserToolbar", () => {
 				onClearSelection: selectionHandlers.onClearSelection,
 				onCopy: selectionHandlers.onCopy,
 				onDelete: selectionHandlers.onDelete,
+				onManageTags: vi.fn(),
 				onMove: selectionHandlers.onMove,
 				onToggleDisplayedSelection:
 					selectionHandlers.onToggleDisplayedSelection,
@@ -237,8 +239,8 @@ describe("FileBrowserToolbar", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "selection_clear" }));
 		fireEvent.click(screen.getAllByText("selection_select_all_visible")[0]);
-		fireEvent.click(screen.getByRole("button", { name: "move" }));
-		fireEvent.click(screen.getAllByText("copy")[0]);
+		fireEvent.click(screen.getByRole("button", { name: "move_to" }));
+		fireEvent.click(screen.getAllByText("copy_to")[0]);
 		fireEvent.click(screen.getAllByText("tasks:archive_download_action")[0]);
 		fireEvent.click(screen.getByText("tasks:archive_compress_action"));
 		fireEvent.click(screen.getByText("core:delete"));
@@ -269,6 +271,7 @@ describe("FileBrowserToolbar", () => {
 				onClearSelection: vi.fn(),
 				onCopy: vi.fn(),
 				onDelete: vi.fn(),
+				onManageTags: vi.fn(),
 				onMove: vi.fn(),
 				onToggleDisplayedSelection: vi.fn(),
 			},
@@ -292,6 +295,7 @@ describe("FileBrowserToolbar", () => {
 				onClearSelection: vi.fn(),
 				onCopy: vi.fn(),
 				onDelete: vi.fn(),
+				onManageTags: vi.fn(),
 				onMove: vi.fn(),
 				onToggleDisplayedSelection: vi.fn(),
 			};
@@ -344,6 +348,7 @@ describe("FileBrowserToolbar", () => {
 				onClearSelection: vi.fn(),
 				onCopy: vi.fn(),
 				onDelete: vi.fn(),
+				onManageTags: vi.fn(),
 				onMove: vi.fn(),
 				onToggleDisplayedSelection: vi.fn(),
 			};
@@ -373,6 +378,7 @@ describe("FileBrowserToolbar", () => {
 				onClearSelection: vi.fn(),
 				onCopy: vi.fn(),
 				onDelete: vi.fn(),
+				onManageTags: vi.fn(),
 				onMove: vi.fn(),
 				onToggleDisplayedSelection: vi.fn(),
 			};

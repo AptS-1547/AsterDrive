@@ -6,6 +6,8 @@ use std::collections::HashSet;
 use utoipa::ToSchema;
 
 use crate::entities::{file, folder};
+use crate::services::tag_service::TagSummary;
+use crate::types::EntityType;
 
 #[derive(Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -32,6 +34,7 @@ pub struct FileListItem {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
     pub is_shared: bool,
+    pub tags: Vec<TagSummary>,
 }
 
 #[derive(Clone, Serialize)]
@@ -43,6 +46,7 @@ pub struct FolderListItem {
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
     pub is_shared: bool,
+    pub tags: Vec<TagSummary>,
 }
 
 #[derive(Serialize)]
@@ -68,6 +72,14 @@ pub fn build_file_list_items(
     files: Vec<file::Model>,
     shared_file_ids: &HashSet<i64>,
 ) -> Vec<FileListItem> {
+    build_file_list_items_with_tags(files, shared_file_ids, &std::collections::HashMap::new())
+}
+
+pub fn build_file_list_items_with_tags(
+    files: Vec<file::Model>,
+    shared_file_ids: &HashSet<i64>,
+    tags_by_entity: &std::collections::HashMap<(EntityType, i64), Vec<TagSummary>>,
+) -> Vec<FileListItem> {
     files
         .into_iter()
         .map(|file| FileListItem {
@@ -81,6 +93,10 @@ pub fn build_file_list_items(
             updated_at: file.updated_at,
             is_locked: file.is_locked,
             is_shared: shared_file_ids.contains(&file.id),
+            tags: tags_by_entity
+                .get(&(EntityType::File, file.id))
+                .cloned()
+                .unwrap_or_default(),
         })
         .collect()
 }
@@ -88,6 +104,18 @@ pub fn build_file_list_items(
 pub fn build_folder_list_items(
     folders: Vec<folder::Model>,
     shared_folder_ids: &HashSet<i64>,
+) -> Vec<FolderListItem> {
+    build_folder_list_items_with_tags(
+        folders,
+        shared_folder_ids,
+        &std::collections::HashMap::new(),
+    )
+}
+
+pub fn build_folder_list_items_with_tags(
+    folders: Vec<folder::Model>,
+    shared_folder_ids: &HashSet<i64>,
+    tags_by_entity: &std::collections::HashMap<(EntityType, i64), Vec<TagSummary>>,
 ) -> Vec<FolderListItem> {
     folders
         .into_iter()
@@ -97,6 +125,10 @@ pub fn build_folder_list_items(
             updated_at: folder.updated_at,
             is_locked: folder.is_locked,
             is_shared: shared_folder_ids.contains(&folder.id),
+            tags: tags_by_entity
+                .get(&(EntityType::Folder, folder.id))
+                .cloned()
+                .unwrap_or_default(),
         })
         .collect()
 }
