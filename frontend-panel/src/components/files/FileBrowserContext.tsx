@@ -18,10 +18,10 @@ export interface FileBrowserBatchSelectionActions {
 	count: number;
 	downloadAction?: FileBrowserSelectionDownloadAction;
 	onArchiveCompress?: () => void;
-	onCopy: () => void;
+	onCopy?: () => void;
 	onDelete: () => void;
 	onManageTags?: () => void;
-	onMove: () => void;
+	onMove?: () => void;
 }
 
 export interface FileBrowserContextValue {
@@ -39,9 +39,10 @@ export interface FileBrowserContextValue {
 	onArchiveDownload?: (folderId: number) => void;
 	onArchiveCompress?: (type: "file" | "folder", id: number) => void;
 	onArchiveExtract?: (fileId: number) => void;
-	onCopy: (type: "file" | "folder", id: number) => void;
+	onCopy?: (type: "file" | "folder", id: number) => void;
 	onManageTags?: (type: "file" | "folder", id: number) => void;
 	onMove?: (type: "file" | "folder", id: number) => void;
+	onGoToLocation?: (file: FileListItem) => void;
 	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
 	onDelete: (type: "file" | "folder", id: number) => void;
 	onRename?: (type: "file" | "folder", id: number, name: string) => void;

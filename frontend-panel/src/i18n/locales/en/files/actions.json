@@ -5,6 +5,7 @@
 	"copy_to": "Copy to",
 	"move": "Move",
 	"move_to": "Move to",
+	"go_to_file_location": "Go to file location",
 	"rename": "Rename",
 	"lock": "Lock",
 	"unlock": "Unlock",

@@ -7,9 +7,21 @@ const mockState = vi.hoisted(() => ({
 	thumbnailSupportStore: {
 		config: {
 			version: 1,
+			image_preview: {
+				enabled: true,
+				extensions: ["png", "heic"],
+			},
 			image_thumbnail: {
 				enabled: true,
 				extensions: ["png", "heic"],
+			},
+			audio_thumbnail: {
+				enabled: true,
+				extensions: ["mp3"],
+			},
+			video_thumbnail: {
+				enabled: true,
+				extensions: ["mp4"],
 			},
 		},
 		invalidate: vi.fn(),
@@ -79,9 +91,21 @@ describe("FileThumbnail", () => {
 		mockState.thumbnailPath.mockClear();
 		mockState.thumbnailSupportStore.config = {
 			version: 1,
+			image_preview: {
+				enabled: true,
+				extensions: ["png", "heic"],
+			},
 			image_thumbnail: {
 				enabled: true,
 				extensions: ["png", "heic"],
+			},
+			audio_thumbnail: {
+				enabled: true,
+				extensions: ["mp3"],
+			},
+			video_thumbnail: {
+				enabled: true,
+				extensions: ["mp4"],
 			},
 		};
 		mockState.thumbnailSupportStore.isLoaded = true;
@@ -189,6 +213,62 @@ describe("FileThumbnail", () => {
 			lane: "thumbnail",
 		});
 		expect(container.querySelector("img")).toHaveAttribute("src", "blob:heic");
+	});
+
+	it("requests generated thumbnails for supported video suffixes", () => {
+		mockState.useBlobUrl.mockReturnValue({
+			blobUrl: "blob:video",
+			error: false,
+			loading: false,
+		});
+
+		const { container } = render(
+			<FileThumbnail
+				file={{ id: 10, name: "clip.mp4", mime_type: "video/mp4" }}
+			/>,
+		);
+
+		expect(mockState.thumbnailPath).toHaveBeenCalledWith(10);
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith("/thumb/10", {
+			lane: "thumbnail",
+		});
+		expect(container.querySelector("img")).toHaveAttribute("src", "blob:video");
+	});
+
+	it("does not request disabled thumbnail media groups", () => {
+		mockState.thumbnailSupportStore.config = {
+			version: 1,
+			image_preview: {
+				enabled: true,
+				extensions: ["png"],
+			},
+			image_thumbnail: {
+				enabled: true,
+				extensions: ["png"],
+			},
+			audio_thumbnail: {
+				enabled: true,
+				extensions: ["mp3"],
+			},
+			video_thumbnail: {
+				enabled: false,
+				extensions: ["mp4"],
+			},
+		};
+
+		render(
+			<FileThumbnail
+				file={{ id: 11, name: "clip.mp4", mime_type: "video/mp4" }}
+			/>,
+		);
+
+		expect(mockState.useBlobUrl).toHaveBeenCalledWith(null, {
+			lane: "thumbnail",
+		});
+		expect(screen.getByTestId("file-type-icon")).toHaveAttribute(
+			"data-mime-type",
+			"video/mp4",
+		);
 	});
 
 	it("falls back to the icon when blob loading fails or is absent", () => {

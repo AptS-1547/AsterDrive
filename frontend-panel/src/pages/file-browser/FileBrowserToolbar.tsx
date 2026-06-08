@@ -59,6 +59,7 @@ interface FileBrowserToolbarProps {
 		id: number | null;
 		name: string;
 	}>;
+	currentFolderActions?: "full" | "refresh-only";
 	dragOverBreadcrumbIndex: number | null;
 	isCompactBreadcrumb: boolean;
 	isRootFolder: boolean;
@@ -348,21 +349,24 @@ function FileBrowserSelectionToolbar({
 								onClick={renderedSelectionToolbar.onMove}
 								aria-label={t("move_to")}
 								title={t("move_to")}
+								disabled={!renderedSelectionToolbar.onMove}
 							>
 								<Icon name="ArrowsOutCardinal" className="size-3.5" />
 								<span className="hidden min-[420px]:inline">
 									{t("move_to")}
 								</span>
 							</Button>
-							<Button
-								type="button"
-								size="sm"
-								variant="outline"
-								onClick={renderedSelectionToolbar.onCopy}
-							>
-								<Icon name="Copy" className="size-3.5" />
-								<span>{t("copy_to")}</span>
-							</Button>
+							{renderedSelectionToolbar.onCopy ? (
+								<Button
+									type="button"
+									size="sm"
+									variant="outline"
+									onClick={renderedSelectionToolbar.onCopy}
+								>
+									<Icon name="Copy" className="size-3.5" />
+									<span>{t("copy_to")}</span>
+								</Button>
+							) : null}
 							<SelectionActionsMenu
 								renderedSelectionToolbar={renderedSelectionToolbar}
 								selectDisplayedLabel={selectDisplayedLabel}
@@ -426,6 +430,7 @@ function FileBrowserSelectionToolbar({
 						onClick={renderedSelectionToolbar.onMove}
 						aria-label={t("move_to")}
 						title={t("move_to")}
+						disabled={!renderedSelectionToolbar.onMove}
 					>
 						<Icon name="ArrowsOutCardinal" className="size-3.5" />
 					</Button>
@@ -482,10 +487,12 @@ function SelectionActionsMenu({
 						{selectionDownloadLabel}
 					</DropdownMenuItem>
 				) : null}
-				<DropdownMenuItem onClick={renderedSelectionToolbar.onCopy}>
-					<Icon name="Copy" className="size-4 text-muted-foreground" />
-					{t("copy_to")}
-				</DropdownMenuItem>
+				{renderedSelectionToolbar.onCopy ? (
+					<DropdownMenuItem onClick={renderedSelectionToolbar.onCopy}>
+						<Icon name="Copy" className="size-4 text-muted-foreground" />
+						{t("copy_to")}
+					</DropdownMenuItem>
+				) : null}
 				<DropdownMenuItem onClick={renderedSelectionToolbar.onManageTags}>
 					<Icon name="Tag" className="size-4 text-muted-foreground" />
 					{t("tag_manage")}
@@ -513,6 +520,7 @@ function SelectionActionsMenu({
 
 export function FileBrowserToolbar({
 	breadcrumb,
+	currentFolderActions = "full",
 	dragOverBreadcrumbIndex,
 	isCompactBreadcrumb,
 	isRootFolder,
@@ -717,6 +725,7 @@ export function FileBrowserToolbar({
 					}
 				/>
 				<CurrentFolderDropdownMenuContent
+					mode={currentFolderActions}
 					uploadReady={uploadReady}
 					onCreateFile={onCreateFile}
 					onCreateFolder={onCreateFolder}

@@ -1,3 +1,24 @@
+import type { FileCategory } from "@/types/api";
+
+export const CATEGORY_ROUTE_SEGMENTS = {
+	image: "photo",
+	video: "video",
+	audio: "audio",
+	document: "document",
+	spreadsheet: "spreadsheet",
+	presentation: "presentation",
+	archive: "archive",
+	code: "code",
+	other: "other",
+} as const satisfies Record<FileCategory, string>;
+
+export const FILE_CATEGORY_BY_ROUTE_SEGMENT = Object.fromEntries(
+	Object.entries(CATEGORY_ROUTE_SEGMENTS).map(([category, segment]) => [
+		segment,
+		category,
+	]),
+) as Record<string, FileCategory>;
+
 export interface PersonalWorkspace {
 	kind: "personal";
 }
@@ -54,6 +75,16 @@ export function workspaceFolderPath(
 
 	if (!folderName) return basePath;
 	return `${basePath}?name=${encodeURIComponent(folderName)}`;
+}
+
+export function workspaceCategoryPath(
+	workspace: Workspace,
+	category: FileCategory,
+) {
+	const segment = CATEGORY_ROUTE_SEGMENTS[category];
+	return isTeamWorkspace(workspace)
+		? `/teams/${workspace.teamId}/category/${segment}`
+		: `/category/${segment}`;
 }
 
 export function workspaceSharesPath(workspace: Workspace) {

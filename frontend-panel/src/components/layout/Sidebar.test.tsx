@@ -64,6 +64,28 @@ vi.mock("react-router-dom", () => ({
 			{children}
 		</button>
 	),
+	NavLink: ({
+		children,
+		to,
+		onClick,
+		className,
+	}: {
+		children: React.ReactNode;
+		to: string;
+		onClick?: () => void;
+		className?: (props: { isActive: boolean }) => string;
+	}) => (
+		<a
+			href={to}
+			className={className?.({ isActive: mockState.pathname === to })}
+			onClick={(event) => {
+				event.preventDefault();
+				onClick?.();
+			}}
+		>
+			{children}
+		</a>
+	),
 	useLocation: () => ({
 		pathname: mockState.pathname,
 	}),
@@ -212,10 +234,15 @@ describe("Sidebar", () => {
 			"sidebar",
 		);
 		expect(scrollArea).toContainElement(
-			screen.getByRole("button", {
+			screen.getByRole("link", {
 				name: /translated:search:category_image/i,
 			}),
 		);
+		expect(
+			screen.getByRole("link", {
+				name: /translated:search:category_image/i,
+			}),
+		).toHaveAttribute("href", "/category/photo");
 		expect(
 			screen.getByRole("button", { name: /translated:share:my_shares_title/i }),
 		).toBeInTheDocument();
@@ -429,25 +456,17 @@ describe("Sidebar", () => {
 		expect(localStorage.getItem(STORAGE_KEYS.userSidebarWidth)).toBe("220");
 	});
 
-	it("opens quick category search links and closes the mobile sidebar", () => {
+	it("navigates quick category links and closes the mobile sidebar", () => {
 		const onMobileClose = vi.fn();
-		const onSearchCategoryOpen = vi.fn();
 
-		render(
-			<Sidebar
-				mobileOpen
-				onMobileClose={onMobileClose}
-				onSearchCategoryOpen={onSearchCategoryOpen}
-			/>,
-		);
+		render(<Sidebar mobileOpen onMobileClose={onMobileClose} />);
 
 		fireEvent.click(
-			screen.getByRole("button", {
+			screen.getByRole("link", {
 				name: /translated:search:category_image/i,
 			}),
 		);
 
-		expect(onSearchCategoryOpen).toHaveBeenCalledWith("image");
 		expect(onMobileClose).toHaveBeenCalledTimes(1);
 	});
 });

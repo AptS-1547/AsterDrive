@@ -7,7 +7,7 @@ import type {
 import type { IconName } from "@/components/ui/icon";
 import type { InternalDragData } from "@/lib/dragDrop";
 import type { Workspace } from "@/lib/workspace";
-import type { FileCategory, TeamInfo, UserInfo } from "@/types/api";
+import type { TeamInfo, UserInfo } from "@/types/api";
 
 export type SidebarResizeHandleElement = HTMLDivElement;
 
@@ -20,7 +20,6 @@ export interface SidebarProps {
 		folderIds: number[],
 		targetFolderId: number | null,
 	) => Promise<void> | void;
-	onSearchCategoryOpen?: (category: FileCategory) => void;
 }
 
 export interface SidebarNavLink {
@@ -30,10 +29,7 @@ export interface SidebarNavLink {
 }
 
 export interface SidebarContentProps
-	extends Pick<
-		SidebarProps,
-		"onMobileClose" | "onMoveToFolder" | "onSearchCategoryOpen"
-	> {
+	extends Pick<SidebarProps, "onMobileClose" | "onMoveToFolder"> {
 	activeTeam: TeamInfo | null;
 	locationPathname: string;
 	navLinks: SidebarNavLink[];

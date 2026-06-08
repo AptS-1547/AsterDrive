@@ -51,6 +51,7 @@ function useFileBrowserItemMenuProps(
 		onFileClick,
 		onFileOpen,
 		onFolderOpen,
+		onGoToLocation,
 		onInfo,
 		onManageTags,
 		onMove,
@@ -100,7 +101,7 @@ function useFileBrowserItemMenuProps(
 			onArchiveCompress: onArchiveCompress
 				? () => onArchiveCompress("folder", item.id)
 				: undefined,
-			onCopy: () => onCopy("folder", item.id),
+			onCopy: onCopy ? () => onCopy("folder", item.id) : undefined,
 			onManageTags: onManageTags
 				? () => onManageTags("folder", item.id)
 				: undefined,
@@ -143,7 +144,8 @@ function useFileBrowserItemMenuProps(
 				name: item.name,
 				initialMode: "direct",
 			}),
-		onCopy: () => onCopy("file", item.id),
+		onCopy: onCopy ? () => onCopy("file", item.id) : undefined,
+		onGoToLocation: onGoToLocation ? () => onGoToLocation(item) : undefined,
 		onManageTags: onManageTags
 			? () => onManageTags("file", item.id)
 			: undefined,

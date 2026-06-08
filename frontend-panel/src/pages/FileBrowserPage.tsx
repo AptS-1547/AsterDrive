@@ -366,11 +366,11 @@ export default function FileBrowserPage() {
 				infoPanelOpen={infoPanelOpen}
 				infoTarget={infoTarget}
 				isEmpty={isEmpty}
-				isSearching={isSearching}
 				loading={loading}
 				loadingMore={loadingMore}
 				scrollViewport={scrollViewport}
 				sentinelRef={sentinelRef}
+				suppressLoadMore={isSearching}
 				uploadReady={uploadReady}
 				viewMode={viewMode}
 				bottomOverlayOffset={bottomOverlayOffset}

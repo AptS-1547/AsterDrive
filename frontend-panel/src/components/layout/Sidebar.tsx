@@ -123,7 +123,6 @@ export function Sidebar({
 	onMobileClose,
 	onTrashDrop,
 	onMoveToFolder,
-	onSearchCategoryOpen,
 }: SidebarProps) {
 	const { t } = useTranslation();
 	const location = useLocation();
@@ -344,7 +343,6 @@ export function Sidebar({
 					navLinks={navLinks}
 					onMobileClose={onMobileClose}
 					onMoveToFolder={onMoveToFolder}
-					onSearchCategoryOpen={onSearchCategoryOpen}
 					onScrollViewport={handleScrollViewport}
 					onTrashDragLeave={handleTrashDragLeave}
 					onTrashDragOver={handleTrashDragOver}

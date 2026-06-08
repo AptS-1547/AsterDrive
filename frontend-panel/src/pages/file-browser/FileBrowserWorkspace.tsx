@@ -33,17 +33,18 @@ interface FileBrowserWorkspaceProps {
 		name: string;
 	}>;
 	contentDragOver: boolean;
+	currentFolderActions?: "full" | "refresh-only";
 	error: string | null;
 	fileBrowserContextValue: FileBrowserContextValue;
 	hasMoreFiles: boolean;
 	infoPanelOpen: boolean;
 	infoTarget: FileBrowserInfoTarget | null;
 	isEmpty: boolean;
-	isSearching: boolean;
 	loading: boolean;
 	loadingMore: boolean;
 	scrollViewport: HTMLDivElement | null;
 	sentinelRef: RefObject<HTMLDivElement | null>;
+	suppressLoadMore?: boolean;
 	uploadReady: boolean;
 	viewMode: "grid" | "list";
 	bottomOverlayOffset?: BottomOverlayOffset;
@@ -79,17 +80,18 @@ interface FileBrowserWorkspaceProps {
 export function FileBrowserWorkspace({
 	breadcrumb,
 	contentDragOver,
+	currentFolderActions = "full",
 	error,
 	fileBrowserContextValue,
 	hasMoreFiles,
 	infoPanelOpen,
 	infoTarget,
 	isEmpty,
-	isSearching,
 	loading,
 	loadingMore,
 	scrollViewport,
 	sentinelRef,
+	suppressLoadMore = false,
 	uploadReady,
 	viewMode,
 	bottomOverlayOffset = "none",
@@ -183,7 +185,7 @@ export function FileBrowserWorkspace({
 									)}
 								</FileBrowserProvider>
 							)}
-							{!isSearching && hasMoreFiles && (
+							{!suppressLoadMore && hasMoreFiles && (
 								<div ref={sentinelRef} className="flex justify-center py-4">
 									{loadingMore && (
 										<div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
@@ -193,6 +195,7 @@ export function FileBrowserWorkspace({
 						</ScrollArea>
 					</ContextMenuTrigger>
 					<CurrentFolderContextMenuContent
+						mode={currentFolderActions}
 						uploadReady={uploadReady}
 						onCreateFile={onCreateFile}
 						onCreateFolder={onCreateFolder}

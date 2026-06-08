@@ -35,6 +35,7 @@ export interface FileContextMenuProps {
 	onDirectShare?: () => void;
 	onCopy?: () => void;
 	onMove?: () => void;
+	onGoToLocation?: () => void;
 	onManageTags?: () => void;
 	onToggleLock?: () => void;
 	onDelete?: () => void;
@@ -64,6 +65,7 @@ function FileContextMenuItems({
 	onDirectShare,
 	onCopy,
 	onMove,
+	onGoToLocation,
 	onManageTags,
 	onRename,
 	onToggleLock,
@@ -206,6 +208,12 @@ function FileContextMenuItems({
 					{t("move_to")}
 				</Item>
 			)}
+			{!isFolder && onGoToLocation && (
+				<Item onClick={onGoToLocation}>
+					<Icon name="FolderOpen" className="size-4 mr-2" />
+					{t("go_to_file_location")}
+				</Item>
+			)}
 			{onRename && (
 				<Item onClick={onRename}>
 					<Icon name="PencilSimple" className="size-4 mr-2" />
@@ -296,6 +304,7 @@ export function FileContextMenu({
 	onDirectShare,
 	onCopy,
 	onMove,
+	onGoToLocation,
 	onManageTags,
 	onRename,
 	onToggleLock,
@@ -330,6 +339,7 @@ export function FileContextMenu({
 					onDirectShare={onDirectShare}
 					onCopy={onCopy}
 					onMove={onMove}
+					onGoToLocation={onGoToLocation}
 					onManageTags={onManageTags}
 					onRename={onRename}
 					onToggleLock={onToggleLock}
