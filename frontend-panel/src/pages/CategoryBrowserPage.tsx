@@ -26,6 +26,7 @@ import { FileBrowserDialogs } from "@/pages/file-browser/FileBrowserDialogs";
 import { FileBrowserToolbar } from "@/pages/file-browser/FileBrowserToolbar";
 import { FileBrowserWorkspace } from "@/pages/file-browser/FileBrowserWorkspace";
 import type {
+	FileBrowserInfoTarget,
 	FileBrowserPreviewState,
 	FileBrowserShareTarget,
 	FileBrowserVersionTarget,
@@ -80,6 +81,10 @@ export default function CategoryBrowserPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [previewState, setPreviewState] =
 		useState<FileBrowserPreviewState | null>(null);
+	const [infoPanelOpen, setInfoPanelOpen] = useState(false);
+	const [infoTarget, setInfoTarget] = useState<FileBrowserInfoTarget | null>(
+		null,
+	);
 	const [shareTarget, setShareTarget] = useState<FileBrowserShareTarget | null>(
 		null,
 	);
@@ -133,6 +138,8 @@ export default function CategoryBrowserPage() {
 				const results = await searchService.search({
 					type: "file",
 					category,
+					sort_by: sortBy,
+					sort_order: sortOrder,
 					limit: CATEGORY_PAGE_LIMIT,
 					offset,
 				});
@@ -158,15 +165,30 @@ export default function CategoryBrowserPage() {
 				}
 			}
 		},
-		[category, searchErrorText],
+		[category, searchErrorText, sortBy, sortOrder],
 	);
 
 	useEffect(() => {
 		if (!category) return;
+		setInfoPanelOpen(false);
+		setInfoTarget(null);
 		setFiles([]);
 		setTotalFiles(0);
 		void loadCategory(0, "replace");
 	}, [category, loadCategory]);
+
+	useEffect(() => {
+		if (!infoPanelOpen || !infoTarget?.file) return;
+		const nextFile = files.find((entry) => entry.id === infoTarget.file?.id);
+		if (nextFile) {
+			if (nextFile !== infoTarget.file) {
+				setInfoTarget({ file: nextFile });
+			}
+			return;
+		}
+		setInfoPanelOpen(false);
+		setInfoTarget(null);
+	}, [files, infoPanelOpen, infoTarget]);
 
 	const hasMoreFiles = files.length < totalFiles;
 	useEffect(() => {
@@ -232,6 +254,17 @@ export default function CategoryBrowserPage() {
 	const handleShare = useCallback((target: FileBrowserShareTarget) => {
 		setShareTarget(target);
 	}, []);
+
+	const handleInfo = useCallback(
+		(type: "file" | "folder", id: number) => {
+			if (type !== "file") return;
+			const file = files.find((entry) => entry.id === id);
+			if (!file) return;
+			setInfoTarget({ file });
+			setInfoPanelOpen(true);
+		},
+		[files],
+	);
 
 	const handleManageTags = useCallback(
 		(type: "file" | "folder", id: number) => {
@@ -326,6 +359,7 @@ export default function CategoryBrowserPage() {
 			onDownload: handleDownload,
 			onManageTags: handleManageTags,
 			onGoToLocation: handleGoToLocation,
+			onInfo: handleInfo,
 			onToggleLock: handleToggleLock,
 			onDelete: handleDelete,
 			onVersions: handleVersions,
@@ -338,6 +372,7 @@ export default function CategoryBrowserPage() {
 			handleDelete,
 			handleDownload,
 			handleGoToLocation,
+			handleInfo,
 			handleManageTags,
 			handleShare,
 			handleToggleLock,
@@ -396,8 +431,8 @@ export default function CategoryBrowserPage() {
 				error={error}
 				fileBrowserContextValue={fileBrowserContextValue}
 				hasMoreFiles={hasMoreFiles}
-				infoPanelOpen={false}
-				infoTarget={null}
+				infoPanelOpen={infoPanelOpen}
+				infoTarget={infoTarget}
 				isEmpty={!loading && files.length === 0}
 				loading={loading}
 				loadingMore={loadingMore}
@@ -411,7 +446,7 @@ export default function CategoryBrowserPage() {
 				onCreateFile={() => undefined}
 				onCreateFolder={() => undefined}
 				onDownload={handleDownload}
-				onInfoPanelOpenChange={() => undefined}
+				onInfoPanelOpenChange={setInfoPanelOpen}
 				onOpenInfoFolder={() => undefined}
 				onOfflineDownload={() => undefined}
 				onPreview={(file) => setPreviewState({ file, openMode: "auto" })}

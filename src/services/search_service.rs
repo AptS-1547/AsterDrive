@@ -6,6 +6,7 @@ use std::collections::HashSet;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
+use crate::api::pagination::{SortBy, SortOrder};
 use crate::db::repository::search_repo::{self, TagSearchFilter, TagSearchMatch};
 use crate::errors::{AsterError, Result};
 use crate::runtime::SharedRuntimeState;
@@ -49,6 +50,10 @@ pub struct SearchParams {
     pub tag_ids: Option<String>,
     /// Tag filter mode: "any" or "all" (default any)
     pub tag_match: Option<String>,
+    /// Sort field (default name)
+    pub sort_by: Option<SortBy>,
+    /// Sort direction (default asc)
+    pub sort_order: Option<SortOrder>,
     /// Max results per type (default 50, max 100)
     pub limit: Option<u64>,
     /// Offset for pagination
@@ -273,6 +278,8 @@ pub(crate) async fn search_in_scope(
 
     let limit = params.limit.unwrap_or(50).clamp(1, 100);
     let offset = params.offset.unwrap_or(0);
+    let sort_by = params.sort_by.unwrap_or_default();
+    let sort_order = params.sort_order.unwrap_or_default();
     let query = normalized_query(params);
     let tag_ids = parse_tag_ids(params)?;
     let tag_match = params.tag_match.as_deref().unwrap_or("any");
@@ -295,6 +302,8 @@ pub(crate) async fn search_in_scope(
         folder_id = params.folder_id,
         has_tag_filter = !tag_ids.is_empty(),
         tag_match,
+        sort_by = ?sort_by,
+        sort_order = ?sort_order,
         limit,
         offset,
         "running search"
@@ -345,6 +354,8 @@ pub(crate) async fn search_in_scope(
                             created_before,
                             folder_id: params.folder_id,
                             tag_filter,
+                            sort_by,
+                            sort_order,
                             limit,
                             offset,
                         },
@@ -365,6 +376,8 @@ pub(crate) async fn search_in_scope(
                             created_before,
                             parent_id: params.folder_id,
                             tag_filter,
+                            sort_by,
+                            sort_order,
                             limit,
                             offset,
                         },
@@ -422,6 +435,8 @@ pub(crate) async fn search_in_scope(
                             created_before,
                             folder_id: params.folder_id,
                             tag_filter,
+                            sort_by,
+                            sort_order,
                             limit,
                             offset,
                         },
@@ -442,6 +457,8 @@ pub(crate) async fn search_in_scope(
                             created_before,
                             parent_id: params.folder_id,
                             tag_filter,
+                            sort_by,
+                            sort_order,
                             limit,
                             offset,
                         },

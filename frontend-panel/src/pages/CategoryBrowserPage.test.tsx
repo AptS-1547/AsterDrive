@@ -184,7 +184,10 @@ vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
 		currentFolderActions,
 		fileBrowserContextValue,
 		hasMoreFiles,
+		infoPanelOpen,
+		infoTarget,
 		loading,
+		onInfoPanelOpenChange,
 		suppressLoadMore,
 	}: {
 		currentFolderActions?: "full" | "refresh-only";
@@ -192,10 +195,14 @@ vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
 			files: FileListItem[];
 			onCopy?: unknown;
 			onGoToLocation?: (file: FileListItem) => void;
+			onInfo?: (type: "file" | "folder", id: number) => void;
 			onMove?: unknown;
 		};
 		hasMoreFiles: boolean;
+		infoPanelOpen: boolean;
+		infoTarget: { file?: FileListItem } | null;
 		loading: boolean;
+		onInfoPanelOpenChange: (open: boolean) => void;
 		suppressLoadMore?: boolean;
 	}) => (
 		<div
@@ -205,18 +212,30 @@ vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
 			data-loading={String(loading)}
 			data-suppress-load-more={String(Boolean(suppressLoadMore))}
 			data-copy={String(Boolean(fileBrowserContextValue.onCopy))}
+			data-info-open={String(infoPanelOpen)}
+			data-info-target={infoTarget?.file?.name ?? ""}
 			data-move={String(Boolean(fileBrowserContextValue.onMove))}
 			data-location={String(Boolean(fileBrowserContextValue.onGoToLocation))}
 		>
 			{fileBrowserContextValue.files.map((file) => (
-				<button
-					key={file.id}
-					type="button"
-					onClick={() => fileBrowserContextValue.onGoToLocation?.(file)}
-				>
-					{file.name}
-				</button>
+				<div key={file.id}>
+					<button
+						type="button"
+						onClick={() => fileBrowserContextValue.onGoToLocation?.(file)}
+					>
+						{file.name}
+					</button>
+					<button
+						type="button"
+						onClick={() => fileBrowserContextValue.onInfo?.("file", file.id)}
+					>
+						info {file.name}
+					</button>
+				</div>
 			))}
+			<button type="button" onClick={() => onInfoPanelOpenChange(false)}>
+				close info
+			</button>
 		</div>
 	),
 }));
@@ -284,6 +303,8 @@ describe("CategoryBrowserPage", () => {
 			expect(mockState.search).toHaveBeenCalledWith({
 				type: "file",
 				category: "image",
+				sort_by: "name",
+				sort_order: "asc",
 				limit: 100,
 				offset: 0,
 			});
@@ -352,6 +373,28 @@ describe("CategoryBrowserPage", () => {
 		expect(mockState.navigate).toHaveBeenCalledWith("/folder/42", {
 			viewTransition: false,
 		});
+	});
+
+	it("opens the file info panel from category file actions", async () => {
+		render(<CategoryBrowserPage />);
+
+		fireEvent.click(await screen.findByText("info photo.jpg"));
+
+		expect(screen.getByTestId("workspace")).toHaveAttribute(
+			"data-info-open",
+			"true",
+		);
+		expect(screen.getByTestId("workspace")).toHaveAttribute(
+			"data-info-target",
+			"photo.jpg",
+		);
+
+		fireEvent.click(screen.getByText("close info"));
+
+		expect(screen.getByTestId("workspace")).toHaveAttribute(
+			"data-info-open",
+			"false",
+		);
 	});
 
 	it("redirects unknown category routes to the workspace root", () => {
