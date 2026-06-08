@@ -113,7 +113,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 				<button
 					type="button"
 					className={cn(
-						"fixed inset-x-0 z-40 bg-black/50 transition-opacity duration-200 ease-out md:hidden motion-reduce:transition-none",
+						"fixed inset-x-0 z-(--z-fixed) bg-black/50 transition-opacity duration-200 ease-out md:hidden motion-reduce:transition-none",
 						ADMIN_TOPBAR_OFFSET_CLASS,
 						mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
 					)}
@@ -125,7 +125,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 					className={cn(
 						"border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-out motion-reduce:transition-none",
 						ADMIN_SIDEBAR_WIDTH_CLASS,
-						"fixed left-0 z-50 flex flex-col md:relative md:left-auto md:top-auto md:bottom-auto md:z-auto md:translate-x-0",
+						"fixed left-0 z-(--z-fixed) flex flex-col md:relative md:left-auto md:top-auto md:bottom-auto md:z-auto md:translate-x-0",
 						ADMIN_TOPBAR_OFFSET_CLASS,
 						mobileOpen
 							? "translate-x-0 shadow-lg dark:shadow-none md:shadow-none"

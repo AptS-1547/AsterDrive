@@ -85,6 +85,13 @@
 	--sidebar-ring: oklch(0.56 0.185 264);
 	--scrollbar-thumb: oklch(0.62 0.012 255 / 48%);
 	--scrollbar-thumb-hover: oklch(0.52 0.014 255 / 68%);
+	--z-fixed: 40;
+	--z-dialog: 50;
+	--z-dropdown: 60;
+	--z-popover: 60;
+	--z-tooltip: 65;
+	--z-alert-dialog: 70;
+	--z-toast: 80;
 }
 
 .dark {

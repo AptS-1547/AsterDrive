@@ -374,7 +374,7 @@ function FileBrowserSelectionToolbar({
 				data-testid="file-browser-mobile-selection-toolbar"
 				{...selectionToolbarHiddenProps}
 				className={cn(
-					"fixed right-3 bottom-3 left-3 z-50 flex min-h-14 items-center gap-2 rounded-xl border border-border/70 bg-card/95 px-3 py-2 shadow-lg shadow-black/8 backdrop-blur supports-[backdrop-filter]:bg-card/85 dark:shadow-none sm:hidden",
+					"fixed right-3 bottom-3 left-3 z-(--z-fixed) flex min-h-14 items-center gap-2 rounded-xl border border-border/70 bg-card/95 px-3 py-2 shadow-lg shadow-black/8 backdrop-blur supports-[backdrop-filter]:bg-card/85 dark:shadow-none sm:hidden",
 					selectionToolbarContentClass,
 				)}
 			>

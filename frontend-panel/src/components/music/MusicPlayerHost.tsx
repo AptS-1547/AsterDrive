@@ -1109,7 +1109,7 @@ export function MusicPlayerHost() {
 				data-state={isPanelOpen ? "open" : "closed"}
 				inert={isPanelOpen ? undefined : true}
 				className={cn(
-					"fixed top-[calc(var(--spacing)*16+0.5rem)] right-3 z-40 w-[calc(100vw-1.5rem)] max-w-[26rem] origin-top-right transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none sm:right-4",
+					"fixed top-[calc(var(--spacing)*16+0.5rem)] right-3 z-(--z-fixed) w-[calc(100vw-1.5rem)] max-w-[26rem] origin-top-right transition-[opacity,transform] duration-150 ease-out motion-reduce:transition-none sm:right-4",
 					isPanelOpen
 						? "translate-y-0 scale-100 opacity-100"
 						: "pointer-events-none -translate-y-2 scale-[0.98] opacity-0",
