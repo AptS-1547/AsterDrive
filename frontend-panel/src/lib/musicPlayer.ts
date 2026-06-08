@@ -15,8 +15,6 @@ import type {
 	ShareStreamSessionInfo,
 } from "@/types/api";
 
-const MUSIC_METADATA_FETCH_LIMIT_BYTES = 3 * 1024 * 1024;
-
 export type MusicFileLike = Pick<
 	FileInfo | FileListItem,
 	"id" | "mime_type" | "name"
@@ -256,109 +254,4 @@ export async function hydrateMusicQueueForPlayback(
 	return tracks.map((track) =>
 		track.id === activeTrackId ? hydratedTrack : track,
 	);
-}
-
-function pictureToDataUrl(picture: {
-	data: Uint8Array;
-	format?: string | null;
-}) {
-	const mimeType = picture.format?.trim() || "image/jpeg";
-	const chunkSize = 0x8000;
-	let binary = "";
-	for (let index = 0; index < picture.data.length; index += chunkSize) {
-		binary += String.fromCharCode(
-			...picture.data.subarray(index, index + chunkSize),
-		);
-	}
-
-	return `data:${mimeType};base64,${btoa(binary)}`;
-}
-
-function responseHasBoundedMusicMetadataBody(response: Response) {
-	if (response.status === 206) {
-		return true;
-	}
-
-	const contentRange = response.headers.get("Content-Range");
-	if (contentRange) {
-		return true;
-	}
-
-	const contentLength = Number(response.headers.get("Content-Length"));
-	return (
-		Number.isFinite(contentLength) &&
-		contentLength > 0 &&
-		contentLength <= MUSIC_METADATA_FETCH_LIMIT_BYTES
-	);
-}
-
-export async function parseMusicMetadataFromSource({
-	fallbackMetadata,
-	mimeType,
-	name,
-	size,
-	source,
-	signal,
-}: {
-	fallbackMetadata?: MusicTrackMetadata;
-	mimeType: string;
-	name: string;
-	size?: number;
-	signal?: AbortSignal;
-	source: string;
-}): Promise<MusicTrackMetadata> {
-	const headers = new Headers();
-	if (!source.startsWith("blob:")) {
-		headers.set("Range", `bytes=0-${MUSIC_METADATA_FETCH_LIMIT_BYTES - 1}`);
-	}
-
-	const response = await fetch(source, {
-		credentials: "include",
-		headers,
-		signal,
-	});
-	if (!response.ok) {
-		throw new Error(`music metadata request failed with ${response.status}`);
-	}
-	if (
-		!source.startsWith("blob:") &&
-		!responseHasBoundedMusicMetadataBody(response)
-	) {
-		return (
-			fallbackMetadata ??
-			inferMusicMetadata({ id: -1, mime_type: mimeType, name, size })
-		);
-	}
-
-	const [blob, { parseBlob, selectCover }] = await Promise.all([
-		response.blob(),
-		import("music-metadata"),
-	]);
-	const parsed = await parseBlob(blob, {
-		duration: false,
-		skipCovers: false,
-		skipPostHeaders: true,
-	});
-	const cover = selectCover(parsed.common.picture);
-	const parsedArtists =
-		cleanMetadataTexts(parsed.common.artists) ??
-		(cleanMetadataText(parsed.common.artist)
-			? [cleanMetadataText(parsed.common.artist) as string]
-			: null);
-	const fallbackArtists =
-		fallbackMetadata?.artists ??
-		(fallbackMetadata?.artist ? [fallbackMetadata.artist] : null);
-
-	return {
-		album: cleanMetadataText(parsed.common.album) ?? fallbackMetadata?.album,
-		artist: parsedArtists?.join(", ") ?? fallbackMetadata?.artist,
-		artists: parsedArtists ?? fallbackArtists,
-		artworkUrl: cover
-			? pictureToDataUrl(cover)
-			: (fallbackMetadata?.artworkUrl ?? null),
-		title:
-			cleanMetadataText(parsed.common.title) ??
-			fallbackMetadata?.title ??
-			inferMusicMetadata({ id: -1, mime_type: mimeType, name, size }).title,
-	};
 }

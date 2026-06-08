@@ -12,7 +12,6 @@ import {
 import type { FileStoreSlice, NavigationSlice } from "./types";
 import {
 	createRootBreadcrumb,
-	createSearchReset,
 	createSelectionReset,
 	createWorkspaceContentReset,
 } from "./types";
@@ -37,7 +36,6 @@ export const createNavigationSlice: FileStoreSlice<NavigationSlice> = (
 		set({
 			loading: true,
 			error: null,
-			...createSearchReset(),
 			...createSelectionReset(),
 			...createWorkspaceContentReset(),
 		});

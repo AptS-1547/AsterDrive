@@ -9,7 +9,6 @@ const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
 	getSettings: vi.fn(),
 	reload: vi.fn(),
-	requestConfirm: vi.fn(),
 	testConnection: vi.fn(),
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
@@ -63,10 +62,6 @@ vi.mock("@/components/common/AdminTableList", () => ({
 				))}
 			</div>
 		),
-}));
-
-vi.mock("@/components/common/ConfirmDialog", () => ({
-	ConfirmDialog: () => null,
 }));
 
 vi.mock("@/components/layout/AppLayout", () => ({
@@ -226,17 +221,6 @@ vi.mock("@/hooks/useApiList", () => ({
 	useApiList: (...args: unknown[]) => mockState.useApiList(...args),
 }));
 
-vi.mock("@/hooks/useConfirmDialog", () => ({
-	useConfirmDialog: () => ({
-		requestConfirm: (...args: unknown[]) => mockState.requestConfirm(...args),
-		dialogProps: {
-			onConfirm: vi.fn(),
-			onOpenChange: vi.fn(),
-			open: false,
-		},
-	}),
-}));
-
 vi.mock("@/stores/authStore", () => ({
 	useAuthStore: <T,>(selector: (state: { user: { id: number } }) => T) =>
 		selector({ user: { id: 7 } }),
@@ -282,7 +266,6 @@ describe("WebdavAccountsPage", () => {
 		mockState.handleApiError.mockReset();
 		mockState.getSettings.mockReset();
 		mockState.reload.mockReset();
-		mockState.requestConfirm.mockReset();
 		mockState.testConnection.mockReset();
 		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
@@ -346,6 +329,30 @@ describe("WebdavAccountsPage", () => {
 			expect(mockState.toggle).toHaveBeenCalledWith(11);
 		});
 		expect(mockState.reload).toHaveBeenCalledTimes(1);
+	});
+
+	it("deletes accounts after inline confirmation", async () => {
+		const { webdavAccountService } = await import(
+			"@/services/webdavAccountService"
+		);
+		vi.mocked(webdavAccountService.delete).mockResolvedValue(undefined);
+
+		render(<WebdavAccountsPage />);
+		await screen.findByText("dav-user");
+
+		fireEvent.click(screen.getByTitle("delete"));
+		fireEvent.click(screen.getByRole("button", { name: "cancel" }));
+		expect(webdavAccountService.delete).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByTitle("delete"));
+		fireEvent.click(screen.getByRole("button", { name: "delete" }));
+
+		await waitFor(() => {
+			expect(webdavAccountService.delete).toHaveBeenCalledWith(11);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"admin:webdav_account_deleted",
+		);
 	});
 
 	it("uses the configured public site URL when copying the WebDAV endpoint", async () => {

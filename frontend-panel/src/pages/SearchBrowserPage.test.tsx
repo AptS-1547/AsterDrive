@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import CategoryBrowserPage from "@/pages/CategoryBrowserPage";
-import type { FileListItem } from "@/types/api";
+import SearchBrowserPage from "@/pages/SearchBrowserPage";
+import type { FileListItem, FolderListItem } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	clearSelection: vi.fn(),
@@ -12,15 +12,13 @@ const mockState = vi.hoisted(() => ({
 	loadPreviewApps: vi.fn(),
 	navigate: vi.fn(),
 	search: vi.fn(),
+	searchParams: new URLSearchParams("q=report&type=all"),
 	setPageTitle: vi.fn(),
 	setSortBy: vi.fn(),
 	setSortOrder: vi.fn(),
 	setViewMode: vi.fn(),
 	selectItems: vi.fn(),
 	streamArchiveDownload: vi.fn(),
-	params: {
-		category: "photo" as string | undefined,
-	},
 	previewAppsLoaded: true,
 	thumbnailSupport: null,
 	workspace: { kind: "personal" as const },
@@ -28,15 +26,13 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string, options?: Record<string, string>) =>
-			options?.category ? `${key}:${options.category}` : key,
+		t: (key: string) => key,
 	}),
 }));
 
 vi.mock("react-router-dom", () => ({
-	Navigate: ({ to }: { to: string }) => <div data-testid="navigate">{to}</div>,
 	useNavigate: () => mockState.navigate,
-	useParams: () => mockState.params,
+	useSearchParams: () => [mockState.searchParams, vi.fn()],
 }));
 
 vi.mock("sonner", () => ({
@@ -110,7 +106,7 @@ vi.mock("@/pages/file-browser/useFileBrowserBatchActions", () => ({
 		dialogs: null,
 		selectionToolbar: {
 			allDisplayedSelected: false,
-			count: 1,
+			count: 2,
 			downloadAction: undefined,
 			hasDisplayedItems: true,
 			onArchiveCompress: undefined,
@@ -139,9 +135,11 @@ vi.mock("@/services/batchService", () => ({
 vi.mock("@/services/fileService", () => ({
 	fileService: {
 		deleteFile: vi.fn(),
+		deleteFolder: vi.fn(),
 		downloadUrl: mockState.downloadUrl,
 		getFile: mockState.getFile,
 		setFileLock: vi.fn(),
+		setFolderLock: vi.fn(),
 		createPreviewLink: vi.fn(),
 		getArchivePreview: vi.fn(),
 		createWopiSession: vi.fn(),
@@ -156,26 +154,20 @@ vi.mock("@/components/layout/AppLayout", () => ({
 
 vi.mock("@/pages/file-browser/FileBrowserToolbar", () => ({
 	FileBrowserToolbar: ({
-		breadcrumb,
 		currentFolderActions,
-		onRefresh,
+		searchQuery,
 		selectionToolbar,
 	}: {
-		breadcrumb: Array<{ name: string }>;
 		currentFolderActions?: "full" | "refresh-only";
-		onRefresh: () => void;
+		searchQuery: string | null;
 		selectionToolbar: unknown;
 	}) => (
 		<div
 			data-testid="toolbar"
 			data-current-folder-actions={currentFolderActions ?? "full"}
+			data-search-query={searchQuery ?? ""}
 			data-selection={String(Boolean(selectionToolbar))}
-		>
-			<span>{breadcrumb[0]?.name}</span>
-			<button type="button" onClick={onRefresh}>
-				refresh
-			</button>
-		</div>
+		/>
 	),
 }));
 
@@ -184,58 +176,46 @@ vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
 		currentFolderActions,
 		fileBrowserContextValue,
 		hasMoreFiles,
-		infoPanelOpen,
-		infoTarget,
-		loading,
-		onInfoPanelOpenChange,
-		suppressLoadMore,
 	}: {
 		currentFolderActions?: "full" | "refresh-only";
 		fileBrowserContextValue: {
 			files: FileListItem[];
+			folders: FolderListItem[];
 			onCopy?: unknown;
+			onFolderOpen: (id: number, name: string) => void;
 			onGoToLocation?: (file: FileListItem) => void;
-			onInfo?: (type: "file" | "folder", id: number) => void;
 			onMove?: unknown;
 		};
 		hasMoreFiles: boolean;
-		infoPanelOpen: boolean;
-		infoTarget: { file?: FileListItem } | null;
-		loading: boolean;
-		onInfoPanelOpenChange: (open: boolean) => void;
-		suppressLoadMore?: boolean;
 	}) => (
 		<div
 			data-testid="workspace"
 			data-current-folder-actions={currentFolderActions ?? "full"}
-			data-has-more={String(hasMoreFiles)}
-			data-loading={String(loading)}
-			data-suppress-load-more={String(Boolean(suppressLoadMore))}
 			data-copy={String(Boolean(fileBrowserContextValue.onCopy))}
-			data-info-open={String(infoPanelOpen)}
-			data-info-target={infoTarget?.file?.name ?? ""}
-			data-move={String(Boolean(fileBrowserContextValue.onMove))}
+			data-has-more={String(hasMoreFiles)}
 			data-location={String(Boolean(fileBrowserContextValue.onGoToLocation))}
+			data-move={String(Boolean(fileBrowserContextValue.onMove))}
 		>
 			{fileBrowserContextValue.files.map((file) => (
-				<div key={file.id}>
-					<button
-						type="button"
-						onClick={() => fileBrowserContextValue.onGoToLocation?.(file)}
-					>
-						{file.name}
-					</button>
-					<button
-						type="button"
-						onClick={() => fileBrowserContextValue.onInfo?.("file", file.id)}
-					>
-						info {file.name}
-					</button>
-				</div>
+				<button
+					key={file.id}
+					type="button"
+					onClick={() => fileBrowserContextValue.onGoToLocation?.(file)}
+				>
+					{file.name}
+				</button>
 			))}
-			<button type="button" onClick={() => onInfoPanelOpenChange(false)}>
-				close info
-			</button>
+			{fileBrowserContextValue.folders.map((folder) => (
+				<button
+					key={folder.id}
+					type="button"
+					onClick={() =>
+						fileBrowserContextValue.onFolderOpen(folder.id, folder.name)
+					}
+				>
+					{folder.name}
+				</button>
+			))}
 		</div>
 	),
 }));
@@ -260,10 +240,10 @@ function fileItem(id: number, name: string): FileListItem {
 	return {
 		compound_extension: null,
 		extension: name.split(".").pop() ?? "",
-		file_category: "image",
+		file_category: "document",
 		is_locked: false,
 		is_shared: false,
-		mime_type: "image/jpeg",
+		mime_type: "text/plain",
 		name,
 		size: 1024,
 		tags: [],
@@ -272,7 +252,18 @@ function fileItem(id: number, name: string): FileListItem {
 	};
 }
 
-describe("CategoryBrowserPage", () => {
+function folderItem(id: number, name: string): FolderListItem {
+	return {
+		id,
+		is_locked: false,
+		is_shared: false,
+		name,
+		tags: [],
+		updated_at: "2026-06-08T00:00:00Z",
+	};
+}
+
+describe("SearchBrowserPage", () => {
 	beforeEach(() => {
 		mockState.clearSelection.mockReset();
 		mockState.downloadUrl.mockReset();
@@ -281,28 +272,27 @@ describe("CategoryBrowserPage", () => {
 		mockState.handleApiError.mockReset();
 		mockState.loadPreviewApps.mockReset();
 		mockState.navigate.mockReset();
-		mockState.params.category = "photo";
-		mockState.previewAppsLoaded = true;
 		mockState.search.mockReset();
 		mockState.search.mockResolvedValue({
-			files: [fileItem(1, "photo.jpg")],
-			folders: [],
+			files: [fileItem(1, "report.txt")],
+			folders: [folderItem(2, "Reports")],
 			total_files: 2,
-			total_folders: 0,
+			total_folders: 1,
 		});
+		mockState.searchParams = new URLSearchParams("q=report&type=all");
 		mockState.setPageTitle.mockReset();
 		mockState.selectItems.mockReset();
 		mockState.streamArchiveDownload.mockReset();
 		mockState.workspace = { kind: "personal" };
 	});
 
-	it("loads image category files without copy or move actions", async () => {
-		render(<CategoryBrowserPage />);
+	it("loads search results through the file-browser surface", async () => {
+		render(<SearchBrowserPage />);
 
 		await waitFor(() => {
 			expect(mockState.search).toHaveBeenCalledWith({
-				type: "file",
-				category: "image",
+				q: "report",
+				type: "all",
 				sort_by: "name",
 				sort_order: "asc",
 				limit: 100,
@@ -310,11 +300,8 @@ describe("CategoryBrowserPage", () => {
 			});
 		});
 
-		expect(await screen.findByText("photo.jpg")).toBeInTheDocument();
-		expect(screen.getByTestId("toolbar")).toHaveAttribute(
-			"data-selection",
-			"true",
-		);
+		expect(await screen.findByText("report.txt")).toBeInTheDocument();
+		expect(screen.getByText("Reports")).toBeInTheDocument();
 		expect(screen.getByTestId("toolbar")).toHaveAttribute(
 			"data-current-folder-actions",
 			"refresh-only",
@@ -336,20 +323,15 @@ describe("CategoryBrowserPage", () => {
 			"true",
 		);
 		expect(screen.getByTestId("workspace")).toHaveAttribute(
-			"data-suppress-load-more",
-			"false",
-		);
-		expect(screen.getByTestId("workspace")).toHaveAttribute(
 			"data-has-more",
 			"true",
 		);
-		expect(mockState.clearSelection).toHaveBeenCalledTimes(1);
 	});
 
-	it("selects all visible category files with Command+A", async () => {
-		render(<CategoryBrowserPage />);
+	it("selects all visible search results with Command+A", async () => {
+		render(<SearchBrowserPage />);
 
-		await screen.findByText("photo.jpg");
+		await screen.findByText("report.txt");
 
 		fireEvent.keyDown(document, {
 			cancelable: true,
@@ -357,63 +339,25 @@ describe("CategoryBrowserPage", () => {
 			metaKey: true,
 		});
 
-		expect(mockState.selectItems).toHaveBeenCalledWith([1], []);
+		expect(mockState.selectItems).toHaveBeenCalledWith([1], [2]);
 	});
 
-	it("navigates to a result file location from the category context action", async () => {
+	it("can go to a result file location and open folder results", async () => {
 		mockState.getFile.mockResolvedValue({ folder_id: 42 });
 
-		render(<CategoryBrowserPage />);
+		render(<SearchBrowserPage />);
 
-		fireEvent.click(await screen.findByText("photo.jpg"));
-
+		fireEvent.click(await screen.findByText("report.txt"));
 		await waitFor(() => {
 			expect(mockState.getFile).toHaveBeenCalledWith(1);
 		});
 		expect(mockState.navigate).toHaveBeenCalledWith("/folder/42", {
 			viewTransition: false,
 		});
-	});
 
-	it("opens the file info panel from category file actions", async () => {
-		render(<CategoryBrowserPage />);
-
-		fireEvent.click(await screen.findByText("info photo.jpg"));
-
-		expect(screen.getByTestId("workspace")).toHaveAttribute(
-			"data-info-open",
-			"true",
-		);
-		expect(screen.getByTestId("workspace")).toHaveAttribute(
-			"data-info-target",
-			"photo.jpg",
-		);
-
-		fireEvent.click(screen.getByText("close info"));
-
-		expect(screen.getByTestId("workspace")).toHaveAttribute(
-			"data-info-open",
-			"false",
-		);
-	});
-
-	it("redirects unknown category routes to the workspace root", () => {
-		mockState.params.category = "unknown";
-
-		render(<CategoryBrowserPage />);
-
-		expect(screen.getByTestId("navigate")).toHaveTextContent("/");
-		expect(mockState.search).not.toHaveBeenCalled();
-	});
-
-	it("clears stale selection when the category route changes", async () => {
-		const { rerender } = render(<CategoryBrowserPage />);
-		await screen.findByText("photo.jpg");
-		expect(mockState.clearSelection).toHaveBeenCalledTimes(1);
-
-		mockState.params.category = "video";
-		rerender(<CategoryBrowserPage />);
-
-		expect(mockState.clearSelection).toHaveBeenCalledTimes(2);
+		fireEvent.click(screen.getByText("Reports"));
+		expect(mockState.navigate).toHaveBeenCalledWith("/folder/2?name=Reports", {
+			viewTransition: false,
+		});
 	});
 });

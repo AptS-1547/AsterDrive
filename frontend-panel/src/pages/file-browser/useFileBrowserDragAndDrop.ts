@@ -33,8 +33,6 @@ interface UseFileBrowserDragAndDropOptions {
 		targetFolderId: number | null,
 	) => Promise<BatchResult>;
 	refresh: () => Promise<void>;
-	search: (query: string) => Promise<void>;
-	searchQuery: string | null;
 	t: TFunction;
 }
 
@@ -49,8 +47,6 @@ export function useFileBrowserDragAndDrop({
 	isSearching,
 	moveToFolder,
 	refresh,
-	search,
-	searchQuery,
 	t,
 }: UseFileBrowserDragAndDropOptions) {
 	const [contentDragOver, setContentDragOver] = useState(false);
@@ -228,21 +224,14 @@ export function useFileBrowserDragAndDrop({
 				clearFadingState();
 				showBatchToast("delete", result);
 				clearSelection();
-				await (searchQuery ? search(searchQuery) : refresh());
+				await refresh();
 			} catch (err) {
 				forgetStorageEventEchoes(echoIds);
 				clearFadingState();
 				handleApiError(err);
 			}
 		},
-		[
-			clearFadingState,
-			clearSelection,
-			refresh,
-			search,
-			searchQuery,
-			showBatchToast,
-		],
+		[clearFadingState, clearSelection, refresh, showBatchToast],
 	);
 
 	return {

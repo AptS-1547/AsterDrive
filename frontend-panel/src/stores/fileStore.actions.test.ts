@@ -18,7 +18,6 @@ const mockState = vi.hoisted(() => ({
 	listRoot: vi.fn(),
 	queuePreferenceSync: vi.fn(),
 	refreshUser: vi.fn(async () => undefined),
-	search: vi.fn(),
 	warn: vi.fn(),
 }));
 
@@ -44,12 +43,6 @@ vi.mock("@/services/batchService", () => ({
 		batchCopy: mockState.batchCopy,
 		batchDelete: mockState.batchDelete,
 		batchMove: mockState.batchMove,
-	},
-}));
-
-vi.mock("@/services/searchService", () => ({
-	searchService: {
-		search: mockState.search,
 	},
 }));
 
@@ -130,7 +123,6 @@ describe("useFileStore actions", () => {
 		mockState.queuePreferenceSync.mockReset();
 		mockState.refreshUser.mockReset();
 		mockState.refreshUser.mockResolvedValue(undefined);
-		mockState.search.mockReset();
 		mockState.warn.mockReset();
 	});
 
@@ -162,9 +154,6 @@ describe("useFileStore actions", () => {
 			foldersTotalCount: 1,
 			loadingMore: true,
 			nextFileCursor: seeded.next_file_cursor,
-			searchQuery: "draft",
-			searchFiles: seeded.files,
-			searchFolders: seeded.folders,
 			selectedFileIds: new Set([20]),
 			selectedFolderIds: new Set([10]),
 			clipboard: {
@@ -194,9 +183,6 @@ describe("useFileStore actions", () => {
 		expect(state.filesTotalCount).toBe(0);
 		expect(state.loadingMore).toBe(false);
 		expect(state.nextFileCursor).toBeNull();
-		expect(state.searchQuery).toBeNull();
-		expect(state.searchFolders).toEqual([]);
-		expect(state.searchFiles).toEqual([]);
 		expect(state.selectedFileIds.size).toBe(0);
 		expect(state.selectedFolderIds.size).toBe(0);
 		expect(state.clipboard).toBeNull();

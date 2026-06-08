@@ -2,6 +2,7 @@
 	"dialog_title": "Search",
 	"open_search": "Open search",
 	"placeholder": "Search files and folders...",
+	"submit_search": "Search",
 	"close_search": "Close search",
 	"all": "All",
 	"files_only": "Files only",
@@ -20,13 +21,8 @@
 	"category_view_title": "{{category}}",
 	"category_view_empty": "No {{category}} files yet",
 	"category_view_empty_desc": "Files matching this category will appear here.",
-	"results": "Found {{files}} file(s) and {{folders}} folder(s)",
-	"start_typing": "Start typing to search",
-	"start_typing_desc": "Search across files and folders in the current workspace.",
-	"navigate_results": "Navigate with the keyboard",
-	"navigate_results_desc": "Use Arrow keys to move through results, then press Enter to open.",
-	"open_selected_desc": "Enter opens the active result. Esc closes search.",
-	"searching": "Searching...",
+	"dialog_empty": "Enter a keyword or choose filters to open the search results page.",
+	"dialog_ready": "Press Enter or click Search to browse and manage results.",
 	"tag_filters": "Tags",
 	"tag_loading": "Loading tags",
 	"no_tags": "No tags yet",
@@ -39,8 +35,5 @@
 	"filter_tag": "Tag: {{value}}",
 	"filter_tag_match": "Tag mode: {{value}}",
 	"clear_filter": "Clear filter",
-	"open_result": "Open",
-	"search_error": "Search failed",
-	"no_results": "No results found",
-	"no_results_desc": "Try a different search term."
+	"search_error": "Search failed"
 }

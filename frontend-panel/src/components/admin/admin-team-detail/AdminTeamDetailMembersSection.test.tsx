@@ -210,7 +210,6 @@ function createProps(
 		nextMemberPageDisabled: false,
 		ownerCount: 1,
 		prevMemberPageDisabled: true,
-		requestRemoveConfirm: vi.fn(),
 		roleFilterOptions: [{ label: "all", value: "__all__" }],
 		roleLabel: (role) => `role:${role}`,
 		roleOptions: ["owner", "admin", "member"],
@@ -224,6 +223,7 @@ function createProps(
 		team,
 		onAddMember: vi.fn((event) => event.preventDefault()),
 		onMemberSortChange: vi.fn(),
+		onRemoveMember: vi.fn(),
 		onUpdateMemberRole: vi.fn(),
 		...overrides,
 	} satisfies ComponentProps<typeof AdminTeamDetailMembersSection>;
@@ -279,7 +279,9 @@ describe("AdminTeamDetailMembersSection", () => {
 				name: "settings:settings_team_remove_member",
 			}),
 		);
-		expect(props.requestRemoveConfirm).toHaveBeenCalledWith(2);
+		expect(props.onRemoveMember).not.toHaveBeenCalled();
+		fireEvent.click(screen.getByRole("button", { name: "core:confirm" }));
+		expect(props.onRemoveMember).toHaveBeenCalledWith(2);
 		const nextPageButton = screen.getByText("CaretRight").closest("button");
 		if (!nextPageButton) throw new Error("Expected next page button");
 		fireEvent.click(nextPageButton);
@@ -288,6 +290,27 @@ describe("AdminTeamDetailMembersSection", () => {
 			props.memberOffset,
 			10,
 		);
+	});
+
+	it("can cancel inline member removal confirmation", () => {
+		const props = createProps();
+		render(<AdminTeamDetailMembersSection {...props} />);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_team_remove_member",
+			}),
+		);
+		expect(screen.getByRole("button", { name: "core:confirm" })).toBeVisible();
+
+		fireEvent.click(screen.getByRole("button", { name: "core:cancel" }));
+
+		expect(props.onRemoveMember).not.toHaveBeenCalled();
+		expect(
+			screen.getByRole("button", {
+				name: "settings:settings_team_remove_member",
+			}),
+		).toBeVisible();
 	});
 
 	it("renders readonly, loading and empty states", () => {

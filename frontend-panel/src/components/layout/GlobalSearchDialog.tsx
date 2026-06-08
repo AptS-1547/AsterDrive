@@ -1,25 +1,11 @@
-import {
-	type KeyboardEvent,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { TagLibraryManagerDialog } from "@/components/files/TagLibraryManagerDialog";
 import { GlobalSearchHeader } from "@/components/layout/global-search/GlobalSearchHeader";
-import { GlobalSearchResultsPanel } from "@/components/layout/global-search/GlobalSearchResultsPanel";
-import {
-	getSearchOffset,
-	hasMoreSearchResults,
-} from "@/components/layout/global-search/searchResultState";
-import {
-	EMPTY_RESULTS,
-	type SearchCategoryFilter,
-	type SearchEntry,
-	type SearchFilter,
-	type SearchPreviewLocationState,
+import type {
+	SearchCategoryFilter,
+	SearchFilter,
 } from "@/components/layout/global-search/types";
 import {
 	Dialog,
@@ -27,23 +13,14 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { handleApiError } from "@/hooks/useApiError";
+import { Icon } from "@/components/ui/icon";
 import { isImeComposingKeyEvent } from "@/lib/keyboard";
-import { workspaceFolderPath } from "@/lib/workspace";
-import { fileService } from "@/services/fileService";
+import { workspaceSearchPath } from "@/lib/workspace";
 import { isRequestCanceled } from "@/services/http";
-import { searchService } from "@/services/searchService";
 import { createTagService } from "@/services/tagService";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import type {
-	FileCategory,
-	SearchParams,
-	SearchResults,
-	TagInfo,
-} from "@/types/api";
+import type { FileCategory, TagInfo } from "@/types/api";
 
-const SEARCH_DEBOUNCE_MS = 180;
-const SEARCH_RESULT_LIMIT = 10;
 const TAG_FILTER_LIMIT = 100;
 
 type SearchTagMatch = "any" | "all";
@@ -65,35 +42,28 @@ export function GlobalSearchDialog({
 	const inputRef = useRef<HTMLInputElement | null>(null);
 	const inputComposingRef = useRef(false);
 	const inputCompositionEndAtRef = useRef(0);
-	const resultListRef = useRef<HTMLDivElement | null>(null);
-	const loadMoreRef = useRef<HTMLDivElement | null>(null);
-	const controllerRef = useRef<AbortController | null>(null);
-	const requestIdRef = useRef(0);
 	const [query, setQuery] = useState("");
 	const [filter, setFilter] = useState<SearchFilter>("all");
 	const [categoryFilter, setCategoryFilter] =
 		useState<SearchCategoryFilter>(null);
-	const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
-	const [loading, setLoading] = useState(false);
-	const [loadingMore, setLoadingMore] = useState(false);
 	const [tagLoading, setTagLoading] = useState(false);
 	const [tags, setTags] = useState<TagInfo[]>([]);
 	const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
 	const [tagMatch, setTagMatch] = useState<SearchTagMatch>("any");
 	const [tagLibraryManagerOpen, setTagLibraryManagerOpen] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-	const [activeIndex, setActiveIndex] = useState(0);
-	const [openingKey, setOpeningKey] = useState<string | null>(null);
 
 	const trimmedQuery = query.trim();
 	const hasSearchCriteria = Boolean(
 		trimmedQuery || categoryFilter || selectedTagIds.length > 0,
 	);
 	const searchType: SearchFilter = categoryFilter ? "file" : filter;
-
-	const buildSearchParams = useMemo(
-		() =>
-			(offset?: number): SearchParams => ({
+	const openSearchPage = () => {
+		if (!hasSearchCriteria) {
+			return;
+		}
+		onOpenChange(false);
+		navigate(
+			workspaceSearchPath(workspace, {
 				...(trimmedQuery ? { q: trimmedQuery } : {}),
 				type: searchType,
 				...(categoryFilter ? { category: categoryFilter } : {}),
@@ -103,37 +73,15 @@ export function GlobalSearchDialog({
 							tag_match: tagMatch,
 						}
 					: {}),
-				limit: SEARCH_RESULT_LIMIT,
-				...(offset == null ? {} : { offset }),
 			}),
-		[categoryFilter, searchType, selectedTagIds, tagMatch, trimmedQuery],
-	);
-
-	const resultEntries = useMemo<SearchEntry[]>(
-		() => [
-			...results.folders.map((item) => ({
-				key: `folder-${item.id}`,
-				kind: "folder" as const,
-				item,
-			})),
-			...results.files.map((item) => ({
-				key: `file-${item.id}`,
-				kind: "file" as const,
-				item,
-			})),
-		],
-		[results],
-	);
-	const activeEntry = resultEntries[activeIndex] ?? null;
-	const canLoadMore = hasMoreSearchResults(results);
+			{ viewTransition: false },
+		);
+	};
 
 	useEffect(() => {
 		if (!open) {
 			inputComposingRef.current = false;
 			inputCompositionEndAtRef.current = 0;
-			controllerRef.current?.abort();
-			controllerRef.current = null;
-			requestIdRef.current += 1;
 			setQuery("");
 			setFilter("all");
 			setCategoryFilter(null);
@@ -142,12 +90,6 @@ export function GlobalSearchDialog({
 			setSelectedTagIds([]);
 			setTagMatch("any");
 			setTagLibraryManagerOpen(false);
-			setResults(EMPTY_RESULTS);
-			setLoading(false);
-			setLoadingMore(false);
-			setError(null);
-			setActiveIndex(0);
-			setOpeningKey(null);
 			return;
 		}
 
@@ -197,11 +139,6 @@ export function GlobalSearchDialog({
 		setQuery("");
 		setFilter("file");
 		setCategoryFilter(initialCategory);
-		setResults(EMPTY_RESULTS);
-		setActiveIndex(0);
-		setLoading(false);
-		setLoadingMore(false);
-		setError(null);
 	}, [initialCategory, open]);
 
 	const handleToggleTag = (tagId: number) => {
@@ -210,7 +147,6 @@ export function GlobalSearchDialog({
 				? current.filter((id) => id !== tagId)
 				: [...current, tagId],
 		);
-		setActiveIndex(0);
 	};
 
 	const handleLibraryTagUpdated = (tag: TagInfo) => {
@@ -226,209 +162,9 @@ export function GlobalSearchDialog({
 	const handleLibraryTagDeleted = (tagId: number) => {
 		setTags((current) => current.filter((tag) => tag.id !== tagId));
 		setSelectedTagIds((current) => current.filter((id) => id !== tagId));
-		setActiveIndex(0);
 	};
 
-	useEffect(() => {
-		if (!open) {
-			return;
-		}
-
-		if (!hasSearchCriteria) {
-			controllerRef.current?.abort();
-			controllerRef.current = null;
-			requestIdRef.current += 1;
-			setResults(EMPTY_RESULTS);
-			setLoading(false);
-			setLoadingMore(false);
-			setError(null);
-			setActiveIndex(0);
-			return;
-		}
-
-		const requestId = requestIdRef.current + 1;
-		requestIdRef.current = requestId;
-		controllerRef.current?.abort();
-		const controller = new AbortController();
-		controllerRef.current = controller;
-		setLoading(true);
-		setLoadingMore(false);
-		setError(null);
-
-		const timer = window.setTimeout(() => {
-			void searchService
-				.search(buildSearchParams(), { signal: controller.signal })
-				.then((nextResults) => {
-					if (requestIdRef.current !== requestId) {
-						return;
-					}
-					setResults(nextResults);
-					setLoading(false);
-					setLoadingMore(false);
-					setActiveIndex(0);
-				})
-				.catch((searchError) => {
-					if (
-						requestIdRef.current !== requestId ||
-						isRequestCanceled(searchError)
-					) {
-						return;
-					}
-					setResults(EMPTY_RESULTS);
-					setLoading(false);
-					setLoadingMore(false);
-					setError(
-						searchError instanceof Error
-							? searchError.message
-							: t("search:search_error"),
-					);
-				});
-		}, SEARCH_DEBOUNCE_MS);
-
-		return () => {
-			window.clearTimeout(timer);
-			controller.abort();
-			if (
-				requestIdRef.current === requestId &&
-				controllerRef.current === controller
-			) {
-				controllerRef.current = null;
-			}
-		};
-	}, [buildSearchParams, hasSearchCriteria, open, t]);
-
-	useEffect(() => {
-		if (
-			!open ||
-			!hasSearchCriteria ||
-			!canLoadMore ||
-			loading ||
-			loadingMore ||
-			typeof window === "undefined" ||
-			typeof window.IntersectionObserver === "undefined"
-		) {
-			return;
-		}
-
-		const root = resultListRef.current;
-		const sentinel = loadMoreRef.current;
-		if (!root || !sentinel) {
-			return;
-		}
-
-		const observer = new window.IntersectionObserver(
-			(entries) => {
-				if (!entries.some((entry) => entry.isIntersecting)) {
-					return;
-				}
-
-				const requestId = requestIdRef.current + 1;
-				requestIdRef.current = requestId;
-				controllerRef.current?.abort();
-				const controller = new AbortController();
-				controllerRef.current = controller;
-				setLoadingMore(true);
-
-				void searchService
-					.search(buildSearchParams(getSearchOffset(results)), {
-						signal: controller.signal,
-					})
-					.then((nextResults) => {
-						if (requestIdRef.current !== requestId) {
-							return;
-						}
-
-						setResults((current) => ({
-							files: [...current.files, ...nextResults.files],
-							folders: [...current.folders, ...nextResults.folders],
-							total_files: nextResults.total_files,
-							total_folders: nextResults.total_folders,
-						}));
-						setLoadingMore(false);
-					})
-					.catch((searchError) => {
-						if (
-							requestIdRef.current !== requestId ||
-							isRequestCanceled(searchError)
-						) {
-							return;
-						}
-
-						setLoadingMore(false);
-					})
-					.finally(() => {
-						if (
-							requestIdRef.current === requestId &&
-							controllerRef.current === controller
-						) {
-							controllerRef.current = null;
-						}
-					});
-			},
-			{ root, rootMargin: "160px" },
-		);
-
-		observer.observe(sentinel);
-		return () => observer.disconnect();
-	}, [
-		buildSearchParams,
-		canLoadMore,
-		hasSearchCriteria,
-		loading,
-		loadingMore,
-		open,
-		results,
-	]);
-
-	useEffect(() => {
-		if (activeIndex < resultEntries.length) {
-			return;
-		}
-		setActiveIndex(Math.max(0, resultEntries.length - 1));
-	}, [activeIndex, resultEntries.length]);
-
-	useEffect(() => {
-		if (!open || resultEntries.length === 0) {
-			return;
-		}
-		const activeRow = resultListRef.current?.querySelector<HTMLElement>(
-			`[data-search-result-index="${activeIndex}"]`,
-		);
-		activeRow?.scrollIntoView({ block: "nearest" });
-	}, [activeIndex, open, resultEntries.length]);
-
-	const handleSelect = async (entry: SearchEntry) => {
-		if (openingKey !== null) {
-			return;
-		}
-
-		if (entry.kind === "folder") {
-			onOpenChange(false);
-			navigate(workspaceFolderPath(workspace, entry.item.id, entry.item.name), {
-				viewTransition: false,
-			});
-			return;
-		}
-
-		setOpeningKey(entry.key);
-		try {
-			const fileInfo = await fileService.getFile(entry.item.id);
-			const state: SearchPreviewLocationState = {
-				searchPreviewFile: entry.item,
-			};
-			onOpenChange(false);
-			navigate(workspaceFolderPath(workspace, fileInfo.folder_id ?? null), {
-				state,
-				viewTransition: false,
-			});
-		} catch (selectError) {
-			handleApiError(selectError);
-		} finally {
-			setOpeningKey(null);
-		}
-	};
-
-	const handleInputKeyDown = async (event: KeyboardEvent<HTMLInputElement>) => {
+	const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
 		if (
 			inputComposingRef.current ||
 			isImeComposingKeyEvent(event, {
@@ -438,29 +174,9 @@ export function GlobalSearchDialog({
 			return;
 		}
 
-		if (event.key === "ArrowDown") {
-			if (resultEntries.length === 0) {
-				return;
-			}
+		if (event.key === "Enter" && hasSearchCriteria) {
 			event.preventDefault();
-			setActiveIndex((current) => (current + 1) % resultEntries.length);
-			return;
-		}
-
-		if (event.key === "ArrowUp") {
-			if (resultEntries.length === 0) {
-				return;
-			}
-			event.preventDefault();
-			setActiveIndex((current) =>
-				current === 0 ? resultEntries.length - 1 : current - 1,
-			);
-			return;
-		}
-
-		if (event.key === "Enter" && activeEntry) {
-			event.preventDefault();
-			await handleSelect(activeEntry);
+			openSearchPage();
 			return;
 		}
 
@@ -491,12 +207,10 @@ export function GlobalSearchDialog({
 					}}
 					onCategoryFilterClear={() => {
 						setCategoryFilter(null);
-						setActiveIndex(0);
 					}}
 					onClose={() => onOpenChange(false)}
 					onFilterClear={() => {
 						setFilter("all");
-						setActiveIndex(0);
 					}}
 					onFilterChange={(nextFilter) => {
 						setFilter(nextFilter);
@@ -515,47 +229,41 @@ export function GlobalSearchDialog({
 					onInputCompositionStart={() => {
 						inputComposingRef.current = true;
 					}}
-					onInputKeyDown={(event) => {
-						void handleInputKeyDown(event);
-					}}
+					onInputKeyDown={handleInputKeyDown}
 					onManageTagLibrary={() => setTagLibraryManagerOpen(true)}
 					onQueryClear={() => {
 						setQuery("");
-						setActiveIndex(0);
 					}}
 					onQueryChange={setQuery}
 					onTagClear={(tagId) => {
 						setSelectedTagIds((current) =>
 							current.filter((currentTagId) => currentTagId !== tagId),
 						);
-						setActiveIndex(0);
 					}}
 					onTagMatchChange={setTagMatch}
 					onTagMatchClear={() => setTagMatch("any")}
 					onTagToggle={handleToggleTag}
+					onSubmitSearch={openSearchPage}
 					query={query}
+					searchReady={hasSearchCriteria}
 					selectedTagIds={selectedTagIds}
 					tagLoading={tagLoading}
 					tagMatch={tagMatch}
 					tags={tags}
 				/>
-				<GlobalSearchResultsPanel
-					activeIndex={activeIndex}
-					canLoadMore={canLoadMore}
-					error={error}
-					loading={loading}
-					loadingMore={loadingMore}
-					loadMoreRef={loadMoreRef}
-					openingKey={openingKey}
-					onHoverResult={setActiveIndex}
-					onSelectResult={(entry) => {
-						void handleSelect(entry);
-					}}
-					resultEntries={resultEntries}
-					resultListRef={resultListRef}
-					results={results}
-					searchActive={hasSearchCriteria}
-				/>
+				<div className="flex items-center justify-between gap-3 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+					<span className="inline-flex min-w-0 items-center gap-1.5">
+						<Icon name="MagnifyingGlass" className="size-3.5 shrink-0" />
+						<span className="truncate">
+							{hasSearchCriteria
+								? t("search:dialog_ready")
+								: t("search:dialog_empty")}
+						</span>
+					</span>
+					<kbd className="hidden rounded-md border border-border/70 bg-background px-2 py-1 font-sans sm:inline-flex">
+						Enter
+					</kbd>
+				</div>
 				<TagLibraryManagerDialog
 					open={tagLibraryManagerOpen}
 					onOpenChange={setTagLibraryManagerOpen}

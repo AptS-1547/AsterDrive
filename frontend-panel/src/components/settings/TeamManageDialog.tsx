@@ -209,15 +209,12 @@ export function TeamManageDialog({
 	}, [open, setWebdavPrefix]);
 
 	const {
-		archiveDialogProps,
 		handleAddMember,
+		handleArchiveTeam,
+		handleRemoveMember,
 		handleUpdateMemberRole,
 		handleUpdateTeam,
 		mutating,
-		removeDialogProps,
-		removeMemberId,
-		requestArchiveConfirm,
-		requestRemoveConfirm,
 	} = useTeamManageActions({
 		canArchiveTeam,
 		canManageTeam,
@@ -236,26 +233,9 @@ export function TeamManageDialog({
 		teamId,
 	});
 
-	const removeMember =
-		members.find((member) => member.user_id === removeMemberId) ?? null;
-
 	if (teamId == null) {
 		return null;
 	}
-
-	const handleDialogOpenChange = (nextOpen: boolean) => {
-		if (!nextOpen) {
-			archiveDialogProps.onOpenChange(false);
-		}
-		onOpenChange(nextOpen);
-	};
-	const handleArchiveDialogOpenChange = (nextOpen: boolean) => {
-		if (nextOpen) {
-			requestArchiveConfirm(true);
-			return;
-		}
-		archiveDialogProps.onOpenChange(false);
-	};
 
 	const {
 		auditSection,
@@ -277,7 +257,8 @@ export function TeamManageDialog({
 		currentUserId,
 		detailLoading,
 		displayTeam,
-		handleArchiveDialogOpenChange,
+		handleArchiveTeam,
+		handleRemoveMember,
 		handleUpdateMemberRole,
 		hasMemberFilters,
 		managerCount,
@@ -306,7 +287,6 @@ export function TeamManageDialog({
 		ownerCount,
 		prevAuditPageDisabled,
 		prevMemberPageDisabled,
-		requestRemoveConfirm,
 		roleFilterOptions,
 		roleLabel,
 		roleOptions,
@@ -331,21 +311,16 @@ export function TeamManageDialog({
 	return (
 		<TeamManageDialogView
 			auditSection={auditSection}
-			archiveConfirmLabel={t("settings:settings_team_archive")}
-			archiveDescription={t("settings:settings_team_archive_desc")}
-			archiveDialogProps={archiveDialogProps}
 			canArchiveTeam={canArchiveTeam}
 			canManageTeam={canManageTeam}
 			contentRef={contentRef}
 			currentTab={currentTab}
-			currentUserId={currentUserId}
 			dangerSection={dangerSection}
 			isPageLayout={isPageLayout}
-			leaveLabel={t("settings:settings_team_leave")}
 			managerCount={managerCount}
 			membersSection={membersSection}
 			onContentScroll={handleContentScroll}
-			onOpenChange={handleDialogOpenChange}
+			onOpenChange={onOpenChange}
 			onOpenWorkspace={() =>
 				navigate(`/teams/${teamId}`, { viewTransition: false })
 			}
@@ -357,10 +332,6 @@ export function TeamManageDialog({
 			ownerCount={ownerCount}
 			panelAnimationClass={panelAnimationClass}
 			quota={quota}
-			removeDescription={t("settings:settings_team_remove_member_desc")}
-			removeDialogProps={removeDialogProps}
-			removeLabel={t("settings:settings_team_remove_member")}
-			removeMember={removeMember}
 			roleLabel={roleLabel}
 			sidebarRef={sidebarRef}
 			team={displayTeam}

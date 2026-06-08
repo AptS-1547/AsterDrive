@@ -1,3 +1,4 @@
+import { withQuery } from "@/lib/queryParams";
 import type { FileCategory } from "@/types/api";
 
 export const CATEGORY_ROUTE_SEGMENTS = {
@@ -85,6 +86,22 @@ export function workspaceCategoryPath(
 	return isTeamWorkspace(workspace)
 		? `/teams/${workspace.teamId}/category/${segment}`
 		: `/category/${segment}`;
+}
+
+export function workspaceSearchPath(
+	workspace: Workspace,
+	params?: {
+		category?: FileCategory | null;
+		q?: string | null;
+		tag_ids?: string | null;
+		tag_match?: "all" | "any" | null;
+		type?: "all" | "file" | "folder" | null;
+	},
+) {
+	const path = isTeamWorkspace(workspace)
+		? `/teams/${workspace.teamId}/search`
+		: "/search";
+	return withQuery(path, params);
 }
 
 export function workspaceSharesPath(workspace: Workspace) {

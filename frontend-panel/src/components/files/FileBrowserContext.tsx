@@ -43,8 +43,12 @@ export interface FileBrowserContextValue {
 	onManageTags?: (type: "file" | "folder", id: number) => void;
 	onMove?: (type: "file" | "folder", id: number) => void;
 	onGoToLocation?: (file: FileListItem) => void;
-	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
-	onDelete: (type: "file" | "folder", id: number) => void;
+	onToggleLock: (
+		type: "file" | "folder",
+		id: number,
+		locked: boolean,
+	) => boolean | Promise<boolean> | undefined;
+	onDelete: (type: "file" | "folder", id: number) => Promise<void> | undefined;
 	onRename?: (type: "file" | "folder", id: number, name: string) => void;
 	onVersions?: (fileId: number) => void;
 	onInfo?: (type: "file" | "folder", id: number) => void;

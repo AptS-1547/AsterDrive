@@ -26,11 +26,13 @@ interface GlobalSearchHeaderProps {
 	onManageTagLibrary: () => void;
 	onQueryClear: () => void;
 	onQueryChange: (value: string) => void;
+	onSubmitSearch: () => void;
 	onTagClear: (tagId: number) => void;
 	onTagMatchChange: (value: SearchTagMatch) => void;
 	onTagMatchClear: () => void;
 	onTagToggle: (tagId: number) => void;
 	query: string;
+	searchReady: boolean;
 	selectedTagIds: number[];
 	tagLoading: boolean;
 	tagMatch: SearchTagMatch;
@@ -53,11 +55,13 @@ export function GlobalSearchHeader({
 	onManageTagLibrary,
 	onQueryClear,
 	onQueryChange,
+	onSubmitSearch,
 	onTagClear,
 	onTagMatchChange,
 	onTagMatchClear,
 	onTagToggle,
 	query,
+	searchReady,
 	selectedTagIds,
 	tagLoading,
 	tagMatch,
@@ -91,6 +95,15 @@ export function GlobalSearchHeader({
 						className="h-11 rounded-xl border-border/70 bg-muted/35 pr-3 pl-9 text-base shadow-none focus-visible:bg-background"
 					/>
 				</div>
+				<Button
+					type="button"
+					onClick={onSubmitSearch}
+					disabled={!searchReady}
+					className="shrink-0"
+				>
+					<Icon name="MagnifyingGlass" className="size-4" />
+					<span className="hidden sm:inline">{t("search:submit_search")}</span>
+				</Button>
 				<Button
 					type="button"
 					variant="ghost"

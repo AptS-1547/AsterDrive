@@ -14,8 +14,8 @@ interface DangerSectionProps {
 	ownerCount: number;
 	restoring: boolean;
 	setArchiveConfirmValue: (value: string) => void;
-	setArchiveDialogOpen: (open: boolean) => void;
 	team: AdminTeamInfo | null;
+	onArchive: () => Promise<void>;
 	onRestore: () => Promise<void>;
 }
 
@@ -27,8 +27,8 @@ export function AdminTeamDetailDangerSection({
 	ownerCount,
 	restoring,
 	setArchiveConfirmValue,
-	setArchiveDialogOpen,
 	team,
+	onArchive,
 	onRestore,
 }: DangerSectionProps) {
 	const { t } = useTranslation(["admin", "core", "settings"]);
@@ -118,7 +118,7 @@ export function AdminTeamDetailDangerSection({
 									archiving ||
 									archiveConfirmValue.trim() !== (team?.name ?? "")
 								}
-								onClick={() => setArchiveDialogOpen(true)}
+								onClick={() => void onArchive()}
 							>
 								{archiving ? (
 									<Icon name="Spinner" className="mr-1 size-4 animate-spin" />

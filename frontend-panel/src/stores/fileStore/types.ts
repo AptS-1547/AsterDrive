@@ -116,14 +116,6 @@ export interface NavigationSlice {
 	hasMoreFiles: () => boolean;
 }
 
-export interface SearchSlice {
-	searchQuery: string | null;
-	searchFolders: FolderListItem[];
-	searchFiles: FileListItem[];
-	search: (query: string) => Promise<void>;
-	clearSearch: () => void;
-}
-
 export interface PreferencesSlice {
 	viewMode: ViewMode;
 	browserOpenMode: BrowserOpenMode;
@@ -176,7 +168,6 @@ export interface CrudSlice {
 
 export type FileState = RequestSlice &
 	NavigationSlice &
-	SearchSlice &
 	PreferencesSlice &
 	SelectionSlice &
 	ClipboardSlice &
@@ -203,14 +194,6 @@ export function createWorkspaceContentReset() {
 	};
 }
 
-export function createSearchReset() {
-	return {
-		searchQuery: null as string | null,
-		searchFolders: [] as FolderListItem[],
-		searchFiles: [] as FileListItem[],
-	};
-}
-
 export function createSelectionReset() {
 	return {
 		selectedFileIds: new Set<number>(),
@@ -226,7 +209,6 @@ export function createWorkspaceResetState() {
 		error: null as string | null,
 		clipboard: null as Clipboard | null,
 		...createWorkspaceContentReset(),
-		...createSearchReset(),
 		...createSelectionReset(),
 	};
 }

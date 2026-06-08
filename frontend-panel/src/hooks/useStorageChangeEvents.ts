@@ -44,10 +44,10 @@ function eventMatchesWorkspace(
 }
 
 function shouldRefreshCurrentFolder(event: StorageChangeEventPayload) {
-	const { currentFolderId, breadcrumb, searchQuery } = useFileStore.getState();
-	if (searchQuery) {
+	if (isVirtualFileBrowserRoute()) {
 		return false;
 	}
+	const { currentFolderId, breadcrumb } = useFileStore.getState();
 	if (event.root_affected && currentFolderId === null) {
 		return true;
 	}
@@ -60,6 +60,20 @@ function shouldRefreshCurrentFolder(event: StorageChangeEventPayload) {
 	}
 	return breadcrumb.some(
 		(item) => item.id !== null && event.folder_ids.includes(item.id),
+	);
+}
+
+function isVirtualFileBrowserRoute() {
+	if (typeof window === "undefined") {
+		return false;
+	}
+
+	const { pathname } = window.location;
+	return (
+		pathname === "/search" ||
+		/^\/teams\/\d+\/search$/.test(pathname) ||
+		/^\/category\/[^/]+$/.test(pathname) ||
+		/^\/teams\/\d+\/category\/[^/]+$/.test(pathname)
 	);
 }
 
@@ -220,7 +234,7 @@ export function useStorageChangeEvents() {
 				if (event.kind === "sync.required") {
 					invalidateBlobUrl();
 					invalidateTextContent();
-					if (!useFileStore.getState().searchQuery) {
+					if (!isVirtualFileBrowserRoute()) {
 						if (isStorageRefreshGateActive()) {
 							deferStorageRefresh();
 							return;

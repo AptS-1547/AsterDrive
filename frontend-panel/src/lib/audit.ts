@@ -188,6 +188,7 @@ function stringParam(
 function formatAuditPresentationMessage(
 	t: TFunction,
 	message: AuditPresentationMessage | undefined | null,
+	prefer: "action" | "presentation" | "target",
 	fallback?: string,
 ) {
 	if (!message?.code) {
@@ -195,6 +196,22 @@ function formatAuditPresentationMessage(
 	}
 
 	const params = presentationParams(message);
+	if (prefer === "action") {
+		if (message.code.startsWith("audit_action_")) {
+			// Old backend responses may already use an action code here; keep that path working.
+			return resolveAuditTranslation(t, message.code, "admin", fallback);
+		}
+
+		const actionLabel = resolveAuditTranslation(
+			t,
+			`audit_action_${message.code}`,
+			"admin",
+		);
+		if (actionLabel) {
+			return actionLabel;
+		}
+	}
+
 	const direct = resolveAuditTranslation(
 		t,
 		`audit_presentation_${message.code}`,
@@ -209,7 +226,6 @@ function formatAuditPresentationMessage(
 	}
 
 	if (message.code.startsWith("audit_action_")) {
-		// Old backend responses may already use an action code here; keep that path working.
 		return resolveAuditTranslation(t, message.code, "admin", fallback);
 	}
 
@@ -240,7 +256,7 @@ export function formatAuditSummary(
 	entry: AuditPresentationEntry,
 ) {
 	return (
-		formatAuditPresentationMessage(t, entry.presentation?.summary) ??
+		formatAuditPresentationMessage(t, entry.presentation?.summary, "action") ??
 		formatAuditAction(t, entry.action)
 	);
 }
@@ -250,7 +266,7 @@ export function formatAuditTarget(
 	entry: Pick<AuditLogEntry, "entity_name" | "entity_type" | "presentation">,
 ) {
 	return (
-		formatAuditPresentationMessage(t, entry.presentation?.target) ??
+		formatAuditPresentationMessage(t, entry.presentation?.target, "target") ??
 		entry.entity_name ??
 		formatAuditEntityType(t, entry.entity_type)
 	);
@@ -276,5 +292,9 @@ export function formatAuditTargetType(
 }
 
 export function formatAuditDetail(t: TFunction, entry: AuditPresentationEntry) {
-	return formatAuditPresentationMessage(t, entry.presentation?.detail);
+	return formatAuditPresentationMessage(
+		t,
+		entry.presentation?.detail,
+		"presentation",
+	);
 }

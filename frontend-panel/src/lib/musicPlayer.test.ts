@@ -8,7 +8,6 @@ import {
 	hydrateMusicTrackStreamLink,
 	inferMusicMetadata,
 	isMusicFile,
-	parseMusicMetadataFromSource,
 } from "@/lib/musicPlayer";
 
 const mockState = vi.hoisted(() => ({
@@ -22,12 +21,9 @@ const mockState = vi.hoisted(() => ({
 			? `/files/${idOrToken}/download`
 			: `/s/${idOrToken}/download`,
 	),
-	fetch: vi.fn(),
 	getFileMediaMetadata: vi.fn(),
 	getShareFolderFileMediaMetadata: vi.fn(),
 	getShareMediaMetadata: vi.fn(),
-	parseBlob: vi.fn(),
-	selectCover: vi.fn(),
 	mediaDataSupportStore: {
 		config: {
 			enabled: true,
@@ -88,24 +84,16 @@ vi.mock("@/services/shareService", () => ({
 	},
 }));
 
-vi.mock("music-metadata", () => ({
-	parseBlob: (...args: unknown[]) => mockState.parseBlob(...args),
-	selectCover: (...args: unknown[]) => mockState.selectCover(...args),
-}));
-
 describe("musicPlayer helpers", () => {
 	beforeEach(() => {
 		mockState.createFolderFileStreamSession.mockReset();
 		mockState.createStreamSession.mockReset();
 		mockState.downloadFolderPath.mockClear();
 		mockState.downloadPath.mockClear();
-		mockState.fetch.mockReset();
 		mockState.folderFileThumbnailPath.mockClear();
 		mockState.getFileMediaMetadata.mockReset();
 		mockState.getShareFolderFileMediaMetadata.mockReset();
 		mockState.getShareMediaMetadata.mockReset();
-		mockState.parseBlob.mockReset();
-		mockState.selectCover.mockReset();
 		mockState.mediaDataSupportStore.config = {
 			enabled: true,
 			kinds: {
@@ -121,10 +109,6 @@ describe("musicPlayer helpers", () => {
 			version: 1,
 		};
 		mockState.thumbnailPath.mockClear();
-		vi.stubGlobal("fetch", mockState.fetch);
-		vi.stubGlobal("btoa", (value: string) =>
-			Buffer.from(value, "binary").toString("base64"),
-		);
 	});
 
 	it("recognizes music files by persisted category or MIME type", () => {
@@ -610,223 +594,5 @@ describe("musicPlayer helpers", () => {
 			expiresAt: undefined,
 			path: "/new",
 		});
-	});
-
-	it("parses browser music metadata and turns embedded cover art into a data URL", async () => {
-		const blob = new Blob(["audio"]);
-		mockState.fetch.mockResolvedValueOnce({
-			blob: async () => blob,
-			headers: new Headers(),
-			ok: true,
-			status: 206,
-		});
-		mockState.parseBlob.mockResolvedValueOnce({
-			common: {
-				album: "Album One",
-				artist: "First Artist",
-				artists: ["First Artist", "Second Artist"],
-				picture: [{ data: new Uint8Array([1, 2, 3]), format: "image/png" }],
-				title: "Parsed Song",
-			},
-		});
-		mockState.selectCover.mockReturnValueOnce({
-			data: new Uint8Array([1, 2, 3]),
-			format: "image/png",
-		});
-
-		const metadata = await parseMusicMetadataFromSource({
-			fallbackMetadata: { artist: "Fallback Artist", title: "Fallback Song" },
-			mimeType: "audio/mpeg",
-			name: "Fallback Song.mp3",
-			size: 123,
-			source: "/api/v1/files/1/download",
-		});
-
-		expect(mockState.fetch).toHaveBeenCalledWith(
-			"/api/v1/files/1/download",
-			expect.objectContaining({
-				credentials: "include",
-				headers: expect.any(Headers),
-			}),
-		);
-		expect(
-			(mockState.fetch.mock.calls[0]?.[1] as { headers: Headers }).headers.get(
-				"Range",
-			),
-		).toBe("bytes=0-3145727");
-		expect(mockState.parseBlob).toHaveBeenCalledWith(
-			blob,
-			expect.objectContaining({
-				duration: false,
-				skipCovers: false,
-				skipPostHeaders: true,
-			}),
-		);
-		expect(metadata).toEqual({
-			album: "Album One",
-			artist: "First Artist, Second Artist",
-			artists: ["First Artist", "Second Artist"],
-			artworkUrl: "data:image/png;base64,AQID",
-			title: "Parsed Song",
-		});
-	});
-
-	it("keeps fallback metadata when parsed tags are missing cover, title, or artist", async () => {
-		mockState.fetch.mockResolvedValueOnce({
-			blob: async () => new Blob(["audio"]),
-			headers: new Headers(),
-			ok: true,
-			status: 206,
-		});
-		mockState.parseBlob.mockResolvedValueOnce({
-			common: {
-				album: "",
-				artist: "",
-				artists: [],
-				picture: [],
-				title: "",
-			},
-		});
-		mockState.selectCover.mockReturnValueOnce(null);
-
-		await expect(
-			parseMusicMetadataFromSource({
-				fallbackMetadata: {
-					artist: "Fallback Artist",
-					artworkUrl: "data:image/jpeg;base64,old",
-					title: "Fallback Title",
-				},
-				mimeType: "audio/flac",
-				name: "File Name.flac",
-				source: "blob:local-audio",
-			}),
-		).resolves.toEqual({
-			album: undefined,
-			artist: "Fallback Artist",
-			artists: ["Fallback Artist"],
-			artworkUrl: "data:image/jpeg;base64,old",
-			title: "Fallback Title",
-		});
-		expect(
-			(mockState.fetch.mock.calls[0]?.[1] as { headers: Headers }).headers.get(
-				"Range",
-			),
-		).toBeNull();
-	});
-
-	it("parses bounded full-body metadata responses and defaults cover MIME type", async () => {
-		const blob = new Blob(["small body"]);
-		mockState.fetch.mockResolvedValueOnce({
-			blob: async () => blob,
-			headers: new Headers({ "Content-Length": "128" }),
-			ok: true,
-			status: 200,
-		});
-		mockState.parseBlob.mockResolvedValueOnce({
-			common: {
-				album: null,
-				artist: " Parsed Artist ",
-				artists: null,
-				picture: [{ data: new Uint8Array([4, 5, 6]), format: "" }],
-				title: "",
-			},
-		});
-		mockState.selectCover.mockReturnValueOnce({
-			data: new Uint8Array([4, 5, 6]),
-			format: "",
-		});
-
-		await expect(
-			parseMusicMetadataFromSource({
-				mimeType: "audio/ogg",
-				name: "Original File.ogg",
-				source: "/api/v1/files/2/download",
-			}),
-		).resolves.toEqual({
-			album: undefined,
-			artist: "Parsed Artist",
-			artists: ["Parsed Artist"],
-			artworkUrl: "data:image/jpeg;base64,BAUG",
-			title: "Original File",
-		});
-		expect(mockState.parseBlob).toHaveBeenCalledWith(blob, expect.any(Object));
-	});
-
-	it("accepts a content-range header even when status is 200", async () => {
-		const blob = new Blob(["partial body"]);
-		mockState.fetch.mockResolvedValueOnce({
-			blob: async () => blob,
-			headers: new Headers({ "Content-Range": "bytes 0-4/100" }),
-			ok: true,
-			status: 200,
-		});
-		mockState.parseBlob.mockResolvedValueOnce({
-			common: {
-				album: null,
-				artist: null,
-				artists: null,
-				picture: [],
-				title: "Range Header Song",
-			},
-		});
-		mockState.selectCover.mockReturnValueOnce(null);
-
-		await expect(
-			parseMusicMetadataFromSource({
-				mimeType: "audio/mpeg",
-				name: "fallback.mp3",
-				source: "/api/v1/files/3/download",
-			}),
-		).resolves.toEqual({
-			album: undefined,
-			artist: undefined,
-			artists: null,
-			artworkUrl: null,
-			title: "Range Header Song",
-		});
-		expect(mockState.parseBlob).toHaveBeenCalledWith(blob, expect.any(Object));
-	});
-
-	it("skips parsing when a ranged metadata request returns an unbounded full body", async () => {
-		const blob = vi.fn(async () => new Blob(["full body"]));
-		mockState.fetch.mockResolvedValueOnce({
-			blob,
-			headers: new Headers(),
-			ok: true,
-			status: 200,
-		});
-
-		await expect(
-			parseMusicMetadataFromSource({
-				fallbackMetadata: { artist: "Fallback Artist", title: "Fallback Song" },
-				mimeType: "audio/mpeg",
-				name: "Fallback Song.mp3",
-				size: 10_000_000,
-				source: "/api/v1/files/1/download",
-			}),
-		).resolves.toEqual({
-			artist: "Fallback Artist",
-			title: "Fallback Song",
-		});
-		expect(blob).not.toHaveBeenCalled();
-		expect(mockState.parseBlob).not.toHaveBeenCalled();
-	});
-
-	it("throws when metadata fetch fails", async () => {
-		mockState.fetch.mockResolvedValueOnce({
-			blob: async () => new Blob(["audio"]),
-			headers: new Headers(),
-			ok: false,
-			status: 500,
-		});
-
-		await expect(
-			parseMusicMetadataFromSource({
-				mimeType: "audio/mpeg",
-				name: "Broken.mp3",
-				source: "/api/v1/files/1/download",
-			}),
-		).rejects.toThrow("music metadata request failed with 500");
-		expect(mockState.parseBlob).not.toHaveBeenCalled();
 	});
 });

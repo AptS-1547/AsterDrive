@@ -9,7 +9,6 @@ const mockState = vi.hoisted(() => ({
 	listRoot: vi.fn(),
 	queuePreferenceSync: vi.fn(),
 	refreshUser: vi.fn(async () => undefined),
-	search: vi.fn(),
 }));
 
 vi.mock("@/services/fileService", () => ({
@@ -29,12 +28,6 @@ vi.mock("@/services/batchService", () => ({
 	batchService: {
 		batchCopy: mockState.batchCopy,
 		batchMove: mockState.batchMove,
-	},
-}));
-
-vi.mock("@/services/searchService", () => ({
-	searchService: {
-		search: mockState.search,
 	},
 }));
 
@@ -72,7 +65,6 @@ describe("useFileStore edge cases", () => {
 		mockState.queuePreferenceSync.mockReset();
 		mockState.refreshUser.mockReset();
 		mockState.refreshUser.mockResolvedValue(undefined);
-		mockState.search.mockReset();
 	});
 
 	it("persists view mode changes", async () => {
@@ -160,50 +152,6 @@ describe("useFileStore edge cases", () => {
 		} finally {
 			setItem.mockRestore();
 		}
-	});
-
-	it("populates and clears search results", async () => {
-		mockState.search.mockResolvedValue({
-			files: [{ id: 7, name: "notes.txt" }],
-			folders: [{ id: 8, name: "Docs" }],
-		});
-		const { useFileStore } = await loadStore();
-		useFileStore.setState({
-			selectedFileIds: new Set([7]),
-			selectedFolderIds: new Set([8]),
-		});
-
-		await useFileStore.getState().search("notes");
-
-		expect(mockState.search).toHaveBeenCalledWith(
-			{
-				q: "notes",
-				limit: 100,
-			},
-			expect.objectContaining({
-				signal: expect.any(AbortSignal),
-			}),
-		);
-		expect(useFileStore.getState()).toMatchObject({
-			loading: false,
-			searchQuery: "notes",
-		});
-		expect(useFileStore.getState().searchFiles).toEqual([
-			expect.objectContaining({ id: 7 }),
-		]);
-		expect(useFileStore.getState().searchFolders).toEqual([
-			expect.objectContaining({ id: 8 }),
-		]);
-		expect(useFileStore.getState().selectedFileIds.size).toBe(0);
-		expect(useFileStore.getState().selectedFolderIds.size).toBe(0);
-
-		useFileStore.getState().clearSearch();
-
-		expect(useFileStore.getState()).toMatchObject({
-			searchQuery: null,
-			searchFiles: [],
-			searchFolders: [],
-		});
 	});
 
 	it("tracks clipboard state for copy and cut selections", async () => {

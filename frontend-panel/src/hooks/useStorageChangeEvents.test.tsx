@@ -30,7 +30,6 @@ const mockState = vi.hoisted(() => ({
 			{ id: null, name: "Root" },
 			{ id: 7, name: "Docs" },
 		],
-		searchQuery: null as string | null,
 		navigateTo: vi.fn(),
 	},
 	invalidateBlobUrl: vi.fn(),
@@ -161,7 +160,6 @@ vi.mock("@/stores/fileStore", () => {
 				breadcrumb: typeof mockState.fileStore.breadcrumb;
 				currentFolderId: number | null;
 				navigateTo: typeof mockState.fileStore.navigateTo;
-				searchQuery: string | null;
 			}) => T,
 		) => selector(mockState.fileStore),
 		{
@@ -190,7 +188,7 @@ describe("useStorageChangeEvents", () => {
 			{ id: null, name: "Root" },
 			{ id: 7, name: "Docs" },
 		];
-		mockState.fileStore.searchQuery = null;
+		window.history.replaceState(null, "", "/");
 		mockState.fileStore.navigateTo.mockReset();
 		mockState.fileStore.navigateTo.mockResolvedValue(undefined);
 		mockState.invalidateBlobUrl.mockReset();
@@ -249,7 +247,7 @@ describe("useStorageChangeEvents", () => {
 	});
 
 	it("handles sync.required without refreshing during search", async () => {
-		mockState.fileStore.searchQuery = "report";
+		window.history.replaceState(null, "", "/search?q=report");
 		const { useStorageChangeEvents } = await import(
 			"@/hooks/useStorageChangeEvents"
 		);

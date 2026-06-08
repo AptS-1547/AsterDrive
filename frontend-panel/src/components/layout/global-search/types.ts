@@ -1,17 +1,8 @@
 import type { IconName } from "@/components/ui/icon";
-import type {
-	FileCategory,
-	FileListItem,
-	FolderListItem,
-	SearchResults,
-} from "@/types/api";
+import type { FileCategory, FileListItem } from "@/types/api";
 
 export type SearchFilter = "all" | "file" | "folder";
 export type SearchCategoryFilter = FileCategory | null;
-
-export type SearchEntry =
-	| { key: string; kind: "folder"; item: FolderListItem }
-	| { key: string; kind: "file"; item: FileListItem };
 
 export interface SearchPreviewLocationState {
 	searchPreviewFile?: FileListItem;
@@ -45,10 +36,3 @@ export const SEARCH_CATEGORY_OPTIONS: Array<{
 	{ value: "code", labelKey: "category_code", icon: "FileCode" },
 	{ value: "other", labelKey: "category_other", icon: "Folder" },
 ];
-
-export const EMPTY_RESULTS: SearchResults = {
-	files: [],
-	folders: [],
-	total_files: 0,
-	total_folders: 0,
-};

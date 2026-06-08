@@ -20,7 +20,6 @@ type MockMediaSession = {
 const mockState = vi.hoisted(() => ({
 	clear: vi.fn(),
 	closePanel: vi.fn(),
-	parseMusicMetadataFromSource: vi.fn(),
 	openPanel: vi.fn(),
 	playNext: vi.fn(),
 	playPrevious: vi.fn(),
@@ -139,11 +138,6 @@ vi.mock("@/stores/musicPlayerStore", () => ({
 			updateTrackMetadata: mockState.updateTrackMetadata,
 			updateTrackSource: mockState.updateTrackSource,
 		}),
-}));
-
-vi.mock("@/lib/musicPlayer", () => ({
-	parseMusicMetadataFromSource: (...args: unknown[]) =>
-		mockState.parseMusicMetadataFromSource(...args),
 }));
 
 vi.mock("@/hooks/useBlobUrl", () => ({
@@ -412,11 +406,6 @@ describe("MusicPlayerHost", () => {
 		mockState.clear.mockReset();
 		mockState.closePanel.mockReset();
 		mockState.openPanel.mockReset();
-		mockState.parseMusicMetadataFromSource.mockReset();
-		mockState.parseMusicMetadataFromSource.mockResolvedValue({
-			artist: "Parsed Artist",
-			title: "Parsed Title",
-		});
 		mockState.playNext.mockReset();
 		mockState.playPrevious.mockReset();
 		mockState.playTracks.mockReset();
@@ -1342,7 +1331,7 @@ describe("MusicPlayerHost", () => {
 		expect(style).not.toContain("var(--color-muted)) 100%");
 	});
 
-	it("falls back from pending backend metadata to browser parsing and then updates when backend metadata becomes ready", async () => {
+	it("keeps existing metadata while backend metadata is pending, then updates when ready", async () => {
 		vi.useFakeTimers();
 		const loadBackendMetadata = vi
 			.fn()
@@ -1351,10 +1340,6 @@ describe("MusicPlayerHost", () => {
 				artist: "Backend Artist",
 				title: "Backend Title",
 			});
-		mockState.parseMusicMetadataFromSource.mockResolvedValueOnce({
-			artist: "Parsed Artist",
-			title: "Parsed Title",
-		});
 		mockState.state.activeTrackId = "track-1";
 		mockState.state.queue = [
 			{
@@ -1371,16 +1356,7 @@ describe("MusicPlayerHost", () => {
 
 		await flushAsyncEffects();
 
-		expect(mockState.parseMusicMetadataFromSource).toHaveBeenCalledWith(
-			expect.objectContaining({
-				fallbackMetadata: { title: "Fallback Title" },
-				source: "/api/v1/files/7/download",
-			}),
-		);
-		expect(mockState.updateTrackMetadata).toHaveBeenCalledWith("track-1", {
-			artist: "Parsed Artist",
-			title: "Parsed Title",
-		});
+		expect(mockState.updateTrackMetadata).not.toHaveBeenCalled();
 
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(1_000);
@@ -1562,49 +1538,10 @@ describe("MusicPlayerHost", () => {
 		expect(audio.currentTime).toBe(60);
 	});
 
-	it("parses metadata once per track id so metadata updates do not re-fetch the same range", async () => {
-		setQueue();
-		mockState.state.isPanelOpen = true;
-
-		const { rerender } = render(<MusicPlayerHost />);
-
-		await flushAsyncEffects();
-
-		const [firstTrack, secondTrack] = mockState.state.queue;
-		if (!firstTrack || !secondTrack) {
-			throw new Error("expected queued test tracks");
-		}
-		mockState.state.queue = [
-			{
-				...firstTrack,
-				metadata: {
-					artist: "Parsed Artist",
-					artworkUrl: "data:image/jpeg;base64,cover",
-					title: "Parsed Title",
-				},
-			},
-			secondTrack,
-		];
-		rerender(<MusicPlayerHost />);
-
-		await flushAsyncEffects();
-
-		expect(mockState.parseMusicMetadataFromSource).toHaveBeenCalledTimes(1);
-		expect(mockState.updateTrackMetadata).toHaveBeenCalledWith("track-1", {
-			artist: "Parsed Artist",
-			title: "Parsed Title",
-		});
-	});
-
-	it("shows frontend fallback parsed metadata in details when backend metadata is unavailable", async () => {
-		const loadBackendMetadata = vi
-			.fn()
-			.mockRejectedValueOnce(new Error("backend unavailable"));
-		mockState.parseMusicMetadataFromSource.mockResolvedValueOnce({
-			album: "Parsed Album",
-			artist: "Parsed Artist",
-			artists: ["Parsed Artist"],
-			title: "Parsed Title",
+	it("loads backend metadata once per track id so metadata updates do not repeat the request", async () => {
+		const loadBackendMetadata = vi.fn().mockResolvedValueOnce({
+			artist: "Backend Artist",
+			title: "Backend Title",
 		});
 		setQueue();
 		mockState.state.isPanelOpen = true;
@@ -1620,13 +1557,50 @@ describe("MusicPlayerHost", () => {
 		const { rerender } = render(<MusicPlayerHost />);
 
 		await flushAsyncEffects();
+
+		mockState.state.queue = [
+			{
+				...firstTrack,
+				metadata: {
+					artist: "Backend Artist",
+					artworkUrl: "data:image/jpeg;base64,cover",
+					title: "Backend Title",
+				},
+				loadBackendMetadata,
+			},
+			secondTrack,
+		];
+		rerender(<MusicPlayerHost />);
+
+		await flushAsyncEffects();
+
 		expect(loadBackendMetadata).toHaveBeenCalledTimes(1);
 		expect(mockState.updateTrackMetadata).toHaveBeenCalledWith("track-1", {
-			album: "Parsed Album",
-			artist: "Parsed Artist",
-			artists: ["Parsed Artist"],
-			title: "Parsed Title",
+			artist: "Backend Artist",
+			title: "Backend Title",
 		});
+	});
+
+	it("keeps existing metadata in details when backend metadata is unavailable", async () => {
+		const loadBackendMetadata = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("backend unavailable"));
+		setQueue();
+		mockState.state.isPanelOpen = true;
+		const { firstTrack, secondTrack } = getQueuedTracks();
+		mockState.state.queue = [
+			{
+				...firstTrack,
+				loadBackendMetadata,
+			},
+			secondTrack,
+		];
+
+		const { rerender } = render(<MusicPlayerHost />);
+
+		await flushAsyncEffects();
+		expect(loadBackendMetadata).toHaveBeenCalledTimes(1);
+		expect(mockState.updateTrackMetadata).not.toHaveBeenCalled();
 
 		rerender(<MusicPlayerHost />);
 		fireEvent.click(
@@ -1634,27 +1608,35 @@ describe("MusicPlayerHost", () => {
 		);
 
 		expect(screen.getByText("music_player_title_label")).toBeInTheDocument();
-		expect(screen.getAllByText("Parsed Title").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("Track One").length).toBeGreaterThan(0);
 		expect(screen.getByText("music_player_artist_label")).toBeInTheDocument();
-		expect(screen.getAllByText("Parsed Artist").length).toBeGreaterThan(0);
-		expect(screen.getByText("music_player_album_label")).toBeInTheDocument();
-		expect(screen.getByText("Parsed Album")).toBeInTheDocument();
+		expect(screen.getAllByText("Artist One").length).toBeGreaterThan(0);
+		expect(
+			screen.queryByText("music_player_album_label"),
+		).not.toBeInTheDocument();
 	});
 
-	it("logs metadata parse failures without surfacing player errors", async () => {
+	it("logs backend metadata failures without surfacing player errors", async () => {
 		const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-		const parseError = new Error("metadata failed");
-		mockState.parseMusicMetadataFromSource.mockRejectedValueOnce(parseError);
+		const metadataError = new Error("metadata failed");
 		setQueue();
+		const { firstTrack, secondTrack } = getQueuedTracks();
+		mockState.state.queue = [
+			{
+				...firstTrack,
+				loadBackendMetadata: vi.fn().mockRejectedValueOnce(metadataError),
+			},
+			secondTrack,
+		];
 
 		render(<MusicPlayerHost />);
 
 		await waitFor(() => {
 			expect(debugSpy).toHaveBeenCalledWith(
 				"[AsterDrive]",
-				"music metadata parse failed",
+				"backend music metadata unavailable",
 				"track-one.mp3",
-				parseError,
+				metadataError,
 			);
 		});
 		expect(mockState.updateTrackMetadata).not.toHaveBeenCalled();
@@ -1683,10 +1665,7 @@ describe("MusicPlayerHost", () => {
 		render(<MusicPlayerHost />);
 
 		await flushAsyncEffects();
-		expect(mockState.updateTrackMetadata).toHaveBeenCalledWith("track-1", {
-			artist: "Parsed Artist",
-			title: "Parsed Title",
-		});
+		expect(mockState.updateTrackMetadata).not.toHaveBeenCalled();
 		expect(loadBackendMetadata).toHaveBeenCalledTimes(1);
 
 		await act(async () => {
@@ -1734,10 +1713,7 @@ describe("MusicPlayerHost", () => {
 		const { unmount } = render(<MusicPlayerHost />);
 
 		await flushAsyncEffects();
-		expect(mockState.updateTrackMetadata).toHaveBeenCalledWith("track-1", {
-			artist: "Parsed Artist",
-			title: "Parsed Title",
-		});
+		expect(mockState.updateTrackMetadata).not.toHaveBeenCalled();
 		mockState.updateTrackMetadata.mockClear();
 		mockState.state.activeTrackId = "track-2";
 		unmount();

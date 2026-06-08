@@ -1,6 +1,6 @@
 [package]
 name = "aster_drive"
-version = "0.3.0-do-not-use-in-production.1"
+version = "0.3.0-alpha.1"
 description = "A self-hosted cloud storage solution."
 authors = [
     "AptS-1547 <apts-1547@esaps.net>",

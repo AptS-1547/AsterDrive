@@ -2,7 +2,6 @@ import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { handleApiError } from "@/hooks/useApiError";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { teamService } from "@/services/teamService";
 import type { TeamInfo, TeamMemberRole } from "@/types/api";
 
@@ -221,27 +220,12 @@ export function useTeamManageActions({
 		}
 	}, [canArchiveTeam, onArchivedReload, onTeamsReload, t, teamId]);
 
-	const {
-		confirmId: removeMemberId,
-		requestConfirm: requestRemoveConfirm,
-		dialogProps: removeDialogProps,
-	} = useConfirmDialog(handleRemoveMember);
-	const {
-		requestConfirm: requestArchiveConfirm,
-		dialogProps: archiveDialogProps,
-	} = useConfirmDialog<true>(handleArchiveTeam);
-
 	return {
-		archiveDialogProps,
 		handleAddMember,
 		handleArchiveTeam,
 		handleRemoveMember,
 		handleUpdateMemberRole,
 		handleUpdateTeam,
 		mutating,
-		removeDialogProps,
-		removeMemberId,
-		requestArchiveConfirm,
-		requestRemoveConfirm,
 	};
 }

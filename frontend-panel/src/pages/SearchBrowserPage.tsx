@@ -7,21 +7,18 @@ import {
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import type { FileBrowserContextValue } from "@/components/files/FileBrowserContext";
 import { getImagePreviewNavigation } from "@/components/files/preview/imagePreviewNavigation";
 import { TagLibraryManagerDialog } from "@/components/files/TagLibraryManagerDialog";
 import { TagManagerDialog } from "@/components/files/TagManagerDialog";
 import { AppLayout } from "@/components/layout/AppLayout";
+import type { SearchFilter } from "@/components/layout/global-search/types";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
-import {
-	FILE_CATEGORY_BY_ROUTE_SEGMENT,
-	workspaceFolderPath,
-	workspaceRootPath,
-} from "@/lib/workspace";
+import { workspaceFolderPath, workspaceRootPath } from "@/lib/workspace";
 import { FileBrowserDialogs } from "@/pages/file-browser/FileBrowserDialogs";
 import { FileBrowserToolbar } from "@/pages/file-browser/FileBrowserToolbar";
 import { FileBrowserWorkspace } from "@/pages/file-browser/FileBrowserWorkspace";
@@ -40,26 +37,103 @@ import { useFileStore } from "@/stores/fileStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useThumbnailSupportStore } from "@/stores/thumbnailSupportStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import type { FileCategory, FileInfo, FileListItem } from "@/types/api";
+import type {
+	FileCategory,
+	FileInfo,
+	FileListItem,
+	FolderInfo,
+	FolderListItem,
+	SearchParams,
+} from "@/types/api";
 
-const CATEGORY_PAGE_LIMIT = 100;
+const SEARCH_PAGE_LIMIT = 100;
+const SEARCH_TYPES = new Set<SearchFilter>(["all", "file", "folder"]);
+const FILE_CATEGORIES = new Set<FileCategory>([
+	"image",
+	"video",
+	"audio",
+	"document",
+	"spreadsheet",
+	"presentation",
+	"archive",
+	"code",
+	"other",
+]);
 
-function getCategoryLabelKey(category: FileCategory) {
-	return `search:category_${category}`;
+type SearchTagMatch = "any" | "all";
+
+interface ParsedSearchQuery {
+	category: FileCategory | null;
+	q: string;
+	tagIds: string | null;
+	tagMatch: SearchTagMatch;
+	type: SearchFilter;
 }
 
-export default function CategoryBrowserPage() {
+function parseSearchQuery(params: URLSearchParams): ParsedSearchQuery {
+	const rawType = params.get("type");
+	const type = SEARCH_TYPES.has(rawType as SearchFilter)
+		? (rawType as SearchFilter)
+		: "all";
+	const rawCategory = params.get("category");
+	const category = FILE_CATEGORIES.has(rawCategory as FileCategory)
+		? (rawCategory as FileCategory)
+		: null;
+	const tagMatch = params.get("tag_match") === "all" ? "all" : "any";
+	const q = params.get("q")?.trim() ?? "";
+	const tagIds = params.get("tag_ids")?.trim() || null;
+
+	return {
+		category,
+		q,
+		tagIds,
+		tagMatch,
+		type: category ? "file" : type,
+	};
+}
+
+function hasSearchCriteria(query: ParsedSearchQuery) {
+	return Boolean(query.q || query.category || query.tagIds);
+}
+
+function buildSearchParams(
+	query: ParsedSearchQuery,
+	sortBy: SearchParams["sort_by"],
+	sortOrder: SearchParams["sort_order"],
+	offset: number,
+): SearchParams {
+	return {
+		...(query.q ? { q: query.q } : {}),
+		type: query.type,
+		...(query.category ? { category: query.category } : {}),
+		...(query.tagIds
+			? {
+					tag_ids: query.tagIds,
+					tag_match: query.tagMatch,
+				}
+			: {}),
+		sort_by: sortBy,
+		sort_order: sortOrder,
+		limit: SEARCH_PAGE_LIMIT,
+		offset,
+	};
+}
+
+export default function SearchBrowserPage() {
 	const { t } = useTranslation(["core", "files", "search", "tasks"]);
-	const params = useParams<{ category?: string }>();
+	const [searchParams] = useSearchParams();
 	const navigate = useNavigate();
 	const workspace = useWorkspaceStore((s) => s.workspace);
-	const category = params.category
-		? FILE_CATEGORY_BY_ROUTE_SEGMENT[params.category]
-		: undefined;
-	const categoryLabel = category ? t(getCategoryLabelKey(category)) : "";
-	const pageTitle = category
-		? t("search:category_view_title", { category: categoryLabel })
-		: t("core:all_files");
+	const parsedQuery = useMemo(
+		() => parseSearchQuery(searchParams),
+		[searchParams],
+	);
+	const criteriaReady = hasSearchCriteria(parsedQuery);
+	const pageTitle = criteriaReady
+		? `${t("core:search")}: ${
+				parsedQuery.q || t(`search:category_${parsedQuery.category ?? "other"}`)
+			}`
+		: t("search:dialog_title");
 	const searchErrorText = t("search:search_error");
 	const isCompactBreadcrumb = useMediaQuery("(max-width: 639px)");
 	const browserOpenMode = useFileStore((s) => s.browserOpenMode);
@@ -75,7 +149,9 @@ export default function CategoryBrowserPage() {
 	const loadPreviewApps = usePreviewAppStore((s) => s.load);
 	const thumbnailSupport = useThumbnailSupportStore((s) => s.config);
 	const [files, setFiles] = useState<FileListItem[]>([]);
+	const [folders, setFolders] = useState<FolderListItem[]>([]);
 	const [totalFiles, setTotalFiles] = useState(0);
+	const [totalFolders, setTotalFolders] = useState(0);
 	const [loading, setLoading] = useState(true);
 	const [loadingMore, setLoadingMore] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -101,33 +177,41 @@ export default function CategoryBrowserPage() {
 	const requestIdRef = useRef(0);
 
 	usePageTitle(pageTitle);
-	const selectDisplayedFiles = useCallback(() => {
+	const selectDisplayedItems = useCallback(() => {
 		selectItems(
 			files.map((file) => file.id),
-			[],
+			folders.map((folder) => folder.id),
 		);
-	}, [files, selectItems]);
+	}, [files, folders, selectItems]);
 	useSelectionShortcuts({
-		selectAll: selectDisplayedFiles,
+		selectAll: selectDisplayedItems,
 		clearSelection,
-		enabled: category != null,
+		enabled: true,
 	});
 
 	useEffect(() => {
-		if (!category) return;
 		clearSelection();
-	}, [category, clearSelection]);
+	}, [clearSelection]);
 
 	useEffect(() => {
 		if (previewAppsLoaded) return;
 		void loadPreviewApps();
 	}, [loadPreviewApps, previewAppsLoaded]);
 
-	const loadCategory = useCallback(
+	const loadSearch = useCallback(
 		async (offset: number, mode: "replace" | "append") => {
-			if (!category) return;
 			const requestId = requestIdRef.current + 1;
 			requestIdRef.current = requestId;
+			if (!criteriaReady) {
+				setFiles([]);
+				setFolders([]);
+				setTotalFiles(0);
+				setTotalFolders(0);
+				setLoading(false);
+				setLoadingMore(false);
+				setError(null);
+				return;
+			}
 			if (mode === "replace") {
 				setLoading(true);
 				setError(null);
@@ -136,21 +220,22 @@ export default function CategoryBrowserPage() {
 			}
 
 			try {
-				const results = await searchService.search({
-					type: "file",
-					category,
-					sort_by: sortBy,
-					sort_order: sortOrder,
-					limit: CATEGORY_PAGE_LIMIT,
-					offset,
-				});
+				const results = await searchService.search(
+					buildSearchParams(parsedQuery, sortBy, sortOrder, offset),
+				);
 				if (requestIdRef.current !== requestId) {
 					return;
 				}
 				setFiles((current) =>
 					mode === "append" ? [...current, ...results.files] : results.files,
 				);
+				setFolders((current) =>
+					mode === "append"
+						? [...current, ...results.folders]
+						: results.folders,
+				);
 				setTotalFiles(results.total_files);
+				setTotalFolders(results.total_folders);
 				setError(null);
 			} catch (loadError) {
 				if (requestIdRef.current !== requestId) {
@@ -166,32 +251,47 @@ export default function CategoryBrowserPage() {
 				}
 			}
 		},
-		[category, searchErrorText, sortBy, sortOrder],
+		[criteriaReady, parsedQuery, searchErrorText, sortBy, sortOrder],
 	);
 
 	useEffect(() => {
-		if (!category) return;
 		setInfoPanelOpen(false);
 		setInfoTarget(null);
 		setFiles([]);
+		setFolders([]);
 		setTotalFiles(0);
-		void loadCategory(0, "replace");
-	}, [category, loadCategory]);
+		setTotalFolders(0);
+		void loadSearch(0, "replace");
+	}, [loadSearch]);
 
 	useEffect(() => {
-		if (!infoPanelOpen || !infoTarget?.file) return;
-		const nextFile = files.find((entry) => entry.id === infoTarget.file?.id);
-		if (nextFile) {
-			if (nextFile !== infoTarget.file) {
-				setInfoTarget({ file: nextFile });
+		if (!infoPanelOpen || !infoTarget) return;
+		if (infoTarget.file) {
+			const nextFile = files.find((entry) => entry.id === infoTarget.file?.id);
+			if (nextFile) {
+				if (nextFile !== infoTarget.file) {
+					setInfoTarget({ file: nextFile });
+				}
+				return;
 			}
-			return;
+		}
+		if (infoTarget.folder) {
+			const nextFolder = folders.find(
+				(entry) => entry.id === infoTarget.folder?.id,
+			);
+			if (nextFolder) {
+				if (nextFolder !== infoTarget.folder) {
+					setInfoTarget({ folder: nextFolder });
+				}
+				return;
+			}
 		}
 		setInfoPanelOpen(false);
 		setInfoTarget(null);
-	}, [files, infoPanelOpen, infoTarget]);
+	}, [files, folders, infoPanelOpen, infoTarget]);
 
-	const hasMoreFiles = files.length < totalFiles;
+	const hasMoreFiles =
+		files.length < totalFiles || folders.length < totalFolders;
 	useEffect(() => {
 		if (!hasMoreFiles || loading || loadingMore) return;
 		const sentinel = sentinelRef.current;
@@ -200,7 +300,7 @@ export default function CategoryBrowserPage() {
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries[0]?.isIntersecting) {
-					void loadCategory(files.length, "append");
+					void loadSearch(Math.max(files.length, folders.length), "append");
 				}
 			},
 			{ root: scrollViewport, rootMargin: "200px" },
@@ -209,8 +309,9 @@ export default function CategoryBrowserPage() {
 		return () => observer.disconnect();
 	}, [
 		files.length,
+		folders.length,
 		hasMoreFiles,
-		loadCategory,
+		loadSearch,
 		loading,
 		loadingMore,
 		scrollViewport,
@@ -233,8 +334,8 @@ export default function CategoryBrowserPage() {
 		useFileBrowserBatchActions({
 			allowCopyMove: false,
 			displayFiles: files,
-			displayFolders: [],
-			onChanged: () => loadCategory(0, "replace"),
+			displayFolders: folders,
+			onChanged: () => loadSearch(0, "replace"),
 			onArchiveDownload: handleArchiveDownload,
 			onDownload: handleDownload,
 		});
@@ -258,64 +359,77 @@ export default function CategoryBrowserPage() {
 
 	const handleInfo = useCallback(
 		(type: "file" | "folder", id: number) => {
-			if (type !== "file") return;
-			const file = files.find((entry) => entry.id === id);
-			if (!file) return;
-			setInfoTarget({ file });
+			if (type === "file") {
+				const file = files.find((entry) => entry.id === id);
+				if (!file) return;
+				setInfoTarget({ file });
+			} else {
+				const folder = folders.find((entry) => entry.id === id);
+				if (!folder) return;
+				setInfoTarget({ folder });
+			}
 			setInfoPanelOpen(true);
 		},
-		[files],
+		[files, folders],
 	);
 
 	const handleManageTags = useCallback(
 		(type: "file" | "folder", id: number) => {
-			if (type !== "file") return;
-			const file = files.find((entry) => entry.id === id);
-			if (!file) return;
+			const target =
+				type === "file"
+					? files.find((entry) => entry.id === id)
+					: folders.find((entry) => entry.id === id);
+			if (!target) return;
 
 			setTagManagerTarget({
 				mode: "entity",
-				entityId: file.id,
-				entityType: "file",
-				initialTags: file.tags ?? [],
-				name: file.name,
-				onChanged: () => loadCategory(0, "replace"),
+				entityId: target.id,
+				entityType: type,
+				initialTags: target.tags ?? [],
+				name: target.name,
+				onChanged: () => loadSearch(0, "replace"),
 			});
 			setTagManagerOpen(true);
 		},
-		[files, loadCategory],
+		[files, folders, loadSearch],
 	);
 
 	const handleToggleLock = useCallback(
 		async (type: "file" | "folder", id: number, locked: boolean) => {
-			if (type !== "file") return false;
 			try {
-				await fileService.setFileLock(id, !locked);
+				if (type === "file") {
+					await fileService.setFileLock(id, !locked);
+				} else {
+					await fileService.setFolderLock(id, !locked);
+				}
 				toast.success(
 					!locked ? t("files:lock_success") : t("files:unlock_success"),
 				);
-				void loadCategory(0, "replace");
+				void loadSearch(0, "replace");
 				return true;
 			} catch (lockError) {
 				handleApiError(lockError);
 				return false;
 			}
 		},
-		[loadCategory, t],
+		[loadSearch, t],
 	);
 
 	const handleDelete = useCallback(
 		async (type: "file" | "folder", id: number) => {
-			if (type !== "file") return;
 			try {
-				await fileService.deleteFile(id);
+				if (type === "file") {
+					await fileService.deleteFile(id);
+				} else {
+					await fileService.deleteFolder(id);
+				}
 				toast.success(t("files:delete_success"));
-				void loadCategory(0, "replace");
+				void loadSearch(0, "replace");
 			} catch (deleteError) {
 				handleApiError(deleteError);
 			}
 		},
-		[loadCategory, t],
+		[loadSearch, t],
 	);
 
 	const handleVersions = useCallback(
@@ -345,19 +459,31 @@ export default function CategoryBrowserPage() {
 		[navigate, workspace],
 	);
 
+	const handleFolderOpen = useCallback(
+		(id: number, name: string) => {
+			navigate(workspaceFolderPath(workspace, id, name), {
+				viewTransition: false,
+			});
+		},
+		[navigate, workspace],
+	);
+
 	const fileBrowserContextValue = useMemo<FileBrowserContextValue>(
 		() => ({
-			folders: [],
+			folders,
 			files,
 			browserOpenMode,
 			breadcrumbPathIds: [],
 			batchSelectionActions: selectionToolbar,
-			onFolderOpen: () => undefined,
+			onFolderOpen: handleFolderOpen,
 			onFileClick: (file) => openPreview(file, "auto"),
 			onFileOpen: (file) => openPreview(file, "direct"),
 			onFileChooseOpenMethod: (file) => openPreview(file, "picker"),
 			onShare: handleShare,
 			onDownload: handleDownload,
+			onArchiveDownload: (folderId) => handleArchiveDownload([], [folderId]),
+			onArchiveCompress: undefined,
+			onArchiveExtract: undefined,
 			onManageTags: handleManageTags,
 			onGoToLocation: handleGoToLocation,
 			onInfo: handleInfo,
@@ -370,8 +496,11 @@ export default function CategoryBrowserPage() {
 		[
 			browserOpenMode,
 			files,
+			folders,
+			handleArchiveDownload,
 			handleDelete,
 			handleDownload,
+			handleFolderOpen,
 			handleGoToLocation,
 			handleInfo,
 			handleManageTags,
@@ -390,21 +519,36 @@ export default function CategoryBrowserPage() {
 				: {},
 		[files, previewState, thumbnailSupport],
 	);
-
-	if (!category) {
-		return <Navigate to={workspaceRootPath(workspace)} replace />;
-	}
+	const breadcrumb = useMemo(
+		() => [
+			{
+				id: null,
+				name: criteriaReady
+					? `${t("core:search")}: ${
+							parsedQuery.q ||
+							t(`search:category_${parsedQuery.category ?? "other"}`)
+						}`
+					: t("search:dialog_title"),
+			},
+		],
+		[criteriaReady, parsedQuery.category, parsedQuery.q, t],
+	);
 
 	return (
 		<AppLayout>
 			<FileBrowserToolbar
-				breadcrumb={[{ id: null, name: categoryLabel }]}
+				breadcrumb={breadcrumb}
 				currentFolderActions="refresh-only"
 				dragOverBreadcrumbIndex={null}
 				isCompactBreadcrumb={isCompactBreadcrumb}
 				isRootFolder
-				isSearching={false}
-				searchQuery={null}
+				isSearching={criteriaReady}
+				searchQuery={
+					parsedQuery.q ||
+					(parsedQuery.category
+						? t(`search:category_${parsedQuery.category}`)
+						: null)
+				}
 				selectionToolbar={selectionToolbar}
 				sortBy={sortBy}
 				sortOrder={sortOrder}
@@ -418,7 +562,7 @@ export default function CategoryBrowserPage() {
 				onManageTagLibrary={() => setTagLibraryManagerOpen(true)}
 				onNavigateToFolder={() => navigate(workspaceRootPath(workspace))}
 				onOfflineDownload={() => undefined}
-				onRefresh={() => loadCategory(0, "replace")}
+				onRefresh={() => loadSearch(0, "replace")}
 				onSetSortBy={setSortBy}
 				onSetSortOrder={setSortOrder}
 				onSetViewMode={setViewMode}
@@ -426,7 +570,7 @@ export default function CategoryBrowserPage() {
 				onTriggerFolderUpload={() => undefined}
 			/>
 			<FileBrowserWorkspace
-				breadcrumb={[{ id: null, name: categoryLabel }]}
+				breadcrumb={breadcrumb}
 				contentDragOver={false}
 				currentFolderActions="refresh-only"
 				error={error}
@@ -434,7 +578,7 @@ export default function CategoryBrowserPage() {
 				hasMoreFiles={hasMoreFiles}
 				infoPanelOpen={infoPanelOpen}
 				infoTarget={infoTarget}
-				isEmpty={!loading && files.length === 0}
+				isEmpty={!loading && files.length === 0 && folders.length === 0}
 				loading={loading}
 				loadingMore={loadingMore}
 				scrollViewport={scrollViewport}
@@ -448,10 +592,12 @@ export default function CategoryBrowserPage() {
 				onCreateFolder={() => undefined}
 				onDownload={handleDownload}
 				onInfoPanelOpenChange={setInfoPanelOpen}
-				onOpenInfoFolder={() => undefined}
+				onOpenInfoFolder={(folder: FolderInfo | FolderListItem) =>
+					handleFolderOpen(folder.id, folder.name)
+				}
 				onOfflineDownload={() => undefined}
 				onPreview={(file) => setPreviewState({ file, openMode: "auto" })}
-				onRefresh={() => loadCategory(0, "replace")}
+				onRefresh={() => loadSearch(0, "replace")}
 				onRename={() => undefined}
 				onScrollViewportRef={setScrollViewport}
 				onShare={handleShare}
@@ -495,12 +641,12 @@ export default function CategoryBrowserPage() {
 				onMoveConfirm={async () => undefined}
 				onOfflineDownloadOpenChange={() => undefined}
 				onPreviewClose={() => setPreviewState(null)}
-				onPreviewFileUpdated={() => loadCategory(0, "replace")}
+				onPreviewFileUpdated={() => loadSearch(0, "replace")}
 				onPreviewNavigate={navigatePreviewFile}
 				onRenameClose={() => undefined}
 				onShareClose={() => setShareTarget(null)}
 				onVersionClose={() => setVersionTarget(null)}
-				onVersionRestored={() => loadCategory(0, "replace")}
+				onVersionRestored={() => loadSearch(0, "replace")}
 			/>
 		</AppLayout>
 	);

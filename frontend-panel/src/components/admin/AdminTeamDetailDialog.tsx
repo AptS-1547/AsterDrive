@@ -19,12 +19,9 @@ import type { AdminTeamDetailTab } from "@/components/admin/admin-team-detail/ty
 import { useAdminTeamDetailData } from "@/components/admin/admin-team-detail/useAdminTeamDetailData";
 import { useAdminTeamDetailScrollRestoration } from "@/components/admin/admin-team-detail/useAdminTeamDetailScrollRestoration";
 import { useAdminTeamDetailTabs } from "@/components/admin/admin-team-detail/useAdminTeamDetailTabs";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { handleApiError } from "@/hooks/useApiError";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import type { SortOrder } from "@/lib/pagination";
 import { BYTES_PER_MB, parseStorageQuotaMbToBytes } from "@/lib/storageQuota";
-import { getUserDisplayName } from "@/lib/user";
 import { adminTeamService } from "@/services/adminService";
 import type { AdminTeamMemberSortBy } from "@/types/adminSort";
 import type {
@@ -341,7 +338,6 @@ export function AdminTeamDetailDialog({
 				loadAuditEntries(team.id),
 				onListChange(),
 			]);
-			archiveDialogProps.onOpenChange(false);
 			toast.success(t("team_deleted"));
 		} catch (error) {
 			handleApiError(error);
@@ -465,21 +461,10 @@ export function AdminTeamDetailDialog({
 		}
 	};
 
-	const {
-		confirmId: removeMemberId,
-		requestConfirm: requestRemoveConfirm,
-		dialogProps: removeDialogProps,
-	} = useConfirmDialog(handleRemoveMember);
-	const {
-		requestConfirm: requestArchiveConfirm,
-		dialogProps: archiveDialogProps,
-	} = useConfirmDialog<true>(handleArchive);
-
 	useEffect(() => {
 		if (!open || teamId == null) {
 			overviewSyncAllowedRef.current = true;
 			setArchiveConfirmValue("");
-			archiveDialogProps.onOpenChange(false);
 			setArchiving(false);
 			setAuditOffset(0);
 			setDescription("");
@@ -507,10 +492,7 @@ export function AdminTeamDetailDialog({
 		setMemberSortBy("role");
 		setMemberSortOrder("asc");
 		resetDialogTab();
-	}, [archiveDialogProps.onOpenChange, open, resetDialogTab, teamId]);
-
-	const removeMember =
-		members.find((member) => member.user_id === removeMemberId) ?? null;
+	}, [open, resetDialogTab, teamId]);
 
 	if (teamId == null) {
 		return null;
@@ -518,17 +500,9 @@ export function AdminTeamDetailDialog({
 
 	const handleDialogOpenChange = (nextOpen: boolean) => {
 		if (!nextOpen) {
-			archiveDialogProps.onOpenChange(false);
 			setQuotaValue("");
 		}
 		onOpenChange(nextOpen);
-	};
-	const handleArchiveDialogOpenChange = (nextOpen: boolean) => {
-		if (nextOpen) {
-			requestArchiveConfirm(true);
-			return;
-		}
-		archiveDialogProps.onOpenChange(false);
 	};
 
 	const handleContentScroll = () => {
@@ -610,7 +584,6 @@ export function AdminTeamDetailDialog({
 			nextMemberPageDisabled={nextMemberPageDisabled}
 			ownerCount={ownerCount}
 			prevMemberPageDisabled={prevMemberPageDisabled}
-			requestRemoveConfirm={requestRemoveConfirm}
 			roleFilterOptions={roleFilterOptions}
 			roleLabel={roleLabel}
 			roleOptions={roleOptions}
@@ -624,6 +597,7 @@ export function AdminTeamDetailDialog({
 			team={team}
 			onAddMember={handleAddMember}
 			onMemberSortChange={handleMemberSortChange}
+			onRemoveMember={handleRemoveMember}
 			onUpdateMemberRole={handleUpdateMemberRole}
 		/>
 	);
@@ -652,59 +626,37 @@ export function AdminTeamDetailDialog({
 			ownerCount={ownerCount}
 			restoring={restoring}
 			setArchiveConfirmValue={setArchiveConfirmValue}
-			setArchiveDialogOpen={handleArchiveDialogOpenChange}
 			team={team}
+			onArchive={handleArchive}
 			onRestore={handleRestore}
 		/>
 	);
 
 	return (
-		<>
-			<AdminTeamDetailShell
-				auditSection={auditSection}
-				contentRef={contentRef}
-				currentPolicyGroupName={currentPolicyGroup?.name ?? null}
-				currentTab={currentTab}
-				dangerSection={dangerSection}
-				isPageLayout={isPageLayout}
-				membersSection={membersSection}
-				onContentScroll={handleContentScroll}
-				onOpenChange={handleDialogOpenChange}
-				onPageBack={() => handleDialogOpenChange(false)}
-				onSidebarScroll={handleSidebarScroll}
-				onTabChange={handleTabChange}
-				open={open}
-				overviewSection={overviewSection}
-				ownerCount={ownerCount}
-				managerCount={managerCount}
-				panelAnimationClass={panelAnimationClass}
-				quota={quota}
-				selectedPolicyGroupName={selectedPolicyGroup?.name ?? null}
-				sidebarRef={sidebarRef}
-				team={team}
-				usagePercentage={usagePercentage}
-				used={used}
-			/>
-
-			<ConfirmDialog
-				{...removeDialogProps}
-				title={t("settings:settings_team_remove_member")}
-				description={
-					removeMember
-						? `${t("settings:settings_team_remove_member_desc")} ${getUserDisplayName(removeMember.user)}`
-						: t("settings:settings_team_remove_member_desc")
-				}
-				confirmLabel={t("settings:settings_team_remove_member")}
-				variant="destructive"
-			/>
-
-			<ConfirmDialog
-				{...archiveDialogProps}
-				title={team ? `${t("delete_team")} "${team.name}"?` : t("delete_team")}
-				description={t("archive_team_desc")}
-				confirmLabel={t("core:delete")}
-				variant="destructive"
-			/>
-		</>
+		<AdminTeamDetailShell
+			auditSection={auditSection}
+			contentRef={contentRef}
+			currentPolicyGroupName={currentPolicyGroup?.name ?? null}
+			currentTab={currentTab}
+			dangerSection={dangerSection}
+			isPageLayout={isPageLayout}
+			membersSection={membersSection}
+			onContentScroll={handleContentScroll}
+			onOpenChange={handleDialogOpenChange}
+			onPageBack={() => handleDialogOpenChange(false)}
+			onSidebarScroll={handleSidebarScroll}
+			onTabChange={handleTabChange}
+			open={open}
+			overviewSection={overviewSection}
+			ownerCount={ownerCount}
+			managerCount={managerCount}
+			panelAnimationClass={panelAnimationClass}
+			quota={quota}
+			selectedPolicyGroupName={selectedPolicyGroup?.name ?? null}
+			sidebarRef={sidebarRef}
+			team={team}
+			usagePercentage={usagePercentage}
+			used={used}
+		/>
 	);
 }

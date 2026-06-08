@@ -5,6 +5,7 @@ import {
 	isS3CompatibleDriver,
 	type PolicyFormData,
 } from "@/components/admin/storagePolicyDialogShared";
+import { InlineConfirm } from "@/components/common/ManagerDialogShell";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -36,7 +37,10 @@ interface StoragePolicyDialogProps {
 	createStep: number;
 	createStepTouched: boolean;
 	endpointValidationMessage: string | null;
+	saveAnywayConfirmOpen: boolean;
 	onOpenChange: (open: boolean) => void;
+	onCancelSaveAnyway: () => void;
+	onConfirmSaveAnyway: () => void;
 	onSubmit: () => void;
 	onRunConnectionTest: () => Promise<boolean>;
 	onFieldChange: <K extends keyof PolicyFormData>(
@@ -81,7 +85,10 @@ function useStoragePolicyDialogContent({
 	createStep,
 	createStepTouched,
 	endpointValidationMessage,
+	saveAnywayConfirmOpen,
 	onOpenChange,
+	onCancelSaveAnyway,
+	onConfirmSaveAnyway,
 	onSubmit,
 	onRunConnectionTest,
 	onFieldChange,
@@ -384,6 +391,41 @@ function useStoragePolicyDialogContent({
 							/>
 						)}
 					</div>
+					{saveAnywayConfirmOpen ? (
+						<div className="shrink-0 border-t px-6 py-3">
+							<InlineConfirm>
+								<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+									<div>
+										<p className="text-sm font-medium">
+											{t("connection_test_failed")}
+										</p>
+										<p className="mt-1 text-xs text-muted-foreground">
+											{t("policy_test_failed_confirm_desc")}
+										</p>
+									</div>
+									<div className="flex shrink-0 items-center gap-2">
+										<Button
+											type="button"
+											variant="outline"
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
+											onClick={onCancelSaveAnyway}
+											disabled={submitting}
+										>
+											{t("core:cancel")}
+										</Button>
+										<Button
+											type="button"
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
+											onClick={onConfirmSaveAnyway}
+											disabled={submitting}
+										>
+											{t("save_anyway")}
+										</Button>
+									</div>
+								</div>
+							</InlineConfirm>
+						</div>
+					) : null}
 					<DialogFooter className="mx-0 mb-0 w-full shrink-0 flex-row items-center gap-2 rounded-b-xl px-6 py-3">
 						<div className="mr-auto flex shrink-0 gap-2">
 							{isCreateMode && createStep > 0 ? (

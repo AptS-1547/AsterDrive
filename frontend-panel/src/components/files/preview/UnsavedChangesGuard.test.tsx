@@ -8,40 +8,8 @@ vi.mock("react-i18next", () => ({
 	}),
 }));
 
-vi.mock("@/components/common/ConfirmDialog", () => ({
-	ConfirmDialog: ({
-		open,
-		onOpenChange,
-		title,
-		description,
-		confirmLabel,
-		onConfirm,
-		variant,
-	}: {
-		open: boolean;
-		onOpenChange: (open: boolean) => void;
-		title: string;
-		description: string;
-		confirmLabel: string;
-		onConfirm: () => void;
-		variant?: string;
-	}) =>
-		open ? (
-			<div data-testid="confirm-dialog" data-variant={variant}>
-				<h2>{title}</h2>
-				<p>{description}</p>
-				<button type="button" onClick={() => onOpenChange(false)}>
-					close
-				</button>
-				<button type="button" onClick={onConfirm}>
-					{confirmLabel}
-				</button>
-			</div>
-		) : null,
-}));
-
 describe("UnsavedChangesGuard", () => {
-	it("passes translated strings and destructive semantics to ConfirmDialog", () => {
+	it("renders an inline discard guard without opening a nested dialog", () => {
 		const onOpenChange = vi.fn();
 		const onConfirm = vi.fn();
 
@@ -53,10 +21,6 @@ describe("UnsavedChangesGuard", () => {
 			/>,
 		);
 
-		expect(screen.getByTestId("confirm-dialog")).toHaveAttribute(
-			"data-variant",
-			"destructive",
-		);
 		expect(screen.getByText("translated:are_you_sure")).toBeInTheDocument();
 		expect(
 			screen.getByText("translated:files:unsaved_confirm_desc"),
@@ -67,7 +31,7 @@ describe("UnsavedChangesGuard", () => {
 			}),
 		).toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: "close" }));
+		fireEvent.click(screen.getByRole("button", { name: "translated:cancel" }));
 		fireEvent.click(
 			screen.getByRole("button", {
 				name: "translated:files:discard_changes",

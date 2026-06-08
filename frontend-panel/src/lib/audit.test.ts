@@ -136,6 +136,39 @@ describe("audit i18n formatting", () => {
 		expect(formatAuditDetail(t, entry)).toBe("Value changed to enabled");
 	});
 
+	it("formats presentation summary codes as actions before matching detail templates", () => {
+		const t = createT({
+			"admin:audit_action_mail_delivery_failed": "Email delivery failed",
+			"admin:audit_presentation_mail_delivery_failed":
+				"{{template_code}} to {{to_address}} failed: {{error}}",
+		});
+		const entry = {
+			action: "mail_delivery_failed",
+			entity_name: "mail",
+			entity_type: "mail",
+			presentation: {
+				detail: {
+					code: "mail_delivery_failed",
+					params: {
+						error: "smtp unavailable",
+						template_code: "smtp_test",
+						to_address: "alice@example.com",
+					},
+				},
+				summary: { code: "mail_delivery_failed" },
+				target: {
+					code: "mail",
+					params: { name: "mail" },
+				},
+			},
+		} as AuditLogEntry;
+
+		expect(formatAuditSummary(t, entry)).toBe("Email delivery failed");
+		expect(formatAuditDetail(t, entry)).toBe(
+			"smtp_test to alice@example.com failed: smtp unavailable",
+		);
+	});
+
 	it("falls back safely when presentation codes are unknown or missing", () => {
 		const t = createT({
 			"admin:audit_action_file_delete": "Deleted file",

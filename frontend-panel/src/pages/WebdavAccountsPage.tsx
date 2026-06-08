@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -12,7 +11,6 @@ import { WebdavCreateAccountDialog } from "@/components/webdav/WebdavCreateAccou
 import { WebdavCredentialsDialog } from "@/components/webdav/WebdavCredentialsDialog";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { usePendingId } from "@/hooks/usePendingId";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
@@ -152,8 +150,6 @@ export default function WebdavAccountsPage() {
 		});
 	};
 
-	const { requestConfirm, dialogProps } = useConfirmDialog(handleDelete);
-
 	const handleToggle = async (id: number) => {
 		await runWithTogglingAccount(id, async () => {
 			try {
@@ -284,13 +280,14 @@ export default function WebdavAccountsPage() {
 						currentUserId={currentUserId}
 						deletingAccountId={deletingAccountId}
 						togglingAccountId={togglingAccountId}
-						onDelete={requestConfirm}
+						onDelete={(accountId) => void handleDelete(accountId)}
 						onToggle={(accountId) => void handleToggle(accountId)}
 						labels={{
 							accessScope: t("webdav:access_scope"),
 							actions: t("actions"),
 							active: t("active"),
 							allFiles: t("all_files"),
+							cancel: t("cancel"),
 							createdAt: t("created_at"),
 							delete: t("delete"),
 							deleting: t("admin:webdav_account_deleting"),
@@ -304,14 +301,6 @@ export default function WebdavAccountsPage() {
 					/>
 				</div>
 			</div>
-
-			<ConfirmDialog
-				{...dialogProps}
-				title={t("are_you_sure")}
-				description={t("cannot_undo")}
-				confirmLabel={t("delete")}
-				variant="destructive"
-			/>
 		</AppLayout>
 	);
 }
