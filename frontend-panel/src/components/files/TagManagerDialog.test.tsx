@@ -283,6 +283,47 @@ describe("TagManagerDialog", () => {
 		expect(onOpenChange).toHaveBeenCalledWith(false);
 	});
 
+	it("creates a new tag from Enter and queues it for batch save", async () => {
+		render(
+			<TagManagerDialog
+				open
+				onOpenChange={vi.fn()}
+				target={{
+					mode: "batch",
+					count: 2,
+					fileIds: [10],
+					folderIds: [20],
+				}}
+			/>,
+		);
+
+		await screen.findByText("Alpha");
+		fireEvent.change(screen.getByLabelText("tag_search_label"), {
+			target: { value: " Gamma " },
+		});
+		await screen.findByRole("button", { name: /create:Gamma/ });
+		fireEvent.keyDown(screen.getByLabelText("tag_search_label"), {
+			key: "Enter",
+		});
+
+		await waitFor(() => {
+			expect(mockState.createTag).toHaveBeenCalledWith({
+				name: "Gamma",
+				color: expect.stringMatching(/^#[0-9a-f]{6}$/),
+			});
+		});
+		expect(await screen.findByText("draft:add=1:remove=0")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "save" }));
+
+		await waitFor(() => {
+			expect(mockState.batchAttachTag).toHaveBeenCalledWith(3, {
+				file_ids: [10],
+				folder_ids: [20],
+			});
+		});
+	});
+
 	it("loads more tags from the current offset when more library rows exist", async () => {
 		mockState.listTags
 			.mockResolvedValueOnce({ items: [alpha], total: 2 })
@@ -452,5 +493,102 @@ describe("TagManagerDialog", () => {
 
 		expect(await screen.findByText("tag_draft_empty")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "save" })).toBeDisabled();
+	});
+
+	it("resets drafts, query, and nested dialogs when closed", async () => {
+		const target = {
+			mode: "entity" as const,
+			entityType: "file" as const,
+			entityId: 42,
+			initialTags: [summary(alpha)],
+			name: "report.pdf",
+		};
+
+		const { rerender } = render(
+			<TagManagerDialog open onOpenChange={vi.fn()} target={target} />,
+		);
+
+		await screen.findByText("Beta");
+		fireEvent.click(screen.getByRole("button", { name: /Beta/ }));
+		expect(screen.getByText("tag_draft_entity_summary")).toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText("tag_search_label"), {
+			target: { value: "Gamma" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "tag_library_manage" }));
+		expect(screen.getByTestId("tag-library-manager")).toBeInTheDocument();
+
+		rerender(
+			<TagManagerDialog open={false} onOpenChange={vi.fn()} target={null} />,
+		);
+		rerender(<TagManagerDialog open onOpenChange={vi.fn()} target={target} />);
+
+		await screen.findByText("Beta");
+		expect(screen.queryByTestId("tag-library-manager")).not.toBeInTheDocument();
+		expect(screen.getByLabelText("tag_search_label")).toHaveValue("");
+		expect(screen.getByText("tag_draft_empty")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "save" })).toBeDisabled();
+	});
+
+	it("routes create failures through handleApiError", async () => {
+		const createError = new Error("create failed");
+		mockState.listTags
+			.mockResolvedValueOnce({ items: [alpha], total: 1 })
+			.mockResolvedValueOnce({ items: [], total: 0 });
+		mockState.createTag.mockRejectedValueOnce(createError);
+
+		render(
+			<TagManagerDialog
+				open
+				onOpenChange={vi.fn()}
+				target={{
+					mode: "entity",
+					entityType: "file",
+					entityId: 1,
+					initialTags: [],
+				}}
+			/>,
+		);
+
+		await screen.findByText("Alpha");
+		fireEvent.change(screen.getByLabelText("tag_search_label"), {
+			target: { value: "Delta" },
+		});
+		fireEvent.click(
+			await screen.findByRole("button", { name: /create:Delta/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(createError);
+		});
+		expect(screen.getByRole("button", { name: "save" })).toBeDisabled();
+	});
+
+	it("routes load-more failures through handleApiError", async () => {
+		const loadMoreError = new Error("load more failed");
+		mockState.listTags
+			.mockResolvedValueOnce({ items: [alpha], total: 2 })
+			.mockRejectedValueOnce(loadMoreError);
+
+		render(
+			<TagManagerDialog
+				open
+				onOpenChange={vi.fn()}
+				target={{
+					mode: "entity",
+					entityType: "file",
+					entityId: 1,
+					initialTags: [],
+				}}
+			/>,
+		);
+
+		await screen.findByText("Alpha");
+		fireEvent.click(
+			screen.getByRole("button", { name: "tag_library_load_more" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(loadMoreError);
+		});
 	});
 });

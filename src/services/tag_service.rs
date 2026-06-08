@@ -15,8 +15,10 @@ use crate::services::workspace_storage_service::{
     require_team_management_access, verify_file_access_for_read, verify_folder_access_for_read,
 };
 use crate::types::{EntityType, TagScopeType};
+use crate::utils::char_count;
 
 pub const TAG_PROPERTY_NAMESPACE: &str = "system.tags";
+pub const TAG_NAME_MAX_CHARS: usize = 64;
 const MAX_TAGS_PER_ENTITY: usize = 64;
 const BATCH_ENTITY_VERIFY_CHUNK_SIZE: usize = 500;
 
@@ -121,8 +123,10 @@ fn validate_tag_name(name: &str) -> Result<String> {
     if name.is_empty() {
         return Err(AsterError::validation_error("tag name cannot be empty"));
     }
-    if name.len() > 64 {
-        return Err(AsterError::validation_error("tag name too long (max 64)"));
+    if char_count(&name) > TAG_NAME_MAX_CHARS {
+        return Err(AsterError::validation_error(format!(
+            "tag name too long (max {TAG_NAME_MAX_CHARS})"
+        )));
     }
     Ok(name)
 }

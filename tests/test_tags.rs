@@ -266,10 +266,30 @@ async fn test_personal_tags_validate_normalize_filter_and_update() {
         assert_eq!(status, 400, "invalid tag input should be rejected");
     }
 
+    let unicode_name = "标".repeat(64);
+    let (status, body) =
+        create_tag_response(&app, &token, "/api/v1/tags", &unicode_name, "#654321").await;
+    assert_eq!(
+        status, 201,
+        "64 unicode scalar characters should create: {body:?}"
+    );
+    assert_eq!(body["data"]["name"], unicode_name);
+
     let long_name = "a".repeat(65);
     let (status, _) =
         create_tag_response(&app, &token, "/api/v1/tags", &long_name, "#123456").await;
-    assert_eq!(status, 400, "names longer than 64 bytes should be rejected");
+    assert_eq!(
+        status, 400,
+        "names longer than 64 characters should be rejected"
+    );
+
+    let long_unicode_name = "标".repeat(65);
+    let (status, _) =
+        create_tag_response(&app, &token, "/api/v1/tags", &long_unicode_name, "#123456").await;
+    assert_eq!(
+        status, 400,
+        "unicode names longer than 64 characters should be rejected"
+    );
 
     let beta_id = create_tag(&app, &token, "Beta", "#16a34a").await;
 

@@ -347,6 +347,59 @@ describe("GlobalSearchDialog", () => {
 		expect(await screen.findByText("report-2.txt")).toBeInTheDocument();
 	});
 
+	it("ignores load-more observers that are not intersecting and swallows load-more failures", async () => {
+		const firstPageFile = fileItem({
+			id: 7,
+			name: "report-1.txt",
+		});
+		mockState.search
+			.mockResolvedValueOnce({
+				files: [firstPageFile],
+				folders: [],
+				total_files: 2,
+				total_folders: 0,
+			})
+			.mockRejectedValueOnce(new Error("load more failed"));
+
+		render(<GlobalSearchDialog open onOpenChange={vi.fn()} />);
+
+		fireEvent.change(screen.getByPlaceholderText("search:placeholder"), {
+			target: { value: "report" },
+		});
+		await waitForSearchDebounce();
+		expect(await screen.findByText("report-1.txt")).toBeInTheDocument();
+
+		const loadMoreTarget = document.querySelector("[data-search-load-more]");
+		expect(loadMoreTarget).not.toBeNull();
+
+		mockState.intersectionCallback?.(
+			[
+				{
+					isIntersecting: false,
+					target: loadMoreTarget as Element,
+				} as IntersectionObserverEntry,
+			],
+			{} as IntersectionObserver,
+		);
+		expect(mockState.search).toHaveBeenCalledTimes(1);
+
+		mockState.intersectionCallback?.(
+			[
+				{
+					isIntersecting: true,
+					target: loadMoreTarget as Element,
+				} as IntersectionObserverEntry,
+			],
+			{} as IntersectionObserver,
+		);
+
+		await waitFor(() => {
+			expect(mockState.search).toHaveBeenCalledTimes(2);
+		});
+		expect(screen.getByText("report-1.txt")).toBeInTheDocument();
+		expect(screen.queryByText("search:search_error")).not.toBeInTheDocument();
+	});
+
 	it("searches by category without requiring a keyword", async () => {
 		const image = fileItem({
 			id: 9,
@@ -596,6 +649,30 @@ describe("GlobalSearchDialog", () => {
 				},
 				{ signal: expect.any(AbortSignal) },
 			);
+		});
+	});
+
+	it("keeps an empty tag filter list when tag loading fails or is canceled", async () => {
+		mockState.listTags.mockRejectedValueOnce(new Error("tag load failed"));
+
+		const { rerender } = render(
+			<GlobalSearchDialog open onOpenChange={vi.fn()} />,
+		);
+
+		await waitFor(() => {
+			expect(screen.queryByText("search:tag_loading")).not.toBeInTheDocument();
+		});
+		expect(
+			screen.queryByRole("button", { name: /Alpha/ }),
+		).not.toBeInTheDocument();
+
+		const aborted = new DOMException("aborted", "AbortError");
+		mockState.listTags.mockRejectedValueOnce(aborted);
+		rerender(<GlobalSearchDialog open={false} onOpenChange={vi.fn()} />);
+		rerender(<GlobalSearchDialog open onOpenChange={vi.fn()} />);
+
+		await waitFor(() => {
+			expect(screen.queryByText("search:tag_loading")).not.toBeInTheDocument();
 		});
 	});
 

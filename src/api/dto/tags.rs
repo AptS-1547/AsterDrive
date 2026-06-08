@@ -1,5 +1,7 @@
 //! `tags` API DTO 定义。
 
+use crate::services::tag_service::TAG_NAME_MAX_CHARS;
+use crate::utils::char_count;
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
@@ -10,7 +12,6 @@ pub const DEFAULT_TAG_LIMIT: u64 = 50;
 #[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateTagReq {
-    #[validate(length(max = 64, message = "tag name too long (max 64)"))]
     #[validate(custom(function = "validate_tag_name"))]
     pub name: String,
     #[validate(custom(function = "validate_tag_color"))]
@@ -20,7 +21,6 @@ pub struct CreateTagReq {
 #[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchTagReq {
-    #[validate(length(max = 64, message = "tag name too long (max 64)"))]
     #[validate(custom(function = "validate_tag_name"))]
     pub name: Option<String>,
     #[validate(custom(function = "validate_tag_color"))]
@@ -82,9 +82,9 @@ fn validate_tag_name(value: &str) -> std::result::Result<(), ValidationError> {
             "tag name cannot be empty",
         ));
     }
-    if name.len() > 64 {
+    if char_count(name) > TAG_NAME_MAX_CHARS {
         return Err(crate::api::dto::validation::message_validation_error(
-            "tag name too long (max 64)",
+            format!("tag name too long (max {TAG_NAME_MAX_CHARS})"),
         ));
     }
     Ok(())

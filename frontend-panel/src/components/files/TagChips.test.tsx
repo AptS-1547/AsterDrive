@@ -58,6 +58,22 @@ describe("TagChips", () => {
 		expect(screen.getByText("+2")).toBeInTheDocument();
 	});
 
+	it("normalizes invalid maxVisible values to hide every chip behind the count", () => {
+		render(
+			<TagChips
+				maxVisible={Number.NaN}
+				tags={[
+					{ id: 1, name: "Alpha", color: "#2563eb" },
+					{ id: 2, name: "Beta", color: "#16a34a" },
+				]}
+			/>,
+		);
+
+		expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+		expect(screen.queryByText("Beta")).not.toBeInTheDocument();
+		expect(screen.getByText("+2")).toBeInTheDocument();
+	});
+
 	it("renders removable chips with an accessible remove action", () => {
 		const onRemove = vi.fn();
 
