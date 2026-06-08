@@ -102,5 +102,20 @@ describe("isTokenAuthError", () => {
 				},
 			}),
 		).toBe(true);
+		expect(isSessionAuthFailure({ status: 401 })).toBe(true);
+		expect(isSessionAuthFailure({ status: 403 })).toBe(true);
+		expect(isSessionAuthFailure({ status: 502 })).toBe(false);
+		expect(isSessionAuthFailure(null)).toBe(false);
+		expect(isSessionAuthFailure("offline")).toBe(false);
+		expect(isSessionAuthFailure({ status: "401" })).toBe(false);
+		expect(isSessionAuthFailure({ response: null })).toBe(false);
+		expect(isSessionAuthFailure({ response: {} })).toBe(false);
+		expect(isSessionAuthFailure({ response: { status: "401" } })).toBe(false);
+		expect(
+			isSessionAuthFailure({
+				status: "ignored",
+				response: { status: 401 },
+			}),
+		).toBe(true);
 	});
 });

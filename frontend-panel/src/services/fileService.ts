@@ -239,9 +239,9 @@ export function createFileService(workspace: Workspace) {
 							body?.msg ?? `HTTP ${status}`,
 							{
 								retryable: body?.error?.retryable ?? undefined,
+								status,
 							},
 						);
-						(apiErr as ApiError & { status: number }).status = status;
 						throw apiErr;
 					}
 				}

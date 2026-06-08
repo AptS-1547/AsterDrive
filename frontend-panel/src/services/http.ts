@@ -107,6 +107,7 @@ export type ApiRequestConfig = Pick<
 
 type ApiErrorDetails = {
 	retryable?: boolean;
+	status?: number;
 };
 
 export function isRequestCanceled(error: unknown): boolean {
@@ -195,6 +196,7 @@ function isRefreshableAuthError(error: unknown): boolean {
 export class ApiError extends Error {
 	code: ApiErrorCode;
 	retryable?: boolean;
+	status?: number;
 
 	constructor(
 		code: ApiErrorCode,
@@ -204,6 +206,7 @@ export class ApiError extends Error {
 		super(message);
 		this.code = code;
 		this.retryable = details.retryable;
+		this.status = details.status;
 	}
 }
 
@@ -267,12 +270,12 @@ function extractApiError(error: unknown): ApiError | null {
 
 	const errorInfo =
 		"error" in data && typeof data.error === "object" ? data.error : null;
+	const status = "status" in response ? response.status : null;
 
-	return new ApiError(
-		code,
-		message,
-		normalizeApiErrorInfo(errorInfo as ApiErrorInfoPayload | null),
-	);
+	return new ApiError(code, message, {
+		...normalizeApiErrorInfo(errorInfo as ApiErrorInfoPayload | null),
+		status: typeof status === "number" ? status : undefined,
+	});
 }
 
 async function unwrap<T>(
@@ -294,7 +297,10 @@ async function unwrap<T>(
 		);
 	}
 	if (resp.code !== ApiErrorCodeValue.Success) {
-		throw new ApiError(resp.code, resp.msg, normalizeApiErrorInfo(resp.error));
+		throw new ApiError(resp.code, resp.msg, {
+			...normalizeApiErrorInfo(resp.error),
+			status,
+		});
 	}
 	return resp.data as T;
 }

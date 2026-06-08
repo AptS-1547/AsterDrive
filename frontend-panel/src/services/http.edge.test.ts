@@ -393,4 +393,29 @@ describe("http refresh edge cases", () => {
 			}),
 		).rejects.toBeInstanceOf(ApiError);
 	});
+
+	it("preserves HTTP status when converting API payloads into ApiError", async () => {
+		const { ApiError } = await loadHttpModule();
+		const errorHandler = mockState.getErrorHandler();
+
+		const converted = await errorHandler({
+			config: { url: "/auth/login" },
+			response: {
+				status: 403,
+				data: {
+					code: ApiErrorCode.PendingActivation,
+					msg: "pending activation",
+				},
+			},
+		}).catch((error: unknown) => error);
+
+		expect(converted).toBeInstanceOf(ApiError);
+		expect(converted).toEqual(
+			expect.objectContaining({
+				code: ApiErrorCode.PendingActivation,
+				message: "pending activation",
+				status: 403,
+			}),
+		);
+	});
 });

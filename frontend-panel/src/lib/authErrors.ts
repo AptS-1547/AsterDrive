@@ -37,7 +37,16 @@ export function isTokenAuthError(error: unknown): boolean {
 }
 
 function readHttpStatus(error: unknown): number | null {
-	if (typeof error !== "object" || error === null || !("response" in error)) {
+	if (typeof error !== "object" || error === null) {
+		return null;
+	}
+
+	const status = "status" in error ? error.status : null;
+	if (typeof status === "number") {
+		return status;
+	}
+
+	if (!("response" in error)) {
 		return null;
 	}
 

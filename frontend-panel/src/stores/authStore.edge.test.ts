@@ -272,6 +272,7 @@ describe("useAuthStore edge cases", () => {
 		});
 		mockState.isAxiosError.mockReturnValue(true);
 		const { useAuthStore } = await loadStore();
+		useAuthStore.setState({ isAuthStale: false });
 
 		await expect(useAuthStore.getState().refreshToken()).rejects.toEqual(
 			expect.objectContaining({

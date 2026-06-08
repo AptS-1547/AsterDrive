@@ -406,6 +406,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 				) {
 					applyLoggedOutState(set);
 				} else {
+					set({ isAuthStale: true });
 					get().startAutoRefresh(REFRESH_RETRY_MS);
 				}
 				throw error;
