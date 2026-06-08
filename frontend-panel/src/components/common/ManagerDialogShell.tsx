@@ -105,7 +105,7 @@ export function InlineConfirm({
 	return (
 		<div
 			className={cn(
-				"rounded-lg border border-destructive/25 bg-destructive/5 p-3",
+				"rounded-lg border border-destructive/25 bg-destructive/5 p-3 duration-150 animate-in fade-in zoom-in-95 slide-in-from-top-1 motion-reduce:animate-none",
 				className,
 			)}
 		>

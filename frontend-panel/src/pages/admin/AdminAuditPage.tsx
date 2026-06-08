@@ -338,6 +338,12 @@ export default function AdminAuditPage() {
 		setSortOrder(nextOrder);
 		setOffset(0);
 	};
+	const auditEmptyIcon = <Icon name="Scroll" className="size-10" />;
+	const filteredEmptyAction = (
+		<Button variant="outline" onClick={resetFilters}>
+			{t("clear_filters")}
+		</Button>
+	);
 	const auditTableHeader = (
 		<TableHeader>
 			<TableRow>
@@ -487,16 +493,12 @@ export default function AdminAuditPage() {
 					items={items}
 					columns={6}
 					rows={6}
-					emptyIcon={<Icon name="Scroll" className="size-10" />}
+					emptyIcon={auditEmptyIcon}
 					emptyTitle={t("no_audit_logs")}
 					filtered={hasServerFilters}
 					filteredEmptyTitle={t("no_filtered_audit_logs")}
 					filteredEmptyDescription={t("no_filtered_audit_logs_desc")}
-					filteredEmptyAction={
-						<Button variant="outline" onClick={resetFilters}>
-							{t("clear_filters")}
-						</Button>
-					}
+					filteredEmptyAction={filteredEmptyAction}
 					headerRow={auditTableHeader}
 					pagination={auditPagination}
 					renderRow={(item) => (

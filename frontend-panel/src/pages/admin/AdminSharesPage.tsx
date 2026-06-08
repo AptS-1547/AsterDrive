@@ -183,6 +183,80 @@ export default function AdminSharesPage() {
 		deleteId !== null
 			? (shares.find((s) => s.id === deleteId)?.token ?? "")
 			: "";
+	const sharesEmptyIcon = <Icon name="LinkSimple" className="size-10" />;
+	const sharesPagination = (
+		<AdminOffsetPagination
+			total={total}
+			currentPage={currentPage}
+			totalPages={totalPages}
+			pageSize={String(pageSize)}
+			pageSizeOptions={pageSizeOptions}
+			onPageSizeChange={handlePageSizeChange}
+			prevDisabled={prevPageDisabled}
+			nextDisabled={nextPageDisabled}
+			onPrevious={() => setOffset((current) => Math.max(0, current - pageSize))}
+			onNext={() => setOffset((current) => current + pageSize)}
+		/>
+	);
+	const sharesTableHeader = (
+		<TableHeader>
+			<TableRow>
+				<AdminSortableTableHead
+					className="w-16"
+					sortKey="id"
+					sortBy={sortBy}
+					sortOrder={sortOrder}
+					onSortChange={handleSortChange}
+				>
+					{t("id")}
+				</AdminSortableTableHead>
+				<AdminSortableTableHead
+					sortKey="token"
+					sortBy={sortBy}
+					sortOrder={sortOrder}
+					onSortChange={handleSortChange}
+				>
+					{t("token")}
+				</AdminSortableTableHead>
+				<AdminSortableTableHead
+					sortKey="user_id"
+					sortBy={sortBy}
+					sortOrder={sortOrder}
+					onSortChange={handleSortChange}
+				>
+					{t("audit_user")}
+				</AdminSortableTableHead>
+				<TableHead>{t("core:type")}</TableHead>
+				<AdminSortableTableHead
+					sortKey="expires_at"
+					sortBy={sortBy}
+					sortOrder={sortOrder}
+					onSortChange={handleSortChange}
+				>
+					{t("core:status")}
+				</AdminSortableTableHead>
+				<AdminSortableTableHead
+					sortKey="download_count"
+					sortBy={sortBy}
+					sortOrder={sortOrder}
+					onSortChange={handleSortChange}
+				>
+					{t("downloads")}
+				</AdminSortableTableHead>
+				<AdminSortableTableHead
+					sortKey="created_at"
+					sortBy={sortBy}
+					sortOrder={sortOrder}
+					onSortChange={handleSortChange}
+				>
+					{t("core:created_at")}
+				</AdminSortableTableHead>
+				<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
+					{t("core:actions")}
+				</TableHead>
+			</TableRow>
+		</TableHeader>
+	);
 
 	return (
 		<AdminLayout>
@@ -193,84 +267,11 @@ export default function AdminSharesPage() {
 					items={shares}
 					columns={8}
 					rows={6}
-					emptyIcon={<Icon name="LinkSimple" className="size-10" />}
+					emptyIcon={sharesEmptyIcon}
 					emptyTitle={t("no_shares")}
 					emptyDescription={t("no_shares_desc")}
-					pagination={
-						<AdminOffsetPagination
-							total={total}
-							currentPage={currentPage}
-							totalPages={totalPages}
-							pageSize={String(pageSize)}
-							pageSizeOptions={pageSizeOptions}
-							onPageSizeChange={handlePageSizeChange}
-							prevDisabled={prevPageDisabled}
-							nextDisabled={nextPageDisabled}
-							onPrevious={() =>
-								setOffset((current) => Math.max(0, current - pageSize))
-							}
-							onNext={() => setOffset((current) => current + pageSize)}
-						/>
-					}
-					headerRow={
-						<TableHeader>
-							<TableRow>
-								<AdminSortableTableHead
-									className="w-16"
-									sortKey="id"
-									sortBy={sortBy}
-									sortOrder={sortOrder}
-									onSortChange={handleSortChange}
-								>
-									{t("id")}
-								</AdminSortableTableHead>
-								<AdminSortableTableHead
-									sortKey="token"
-									sortBy={sortBy}
-									sortOrder={sortOrder}
-									onSortChange={handleSortChange}
-								>
-									{t("token")}
-								</AdminSortableTableHead>
-								<AdminSortableTableHead
-									sortKey="user_id"
-									sortBy={sortBy}
-									sortOrder={sortOrder}
-									onSortChange={handleSortChange}
-								>
-									{t("audit_user")}
-								</AdminSortableTableHead>
-								<TableHead>{t("core:type")}</TableHead>
-								<AdminSortableTableHead
-									sortKey="expires_at"
-									sortBy={sortBy}
-									sortOrder={sortOrder}
-									onSortChange={handleSortChange}
-								>
-									{t("core:status")}
-								</AdminSortableTableHead>
-								<AdminSortableTableHead
-									sortKey="download_count"
-									sortBy={sortBy}
-									sortOrder={sortOrder}
-									onSortChange={handleSortChange}
-								>
-									{t("downloads")}
-								</AdminSortableTableHead>
-								<AdminSortableTableHead
-									sortKey="created_at"
-									sortBy={sortBy}
-									sortOrder={sortOrder}
-									onSortChange={handleSortChange}
-								>
-									{t("core:created_at")}
-								</AdminSortableTableHead>
-								<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
-									{t("core:actions")}
-								</TableHead>
-							</TableRow>
-						</TableHeader>
-					}
+					pagination={sharesPagination}
+					headerRow={sharesTableHeader}
 					renderRow={(s) => {
 						const isDeleting = deletingShareId === s.id;
 						const deleteLabel = isDeleting

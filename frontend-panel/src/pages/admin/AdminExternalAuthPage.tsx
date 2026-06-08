@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { ExternalAuthCallbackDialog } from "@/components/admin/admin-external-auth-page/ExternalAuthCallbackDialog";
 import { ExternalAuthProviderDialog } from "@/components/admin/admin-external-auth-page/ExternalAuthProviderDialog";
@@ -62,19 +63,42 @@ export default function AdminExternalAuthPage() {
 		total,
 		totalPages,
 	} = controller;
-	const providersPagination = (
-		<AdminOffsetPagination
-			total={total}
-			currentPage={currentPage}
-			totalPages={totalPages}
-			pageSize={String(pageSize)}
-			pageSizeOptions={pageSizeOptions}
-			onPageSizeChange={handlePageSizeChange}
-			prevDisabled={prevPageDisabled}
-			nextDisabled={nextPageDisabled}
-			onPrevious={() => setOffset((current) => Math.max(0, current - pageSize))}
-			onNext={() => setOffset((current) => current + pageSize)}
-		/>
+	const providersEmptyIcon = useMemo(
+		() => <Icon name="Globe" className="size-5" />,
+		[],
+	);
+	const providersHeaderRow = useMemo(
+		() => <ExternalAuthProvidersTableHeader />,
+		[],
+	);
+	const providersPagination = useMemo(
+		() => (
+			<AdminOffsetPagination
+				total={total}
+				currentPage={currentPage}
+				totalPages={totalPages}
+				pageSize={String(pageSize)}
+				pageSizeOptions={pageSizeOptions}
+				onPageSizeChange={handlePageSizeChange}
+				prevDisabled={prevPageDisabled}
+				nextDisabled={nextPageDisabled}
+				onPrevious={() =>
+					setOffset((current) => Math.max(0, current - pageSize))
+				}
+				onNext={() => setOffset((current) => current + pageSize)}
+			/>
+		),
+		[
+			currentPage,
+			handlePageSizeChange,
+			nextPageDisabled,
+			pageSize,
+			pageSizeOptions,
+			prevPageDisabled,
+			setOffset,
+			total,
+			totalPages,
+		],
 	);
 
 	return (
@@ -121,10 +145,10 @@ export default function AdminExternalAuthPage() {
 					items={providers}
 					columns={6}
 					rows={6}
-					emptyIcon={<Icon name="Globe" className="size-5" />}
+					emptyIcon={providersEmptyIcon}
 					emptyTitle={t("external_auth_providers_empty")}
 					emptyDescription={t("external_auth_providers_empty_desc")}
-					headerRow={<ExternalAuthProvidersTableHeader />}
+					headerRow={providersHeaderRow}
 					pagination={providersPagination}
 					renderRow={(provider) => (
 						<ExternalAuthProvidersTableRow

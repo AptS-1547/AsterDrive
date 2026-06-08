@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { Icon } from "@/components/ui/icon";
 import type { WebdavAccountInfo } from "@/types/api";
@@ -65,11 +65,10 @@ export function WebdavAccountTable({
 		[canManageTeam, labels],
 	);
 
-	useEffect(() => {
-		if (pendingDeleteId != null && !accountIds.has(pendingDeleteId)) {
-			setPendingDeleteId(null);
-		}
-	}, [accountIds, pendingDeleteId]);
+	const activePendingDeleteId =
+		pendingDeleteId != null && accountIds.has(pendingDeleteId)
+			? pendingDeleteId
+			: null;
 
 	return (
 		<AdminTableList
@@ -85,7 +84,7 @@ export function WebdavAccountTable({
 				const deleting = deletingAccountId === account.id;
 				const toggling = togglingAccountId === account.id;
 				const canMutate = canManageTeam || account.user_id === currentUserId;
-				const confirmingDelete = pendingDeleteId === account.id;
+				const confirmingDelete = activePendingDeleteId === account.id;
 				const deleteLabel = deleting ? labels.deleting : labels.delete;
 				const toggleLabel = toggling
 					? labels.toggleUpdating

@@ -349,6 +349,16 @@ export default function AdminUserInvitationsPage() {
 			onNext={() => setPagination(offset + pageSize, pageSize)}
 		/>
 	);
+	const invitationsEmptyIcon = (
+		<Icon name="EnvelopeSimple" className="size-10" />
+	);
+	const invitationsEmptyAction = (
+		<Button onClick={() => dispatch({ type: "inviteOpenSet", open: true })}>
+			<Icon name="EnvelopeSimple" className="mr-1 size-4" />
+			{t("invite_user")}
+		</Button>
+	);
+	const invitationsTableHeader = <UserInvitationsTableHeader />;
 
 	return (
 		<AdminLayout>
@@ -397,18 +407,11 @@ export default function AdminUserInvitationsPage() {
 					items={invitations}
 					columns={6}
 					rows={6}
-					emptyIcon={<Icon name="EnvelopeSimple" className="size-10" />}
+					emptyIcon={invitationsEmptyIcon}
 					emptyTitle={t("no_invitations")}
 					emptyDescription={t("no_invitations_desc")}
-					emptyAction={
-						<Button
-							onClick={() => dispatch({ type: "inviteOpenSet", open: true })}
-						>
-							<Icon name="EnvelopeSimple" className="mr-1 size-4" />
-							{t("invite_user")}
-						</Button>
-					}
-					headerRow={<UserInvitationsTableHeader />}
+					emptyAction={invitationsEmptyAction}
+					headerRow={invitationsTableHeader}
 					pagination={invitationsPagination}
 					renderRow={(invitation) => (
 						<UserInvitationsTableRow

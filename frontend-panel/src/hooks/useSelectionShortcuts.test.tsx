@@ -89,6 +89,32 @@ describe("useSelectionShortcuts", () => {
 		});
 
 		expect(selectAll).not.toHaveBeenCalled();
+		input.remove();
+	});
+
+	it("uses the latest callbacks after async list state changes", () => {
+		const initialSelectAll = vi.fn();
+		const nextSelectAll = vi.fn();
+		const clearSelection = vi.fn();
+
+		const { rerender } = renderHook(
+			({ selectAll }) =>
+				useSelectionShortcuts({
+					selectAll,
+					clearSelection,
+				}),
+			{ initialProps: { selectAll: initialSelectAll } },
+		);
+
+		rerender({ selectAll: nextSelectAll });
+
+		fireEvent.keyDown(document, {
+			metaKey: true,
+			key: "a",
+		});
+
+		expect(initialSelectAll).not.toHaveBeenCalled();
+		expect(nextSelectAll).toHaveBeenCalledTimes(1);
 	});
 
 	it("ignores shortcuts while the browser is composing IME text", () => {

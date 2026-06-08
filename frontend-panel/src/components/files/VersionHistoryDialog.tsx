@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useReducer } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { InlineConfirm } from "@/components/common/ManagerDialogShell";
@@ -40,6 +40,65 @@ type VersionInlineConfirm = {
 	version: FileVersion;
 };
 
+interface VersionHistoryState {
+	deletingVersionId: number | null;
+	inlineConfirm: VersionInlineConfirm | null;
+	loading: boolean;
+	restoringVersionId: number | null;
+	versions: FileVersion[];
+}
+
+type VersionHistoryAction =
+	| { type: "close" }
+	| { type: "delete-end"; versions: FileVersion[] }
+	| { type: "delete-start"; versionId: number }
+	| { type: "load-end"; versions?: FileVersion[] }
+	| { type: "load-start" }
+	| { type: "restore-end" }
+	| { type: "restore-start"; versionId: number }
+	| { type: "set-inline-confirm"; inlineConfirm: VersionInlineConfirm | null };
+
+const VERSION_HISTORY_INITIAL_STATE: VersionHistoryState = {
+	deletingVersionId: null,
+	inlineConfirm: null,
+	loading: false,
+	restoringVersionId: null,
+	versions: [],
+};
+
+function versionHistoryReducer(
+	state: VersionHistoryState,
+	action: VersionHistoryAction,
+): VersionHistoryState {
+	switch (action.type) {
+		case "close":
+			return VERSION_HISTORY_INITIAL_STATE;
+		case "delete-end":
+			return {
+				...state,
+				deletingVersionId: null,
+				inlineConfirm: null,
+				versions: action.versions,
+			};
+		case "delete-start":
+			return { ...state, deletingVersionId: action.versionId };
+		case "load-end":
+			return {
+				...state,
+				loading: false,
+				versions: action.versions ?? state.versions,
+			};
+		case "load-start":
+			return { ...state, loading: true };
+		case "restore-end":
+			return { ...state, inlineConfirm: null, restoringVersionId: null };
+		case "restore-start":
+			return { ...state, restoringVersionId: action.versionId };
+		case "set-inline-confirm":
+			return { ...state, inlineConfirm: action.inlineConfirm };
+	}
+}
+
 function getCurrentVersionNumber(versions: FileVersion[]) {
 	return (
 		versions.reduce(
@@ -58,33 +117,26 @@ export function VersionHistoryDialog({
 	onRestored,
 }: VersionHistoryDialogProps) {
 	const { t } = useTranslation(["files", "core"]);
-	const [versions, setVersions] = useState<FileVersion[]>([]);
-	const [loading, setLoading] = useState(false);
-	const [restoringVersionId, setRestoringVersionId] = useState<number | null>(
-		null,
-	);
-	const [deletingVersionId, setDeletingVersionId] = useState<number | null>(
-		null,
-	);
-	const [inlineConfirm, setInlineConfirm] =
-		useState<VersionInlineConfirm | null>(null);
+	const [
+		{ deletingVersionId, inlineConfirm, loading, restoringVersionId, versions },
+		dispatch,
+	] = useReducer(versionHistoryReducer, VERSION_HISTORY_INITIAL_STATE);
 	const currentVersion = loading ? null : getCurrentVersionNumber(versions);
 
 	const load = useCallback(async () => {
 		try {
-			setLoading(true);
+			dispatch({ type: "load-start" });
 			const data = await fileService.listVersions(fileId);
-			setVersions(data);
+			dispatch({ type: "load-end", versions: data });
 		} catch (e) {
 			handleApiError(e);
-		} finally {
-			setLoading(false);
+			dispatch({ type: "load-end" });
 		}
 	}, [fileId]);
 
 	const handleRestore = async (versionId: number) => {
 		try {
-			setRestoringVersionId(versionId);
+			dispatch({ type: "restore-start", versionId });
 			await fileService.restoreVersion(fileId, versionId);
 			const downloadPath = fileService.downloadPath(fileId);
 			invalidateTextContent(downloadPath);
@@ -93,26 +145,23 @@ export function VersionHistoryDialog({
 			invalidateBlobUrl(fileService.imagePreviewPath(fileId));
 			toast.success(t("version_restored"));
 			onRestored?.();
-			setInlineConfirm(null);
 		} catch (e) {
 			handleApiError(e);
 		} finally {
-			setRestoringVersionId(null);
+			dispatch({ type: "restore-end" });
 		}
 	};
 
 	const handleDelete = async (versionId: number) => {
 		try {
-			setDeletingVersionId(versionId);
+			dispatch({ type: "delete-start", versionId });
 			await fileService.deleteVersion(fileId, versionId);
 			const data = await fileService.listVersions(fileId);
-			setVersions(data);
 			toast.success(t("version_deleted"));
-			setInlineConfirm(null);
+			dispatch({ type: "delete-end", versions: data });
 		} catch (e) {
 			handleApiError(e);
-		} finally {
-			setDeletingVersionId(null);
+			dispatch({ type: "delete-end", versions });
 		}
 	};
 
@@ -120,28 +169,28 @@ export function VersionHistoryDialog({
 		kind: VersionInlineConfirm["kind"],
 		version: FileVersion,
 	) => {
-		setInlineConfirm((current) =>
-			current?.kind === kind && current.version.id === version.id
-				? null
-				: { kind, version },
-		);
+		dispatch({
+			type: "set-inline-confirm",
+			inlineConfirm:
+				inlineConfirm?.kind === kind && inlineConfirm.version.id === version.id
+					? null
+					: { kind, version },
+		});
+	};
+	const handleOpenChange = (nextOpen: boolean) => {
+		if (!nextOpen) {
+			dispatch({ type: "close" });
+		}
+		onOpenChange(nextOpen);
 	};
 
 	useEffect(() => {
-		if (open) {
-			load();
-			return;
-		}
-
-		setVersions([]);
-		setLoading(false);
-		setRestoringVersionId(null);
-		setDeletingVersionId(null);
-		setInlineConfirm(null);
+		if (!open) return;
+		load();
 	}, [load, open]);
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog open={open} onOpenChange={handleOpenChange}>
 			<DialogContent keepMounted className="max-w-lg">
 				<DialogHeader>
 					<div className="flex items-start gap-3 pr-8">
@@ -287,7 +336,12 @@ export function VersionHistoryDialog({
 																	restoringVersionId !== null ||
 																	deletingVersionId !== null
 																}
-																onClick={() => setInlineConfirm(null)}
+																onClick={() =>
+																	dispatch({
+																		type: "set-inline-confirm",
+																		inlineConfirm: null,
+																	})
+																}
 															>
 																{t("core:cancel")}
 															</Button>

@@ -75,6 +75,8 @@ describe("ManagerDialogShell", () => {
 		expect(screen.getByText("Confirm delete")).toHaveClass(
 			"border-destructive/25",
 			"bg-destructive/5",
+			"animate-in",
+			"motion-reduce:animate-none",
 		);
 	});
 });

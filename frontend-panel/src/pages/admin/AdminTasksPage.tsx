@@ -539,6 +539,19 @@ function useAdminTasksPageContent() {
 	};
 	const detailTask =
 		items.find((task) => task.id === visibleDetailTaskId) ?? null;
+	const taskEmptyIcon = <Icon name="Clock" className="size-10" />;
+	const taskFilteredEmptyAction = (
+		<Button variant="outline" onClick={resetFilters}>
+			{t("admin:clear_filters")}
+		</Button>
+	);
+	const taskTableHeader = (
+		<AdminTaskTableHeader
+			sortBy={sortBy}
+			sortOrder={sortOrder}
+			onSortChange={handleSortChange}
+		/>
+	);
 	const taskPagination = (
 		<AdminOffsetPagination
 			total={total}
@@ -609,24 +622,14 @@ function useAdminTasksPageContent() {
 					items={items}
 					columns={8}
 					rows={6}
-					emptyIcon={<Icon name="Clock" className="size-10" />}
+					emptyIcon={taskEmptyIcon}
 					emptyTitle={t("admin:no_tasks")}
 					emptyDescription={t("admin:no_tasks_desc")}
 					filtered={hasServerFilters}
 					filteredEmptyTitle={t("admin:no_filtered_tasks")}
 					filteredEmptyDescription={t("admin:no_filtered_tasks_desc")}
-					filteredEmptyAction={
-						<Button variant="outline" onClick={resetFilters}>
-							{t("admin:clear_filters")}
-						</Button>
-					}
-					headerRow={
-						<AdminTaskTableHeader
-							sortBy={sortBy}
-							sortOrder={sortOrder}
-							onSortChange={handleSortChange}
-						/>
-					}
+					filteredEmptyAction={taskFilteredEmptyAction}
+					headerRow={taskTableHeader}
 					pagination={taskPagination}
 					renderRow={(task) => (
 						<AdminTaskTableRow

@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	AdminSortableTableHead,
@@ -132,14 +132,10 @@ export function AdminTeamDetailMembersSection({
 		[members],
 	);
 
-	useEffect(() => {
-		if (
-			pendingRemoveUserId != null &&
-			!memberUserIds.has(pendingRemoveUserId)
-		) {
-			setPendingRemoveUserId(null);
-		}
-	}, [memberUserIds, pendingRemoveUserId]);
+	const activePendingRemoveUserId =
+		pendingRemoveUserId != null && memberUserIds.has(pendingRemoveUserId)
+			? pendingRemoveUserId
+			: null;
 
 	return (
 		<section className="rounded-2xl border bg-background/60 p-6">
@@ -367,7 +363,7 @@ export function AdminTeamDetailMembersSection({
 									const canEditRole = canMutateTeam && !memberMutating;
 									const canRemove = canMutateTeam && !memberMutating;
 									const isConfirmingRemove =
-										pendingRemoveUserId === member.user_id;
+										activePendingRemoveUserId === member.user_id;
 
 									return (
 										<TableRow key={member.id}>
@@ -441,7 +437,7 @@ export function AdminTeamDetailMembersSection({
 											<TableCell>
 												{canRemove ? (
 													isConfirmingRemove ? (
-														<div className="flex flex-wrap items-center gap-2">
+														<div className="flex flex-wrap items-center gap-2 duration-150 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
 															<Button
 																type="button"
 																variant="destructive"

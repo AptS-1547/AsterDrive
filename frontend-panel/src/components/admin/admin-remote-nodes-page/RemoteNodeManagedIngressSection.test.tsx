@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RemoteNodeManagedIngressSection } from "@/components/admin/admin-remote-nodes-page/RemoteNodeManagedIngressSection";
@@ -412,12 +418,18 @@ describe("RemoteNodeManagedIngressSection", () => {
 			/>,
 		);
 		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
-		expect(
-			screen.getByText(
-				"remote_node_ingress_profile_delete_title:Local ingress",
-			),
-		).toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: "core:cancel" }));
+		const deleteNotice = screen.getByText(
+			"remote_node_ingress_profile_delete_title:Local ingress",
+		).parentElement;
+		expect(deleteNotice).toHaveClass(
+			"animate-in",
+			"motion-reduce:animate-none",
+		);
+		fireEvent.click(
+			within(deleteNotice?.parentElement ?? document.body).getByRole("button", {
+				name: "core:cancel",
+			}),
+		);
 		expect(onDeleteProfile).not.toHaveBeenCalled();
 
 		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));

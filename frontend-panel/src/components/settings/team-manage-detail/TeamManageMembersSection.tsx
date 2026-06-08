@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
@@ -131,14 +131,10 @@ export function TeamManageMembersSection({
 		[members],
 	);
 
-	useEffect(() => {
-		if (
-			pendingRemoveUserId != null &&
-			!memberUserIds.has(pendingRemoveUserId)
-		) {
-			setPendingRemoveUserId(null);
-		}
-	}, [memberUserIds, pendingRemoveUserId]);
+	const activePendingRemoveUserId =
+		pendingRemoveUserId != null && memberUserIds.has(pendingRemoveUserId)
+			? pendingRemoveUserId
+			: null;
 
 	return (
 		<section className="rounded-2xl border bg-background/60 p-6">
@@ -329,7 +325,7 @@ export function TeamManageMembersSection({
 									const canRemove =
 										(canManageTeam && canManageOwner) || canRemoveSelf;
 									const isConfirmingRemove =
-										pendingRemoveUserId === member.user_id;
+										activePendingRemoveUserId === member.user_id;
 									const removeLabel = isSelf
 										? t("settings:settings_team_leave")
 										: t("settings:settings_team_remove_member");
@@ -413,7 +409,7 @@ export function TeamManageMembersSection({
 											<TableCell>
 												{canRemove ? (
 													isConfirmingRemove ? (
-														<div className="flex flex-wrap items-center gap-2">
+														<div className="flex flex-wrap items-center gap-2 duration-150 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
 															<Button
 																type="button"
 																variant="destructive"

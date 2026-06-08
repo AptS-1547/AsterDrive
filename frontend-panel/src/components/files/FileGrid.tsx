@@ -83,6 +83,10 @@ const FolderGridCard = memo(function FolderGridCard({
 		() => [...breadcrumbPathIds, folder.id],
 		[breadcrumbPathIds, folder.id],
 	);
+	const actionMenu = useMemo(
+		() => <FileBrowserItemActionMenu item={folder} isFolder />,
+		[folder],
+	);
 
 	return (
 		<FileBrowserItemContextMenu item={folder} isFolder>
@@ -108,7 +112,7 @@ const FolderGridCard = memo(function FolderGridCard({
 				onDrop={onMoveToFolder}
 				targetPathIds={targetPathIds}
 				fading={fading}
-				actionMenu={<FileBrowserItemActionMenu item={folder} isFolder />}
+				actionMenu={actionMenu}
 			/>
 		</FileBrowserItemContextMenu>
 	);
@@ -131,6 +135,10 @@ const FileGridCard = memo(function FileGridCard({
 	const selected = useFileStore((s) => s.selectedFileIds.has(file.id));
 	const selectOnlyFile = useFileStore((s) => s.selectOnlyFile);
 	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
+	const actionMenu = useMemo(
+		() => <FileBrowserItemActionMenu item={file} isFolder={false} />,
+		[file],
+	);
 
 	return (
 		<FileBrowserItemContextMenu item={file} isFolder={false}>
@@ -154,7 +162,7 @@ const FileGridCard = memo(function FileGridCard({
 				}
 				resolveDragData={() => getCurrentSelectionDragData(file.id, false)}
 				fading={fading}
-				actionMenu={<FileBrowserItemActionMenu item={file} isFolder={false} />}
+				actionMenu={actionMenu}
 			/>
 		</FileBrowserItemContextMenu>
 	);

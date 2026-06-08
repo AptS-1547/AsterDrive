@@ -3,6 +3,7 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useReducer,
 	useRef,
 	useState,
 } from "react";
@@ -61,6 +62,84 @@ const FILE_CATEGORIES = new Set<FileCategory>([
 ]);
 
 type SearchTagMatch = "any" | "all";
+
+interface SearchResultsState {
+	error: string | null;
+	files: FileListItem[];
+	folders: FolderListItem[];
+	loading: boolean;
+	loadingMore: boolean;
+	totalFiles: number;
+	totalFolders: number;
+}
+
+type SearchResultsAction =
+	| { type: "load-start"; mode: "replace" | "append" }
+	| {
+			type: "load-success";
+			files: FileListItem[];
+			folders: FolderListItem[];
+			mode: "replace" | "append";
+			totalFiles: number;
+			totalFolders: number;
+	  }
+	| { type: "load-error"; error: string }
+	| { type: "load-empty" };
+
+const SEARCH_RESULTS_INITIAL_STATE: SearchResultsState = {
+	error: null,
+	files: [],
+	folders: [],
+	loading: true,
+	loadingMore: false,
+	totalFiles: 0,
+	totalFolders: 0,
+};
+
+function searchResultsReducer(
+	state: SearchResultsState,
+	action: SearchResultsAction,
+): SearchResultsState {
+	switch (action.type) {
+		case "load-start":
+			return action.mode === "append"
+				? { ...state, loadingMore: true }
+				: {
+						...SEARCH_RESULTS_INITIAL_STATE,
+						loading: true,
+					};
+		case "load-success":
+			return {
+				error: null,
+				files:
+					action.mode === "append"
+						? [...state.files, ...action.files]
+						: action.files,
+				folders:
+					action.mode === "append"
+						? [...state.folders, ...action.folders]
+						: action.folders,
+				loading: false,
+				loadingMore: false,
+				totalFiles: action.totalFiles,
+				totalFolders: action.totalFolders,
+			};
+		case "load-error":
+			return {
+				...state,
+				error: action.error,
+				loading: false,
+				loadingMore: false,
+			};
+		case "load-empty":
+			return {
+				...SEARCH_RESULTS_INITIAL_STATE,
+				loading: false,
+			};
+		default:
+			return state;
+	}
+}
 
 interface ParsedSearchQuery {
 	category: FileCategory | null;
@@ -148,13 +227,10 @@ export default function SearchBrowserPage() {
 	const previewAppsLoaded = usePreviewAppStore((s) => s.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((s) => s.load);
 	const thumbnailSupport = useThumbnailSupportStore((s) => s.config);
-	const [files, setFiles] = useState<FileListItem[]>([]);
-	const [folders, setFolders] = useState<FolderListItem[]>([]);
-	const [totalFiles, setTotalFiles] = useState(0);
-	const [totalFolders, setTotalFolders] = useState(0);
-	const [loading, setLoading] = useState(true);
-	const [loadingMore, setLoadingMore] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+	const [
+		{ error, files, folders, loading, loadingMore, totalFiles, totalFolders },
+		dispatchResults,
+	] = useReducer(searchResultsReducer, SEARCH_RESULTS_INITIAL_STATE);
 	const [previewState, setPreviewState] =
 		useState<FileBrowserPreviewState | null>(null);
 	const [infoPanelOpen, setInfoPanelOpen] = useState(false);
@@ -203,51 +279,32 @@ export default function SearchBrowserPage() {
 			const requestId = requestIdRef.current + 1;
 			requestIdRef.current = requestId;
 			if (!criteriaReady) {
-				setFiles([]);
-				setFolders([]);
-				setTotalFiles(0);
-				setTotalFolders(0);
-				setLoading(false);
-				setLoadingMore(false);
-				setError(null);
+				dispatchResults({ type: "load-empty" });
 				return;
 			}
-			if (mode === "replace") {
-				setLoading(true);
-				setError(null);
-			} else {
-				setLoadingMore(true);
-			}
+			dispatchResults({ type: "load-start", mode });
 
 			try {
 				const results = await searchService.search(
 					buildSearchParams(parsedQuery, sortBy, sortOrder, offset),
 				);
-				if (requestIdRef.current !== requestId) {
-					return;
-				}
-				setFiles((current) =>
-					mode === "append" ? [...current, ...results.files] : results.files,
-				);
-				setFolders((current) =>
-					mode === "append"
-						? [...current, ...results.folders]
-						: results.folders,
-				);
-				setTotalFiles(results.total_files);
-				setTotalFolders(results.total_folders);
-				setError(null);
-			} catch (loadError) {
-				if (requestIdRef.current !== requestId) {
-					return;
-				}
-				setError(
-					loadError instanceof Error ? loadError.message : searchErrorText,
-				);
-			} finally {
 				if (requestIdRef.current === requestId) {
-					setLoading(false);
-					setLoadingMore(false);
+					dispatchResults({
+						type: "load-success",
+						files: results.files,
+						folders: results.folders,
+						mode,
+						totalFiles: results.total_files,
+						totalFolders: results.total_folders,
+					});
+				}
+			} catch (loadError) {
+				if (requestIdRef.current === requestId) {
+					dispatchResults({
+						type: "load-error",
+						error:
+							loadError instanceof Error ? loadError.message : searchErrorText,
+					});
 				}
 			}
 		},
@@ -257,38 +314,22 @@ export default function SearchBrowserPage() {
 	useEffect(() => {
 		setInfoPanelOpen(false);
 		setInfoTarget(null);
-		setFiles([]);
-		setFolders([]);
-		setTotalFiles(0);
-		setTotalFolders(0);
 		void loadSearch(0, "replace");
 	}, [loadSearch]);
 
-	useEffect(() => {
-		if (!infoPanelOpen || !infoTarget) return;
-		if (infoTarget.file) {
+	const activeInfoTarget = useMemo<FileBrowserInfoTarget | null>(() => {
+		if (infoTarget?.file) {
 			const nextFile = files.find((entry) => entry.id === infoTarget.file?.id);
-			if (nextFile) {
-				if (nextFile !== infoTarget.file) {
-					setInfoTarget({ file: nextFile });
-				}
-				return;
-			}
+			return nextFile ? { file: nextFile } : null;
 		}
-		if (infoTarget.folder) {
+		if (infoTarget?.folder) {
 			const nextFolder = folders.find(
 				(entry) => entry.id === infoTarget.folder?.id,
 			);
-			if (nextFolder) {
-				if (nextFolder !== infoTarget.folder) {
-					setInfoTarget({ folder: nextFolder });
-				}
-				return;
-			}
+			return nextFolder ? { folder: nextFolder } : null;
 		}
-		setInfoPanelOpen(false);
-		setInfoTarget(null);
-	}, [files, folders, infoPanelOpen, infoTarget]);
+		return null;
+	}, [files, folders, infoTarget]);
 
 	const hasMoreFiles =
 		files.length < totalFiles || folders.length < totalFolders;
@@ -576,8 +617,8 @@ export default function SearchBrowserPage() {
 				error={error}
 				fileBrowserContextValue={fileBrowserContextValue}
 				hasMoreFiles={hasMoreFiles}
-				infoPanelOpen={infoPanelOpen}
-				infoTarget={infoTarget}
+				infoPanelOpen={infoPanelOpen && activeInfoTarget !== null}
+				infoTarget={activeInfoTarget}
 				isEmpty={!loading && files.length === 0 && folders.length === 0}
 				loading={loading}
 				loadingMore={loadingMore}

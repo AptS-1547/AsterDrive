@@ -108,6 +108,12 @@ function useStoragePolicyDialogContent({
 			iconSrc: "/static/asterdrive/asterdrive-dark.svg",
 		},
 		{
+			type: "remote",
+			title: t("driver_type_remote"),
+			description: t("policy_wizard_remote_storage_desc"),
+			iconSrc: "/static/storage/asterdrive-node.svg",
+		},
+		{
 			type: "s3",
 			title: t("driver_type_s3"),
 			description: t("policy_wizard_s3_storage_desc"),
@@ -118,12 +124,6 @@ function useStoragePolicyDialogContent({
 			title: t("driver_type_tencent_cos"),
 			description: t("policy_wizard_tencent_cos_storage_desc"),
 			iconSrc: "/static/storage/tencent-cloud-cos.webp",
-		},
-		{
-			type: "remote",
-			title: t("driver_type_remote"),
-			description: t("policy_wizard_remote_storage_desc"),
-			iconSrc: "/static/storage/asterdrive-node.svg",
 		},
 	];
 	const createSteps: StoragePolicyDialogStep[] = [
@@ -191,6 +191,14 @@ function useStoragePolicyDialogContent({
 		!form.bucket.trim()
 			? t("policy_wizard_bucket_required")
 			: null;
+	const createEndpointError =
+		isCreateMode &&
+		createStep === 1 &&
+		createStepTouched &&
+		isS3CompatibleDriver(form.driver_type) &&
+		!form.endpoint.trim()
+			? t("policy_wizard_endpoint_required")
+			: endpointValidationMessage;
 	const createRemoteNodeError =
 		isCreateMode &&
 		createStep === 1 &&
@@ -362,7 +370,7 @@ function useStoragePolicyDialogContent({
 								createStepDirection={createStepDirection}
 								createSteps={createSteps}
 								currentStorageOption={currentStorageOption}
-								endpointValidationMessage={endpointValidationMessage}
+								endpointValidationMessage={createEndpointError}
 								form={form}
 								onCreateStepChange={onCreateStepChange}
 								onDriverTypeChange={onDriverTypeChange}

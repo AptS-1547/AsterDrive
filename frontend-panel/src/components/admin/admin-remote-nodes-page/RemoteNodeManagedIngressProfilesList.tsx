@@ -136,7 +136,7 @@ function RemoteNodeManagedIngressProfileCard({
 						<Icon name="PencilSimple" className="size-3.5" />
 					</Button>
 					{deleteConfirming ? (
-						<>
+						<div className="flex items-center gap-1 duration-150 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
 							<Button
 								type="button"
 								variant="destructive"
@@ -153,7 +153,7 @@ function RemoteNodeManagedIngressProfileCard({
 							>
 								{t("core:cancel")}
 							</Button>
-						</>
+						</div>
 					) : (
 						<Button
 							type="button"
@@ -171,7 +171,7 @@ function RemoteNodeManagedIngressProfileCard({
 			</div>
 
 			{deleteConfirming ? (
-				<div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">
+				<div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm duration-150 animate-in fade-in slide-in-from-top-1 motion-reduce:animate-none">
 					<p className="font-medium text-destructive">
 						{t("remote_node_ingress_profile_delete_title", {
 							name: profile.name,

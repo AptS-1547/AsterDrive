@@ -496,6 +496,18 @@ function useAdminPoliciesPageContent() {
 		showFailureError?: boolean;
 	} = {}) => {
 		const currentForm = syncNormalizedS3Form();
+		const currentEndpointValidationMessage = getEndpointValidationMessage(
+			currentForm,
+			t,
+		);
+		if (currentEndpointValidationMessage) {
+			if (showFailureError) {
+				toast.error(currentEndpointValidationMessage);
+			}
+			setValidatedConnectionKey(null);
+			return false;
+		}
+
 		const shouldUseParamTest =
 			editingId === null ||
 			hasConnectionFieldChanges(currentForm, editingPolicy);
@@ -638,6 +650,10 @@ function useAdminPoliciesPageContent() {
 		}
 
 		if (isS3CompatibleDriver(form.driver_type) && !form.bucket.trim()) {
+			return;
+		}
+
+		if (isS3CompatibleDriver(form.driver_type) && !form.endpoint.trim()) {
 			return;
 		}
 

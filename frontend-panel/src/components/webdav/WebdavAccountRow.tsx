@@ -103,7 +103,7 @@ export function WebdavAccountRow({
 						/>
 					</Button>
 					{confirmingDelete ? (
-						<>
+						<div className="flex items-center gap-2 duration-150 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
 							<Button
 								type="button"
 								variant="destructive"
@@ -122,7 +122,7 @@ export function WebdavAccountRow({
 							>
 								{cancelLabel}
 							</Button>
-						</>
+						</div>
 					) : (
 						<Button
 							type="button"

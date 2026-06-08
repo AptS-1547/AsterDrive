@@ -83,6 +83,8 @@
 	"remote_upload_strategy": "远程上传方式",
 	"s3_endpoint_hint": "Cloudflare R2 请填写账号级 S3 endpoint，例如 https://<account>.r2.cloudflarestorage.com。不要使用公开的 .r2.dev 地址；bucket 请单独填写。若误填了 /<bucket>，前后端会自动拆分并校验。",
 	"cos_endpoint_hint": "腾讯云 COS 请填写 bucket 域名，例如 https://<bucket-appid>.cos.<region>.myqcloud.com；bucket 请单独填写，例如 <bucket-appid>。若误填了 /<bucket>，前后端会自动拆分并校验。",
+	"policy_wizard_endpoint_required": "必须填写端点。",
+	"s3_endpoint_protocol_required_error": "S3 endpoint 必须包含 http:// 或 https://。",
 	"s3_endpoint_public_r2_dev_error": "检测到公开的 r2.dev 地址。这里必须填写 Cloudflare R2 的账号级 S3 API endpoint，而不是公开 bucket 域名。",
 	"download_strategy_relay_stream": "服务端中继下载",
 	"download_strategy_relay_stream_desc": "AsterDrive 先从存储后端拉取对象，再把内容流式回传给浏览器。适合需要由应用节点完全控制响应头、同源下载行为或下游网络策略的场景。",

@@ -491,6 +491,19 @@ export default function AdminTeamsPage() {
 			viewTransition: false,
 		});
 	};
+	const teamsEmptyIcon = <Icon name="Cloud" className="size-10" />;
+	const teamsFilteredEmptyAction = (
+		<Button variant="outline" onClick={resetFilters}>
+			{t("clear_filters")}
+		</Button>
+	);
+	const teamsTableHeader = (
+		<AdminTeamsTableHeader
+			sortBy={sortBy}
+			sortOrder={sortOrder}
+			onSortChange={handleSortChange}
+		/>
+	);
 	const teamsPagination = (
 		<AdminOffsetPagination
 			total={total}
@@ -559,24 +572,14 @@ export default function AdminTeamsPage() {
 					items={teams}
 					columns={6}
 					rows={6}
-					emptyIcon={<Icon name="Cloud" className="size-10" />}
+					emptyIcon={teamsEmptyIcon}
 					emptyTitle={t("no_teams")}
 					emptyDescription={t("no_teams_desc")}
 					filtered={hasServerFilters}
 					filteredEmptyTitle={t("no_filtered_teams")}
 					filteredEmptyDescription={t("no_filtered_teams_desc")}
-					filteredEmptyAction={
-						<Button variant="outline" onClick={resetFilters}>
-							{t("clear_filters")}
-						</Button>
-					}
-					headerRow={
-						<AdminTeamsTableHeader
-							sortBy={sortBy}
-							sortOrder={sortOrder}
-							onSortChange={handleSortChange}
-						/>
-					}
+					filteredEmptyAction={teamsFilteredEmptyAction}
+					headerRow={teamsTableHeader}
 					pagination={teamsPagination}
 					renderRow={(team) => (
 						<AdminTeamsTableRow

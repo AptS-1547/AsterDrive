@@ -1828,6 +1828,107 @@ describe("AdminPoliciesPage", () => {
 		).toBeInTheDocument();
 	});
 
+	it("blocks S3-compatible endpoints that omit the http or https protocol", async () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("s3");
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Archive S3" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "s3.example.com" },
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "archive" },
+		});
+
+		expect(screen.getByLabelText("endpoint")).toHaveAttribute(
+			"aria-invalid",
+			"true",
+		);
+		expect(
+			screen.getByText("s3_endpoint_protocol_required_error"),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+		await waitFor(() => {
+			expect(mockState.toastError).toHaveBeenCalledWith(
+				"s3_endpoint_protocol_required_error",
+			);
+		});
+		expect(mockState.testParams).not.toHaveBeenCalled();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		expect(
+			screen.queryByText("policy_wizard_summary_desc"),
+		).not.toBeInTheDocument();
+	});
+
+	it("allows http S3 endpoints because the backend accepts http or https", async () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("s3");
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Archive S3" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "http://s3.example.com" },
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "archive" },
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: undefined,
+				base_path: undefined,
+				bucket: "archive",
+				driver_type: "s3",
+				endpoint: "http://s3.example.com",
+				remote_node_id: undefined,
+				secret_key: undefined,
+			});
+		});
+	});
+
+	it("blocks Tencent COS endpoints that omit the http or https protocol", async () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("tencent_cos");
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "COS Media" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "cos.ap-guangzhou.myqcloud.com" },
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "media-1250000000" },
+		});
+
+		expect(screen.getByLabelText("endpoint")).toHaveAttribute(
+			"aria-invalid",
+			"true",
+		);
+		expect(
+			screen.getByText("s3_endpoint_protocol_required_error"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		expect(
+			screen.queryByText("policy_wizard_summary_desc"),
+		).not.toBeInTheDocument();
+		expect(mockState.testParams).not.toHaveBeenCalled();
+	});
+
 	it("displays presigned strategy from structured options", async () => {
 		mockState.items = [
 			createPolicy({

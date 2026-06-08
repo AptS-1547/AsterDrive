@@ -3,6 +3,7 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useReducer,
 	useRef,
 	useState,
 } from "react";
@@ -44,6 +45,73 @@ import type { FileCategory, FileInfo, FileListItem } from "@/types/api";
 
 const CATEGORY_PAGE_LIMIT = 100;
 
+interface CategoryResultsState {
+	error: string | null;
+	files: FileListItem[];
+	loading: boolean;
+	loadingMore: boolean;
+	totalFiles: number;
+}
+
+type CategoryResultsAction =
+	| { type: "load-start"; mode: "replace" | "append" }
+	| {
+			type: "load-success";
+			files: FileListItem[];
+			mode: "replace" | "append";
+			totalFiles: number;
+	  }
+	| { type: "load-error"; error: string }
+	| { type: "load-empty" };
+
+const CATEGORY_RESULTS_INITIAL_STATE: CategoryResultsState = {
+	error: null,
+	files: [],
+	loading: true,
+	loadingMore: false,
+	totalFiles: 0,
+};
+
+function categoryResultsReducer(
+	state: CategoryResultsState,
+	action: CategoryResultsAction,
+): CategoryResultsState {
+	switch (action.type) {
+		case "load-start":
+			return action.mode === "append"
+				? { ...state, loadingMore: true }
+				: {
+						...CATEGORY_RESULTS_INITIAL_STATE,
+						loading: true,
+					};
+		case "load-success":
+			return {
+				error: null,
+				files:
+					action.mode === "append"
+						? [...state.files, ...action.files]
+						: action.files,
+				loading: false,
+				loadingMore: false,
+				totalFiles: action.totalFiles,
+			};
+		case "load-error":
+			return {
+				...state,
+				error: action.error,
+				loading: false,
+				loadingMore: false,
+			};
+		case "load-empty":
+			return {
+				...CATEGORY_RESULTS_INITIAL_STATE,
+				loading: false,
+			};
+		default:
+			return state;
+	}
+}
+
 function getCategoryLabelKey(category: FileCategory) {
 	return `search:category_${category}`;
 }
@@ -74,11 +142,8 @@ export default function CategoryBrowserPage() {
 	const previewAppsLoaded = usePreviewAppStore((s) => s.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((s) => s.load);
 	const thumbnailSupport = useThumbnailSupportStore((s) => s.config);
-	const [files, setFiles] = useState<FileListItem[]>([]);
-	const [totalFiles, setTotalFiles] = useState(0);
-	const [loading, setLoading] = useState(true);
-	const [loadingMore, setLoadingMore] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+	const [{ error, files, loading, loadingMore, totalFiles }, dispatchResults] =
+		useReducer(categoryResultsReducer, CATEGORY_RESULTS_INITIAL_STATE);
 	const [previewState, setPreviewState] =
 		useState<FileBrowserPreviewState | null>(null);
 	const [infoPanelOpen, setInfoPanelOpen] = useState(false);
@@ -128,12 +193,7 @@ export default function CategoryBrowserPage() {
 			if (!category) return;
 			const requestId = requestIdRef.current + 1;
 			requestIdRef.current = requestId;
-			if (mode === "replace") {
-				setLoading(true);
-				setError(null);
-			} else {
-				setLoadingMore(true);
-			}
+			dispatchResults({ type: "load-start", mode });
 
 			try {
 				const results = await searchService.search({
@@ -144,25 +204,21 @@ export default function CategoryBrowserPage() {
 					limit: CATEGORY_PAGE_LIMIT,
 					offset,
 				});
-				if (requestIdRef.current !== requestId) {
-					return;
-				}
-				setFiles((current) =>
-					mode === "append" ? [...current, ...results.files] : results.files,
-				);
-				setTotalFiles(results.total_files);
-				setError(null);
-			} catch (loadError) {
-				if (requestIdRef.current !== requestId) {
-					return;
-				}
-				setError(
-					loadError instanceof Error ? loadError.message : searchErrorText,
-				);
-			} finally {
 				if (requestIdRef.current === requestId) {
-					setLoading(false);
-					setLoadingMore(false);
+					dispatchResults({
+						type: "load-success",
+						files: results.files,
+						mode,
+						totalFiles: results.total_files,
+					});
+				}
+			} catch (loadError) {
+				if (requestIdRef.current === requestId) {
+					dispatchResults({
+						type: "load-error",
+						error:
+							loadError instanceof Error ? loadError.message : searchErrorText,
+					});
 				}
 			}
 		},
@@ -173,23 +229,14 @@ export default function CategoryBrowserPage() {
 		if (!category) return;
 		setInfoPanelOpen(false);
 		setInfoTarget(null);
-		setFiles([]);
-		setTotalFiles(0);
 		void loadCategory(0, "replace");
 	}, [category, loadCategory]);
 
-	useEffect(() => {
-		if (!infoPanelOpen || !infoTarget?.file) return;
+	const activeInfoTarget = useMemo<FileBrowserInfoTarget | null>(() => {
+		if (!infoTarget?.file) return null;
 		const nextFile = files.find((entry) => entry.id === infoTarget.file?.id);
-		if (nextFile) {
-			if (nextFile !== infoTarget.file) {
-				setInfoTarget({ file: nextFile });
-			}
-			return;
-		}
-		setInfoPanelOpen(false);
-		setInfoTarget(null);
-	}, [files, infoPanelOpen, infoTarget]);
+		return nextFile ? { file: nextFile } : null;
+	}, [files, infoTarget]);
 
 	const hasMoreFiles = files.length < totalFiles;
 	useEffect(() => {
@@ -432,8 +479,8 @@ export default function CategoryBrowserPage() {
 				error={error}
 				fileBrowserContextValue={fileBrowserContextValue}
 				hasMoreFiles={hasMoreFiles}
-				infoPanelOpen={infoPanelOpen}
-				infoTarget={infoTarget}
+				infoPanelOpen={infoPanelOpen && activeInfoTarget !== null}
+				infoTarget={activeInfoTarget}
 				isEmpty={!loading && files.length === 0}
 				loading={loading}
 				loadingMore={loadingMore}

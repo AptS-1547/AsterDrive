@@ -75,16 +75,16 @@ vi.mock("react-router-dom", () => ({
 		onClick?: () => void;
 		className?: (props: { isActive: boolean }) => string;
 	}) => (
-		<a
-			href={to}
+		<button
+			type="button"
+			data-href={to}
 			className={className?.({ isActive: mockState.pathname === to })}
-			onClick={(event) => {
-				event.preventDefault();
+			onClick={() => {
 				onClick?.();
 			}}
 		>
 			{children}
-		</a>
+		</button>
 	),
 	useLocation: () => ({
 		pathname: mockState.pathname,
@@ -234,15 +234,15 @@ describe("Sidebar", () => {
 			"sidebar",
 		);
 		expect(scrollArea).toContainElement(
-			screen.getByRole("link", {
+			screen.getByRole("button", {
 				name: /translated:search:category_image/i,
 			}),
 		);
 		expect(
-			screen.getByRole("link", {
+			screen.getByRole("button", {
 				name: /translated:search:category_image/i,
 			}),
-		).toHaveAttribute("href", "/category/photo");
+		).toHaveAttribute("data-href", "/category/photo");
 		expect(
 			screen.getByRole("button", { name: /translated:share:my_shares_title/i }),
 		).toBeInTheDocument();
@@ -462,7 +462,7 @@ describe("Sidebar", () => {
 		render(<Sidebar mobileOpen onMobileClose={onMobileClose} />);
 
 		fireEvent.click(
-			screen.getByRole("link", {
+			screen.getByRole("button", {
 				name: /translated:search:category_image/i,
 			}),
 		);

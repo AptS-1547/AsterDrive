@@ -599,6 +599,19 @@ export default function AdminUsersPage() {
 		label: t("page_size_option", { count: size }),
 		value: String(size),
 	}));
+	const usersEmptyIcon = <Icon name="ListBullets" className="size-10" />;
+	const usersFilteredEmptyAction = (
+		<Button variant="outline" onClick={resetFilters}>
+			{t("clear_filters")}
+		</Button>
+	);
+	const usersTableHeader = (
+		<UsersTableHeader
+			sortBy={sortBy}
+			sortOrder={sortOrder}
+			onSortChange={handleSortChange}
+		/>
+	);
 	const usersPagination = (
 		<AdminOffsetPagination
 			total={total}
@@ -684,23 +697,13 @@ export default function AdminUsersPage() {
 					items={users}
 					columns={7}
 					rows={6}
-					emptyIcon={<Icon name="ListBullets" className="size-10" />}
+					emptyIcon={usersEmptyIcon}
 					emptyTitle={t("no_users")}
 					filtered={hasServerFilters}
 					filteredEmptyTitle={t("no_filtered_users")}
 					filteredEmptyDescription={t("no_filtered_users_desc")}
-					filteredEmptyAction={
-						<Button variant="outline" onClick={resetFilters}>
-							{t("clear_filters")}
-						</Button>
-					}
-					headerRow={
-						<UsersTableHeader
-							sortBy={sortBy}
-							sortOrder={sortOrder}
-							onSortChange={handleSortChange}
-						/>
-					}
+					filteredEmptyAction={usersFilteredEmptyAction}
+					headerRow={usersTableHeader}
 					pagination={usersPagination}
 					renderRow={(user) => (
 						<UsersTableRow

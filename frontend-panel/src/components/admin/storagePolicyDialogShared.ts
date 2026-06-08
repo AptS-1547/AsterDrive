@@ -331,9 +331,31 @@ export function getEndpointValidationMessage(
 	form: PolicyFormData,
 	t: (key: string) => string,
 ) {
-	return form.driver_type === "s3" && isPublicR2DevUrl(form.endpoint)
-		? t("s3_endpoint_public_r2_dev_error")
-		: null;
+	if (!isS3CompatibleDriver(form.driver_type)) {
+		return null;
+	}
+
+	const trimmedEndpoint = form.endpoint.trim();
+	if (!trimmedEndpoint) {
+		return null;
+	}
+
+	let endpointUrl: URL;
+	try {
+		endpointUrl = new URL(trimmedEndpoint);
+	} catch {
+		return t("s3_endpoint_protocol_required_error");
+	}
+
+	if (endpointUrl.protocol !== "http:" && endpointUrl.protocol !== "https:") {
+		return t("s3_endpoint_protocol_required_error");
+	}
+
+	if (form.driver_type === "s3" && isPublicR2DevUrl(trimmedEndpoint)) {
+		return t("s3_endpoint_public_r2_dev_error");
+	}
+
+	return null;
 }
 
 export const emptyForm: PolicyFormData = {
