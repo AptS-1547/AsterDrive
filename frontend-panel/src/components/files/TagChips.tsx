@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import type { TagSummary } from "@/types/api";
 
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
-const TAG_COLOR_PALETTE = [
+export const TAG_COLOR_PALETTE = [
 	"#2563eb",
 	"#0891b2",
 	"#059669",
