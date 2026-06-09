@@ -5,6 +5,7 @@ import {
 	useId,
 	useLayoutEffect,
 	useMemo,
+	useReducer,
 	useRef,
 	useState,
 } from "react";
@@ -56,6 +57,44 @@ const MEDIA_SESSION_ACTIONS: MediaSessionAction[] = [
 const MUSIC_PLAYER_INTERNAL_SELECTOR =
 	"[data-music-player-surface],[data-music-player-trigger]";
 const BUFFERED_RANGE_CURRENT_TIME_TOLERANCE_SECONDS = 0.5;
+
+interface PanelUiState {
+	closing: boolean;
+	detailsOpen: boolean;
+	queueOpen: boolean;
+}
+
+const INITIAL_PANEL_UI_STATE: PanelUiState = {
+	closing: false,
+	detailsOpen: false,
+	queueOpen: false,
+};
+
+type PanelUiAction =
+	| { type: "reset" }
+	| { type: "setClosing"; closing: boolean }
+	| { type: "toggleDetails" }
+	| { type: "toggleQueue" };
+
+function panelUiReducer(
+	state: PanelUiState,
+	action: PanelUiAction,
+): PanelUiState {
+	switch (action.type) {
+		case "reset":
+			return state.closing || state.detailsOpen || state.queueOpen
+				? INITIAL_PANEL_UI_STATE
+				: state;
+		case "setClosing":
+			return state.closing === action.closing
+				? state
+				: { ...state, closing: action.closing };
+		case "toggleDetails":
+			return { ...state, detailsOpen: !state.detailsOpen };
+		case "toggleQueue":
+			return { ...state, queueOpen: !state.queueOpen };
+	}
+}
 
 function formatPlaybackTime(seconds: number) {
 	if (!Number.isFinite(seconds) || seconds < 0) {
@@ -483,7 +522,10 @@ export function MusicPlayerHost() {
 	const panelRef = useRef<HTMLDivElement | null>(null);
 	const currentTimeRef = useRef(0);
 	const durationRef = useRef(0);
-	const closeAnimationTimerRef = useRef<number | null>(null);
+	const closeAnimationTimersRef = useRef<Set<number> | null>(null);
+	if (closeAnimationTimersRef.current === null) {
+		closeAnimationTimersRef.current = new Set<number>();
+	}
 	const errorSkipTimerRef = useRef<number | null>(null);
 	const isSeekingRef = useRef(false);
 	const parsedMetadataTrackIdsRef = useRef(new Set<string>());
@@ -496,11 +538,13 @@ export function MusicPlayerHost() {
 	const detailsPanelId = useId();
 	const [bufferedProgress, setBufferedProgress] = useState(0);
 	const [currentTime, setCurrentTime] = useState(0);
-	const [closing, setClosing] = useState(false);
 	const [duration, setDuration] = useState(0);
-	const [detailsOpen, setDetailsOpen] = useState(false);
-	const [queueOpen, setQueueOpen] = useState(false);
+	const [panelUiState, dispatchPanelUi] = useReducer(
+		panelUiReducer,
+		INITIAL_PANEL_UI_STATE,
+	);
 	const [volume, setVolume] = useState(0.85);
+	const { closing, detailsOpen, queueOpen } = panelUiState;
 	const activeTrackId = useMusicPlayerStore((state) => state.activeTrackId);
 	const error = useMusicPlayerStore((state) => state.error);
 	const isPanelOpen = useMusicPlayerStore((state) => state.isPanelOpen);
@@ -690,21 +734,22 @@ export function MusicPlayerHost() {
 
 	useEffect(() => {
 		if (isPanelOpen) return;
-		setDetailsOpen(false);
-		setQueueOpen(false);
-		setClosing(false);
+		dispatchPanelUi({ type: "reset" });
 	}, [isPanelOpen]);
 
 	useEffect(() => {
 		if (track) return;
-		setClosing(false);
+		dispatchPanelUi({ type: "setClosing", closing: false });
 	}, [track]);
 
 	useEffect(() => {
+		const closeAnimationTimers = closeAnimationTimersRef.current;
 		return () => {
-			if (closeAnimationTimerRef.current !== null) {
-				window.clearTimeout(closeAnimationTimerRef.current);
+			if (closeAnimationTimers === null) return;
+			for (const timer of closeAnimationTimers) {
+				window.clearTimeout(timer);
 			}
+			closeAnimationTimers.clear();
 		};
 	}, []);
 
@@ -1053,14 +1098,18 @@ export function MusicPlayerHost() {
 
 	const closeWithAnimation = () => {
 		if (closing) return;
-		setClosing(true);
-		if (closeAnimationTimerRef.current !== null) {
-			window.clearTimeout(closeAnimationTimerRef.current);
+		dispatchPanelUi({ type: "setClosing", closing: true });
+		const closeAnimationTimers = closeAnimationTimersRef.current;
+		if (closeAnimationTimers === null) return;
+		for (const timer of closeAnimationTimers) {
+			window.clearTimeout(timer);
 		}
-		closeAnimationTimerRef.current = window.setTimeout(() => {
-			closeAnimationTimerRef.current = null;
+		closeAnimationTimers.clear();
+		const timer = window.setTimeout(() => {
+			closeAnimationTimers.delete(timer);
 			clear();
 		}, PLAYER_CLOSE_ANIMATION_MS);
+		closeAnimationTimers.add(timer);
 	};
 
 	return (
@@ -1311,7 +1360,7 @@ export function MusicPlayerHost() {
 									className="flex h-9 w-full items-center justify-between rounded-md px-2 text-sm font-medium transition hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
 									aria-controls={queuePanelId}
 									aria-expanded={queueOpen}
-									onClick={() => setQueueOpen((open) => !open)}
+									onClick={() => dispatchPanelUi({ type: "toggleQueue" })}
 								>
 									<span className="flex min-w-0 items-center gap-2">
 										<Icon name="Queue" className="size-4 text-primary" />
@@ -1407,7 +1456,7 @@ export function MusicPlayerHost() {
 									className="flex h-9 w-full items-center justify-between rounded-md px-2 text-sm font-medium transition hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
 									aria-controls={detailsPanelId}
 									aria-expanded={detailsOpen}
-									onClick={() => setDetailsOpen((open) => !open)}
+									onClick={() => dispatchPanelUi({ type: "toggleDetails" })}
 								>
 									<span className="flex min-w-0 items-center gap-2">
 										<Icon name="Info" className="size-4 text-primary" />

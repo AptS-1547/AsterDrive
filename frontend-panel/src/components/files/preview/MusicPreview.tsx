@@ -7,7 +7,6 @@ import { logger } from "@/lib/logger";
 import { inferMusicMetadata } from "@/lib/musicPlayer";
 import {
 	type MusicPlayerTrack,
-	type MusicTrackMetadata,
 	useMusicPlayerStore,
 } from "@/stores/musicPlayerStore";
 import type { ShareStreamSessionInfo } from "@/types/api";
@@ -42,11 +41,8 @@ export function MusicPreview({
 	const requestPlayback = useMusicPlayerStore((state) => state.requestPlayback);
 	const [streamLinkFailed, setStreamLinkFailed] = useState(false);
 	const [starting, setStarting] = useState(false);
-	const [loadedMetadata, setLoadedMetadata] = useState<{
-		metadata: MusicTrackMetadata;
-		trackId: string;
-	} | null>(null);
 	const mountedRef = useRef(true);
+	const startAbortControllerRef = useRef<AbortController | null>(null);
 	const startRequestIdRef = useRef(0);
 	const trackId = `${file.name}:${file.size ?? "unknown"}:${file.mime_type}:${path}`;
 	const isCurrentTrack =
@@ -62,39 +58,24 @@ export function MusicPreview({
 			}),
 		[file.file_category, file.id, file.mime_type, file.name, file.size],
 	);
-	const trackMetadata =
-		loadedMetadata?.trackId === trackId
-			? loadedMetadata.metadata
-			: fallbackMetadata;
-	const trackTitle = trackMetadata.title?.trim() || file.name;
+	const trackTitle = fallbackMetadata.title?.trim() || file.name;
 
 	useEffect(() => {
 		mountedRef.current = true;
 		return () => {
 			mountedRef.current = false;
+			startAbortControllerRef.current?.abort();
+			startAbortControllerRef.current = null;
 			startRequestIdRef.current += 1;
 		};
 	}, []);
 
-	useEffect(() => {
-		if (!loadBackendMetadata) return;
-
-		const controller = new AbortController();
-		void loadBackendMetadata(controller.signal)
-			.then((metadata) => {
-				if (controller.signal.aborted || !metadata) return;
-				setLoadedMetadata({ metadata, trackId });
-			})
-			.catch(() => {
-				// Backend media metadata is best-effort. Playback must stay immediate.
-			});
-
-		return () => controller.abort();
-	}, [loadBackendMetadata, trackId]);
-
 	const startPlayback = useCallback(() => {
 		const requestId = startRequestIdRef.current + 1;
 		startRequestIdRef.current = requestId;
+		startAbortControllerRef.current?.abort();
+		const controller = new AbortController();
+		startAbortControllerRef.current = controller;
 		setStreamLinkFailed(false);
 		setStarting(true);
 
@@ -108,13 +89,22 @@ export function MusicPreview({
 					};
 				};
 
-		resolveLink()
-			.then((link) => {
-				if (!mountedRef.current || startRequestIdRef.current !== requestId)
+		const metadataPromise = loadBackendMetadata
+			? loadBackendMetadata(controller.signal).catch(() => null)
+			: Promise.resolve(null);
+
+		Promise.all([resolveLink(), metadataPromise])
+			.then(([link, backendMetadata]) => {
+				if (
+					controller.signal.aborted ||
+					!mountedRef.current ||
+					startRequestIdRef.current !== requestId
+				) {
 					return;
+				}
 				playTrack({
 					id: trackId,
-					metadata: trackMetadata,
+					metadata: backendMetadata ?? fallbackMetadata,
 					name: file.name,
 					mimeType: file.mime_type,
 					path: link.path,
@@ -150,6 +140,7 @@ export function MusicPreview({
 			.finally(() => {
 				if (mountedRef.current && startRequestIdRef.current === requestId) {
 					setStarting(false);
+					startAbortControllerRef.current = null;
 				}
 			});
 	}, [
@@ -158,13 +149,13 @@ export function MusicPreview({
 		file.file_category,
 		file.id,
 		file.size,
+		fallbackMetadata,
 		loadBackendMetadata,
 		mediaStreamLinkFactory,
 		path,
 		playTrack,
 		thumbnailPath,
 		trackId,
-		trackMetadata,
 	]);
 
 	if (streamLinkFailed) {

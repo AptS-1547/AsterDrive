@@ -124,7 +124,7 @@ describe("MusicPreview", () => {
 		);
 	});
 
-	it("uses resolved backend metadata for the preview title and playback track", async () => {
+	it("uses resolved backend metadata for the playback track", async () => {
 		const loadBackendMetadata = vi.fn(async () => ({
 			artist: "Backend Artist",
 			artists: ["Backend Artist"],
@@ -139,7 +139,7 @@ describe("MusicPreview", () => {
 			/>,
 		);
 
-		expect(await screen.findByText("Backend Song")).toBeInTheDocument();
+		expect(screen.getByText("track")).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "music_preview_play" }));
 

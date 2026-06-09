@@ -55,7 +55,7 @@ vi.mock("@/components/settings/AvatarCropDialog", () => ({
 		open: boolean;
 	}) =>
 		open && file ? (
-			<div role="dialog" aria-label="avatar-crop">
+			<dialog open aria-label="avatar-crop">
 				<span>{file.name}</span>
 				<button type="button" onClick={() => void onConfirm(file)}>
 					confirm-avatar
@@ -63,7 +63,7 @@ vi.mock("@/components/settings/AvatarCropDialog", () => ({
 				<button type="button" onClick={() => onOpenChange(false)}>
 					close-avatar
 				</button>
-			</div>
+			</dialog>
 		) : null,
 }));
 

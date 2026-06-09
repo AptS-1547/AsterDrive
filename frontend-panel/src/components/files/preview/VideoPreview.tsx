@@ -21,6 +21,24 @@ interface VideoPreviewProps {
 	path: string;
 }
 
+interface VideoStatus {
+	aspectRatio: number;
+	key: string;
+	mediaFailed: boolean;
+	playerFailed: boolean;
+	streamLinkFailed: boolean;
+}
+
+function initialVideoStatus(key: string): VideoStatus {
+	return {
+		aspectRatio: DEFAULT_ASPECT_RATIO,
+		key,
+		mediaFailed: false,
+		playerFailed: false,
+		streamLinkFailed: false,
+	};
+}
+
 function getPlayerLanguage(language: string) {
 	return language.startsWith("zh") ? "zh-cn" : "en";
 }
@@ -32,11 +50,29 @@ export function VideoPreview({
 }: VideoPreviewProps) {
 	const { i18n, t } = useTranslation("files");
 	const containerRef = useRef<HTMLDivElement | null>(null);
-	const [resolvedPath, setResolvedPath] = useState<string | null>(null);
-	const [streamLinkFailed, setStreamLinkFailed] = useState(false);
-	const [playerFailed, setPlayerFailed] = useState(false);
-	const [mediaFailed, setMediaFailed] = useState(false);
-	const [aspectRatio, setAspectRatio] = useState(DEFAULT_ASPECT_RATIO);
+	const resourceInputsRef = useRef({ mediaStreamLinkFactory, path });
+	const resourceVersionRef = useRef(0);
+	const [resolvedResource, setResolvedResource] = useState<{
+		key: string;
+		path: string;
+	} | null>(null);
+	if (
+		resourceInputsRef.current.path !== path ||
+		resourceInputsRef.current.mediaStreamLinkFactory !== mediaStreamLinkFactory
+	) {
+		resourceInputsRef.current = { mediaStreamLinkFactory, path };
+		resourceVersionRef.current += 1;
+	}
+	const resourceKey = `${path}:${mediaStreamLinkFactory ? "stream" : "direct"}:${resourceVersionRef.current}`;
+	const [status, setStatus] = useState<VideoStatus>(() =>
+		initialVideoStatus(resourceKey),
+	);
+	const currentStatus =
+		status.key === resourceKey ? status : initialVideoStatus(resourceKey);
+	const { aspectRatio, mediaFailed, playerFailed, streamLinkFailed } =
+		currentStatus;
+	const resolvedPath =
+		resolvedResource?.key === resourceKey ? resolvedResource.path : null;
 	const videoSource = useMemo(
 		() => (resolvedPath ? resolveApiResourceUrl(resolvedPath) : null),
 		[resolvedPath],
@@ -56,10 +92,6 @@ export function VideoPreview({
 
 	useEffect(() => {
 		let cancelled = false;
-		setStreamLinkFailed(false);
-		setPlayerFailed(false);
-		setMediaFailed(false);
-		setAspectRatio(DEFAULT_ASPECT_RATIO);
 
 		const resolveDirectPath = async () => {
 			await prepareAuthenticatedResource(path);
@@ -70,11 +102,10 @@ export function VideoPreview({
 			? async () => (await mediaStreamLinkFactory()).path
 			: resolveDirectPath;
 
-		setResolvedPath(null);
 		resolveLink()
 			.then((nextPath) => {
 				if (cancelled) return;
-				setResolvedPath(nextPath);
+				setResolvedResource({ key: resourceKey, path: nextPath });
 			})
 			.catch((error) => {
 				if (cancelled) return;
@@ -85,27 +116,29 @@ export function VideoPreview({
 					file.name,
 					error,
 				);
-				setStreamLinkFailed(true);
+				setStatus({
+					...initialVideoStatus(resourceKey),
+					streamLinkFailed: true,
+				});
 			});
 
 		return () => {
 			cancelled = true;
 		};
-	}, [file.name, path, mediaStreamLinkFactory]);
+	}, [file.name, path, mediaStreamLinkFactory, resourceKey]);
 
 	useEffect(() => {
 		if (!videoSource) return;
-
-		setPlayerFailed(false);
-		setMediaFailed(false);
-		setAspectRatio(DEFAULT_ASPECT_RATIO);
 
 		const metadataVideo = document.createElement("video");
 
 		const handleLoadedMetadata = () => {
 			if (metadataVideo.videoWidth <= 0 || metadataVideo.videoHeight <= 0)
 				return;
-			setAspectRatio(metadataVideo.videoWidth / metadataVideo.videoHeight);
+			setStatus((prev) => ({
+				...(prev.key === resourceKey ? prev : initialVideoStatus(resourceKey)),
+				aspectRatio: metadataVideo.videoWidth / metadataVideo.videoHeight,
+			}));
 		};
 
 		metadataVideo.preload = "metadata";
@@ -118,7 +151,7 @@ export function VideoPreview({
 			metadataVideo.removeAttribute("src");
 			metadataVideo.load();
 		};
-	}, [videoSource]);
+	}, [resourceKey, videoSource]);
 
 	useEffect(() => {
 		if (!containerRef.current || !videoSource || playerFailed || mediaFailed)
@@ -127,7 +160,10 @@ export function VideoPreview({
 		let art: Artplayer | null = null;
 		let videoElement: HTMLVideoElement | null = null;
 		const handleVideoError = () => {
-			setMediaFailed(true);
+			setStatus({
+				...initialVideoStatus(resourceKey),
+				mediaFailed: true,
+			});
 		};
 
 		try {
@@ -154,14 +190,24 @@ export function VideoPreview({
 			videoElement.addEventListener("error", handleVideoError);
 		} catch (playerError) {
 			logger.warn("artplayer init failed", file.name, playerError);
-			setPlayerFailed(true);
+			setStatus({
+				...initialVideoStatus(resourceKey),
+				playerFailed: true,
+			});
 		}
 
 		return () => {
 			videoElement?.removeEventListener("error", handleVideoError);
 			art?.destroy(false);
 		};
-	}, [file.name, mediaFailed, playerFailed, playerLanguage, videoSource]);
+	}, [
+		file.name,
+		mediaFailed,
+		playerFailed,
+		playerLanguage,
+		resourceKey,
+		videoSource,
+	]);
 
 	if (streamLinkFailed || mediaFailed) {
 		return (
@@ -197,7 +243,12 @@ export function VideoPreview({
 							aria-label={file.name}
 							controls
 							preload="metadata"
-							onError={() => setMediaFailed(true)}
+							onError={() =>
+								setStatus({
+									...initialVideoStatus(resourceKey),
+									mediaFailed: true,
+								})
+							}
 							className="block h-full w-full object-contain"
 						/>
 					</div>
