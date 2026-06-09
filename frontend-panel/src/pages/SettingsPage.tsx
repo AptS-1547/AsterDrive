@@ -76,9 +76,7 @@ export default function SettingsPage({
 		"forward" | "backward"
 	>("forward");
 	const panelAnimationClass = hasAnimatedSectionChange
-		? sectionDirection === "forward"
-			? "animate-in fade-in duration-300 slide-in-from-right-4 motion-reduce:animate-none"
-			: "animate-in fade-in duration-300 slide-in-from-left-4 motion-reduce:animate-none"
+		? "animate-in fade-in duration-150 motion-reduce:animate-none"
 		: "";
 
 	usePageTitle(getSettingsSectionTitle(resolvedSection, t));
