@@ -47,8 +47,8 @@ pub struct CreateUserReq {
     pub username: String,
     #[validate(custom(function = "crate::api::dto::validation::validate_auth_email"))]
     pub email: String,
-    #[validate(custom(function = "crate::api::dto::validation::validate_auth_password"))]
-    pub password: String,
+    pub password: Option<String>,
+    pub must_change_password: Option<bool>,
 }
 
 /// Create a new user invitation (admin operation).

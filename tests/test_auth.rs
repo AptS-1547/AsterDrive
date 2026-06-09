@@ -97,7 +97,7 @@ macro_rules! admin_create_user_with_credentials {
         let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201);
         let body: Value = test::read_body_json(resp).await;
-        body["data"]["id"].as_i64().unwrap()
+        body["data"]["user"]["id"].as_i64().unwrap()
     }};
 }
 
@@ -4048,6 +4048,36 @@ async fn test_change_password_rejects_wrong_current_password() {
 }
 
 #[actix_web::test]
+async fn test_change_password_rejects_reusing_current_password() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/password")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "current_password": "password123",
+            "new_password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "testuser",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
 async fn test_forced_password_change_restricts_session_and_clears_after_update() {
     let state = common::setup().await;
     let app = create_test_app!(state.clone());
@@ -4242,6 +4272,32 @@ async fn test_forced_password_change_restricts_session_and_clears_after_update()
         resp.status(),
         401,
         "forced change still requires the current temporary password"
+    );
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/password")
+        .insert_header((
+            "Cookie",
+            common::access_cookie_header(&password_change_access),
+        ))
+        .insert_header(common::csrf_header_for(&password_change_access))
+        .set_json(serde_json::json!({
+            "current_password": "password123",
+            "new_password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "forced change must reject reusing the temporary password"
+    );
+    let unchanged = user_repo::find_by_id(state.writer_db(), user_id)
+        .await
+        .unwrap();
+    assert!(
+        unchanged.must_change_password,
+        "failed same-password update must not clear forced password change"
     );
 
     let req = test::TestRequest::put()

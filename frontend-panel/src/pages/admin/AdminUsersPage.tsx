@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { CreateUserDialog } from "@/components/admin/admin-users-page/CreateUserDialog";
+import { GeneratedPasswordDialog } from "@/components/admin/admin-users-page/GeneratedPasswordDialog";
 import { InviteUserDialog } from "@/components/admin/admin-users-page/InviteUserDialog";
 import {
 	UsersTableHeader,
@@ -23,6 +24,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingAction } from "@/hooks/usePendingAction";
 import { usePendingId } from "@/hooks/usePendingId";
 import { loadAdminPolicyGroupLookup } from "@/lib/adminPolicyGroupLookup";
 import { writeTextToClipboard } from "@/lib/clipboard";
@@ -48,6 +50,19 @@ import type {
 	UserRole,
 	UserStatus,
 } from "@/types/api";
+
+type CreateUserForm = Omit<
+	CreateUserReq,
+	"must_change_password" | "password"
+> & {
+	must_change_password?: boolean | null;
+	password: string;
+};
+
+interface GeneratedCreatePassword {
+	password: string;
+	username: string;
+}
 
 const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_USER_PAGE_SIZE = 20 as const;
@@ -200,13 +215,15 @@ export default function AdminUsersPage() {
 		null,
 	);
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
-	const [creating, setCreating] = useState(false);
-	const [createErrors, setCreateErrors] = useState<Partial<CreateUserReq>>({});
-	const [createForm, setCreateForm] = useState<CreateUserReq>({
+	const [createErrors, setCreateErrors] = useState<Partial<CreateUserForm>>({});
+	const [createForm, setCreateForm] = useState<CreateUserForm>({
 		username: "",
 		email: "",
 		password: "",
+		must_change_password: false,
 	});
+	const [generatedCreatePassword, setGeneratedCreatePassword] =
+		useState<GeneratedCreatePassword | null>(null);
 	const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 	const [inviting, setInviting] = useState(false);
 	const [inviteErrors, setInviteErrors] = useState<
@@ -344,6 +361,8 @@ export default function AdminUsersPage() {
 	);
 	const { pendingId: deletingUserId, runWithPending: runWithDeletingUser } =
 		usePendingId<number>();
+	const { pending: creating, runWithPending: runWithCreatingUser } =
+		usePendingAction();
 
 	const activeFilterCount =
 		(debouncedKeyword.trim().length > 0 ? 1 : 0) +
@@ -397,11 +416,17 @@ export default function AdminUsersPage() {
 	};
 
 	const resetCreateForm = () => {
-		setCreateForm({ username: "", email: "", password: "" });
+		setCreateForm({
+			username: "",
+			email: "",
+			password: "",
+			must_change_password: false,
+		});
 		setCreateErrors({});
 	};
 
-	const validateCreateField = (field: keyof CreateUserReq, value: string) => {
+	const validateCreateField = (field: keyof CreateUserForm, value: string) => {
+		if (field === "must_change_password") return;
 		const schema =
 			field === "username"
 				? usernameSchema
@@ -420,7 +445,7 @@ export default function AdminUsersPage() {
 	};
 
 	const validateCreateForm = () => {
-		const nextErrors: Partial<CreateUserReq> = {};
+		const nextErrors: Partial<CreateUserForm> = {};
 		const usernameResult = usernameSchema.safeParse(createForm.username.trim());
 		if (!usernameResult.success) {
 			nextErrors.username = usernameResult.error.issues[0]?.message ?? "";
@@ -429,16 +454,33 @@ export default function AdminUsersPage() {
 		if (!emailResult.success) {
 			nextErrors.email = emailResult.error.issues[0]?.message ?? "";
 		}
-		const passwordResult = passwordSchema.safeParse(createForm.password);
-		if (!passwordResult.success) {
-			nextErrors.password = passwordResult.error.issues[0]?.message ?? "";
+		if (createForm.password.trim().length > 0) {
+			const passwordResult = passwordSchema.safeParse(createForm.password);
+			if (!passwordResult.success) {
+				nextErrors.password = passwordResult.error.issues[0]?.message ?? "";
+			}
 		}
 		setCreateErrors(nextErrors);
 		return Object.keys(nextErrors).length === 0;
 	};
 
-	const handleCreateFormChange = (key: keyof CreateUserReq, value: string) => {
+	const handleCreateFormChange = (
+		key: keyof CreateUserForm,
+		value: boolean | string,
+	) => {
 		setCreateForm((prev) => ({ ...prev, [key]: value }));
+	};
+
+	const copyGeneratedPassword = async () => {
+		if (!generatedCreatePassword?.password) {
+			return;
+		}
+		try {
+			await writeTextToClipboard(generatedCreatePassword.password);
+			toast.success(t("core:copied_to_clipboard"));
+		} catch (error) {
+			handleApiError(error);
+		}
 	};
 
 	const resetInviteForm = () => {
@@ -498,20 +540,30 @@ export default function AdminUsersPage() {
 		event.preventDefault();
 		if (!validateCreateForm()) return;
 		try {
-			setCreating(true);
-			await adminUserService.create({
-				username: createForm.username.trim(),
-				email: createForm.email.trim(),
-				password: createForm.password,
+			const result = await runWithCreatingUser(async () => {
+				const password = createForm.password.trim()
+					? createForm.password
+					: undefined;
+				const result = await adminUserService.create({
+					username: createForm.username.trim(),
+					email: createForm.email.trim(),
+					password,
+					must_change_password: createForm.must_change_password,
+				});
+				toast.success(t("user_created"));
+				setCreateDialogOpen(false);
+				resetCreateForm();
+				if (result.generated_password) {
+					setGeneratedCreatePassword({
+						password: result.generated_password,
+						username: result.user.username,
+					});
+				}
+				await reloadUsers();
 			});
-			toast.success(t("user_created"));
-			setCreateDialogOpen(false);
-			resetCreateForm();
-			await reloadUsers();
+			if (!result.entered) return;
 		} catch (e) {
 			handleApiError(e);
-		} finally {
-			setCreating(false);
 		}
 	};
 
@@ -729,6 +781,17 @@ export default function AdminUsersPage() {
 				onFieldChange={handleCreateFormChange}
 				onFieldValidate={validateCreateField}
 				onSubmit={handleCreateUser}
+			/>
+			<GeneratedPasswordDialog
+				open={generatedCreatePassword !== null}
+				password={generatedCreatePassword?.password ?? null}
+				username={generatedCreatePassword?.username ?? ""}
+				onCopy={() => void copyGeneratedPassword()}
+				onOpenChange={(open) => {
+					if (!open) {
+						setGeneratedCreatePassword(null);
+					}
+				}}
 			/>
 			<InviteUserDialog
 				open={inviteDialogOpen}

@@ -4946,7 +4946,8 @@ export interface components {
         /** @description Create a new user (admin operation). */
         CreateUserReq: {
             email: string;
-            password: string;
+            must_change_password?: boolean | null;
+            password?: string | null;
             username: string;
         };
         /** @description Create a new WebDAV sub-account. */
@@ -12136,26 +12137,9 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ApiErrorCode"];
-                        /** @description 通用用户响应：核心字段 + profile */
                         data?: {
-                            created_at: string;
-                            email: string;
-                            email_verified: boolean;
-                            /** Format: int64 */
-                            id: number;
-                            must_change_password: boolean;
-                            pending_email?: string | null;
-                            /** Format: int64 */
-                            policy_group_id?: number | null;
-                            profile: components["schemas"]["UserProfileInfo"];
-                            role: components["schemas"]["UserRole"];
-                            status: components["schemas"]["UserStatus"];
-                            /** Format: int64 */
-                            storage_quota: number;
-                            /** Format: int64 */
-                            storage_used: number;
-                            updated_at: string;
-                            username: string;
+                            generated_password?: string | null;
+                            user: components["schemas"]["UserInfo"];
                         };
                         error?: null | components["schemas"]["ApiErrorInfo"];
                         msg: string;

@@ -3260,13 +3260,15 @@ async fn test_admin_create_user() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
-    let user = &body["data"];
+    let user = &body["data"]["user"];
     assert_eq!(user["username"], "newuser");
     assert_eq!(user["email"], "newuser@example.com");
     assert_eq!(user["role"], "user");
     assert_eq!(user["status"], "active");
+    assert_eq!(user["must_change_password"], false);
     assert_eq!(user["storage_quota"], 0);
     assert!(user.get("password_hash").is_none());
+    assert!(body["data"].get("generated_password").is_none());
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users?keyword=newuser")
@@ -3278,6 +3280,234 @@ async fn test_admin_create_user() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["total"], 1);
     assert_eq!(body["data"]["items"][0]["username"], "newuser");
+}
+
+#[actix_web::test]
+async fn test_admin_create_user_can_force_change_with_explicit_password() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "manualforce",
+            "email": "manualforce@example.com",
+            "password": "password123",
+            "must_change_password": true
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["user"]["must_change_password"], true);
+    assert!(body["data"].get("generated_password").is_none());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "manualforce",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["status"], "password_change_required");
+}
+
+#[actix_web::test]
+async fn test_admin_create_user_rejects_short_explicit_password_without_generation() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "shortpassuser",
+            "email": "shortpassuser@example.com",
+            "password": "1234567"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"].is_null());
+    assert!(body.get("generated_password").is_none());
+
+    let user = user_repo::find_by_username(state.writer_db(), "shortpassuser")
+        .await
+        .unwrap();
+    assert!(user.is_none());
+}
+
+#[actix_web::test]
+async fn test_admin_create_user_generates_temporary_password_when_omitted() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "generateduser",
+            "email": "generateduser@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["user"]["id"].as_i64().unwrap();
+    let generated_password = body["data"]["generated_password"]
+        .as_str()
+        .expect("generated password should be returned once")
+        .to_string();
+    assert!(generated_password.len() >= 8);
+    assert_eq!(body["data"]["user"]["must_change_password"], true);
+    let user = user_repo::find_by_id(state.writer_db(), user_id)
+        .await
+        .unwrap();
+    assert!(user.must_change_password);
+    assert!(!user.password_hash.contains(&generated_password));
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"].get("generated_password").is_none());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users?keyword=generateduser")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert!(body["data"]["items"][0].get("generated_password").is_none());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "generateduser",
+            "password": generated_password
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let access = common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["status"], "password_change_required");
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/password")
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
+        .set_json(serde_json::json!({
+            "current_password": "wrongpassword",
+            "new_password": "newsecret456"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        401,
+        "wrong current password must not clear forced password change"
+    );
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/password")
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
+        .set_json(serde_json::json!({
+            "current_password": generated_password,
+            "new_password": "newsecret456"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let user = user_repo::find_by_id(state.writer_db(), user_id)
+        .await
+        .unwrap();
+    assert!(!user.must_change_password);
+}
+
+#[actix_web::test]
+async fn test_admin_create_user_generates_temporary_password_for_null_empty_and_whitespace() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    for (username, password) in [
+        ("nullpass", serde_json::Value::Null),
+        ("emptypass", serde_json::json!("")),
+        ("spacepass", serde_json::json!("   \t\n")),
+        ("explicitfalse", serde_json::json!("")),
+    ] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/admin/users")
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "username": username,
+                "email": format!("{username}@example.com"),
+                "password": password,
+                "must_change_password": false
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+        let body: Value = test::read_body_json(resp).await;
+        assert!(
+            body["data"]["generated_password"]
+                .as_str()
+                .is_some_and(|value| value.len() >= 8),
+            "temporary password should be generated for {username}"
+        );
+        assert_eq!(body["data"]["user"]["must_change_password"], true);
+    }
+}
+
+#[actix_web::test]
+async fn test_admin_create_user_rejects_overlong_generated_password_request_fields() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let long_username = "u".repeat(17);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": long_username,
+            "email": "badgenerated@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"].is_null());
+    assert!(body.get("generated_password").is_none());
 }
 
 #[actix_web::test]

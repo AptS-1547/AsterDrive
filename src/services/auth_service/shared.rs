@@ -178,6 +178,7 @@ pub(crate) struct CreateUserWithRoleInput<'a> {
     pub password: &'a str,
     pub role: UserRole,
     pub status: UserStatus,
+    pub must_change_password: bool,
     pub email_verified_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
@@ -192,6 +193,7 @@ pub(crate) async fn create_user_with_role<C: ConnectionTrait>(
         password,
         role,
         status,
+        must_change_password,
         email_verified_at,
     } = input;
     let username = normalize_username(username)?;
@@ -233,7 +235,7 @@ pub(crate) async fn create_user_with_role<C: ConnectionTrait>(
         password_hash: Set(password_hash),
         role: Set(role),
         status: Set(status),
-        must_change_password: Set(false),
+        must_change_password: Set(must_change_password),
         session_version: Set(INITIAL_SESSION_VERSION),
         email_verified_at: Set(email_verified_at),
         pending_email: Set(None),
@@ -273,6 +275,7 @@ pub(super) async fn create_first_admin(
             password,
             role: UserRole::Admin,
             status: UserStatus::Active,
+            must_change_password: false,
             email_verified_at: Some(Utc::now()),
         },
     )

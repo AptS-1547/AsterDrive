@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useReducer, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -10,12 +10,110 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { existingPasswordSchema, passwordSchema } from "@/lib/validation";
+import {
+	passwordChangeMatchSchema,
+	passwordChangeSchema,
+} from "@/lib/validation";
 import { authService } from "@/services/authService";
 import { useAuthStore } from "@/stores/authStore";
 
+type PasswordChangeField =
+	| "confirmPassword"
+	| "currentPassword"
+	| "newPassword";
+
+type PasswordChangeErrors = {
+	confirm?: string;
+	current?: string;
+	next?: string;
+};
+
+type ValidationIssue = {
+	message: string;
+	path: PropertyKey[];
+};
+
+type PasswordChangeFormState = {
+	confirmPassword: string;
+	currentPassword: string;
+	errors: PasswordChangeErrors;
+	newPassword: string;
+	showPasswords: boolean;
+};
+
+type PasswordChangeFormAction =
+	| {
+			type: "fieldChanged";
+			confirmMismatchMessage: string;
+			field: PasswordChangeField;
+			matchErrors: PasswordChangeErrors;
+			samePasswordMessage: string;
+			value: string;
+	  }
+	| { type: "validated"; errors: PasswordChangeErrors }
+	| { type: "showPasswordsToggled" };
+
+const initialPasswordChangeFormState: PasswordChangeFormState = {
+	confirmPassword: "",
+	currentPassword: "",
+	errors: {},
+	newPassword: "",
+	showPasswords: false,
+};
+
+function errorsFromIssues(issues: ValidationIssue[]): PasswordChangeErrors {
+	const nextErrors: PasswordChangeErrors = {};
+	for (const issue of issues) {
+		const field = issue.path[0];
+		if (field === "currentPassword") {
+			nextErrors.current ??= issue.message;
+		} else if (field === "newPassword") {
+			nextErrors.next ??= issue.message;
+		} else if (field === "confirmPassword") {
+			nextErrors.confirm ??= issue.message;
+		}
+	}
+	return nextErrors;
+}
+
+function passwordChangeFormReducer(
+	state: PasswordChangeFormState,
+	action: PasswordChangeFormAction,
+): PasswordChangeFormState {
+	switch (action.type) {
+		case "fieldChanged": {
+			const nextErrors = { ...state.errors };
+			if (action.field === "currentPassword") {
+				delete nextErrors.current;
+				if (nextErrors.next === action.samePasswordMessage) {
+					delete nextErrors.next;
+				}
+			} else if (action.field === "newPassword") {
+				delete nextErrors.next;
+				if (nextErrors.confirm === action.confirmMismatchMessage) {
+					delete nextErrors.confirm;
+				}
+			} else {
+				delete nextErrors.confirm;
+			}
+			return {
+				...state,
+				[action.field]: action.value,
+				errors: {
+					...nextErrors,
+					...action.matchErrors,
+				},
+			};
+		}
+		case "showPasswordsToggled":
+			return { ...state, showPasswords: !state.showPasswords };
+		case "validated":
+			return { ...state, errors: action.errors };
+	}
+}
+
 export default function ForcePasswordChangePage() {
-	const { t } = useTranslation(["auth", "core", "settings"]);
+	const { t } = useTranslation(["auth", "core", "settings", "validation"]);
 	const navigate = useNavigate();
 	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 	const isChecking = useAuthStore((s) => s.isChecking);
@@ -25,17 +123,19 @@ export default function ForcePasswordChangePage() {
 	);
 	const refreshUser = useAuthStore((s) => s.refreshUser);
 	const syncSession = useAuthStore((s) => s.syncSession);
-	const [currentPassword, setCurrentPassword] = useState("");
-	const [newPassword, setNewPassword] = useState("");
-	const [confirmPassword, setConfirmPassword] = useState("");
-	const [showPasswords, setShowPasswords] = useState(false);
+	const [formState, dispatchForm] = useReducer(
+		passwordChangeFormReducer,
+		initialPasswordChangeFormState,
+	);
 	const [submitting, setSubmitting] = useState(false);
 	const [signingOut, setSigningOut] = useState(false);
-	const [errors, setErrors] = useState<{
-		confirm?: string;
-		current?: string;
-		next?: string;
-	}>({});
+	const {
+		confirmPassword,
+		currentPassword,
+		errors,
+		newPassword,
+		showPasswords,
+	} = formState;
 
 	usePageTitle(t("force_password_change_title"));
 
@@ -53,20 +153,41 @@ export default function ForcePasswordChangePage() {
 	if (!mustChangePassword) return <Navigate to="/" replace />;
 
 	const validate = () => {
-		const nextErrors: typeof errors = {};
-		const currentResult = existingPasswordSchema.safeParse(currentPassword);
-		if (!currentResult.success) {
-			nextErrors.current = currentResult.error.issues[0]?.message ?? "";
-		}
-		const nextResult = passwordSchema.safeParse(newPassword);
-		if (!nextResult.success) {
-			nextErrors.next = nextResult.error.issues[0]?.message ?? "";
-		}
-		if (confirmPassword !== newPassword) {
-			nextErrors.confirm = t("settings:settings_password_confirm_mismatch");
-		}
-		setErrors(nextErrors);
-		return Object.keys(nextErrors).length === 0;
+		const result = passwordChangeSchema.safeParse({
+			confirmPassword,
+			currentPassword,
+			newPassword,
+		});
+		const nextErrors = result.success
+			? {}
+			: errorsFromIssues(result.error.issues);
+		dispatchForm({ type: "validated", errors: nextErrors });
+		return result.success;
+	};
+
+	const updateField = (
+		field: "confirmPassword" | "currentPassword" | "newPassword",
+		value: string,
+	) => {
+		const samePasswordMessage = t("validation:password_same_as_current");
+		const confirmMismatchMessage = t("validation:password_confirm_mismatch");
+		const nextValues = {
+			confirmPassword,
+			currentPassword,
+			newPassword,
+			[field]: value,
+		};
+		const matchResult = passwordChangeMatchSchema.safeParse(nextValues);
+		dispatchForm({
+			type: "fieldChanged",
+			confirmMismatchMessage,
+			field,
+			matchErrors: matchResult.success
+				? {}
+				: errorsFromIssues(matchResult.error.issues),
+			samePasswordMessage,
+			value,
+		});
 	};
 
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -127,8 +248,7 @@ export default function ForcePasswordChangePage() {
 							type={showPasswords ? "text" : "password"}
 							value={currentPassword}
 							onChange={(event) => {
-								setCurrentPassword(event.target.value);
-								setErrors((current) => ({ ...current, current: undefined }));
+								updateField("currentPassword", event.target.value);
 							}}
 							autoComplete="current-password"
 							aria-invalid={errors.current ? true : undefined}
@@ -146,8 +266,7 @@ export default function ForcePasswordChangePage() {
 							type={showPasswords ? "text" : "password"}
 							value={newPassword}
 							onChange={(event) => {
-								setNewPassword(event.target.value);
-								setErrors((current) => ({ ...current, next: undefined }));
+								updateField("newPassword", event.target.value);
 							}}
 							autoComplete="new-password"
 							aria-invalid={errors.next ? true : undefined}
@@ -169,8 +288,7 @@ export default function ForcePasswordChangePage() {
 							type={showPasswords ? "text" : "password"}
 							value={confirmPassword}
 							onChange={(event) => {
-								setConfirmPassword(event.target.value);
-								setErrors((current) => ({ ...current, confirm: undefined }));
+								updateField("confirmPassword", event.target.value);
 							}}
 							autoComplete="new-password"
 							aria-invalid={errors.confirm ? true : undefined}
@@ -183,7 +301,7 @@ export default function ForcePasswordChangePage() {
 						<Button
 							type="button"
 							variant="ghost"
-							onClick={() => setShowPasswords((value) => !value)}
+							onClick={() => dispatchForm({ type: "showPasswordsToggled" })}
 						>
 							<Icon
 								name={showPasswords ? "EyeSlash" : "Eye"}

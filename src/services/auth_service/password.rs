@@ -110,6 +110,12 @@ pub async fn change_password(
         return Err(AsterError::auth_invalid_credentials("wrong password"));
     }
 
+    if hash::verify_password(new_password, &user.password_hash)? {
+        return Err(AsterError::validation_error(
+            "new password must be different from current password",
+        ));
+    }
+
     set_password(state, user.id, new_password).await
 }
 

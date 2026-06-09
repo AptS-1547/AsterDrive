@@ -83,23 +83,81 @@ vi.mock("@/hooks/usePageTitle", () => ({
 }));
 
 vi.mock("@/lib/validation", () => ({
-	existingPasswordSchema: {
-		safeParse: (value: string) =>
-			value.length > 0
+	passwordChangeMatchSchema: {
+		safeParse: ({
+			confirmPassword,
+			currentPassword,
+			newPassword,
+		}: {
+			confirmPassword: string;
+			currentPassword: string;
+			newPassword: string;
+		}) => {
+			const issues = [];
+			if (
+				currentPassword.length > 0 &&
+				newPassword.length > 0 &&
+				currentPassword === newPassword
+			) {
+				issues.push({
+					message: "validation:password_same_as_current",
+					path: ["newPassword"],
+				});
+			}
+			if (newPassword.length > 0 && confirmPassword !== newPassword) {
+				issues.push({
+					message: "validation:password_confirm_mismatch",
+					path: ["confirmPassword"],
+				});
+			}
+			return issues.length === 0
 				? { success: true }
-				: {
-						success: false,
-						error: { issues: [{ message: "current-required" }] },
-					},
+				: { success: false, error: { issues } };
+		},
 	},
-	passwordSchema: {
-		safeParse: (value: string) =>
-			value.length >= 8
+	passwordChangeSchema: {
+		safeParse: ({
+			confirmPassword,
+			currentPassword,
+			newPassword,
+		}: {
+			confirmPassword: string;
+			currentPassword: string;
+			newPassword: string;
+		}) => {
+			const issues = [];
+			if (currentPassword.length === 0) {
+				issues.push({
+					message: "current-required",
+					path: ["currentPassword"],
+				});
+			}
+			if (newPassword.length < 8) {
+				issues.push({
+					message: "password-short",
+					path: ["newPassword"],
+				});
+			}
+			if (
+				currentPassword.length > 0 &&
+				newPassword.length > 0 &&
+				currentPassword === newPassword
+			) {
+				issues.push({
+					message: "validation:password_same_as_current",
+					path: ["newPassword"],
+				});
+			}
+			if (newPassword.length > 0 && confirmPassword !== newPassword) {
+				issues.push({
+					message: "validation:password_confirm_mismatch",
+					path: ["confirmPassword"],
+				});
+			}
+			return issues.length === 0
 				? { success: true }
-				: {
-						success: false,
-						error: { issues: [{ message: "password-short" }] },
-					},
+				: { success: false, error: { issues } };
+		},
 	},
 }));
 
@@ -209,7 +267,121 @@ describe("ForcePasswordChangePage", () => {
 		);
 
 		expect(
-			screen.getByText("settings_password_confirm_mismatch"),
+			screen.getByText("validation:password_confirm_mismatch"),
+		).toBeInTheDocument();
+		expect(mockState.changePassword).not.toHaveBeenCalled();
+	});
+
+	it("clears field errors while recomputing password match errors during editing", () => {
+		render(<ForcePasswordChangePage />);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /force_password_change_submit/ }),
+		);
+		expect(screen.getByText("current-required")).toBeInTheDocument();
+		expect(screen.getByText("password-short")).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("settings_password_current"), {
+			target: { value: "temporary123" },
+		});
+		expect(screen.queryByText("current-required")).not.toBeInTheDocument();
+		expect(screen.getByText("password-short")).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("settings_password_new"), {
+			target: { value: "temporary123" },
+		});
+		expect(screen.queryByText("password-short")).not.toBeInTheDocument();
+		expect(
+			screen.getByText("validation:password_same_as_current"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("validation:password_confirm_mismatch"),
+		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("settings_password_confirm"), {
+			target: { value: "temporary123" },
+		});
+		expect(
+			screen.queryByText("validation:password_confirm_mismatch"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByText("validation:password_same_as_current"),
+		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("settings_password_current"), {
+			target: { value: "oldtemporary123" },
+		});
+		expect(
+			screen.queryByText("validation:password_same_as_current"),
+		).not.toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("settings_password_new"), {
+			target: { value: "newsecret456" },
+		});
+		expect(
+			screen.getByText("validation:password_confirm_mismatch"),
+		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("settings_password_confirm"), {
+			target: { value: "newsecret456" },
+		});
+		expect(
+			screen.queryByText("validation:password_confirm_mismatch"),
+		).not.toBeInTheDocument();
+		expect(mockState.changePassword).not.toHaveBeenCalled();
+	});
+
+	it("toggles all password fields between masked and visible input types", () => {
+		render(<ForcePasswordChangePage />);
+		const currentInput = screen.getByLabelText("settings_password_current");
+		const newInput = screen.getByLabelText("settings_password_new");
+		const confirmInput = screen.getByLabelText("settings_password_confirm");
+
+		expect(currentInput).toHaveAttribute("type", "password");
+		expect(newInput).toHaveAttribute("type", "password");
+		expect(confirmInput).toHaveAttribute("type", "password");
+
+		fireEvent.click(screen.getByRole("button", { name: /show_password/ }));
+
+		expect(currentInput).toHaveAttribute("type", "text");
+		expect(newInput).toHaveAttribute("type", "text");
+		expect(confirmInput).toHaveAttribute("type", "text");
+
+		fireEvent.click(screen.getByRole("button", { name: /hide_password/ }));
+
+		expect(currentInput).toHaveAttribute("type", "password");
+		expect(newInput).toHaveAttribute("type", "password");
+		expect(confirmInput).toHaveAttribute("type", "password");
+	});
+
+	it("detects reused current password while editing and before calling the API", () => {
+		render(<ForcePasswordChangePage />);
+		fillPasswordForm({
+			confirm: "temporary123",
+			current: "temporary123",
+			next: "temporary123",
+		});
+
+		expect(
+			screen.getByText("validation:password_same_as_current"),
+		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("settings_password_new"), {
+			target: { value: "newsecret456" },
+		});
+		expect(
+			screen.queryByText("validation:password_same_as_current"),
+		).not.toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("settings_password_new"), {
+			target: { value: "temporary123" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: /force_password_change_submit/ }),
+		);
+
+		expect(
+			screen.getByText("validation:password_same_as_current"),
 		).toBeInTheDocument();
 		expect(mockState.changePassword).not.toHaveBeenCalled();
 	});

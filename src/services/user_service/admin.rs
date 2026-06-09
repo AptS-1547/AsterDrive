@@ -1,5 +1,7 @@
 use chrono::Utc;
+use rand::RngExt;
 use sea_orm::{ActiveModelTrait, Set};
+use serde::Serialize;
 
 use crate::db::repository::{
     auth_session_repo, file_repo, folder_repo, lock_repo, share_repo, upload_session_repo,
@@ -15,6 +17,10 @@ use crate::services::{
 use crate::types::{UserRole, UserStatus};
 
 use super::queries::{get, to_user_info};
+
+const GENERATED_PASSWORD_LENGTH: usize = 24;
+const GENERATED_PASSWORD_CHARSET: &[u8] =
+    b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*-_+=";
 
 #[derive(Debug, Clone)]
 pub struct ForceDeleteSummary {
@@ -39,24 +45,71 @@ pub struct UpdateUserInput {
     pub policy_group_id: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CreateUserInput<'a> {
+    pub username: &'a str,
+    pub email: &'a str,
+    pub password: Option<&'a str>,
+    pub must_change_password: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
+pub struct CreateUserOutput {
+    pub user: super::models::UserInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generated_password: Option<String>,
+}
+
+fn generate_temporary_password() -> String {
+    let mut rng = rand::rng();
+    (0..GENERATED_PASSWORD_LENGTH)
+        .map(|_| {
+            let index = rng.random_range(0..GENERATED_PASSWORD_CHARSET.len());
+            GENERATED_PASSWORD_CHARSET[index] as char
+        })
+        .collect()
+}
+
 pub async fn create(
     state: &impl SharedRuntimeState,
-    username: &str,
-    email: &str,
-    password: &str,
-) -> Result<super::models::UserInfo> {
-    let user = auth_service::create_user_by_admin(state, username, email, password).await?;
-    get(state, user.id).await
+    input: CreateUserInput<'_>,
+) -> Result<CreateUserOutput> {
+    let explicit_password = input.password.filter(|value| !value.trim().is_empty());
+    let generated_password = explicit_password
+        .is_none()
+        .then(generate_temporary_password);
+    let password = generated_password
+        .as_deref()
+        .or(explicit_password)
+        .ok_or_else(|| {
+            AsterError::internal_error("temporary password generation returned no password")
+        })?;
+    auth_service::validate_password(password)?;
+    let must_change_password =
+        generated_password.is_some() || input.must_change_password.unwrap_or(false);
+    let user = auth_service::create_user_by_admin(
+        state,
+        input.username,
+        input.email,
+        password,
+        must_change_password,
+    )
+    .await?;
+    Ok(CreateUserOutput {
+        user: get(state, user.id).await?,
+        generated_password,
+    })
 }
 
 pub async fn create_with_audit(
     state: &impl SharedRuntimeState,
-    username: &str,
-    email: &str,
-    password: &str,
+    input: CreateUserInput<'_>,
     audit_ctx: &AuditContext,
-) -> Result<super::models::UserInfo> {
-    let user = create(state, username, email, password).await?;
+) -> Result<CreateUserOutput> {
+    let output = create(state, input).await?;
+    let user = &output.user;
+    let temporary_password_generated = output.generated_password.is_some();
     audit_service::log_with_details(
         state,
         audit_ctx,
@@ -71,13 +124,14 @@ pub async fn create_with_audit(
                 role: user.role,
                 status: user.status,
                 must_change_password: user.must_change_password,
+                temporary_password_generated,
                 storage_quota: user.storage_quota,
                 policy_group_id: user.policy_group_id,
             })
         },
     )
     .await;
-    Ok(user)
+    Ok(output)
 }
 
 pub async fn update(
