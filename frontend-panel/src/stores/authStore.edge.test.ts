@@ -239,6 +239,44 @@ describe("useAuthStore edge cases", () => {
 		expect(mockState.warn).toHaveBeenCalledWith("refreshUser failed", failure);
 	});
 
+	it("does not refresh an already fresh session", async () => {
+		const { useAuthStore } = await loadStore();
+		useAuthStore.setState({
+			expiresAt: Date.now() + 120_000,
+			isAuthenticated: true,
+			isAuthStale: false,
+		});
+
+		await useAuthStore.getState().ensureFreshSession();
+
+		expect(mockState.refreshToken).not.toHaveBeenCalled();
+		useAuthStore.getState().stopAutoRefresh();
+	});
+
+	it("refreshes stale or nearly expired sessions on demand", async () => {
+		mockState.refreshToken.mockResolvedValue({ expiresIn: 900 });
+		const { useAuthStore } = await loadStore();
+		useAuthStore.setState({
+			expiresAt: Date.now() + 15_000,
+			isAuthenticated: true,
+			isAuthStale: false,
+		});
+
+		await useAuthStore.getState().ensureFreshSession();
+
+		expect(mockState.refreshToken).toHaveBeenCalledTimes(1);
+		useAuthStore.setState({
+			expiresAt: Date.now() + 120_000,
+			isAuthenticated: true,
+			isAuthStale: true,
+		});
+
+		await useAuthStore.getState().ensureFreshSession();
+
+		expect(mockState.refreshToken).toHaveBeenCalledTimes(2);
+		useAuthStore.getState().stopAutoRefresh();
+	});
+
 	it("rejects MFA-required login responses before syncing a session", async () => {
 		mockState.login.mockResolvedValue({
 			status: "mfa_required",

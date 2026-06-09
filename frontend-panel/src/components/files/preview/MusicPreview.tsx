@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { prepareAuthenticatedResource } from "@/lib/authenticatedResource";
 import { logger } from "@/lib/logger";
 import { inferMusicMetadata } from "@/lib/musicPlayer";
 import {
@@ -99,10 +100,13 @@ export function MusicPreview({
 
 		const resolveLink = mediaStreamLinkFactory
 			? mediaStreamLinkFactory
-			: async () => ({
-					expires_at: "",
-					path,
-				});
+			: async () => {
+					await prepareAuthenticatedResource(path);
+					return {
+						expires_at: "",
+						path,
+					};
+				};
 
 		resolveLink()
 			.then((link) => {
@@ -134,7 +138,13 @@ export function MusicPreview({
 			.catch((error) => {
 				if (!mountedRef.current || startRequestIdRef.current !== requestId)
 					return;
-				logger.warn("audio stream session creation failed", file.name, error);
+				logger.warn(
+					mediaStreamLinkFactory
+						? "audio stream session creation failed"
+						: "audio resource preparation failed",
+					file.name,
+					error,
+				);
 				setStreamLinkFailed(true);
 			})
 			.finally(() => {

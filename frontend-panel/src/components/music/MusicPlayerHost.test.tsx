@@ -25,6 +25,7 @@ const mockState = vi.hoisted(() => ({
 	playNext: vi.fn(),
 	playPrevious: vi.fn(),
 	playTracks: vi.fn(),
+	prepareAuthenticatedResource: vi.fn(),
 	requestPlayback: vi.fn(),
 	setError: vi.fn(),
 	setPanelOpen: vi.fn(),
@@ -143,6 +144,11 @@ vi.mock("@/stores/musicPlayerStore", () => ({
 
 vi.mock("@/hooks/useBlobUrl", () => ({
 	useBlobUrl: (...args: unknown[]) => mockState.useBlobUrl(...args),
+}));
+
+vi.mock("@/lib/authenticatedResource", () => ({
+	prepareAuthenticatedResource: (...args: unknown[]) =>
+		mockState.prepareAuthenticatedResource(...args),
 }));
 
 vi.mock("@/stores/thumbnailSupportStore", () => ({
@@ -325,6 +331,16 @@ async function flushAsyncEffects() {
 	});
 }
 
+function deferred<T = void>() {
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, reject, resolve };
+}
+
 describe("MusicPlayerHost", () => {
 	let originalMediaMetadata: PropertyDescriptor | undefined;
 	let originalMediaSession: PropertyDescriptor | undefined;
@@ -394,6 +410,10 @@ describe("MusicPlayerHost", () => {
 			configurable: true,
 			value: vi.fn(() => Promise.resolve()),
 		});
+		Object.defineProperty(HTMLMediaElement.prototype, "load", {
+			configurable: true,
+			value: vi.fn(),
+		});
 		Object.defineProperty(HTMLMediaElement.prototype, "pause", {
 			configurable: true,
 			value: vi.fn(),
@@ -410,6 +430,8 @@ describe("MusicPlayerHost", () => {
 		mockState.playNext.mockReset();
 		mockState.playPrevious.mockReset();
 		mockState.playTracks.mockReset();
+		mockState.prepareAuthenticatedResource.mockReset();
+		mockState.prepareAuthenticatedResource.mockResolvedValue(undefined);
 		mockState.requestPlayback.mockReset();
 		mockState.setError.mockReset();
 		mockState.setError.mockImplementation((error: string | null) => {
@@ -958,6 +980,92 @@ describe("MusicPlayerHost", () => {
 		expect(audio.currentTime).toBe(0);
 		expect(mockState.requestPlayback).toHaveBeenCalledTimes(1);
 		expect(mockState.playNext).not.toHaveBeenCalled();
+	});
+
+	it("prepares the active download source before starting audio playback", async () => {
+		setQueue();
+		mockState.state.playRequested = true;
+		mockState.state.playRequestVersion = 1;
+
+		render(<MusicPlayerHost />);
+
+		await waitFor(() => {
+			expect(mockState.prepareAuthenticatedResource).toHaveBeenCalledWith(
+				"/files/7/download",
+			);
+		});
+		const audio = document.querySelector("audio");
+		if (!audio) {
+			throw new Error("audio element not found");
+		}
+		await waitFor(() => {
+			expect(audio).toHaveAttribute("src", "/api/v1/files/7/download");
+			expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+			expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("does not hand a protected download source to audio when preparation fails", async () => {
+		const authError = { status: 401 };
+		mockState.prepareAuthenticatedResource.mockRejectedValue(authError);
+		setQueue();
+		mockState.state.playRequested = true;
+		mockState.state.playRequestVersion = 1;
+
+		render(<MusicPlayerHost />);
+
+		const audio = document.querySelector("audio");
+		if (!audio) {
+			throw new Error("audio element not found");
+		}
+		await waitFor(() => {
+			expect(mockState.setError).toHaveBeenCalledWith(
+				"music_player_load_failed",
+			);
+		});
+		expect(audio).toHaveAttribute("src", "/api/v1/files/7/download");
+		expect(HTMLMediaElement.prototype.load).not.toHaveBeenCalled();
+		expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+		expect(mockState.setPlaybackRequested).toHaveBeenCalledWith(false);
+		expect(mockState.setPlaying).toHaveBeenCalledWith(false);
+	});
+
+	it("ignores stale native audio errors while auth preparation is pending", async () => {
+		const preparation = deferred();
+		mockState.prepareAuthenticatedResource.mockReturnValue(preparation.promise);
+		setQueue();
+		mockState.state.playRequested = true;
+		mockState.state.playRequestVersion = 1;
+
+		render(<MusicPlayerHost />);
+
+		const audio = document.querySelector("audio");
+		if (!audio) {
+			throw new Error("audio element not found");
+		}
+		await waitFor(() => {
+			expect(mockState.prepareAuthenticatedResource).toHaveBeenCalledWith(
+				"/files/7/download",
+			);
+		});
+
+		fireEvent.error(audio);
+
+		expect(mockState.setError).not.toHaveBeenCalledWith(
+			"music_player_load_failed",
+		);
+		expect(mockState.setPlaybackRequested).not.toHaveBeenCalledWith(false);
+		expect(mockState.playNext).not.toHaveBeenCalled();
+
+		await act(async () => {
+			preparation.resolve();
+			await preparation.promise;
+		});
+
+		await waitFor(() => {
+			expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+			expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+		});
 	});
 
 	it("marks playback as stopped when the media element rejects play", async () => {

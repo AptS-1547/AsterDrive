@@ -209,24 +209,29 @@ export function BlobImagePreview({
 			</Button>
 		) : null;
 
-	const content = loading ? (
-		<PreviewLoadingState text={t("loading_preview")} className="h-full" />
-	) : error || !blobUrl || imageRenderFailed ? (
-		<PreviewError onRetry={handleRetry} />
-	) : (
-		<div ref={viewportRef} className={imageContainerClass}>
-			<img
-				ref={imageRef}
-				src={blobUrl}
-				alt={file.name}
-				draggable={false}
-				onError={handleImageError}
-				onLoad={handleImageLoad}
-				className={imageClass}
-				style={imageStyle}
-			/>
-		</div>
-	);
+	const readyBlobUrl =
+		!loading && !error && !imageRenderFailed ? blobUrl : null;
+	const content =
+		loading || (!error && !blobUrl) ? (
+			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
+		) : error || imageRenderFailed ? (
+			<PreviewError onRetry={handleRetry} />
+		) : readyBlobUrl ? (
+			<div ref={viewportRef} className={imageContainerClass}>
+				<img
+					ref={imageRef}
+					src={readyBlobUrl}
+					alt={file.name}
+					draggable={false}
+					onError={handleImageError}
+					onLoad={handleImageLoad}
+					className={imageClass}
+					style={imageStyle}
+				/>
+			</div>
+		) : (
+			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
+		);
 
 	if (!originalButton) {
 		return content;

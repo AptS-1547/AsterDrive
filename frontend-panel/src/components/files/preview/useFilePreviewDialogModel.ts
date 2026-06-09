@@ -499,7 +499,12 @@ export function useFilePreviewDialogModel({
 			getEmbeddedOptionMode(activeOption) !== "new_tab");
 	const isImagePreview = activeOption?.mode === "image";
 	const isExpanded =
-		isMobilePreviewViewport || isImagePreview || state.isExpanded;
+		isMobilePreviewViewport ||
+		(isImagePreview
+			? state.hasManualExpanded
+				? state.isExpanded
+				: true
+			: state.isExpanded);
 
 	const closeWithGuard = useCallback(() => {
 		if (state.isDirty) {

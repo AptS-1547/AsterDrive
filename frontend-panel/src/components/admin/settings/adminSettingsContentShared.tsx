@@ -210,7 +210,8 @@ export function isStringEnumSetType(valueType: SystemConfigValueType) {
 }
 
 export function configValueToString(value: ConfigDraftValue | undefined) {
-	return typeof value === "string" ? value : "";
+	if (Array.isArray(value)) return "";
+	return value == null ? "" : String(value);
 }
 
 export function configValueToStringArray(value: ConfigDraftValue | undefined) {
@@ -231,7 +232,7 @@ export function configDraftValuesEqual(
 		);
 	}
 
-	return (left ?? "") === (right ?? "");
+	return String(left ?? "") === String(right ?? "");
 }
 
 export function isRedactedConfigValue(value: ConfigDraftValue | undefined) {
@@ -681,7 +682,7 @@ export function buildDraftValues(configs: SystemConfig[]) {
 				? ""
 				: Array.isArray(config.value)
 					? [...config.value]
-					: config.value,
+					: String(config.value ?? ""),
 		]),
 	) as DraftValues;
 }

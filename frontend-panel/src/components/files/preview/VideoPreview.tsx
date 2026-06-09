@@ -2,6 +2,7 @@ import Artplayer from "artplayer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveApiResourceUrl } from "@/lib/apiUrl";
+import { prepareAuthenticatedResource } from "@/lib/authenticatedResource";
 import { logger } from "@/lib/logger";
 import type { ShareStreamSessionInfo } from "@/types/api";
 import { PreviewError } from "./PreviewError";
@@ -31,9 +32,7 @@ export function VideoPreview({
 }: VideoPreviewProps) {
 	const { i18n, t } = useTranslation("files");
 	const containerRef = useRef<HTMLDivElement | null>(null);
-	const [resolvedPath, setResolvedPath] = useState<string | null>(
-		mediaStreamLinkFactory ? null : path,
-	);
+	const [resolvedPath, setResolvedPath] = useState<string | null>(null);
 	const [streamLinkFailed, setStreamLinkFailed] = useState(false);
 	const [playerFailed, setPlayerFailed] = useState(false);
 	const [mediaFailed, setMediaFailed] = useState(false);
@@ -62,22 +61,30 @@ export function VideoPreview({
 		setMediaFailed(false);
 		setAspectRatio(DEFAULT_ASPECT_RATIO);
 
-		if (!mediaStreamLinkFactory) {
-			setResolvedPath(path);
-			return () => {
-				cancelled = true;
-			};
-		}
+		const resolveDirectPath = async () => {
+			await prepareAuthenticatedResource(path);
+			return path;
+		};
+
+		const resolveLink = mediaStreamLinkFactory
+			? async () => (await mediaStreamLinkFactory()).path
+			: resolveDirectPath;
 
 		setResolvedPath(null);
-		mediaStreamLinkFactory()
-			.then((link) => {
+		resolveLink()
+			.then((nextPath) => {
 				if (cancelled) return;
-				setResolvedPath(link.path);
+				setResolvedPath(nextPath);
 			})
 			.catch((error) => {
 				if (cancelled) return;
-				logger.warn("media stream session creation failed", file.name, error);
+				logger.warn(
+					mediaStreamLinkFactory
+						? "media stream session creation failed"
+						: "media resource preparation failed",
+					file.name,
+					error,
+				);
 				setStreamLinkFailed(true);
 			});
 

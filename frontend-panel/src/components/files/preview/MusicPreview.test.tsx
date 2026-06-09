@@ -20,6 +20,7 @@ const mockState = vi.hoisted(() => ({
 		requestPlayback: vi.fn(),
 	},
 	playTrack: vi.fn(),
+	prepareAuthenticatedResource: vi.fn(),
 	warn: vi.fn(),
 }));
 
@@ -33,6 +34,11 @@ vi.mock("@/lib/logger", () => ({
 	logger: {
 		warn: (...args: unknown[]) => mockState.warn(...args),
 	},
+}));
+
+vi.mock("@/lib/authenticatedResource", () => ({
+	prepareAuthenticatedResource: (...args: unknown[]) =>
+		mockState.prepareAuthenticatedResource(...args),
 }));
 
 vi.mock("@/stores/musicPlayerStore", () => ({
@@ -62,6 +68,8 @@ describe("MusicPreview", () => {
 		mockState.musicStore.queue = [];
 		mockState.musicStore.requestPlayback.mockReset();
 		mockState.playTrack.mockReset();
+		mockState.prepareAuthenticatedResource.mockReset();
+		mockState.prepareAuthenticatedResource.mockResolvedValue(undefined);
 		mockState.warn.mockReset();
 	});
 
@@ -95,6 +103,7 @@ describe("MusicPreview", () => {
 		await waitFor(() => {
 			expect(mockState.playTrack).toHaveBeenCalledWith(
 				expect.objectContaining({
+					// The filename fallback only guarantees a title; backend metadata coverage lives in the next test.
 					metadata: expect.objectContaining({ title: "track" }),
 					name: "track.mp3",
 					path: "/files/7/download",
@@ -110,6 +119,9 @@ describe("MusicPreview", () => {
 				}),
 			);
 		});
+		expect(mockState.prepareAuthenticatedResource).toHaveBeenCalledWith(
+			"/files/7/download",
+		);
 	});
 
 	it("uses resolved backend metadata for the preview title and playback track", async () => {
@@ -238,6 +250,28 @@ describe("MusicPreview", () => {
 			"audio stream session creation failed",
 			"track.mp3",
 			expect.any(Error),
+		);
+	});
+
+	it("renders the preview error when direct audio preparation fails", async () => {
+		const authError = { status: 401 };
+		mockState.prepareAuthenticatedResource.mockRejectedValue(authError);
+
+		render(
+			<MusicPreview
+				file={{ name: "track.mp3", mime_type: "audio/mpeg" }}
+				path="/files/7/download"
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "music_preview_play" }));
+
+		expect(await screen.findByText("preview_load_failed")).toBeInTheDocument();
+		expect(mockState.playTrack).not.toHaveBeenCalled();
+		expect(mockState.warn).toHaveBeenCalledWith(
+			"audio resource preparation failed",
+			"track.mp3",
+			authError,
 		);
 	});
 

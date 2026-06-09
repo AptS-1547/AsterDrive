@@ -22,6 +22,8 @@ describe("TagChips", () => {
 		expect(tagColorFromName(" Important ")).toBe(tagColorFromName("important"));
 		expect(tagColorFromName("")).toBe("#2563eb");
 		expect(tagColorFromName("   ")).toBe("#2563eb");
+		expect(tagColorFromName(null)).toBe("#2563eb");
+		expect(tagColorFromName(undefined)).toBe("#2563eb");
 	});
 
 	it("renders empty fallback when no tags are available", () => {

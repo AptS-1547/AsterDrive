@@ -19,7 +19,9 @@ export function safeTagColor(color: string | null | undefined) {
 	return color && HEX_COLOR_RE.test(color) ? color : "#64748b";
 }
 
-export function tagColorFromName(name: string) {
+export function tagColorFromName(name: string | null | undefined) {
+	if (!name) return TAG_COLOR_PALETTE[0];
+
 	const normalized = name.trim().toLowerCase();
 	if (!normalized) return TAG_COLOR_PALETTE[0];
 

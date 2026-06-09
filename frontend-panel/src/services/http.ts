@@ -145,6 +145,7 @@ client.interceptors.response.use(
 
 		const original = error.config;
 		const url = original?.url || "";
+		const apiError = await extractApiErrorAsync(error);
 
 		// 跳过公开端点的自动 refresh（避免把分享页误当成登录态接口）
 		const shouldSkip = shouldSkipRefresh(url);
@@ -153,7 +154,7 @@ client.interceptors.response.use(
 			original &&
 			!original._retry &&
 			!shouldSkip &&
-			isRefreshableAuthError(error)
+			isRefreshableAuthError(apiError ?? error)
 		) {
 			original._retry = true;
 
@@ -185,7 +186,7 @@ client.interceptors.response.use(
 				return Promise.reject(error);
 			}
 		}
-		return Promise.reject(extractApiError(error) ?? error);
+		return Promise.reject(apiError ?? error);
 	},
 );
 
@@ -240,20 +241,18 @@ function normalizeApiErrorInfo(
 	};
 }
 
-function extractApiError(error: unknown): ApiError | null {
-	if (typeof error !== "object" || error === null) {
-		return null;
+function extractApiErrorFromData(
+	data: unknown,
+	status: number | undefined,
+): ApiError | null {
+	if (typeof data === "string") {
+		try {
+			return extractApiErrorFromData(JSON.parse(data) as unknown, status);
+		} catch {
+			return null;
+		}
 	}
 
-	const response =
-		"response" in error && typeof error.response === "object"
-			? error.response
-			: null;
-	if (response === null || response === undefined) {
-		return null;
-	}
-
-	const data = "data" in response ? response.data : null;
 	if (typeof data !== "object" || data === null) {
 		return null;
 	}
@@ -270,12 +269,68 @@ function extractApiError(error: unknown): ApiError | null {
 
 	const errorInfo =
 		"error" in data && typeof data.error === "object" ? data.error : null;
-	const status = "status" in response ? response.status : null;
 
 	return new ApiError(code, message, {
 		...normalizeApiErrorInfo(errorInfo as ApiErrorInfoPayload | null),
-		status: typeof status === "number" ? status : undefined,
+		status,
 	});
+}
+
+function extractApiError(error: unknown): ApiError | null {
+	if (typeof error !== "object" || error === null) {
+		return null;
+	}
+
+	const response =
+		"response" in error && typeof error.response === "object"
+			? error.response
+			: null;
+	if (response === null || response === undefined) {
+		return null;
+	}
+
+	const data = "data" in response ? response.data : null;
+	const status = "status" in response ? response.status : null;
+
+	return extractApiErrorFromData(
+		data,
+		typeof status === "number" ? status : undefined,
+	);
+}
+
+async function extractApiErrorAsync(error: unknown): Promise<ApiError | null> {
+	const apiError = extractApiError(error);
+	if (apiError) {
+		return apiError;
+	}
+
+	if (typeof error !== "object" || error === null) {
+		return null;
+	}
+
+	const response =
+		"response" in error && typeof error.response === "object"
+			? error.response
+			: null;
+	if (response === null || response === undefined) {
+		return null;
+	}
+
+	const data = "data" in response ? response.data : null;
+	if (!(data instanceof Blob)) {
+		return null;
+	}
+
+	try {
+		const parsed = JSON.parse(await data.text()) as unknown;
+		const status = "status" in response ? response.status : null;
+		return extractApiErrorFromData(
+			parsed,
+			typeof status === "number" ? status : undefined,
+		);
+	} catch {
+		return null;
+	}
 }
 
 async function unwrap<T>(

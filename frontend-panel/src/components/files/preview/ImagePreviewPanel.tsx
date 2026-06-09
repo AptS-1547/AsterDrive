@@ -24,6 +24,7 @@ import {
 import { useImagePreviewTransform } from "./useImagePreviewTransform";
 
 const ORIGINAL_BUTTON_EXIT_MS = 220;
+const CLICK_MOVE_THRESHOLD = 4;
 const IMAGE_PREVIEW_KEY_SEPARATOR = "\u0000";
 const ORIGINAL_BUTTON_SUCCESS_HOLD_MS = 650;
 const IMAGE_NAVIGATION_KEYDOWN_OPTIONS = { capture: true } as const;
@@ -450,7 +451,7 @@ function ImagePreviewTransformLayer({
 				Math.hypot(
 					event.clientX - pointerStart.x,
 					event.clientY - pointerStart.y,
-				) > 4
+				) > CLICK_MOVE_THRESHOLD
 			) {
 				return;
 			}

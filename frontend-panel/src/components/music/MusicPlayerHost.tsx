@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { resolveApiResourceUrl } from "@/lib/apiUrl";
+import { prepareAuthenticatedResource } from "@/lib/authenticatedResource";
 import { formatBytes } from "@/lib/format";
 import { logger } from "@/lib/logger";
 import { supportsThumbnailExtension } from "@/lib/thumbnailSupport";
@@ -486,6 +487,7 @@ export function MusicPlayerHost() {
 	const errorSkipTimerRef = useRef<number | null>(null);
 	const isSeekingRef = useRef(false);
 	const parsedMetadataTrackIdsRef = useRef(new Set<string>());
+	const playbackPreparationPendingRef = useRef(false);
 	const wasPlayingBeforeSeekRef = useRef(false);
 	const latestTrackIdRef = useRef<string | null>(null);
 	const activeQueueItemRef = useRef<HTMLButtonElement | null>(null);
@@ -947,7 +949,7 @@ export function MusicPlayerHost() {
 
 	useEffect(() => {
 		const audio = audioRef.current;
-		if (!audio || !source) return;
+		if (!audio || !source || !track) return;
 		void playRequestVersion;
 
 		if (!playRequested) {
@@ -955,13 +957,33 @@ export function MusicPlayerHost() {
 			return;
 		}
 
-		void audio.play().catch((playError) => {
-			logger.warn("music playback start failed", track?.name, playError);
-			setError(t("music_player_load_failed"));
-			setPlaybackRequested(false);
-			setPlaying(false);
-			scheduleNextAfterPlaybackError(track?.id ?? null);
-		});
+		let cancelled = false;
+		const trackId = track.id;
+		const trackName = track.name;
+		const trackPath = track.path;
+		playbackPreparationPendingRef.current = true;
+		void (async () => {
+			try {
+				await prepareAuthenticatedResource(trackPath);
+				if (cancelled || latestTrackIdRef.current !== trackId) return;
+				playbackPreparationPendingRef.current = false;
+				audio.load();
+				await audio.play();
+			} catch (playError) {
+				if (cancelled || latestTrackIdRef.current !== trackId) return;
+				playbackPreparationPendingRef.current = false;
+				logger.warn("music playback start failed", trackName, playError);
+				setError(t("music_player_load_failed"));
+				setPlaybackRequested(false);
+				setPlaying(false);
+				scheduleNextAfterPlaybackError(trackId);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+			playbackPreparationPendingRef.current = false;
+		};
 	}, [
 		playRequestVersion,
 		playRequested,
@@ -971,11 +993,10 @@ export function MusicPlayerHost() {
 		setPlaying,
 		source,
 		t,
-		track?.id,
-		track?.name,
+		track,
 	]);
 
-	if (!track || !source) {
+	if (!track) {
 		return null;
 	}
 
@@ -1077,6 +1098,7 @@ export function MusicPlayerHost() {
 					playNextTrack();
 				}}
 				onError={() => {
+					if (playbackPreparationPendingRef.current) return;
 					setError(t("music_player_load_failed"));
 					setPlaybackRequested(false);
 					setPlaying(false);

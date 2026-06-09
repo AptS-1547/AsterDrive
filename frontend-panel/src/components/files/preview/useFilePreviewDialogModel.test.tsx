@@ -508,7 +508,7 @@ describe("useFilePreviewDialogModel", () => {
 		expect(result.current.dialogOverlayClassName).toContain("bg-zinc-950/88");
 	});
 
-	it("keeps image previews fullscreen even when the generic expand toggle is called", () => {
+	it("lets desktop image previews collapse after a manual expand toggle", () => {
 		mockState.detectFilePreviewProfile.mockReturnValue(
 			profile({
 				category: "image",
@@ -543,17 +543,10 @@ describe("useFilePreviewDialogModel", () => {
 			result.current.handleExpandToggle();
 		});
 
-		expect(result.current.isExpanded).toBe(true);
-		expect(result.current.dialogContentClassName.split(/\s+/)).toEqual(
-			expect.arrayContaining([
-				"top-0",
-				"left-0",
-				"h-screen",
-				"w-screen",
-				"rounded-none",
-			]),
+		expect(result.current.isExpanded).toBe(false);
+		expect(result.current.dialogContentClassName.split(/\s+/)).not.toContain(
+			"top-0",
 		);
-		expect(result.current.dialogOverlayClassName).toContain("bg-zinc-950/88");
 	});
 
 	it("keeps PDF previews windowed on desktop", () => {
