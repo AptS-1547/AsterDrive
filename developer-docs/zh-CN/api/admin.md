@@ -590,12 +590,16 @@
 - `archive_extract_max_staging_bytes`
 - `avatar_max_upload_size_bytes`
 - `thumbnail_max_source_bytes`
+- `thumbnail_max_dimension`
+- `image_preview_max_dimension`
 - `media_metadata_enabled`
 - `media_metadata_max_source_bytes`
 - `media_processing_registry_json`
 - `frontend_image_preview_preference`
 - `mail_template_login_email_code_subject`
 - `mail_template_login_email_code_html`
+
+`thumbnail_max_source_bytes` 控制哪些源文件允许进入缩略图生成；`thumbnail_max_dimension` 和 `image_preview_max_dimension` 分别控制列表缩略图和预览面板图片生成后的最长边。调整尺寸会进入带尺寸后缀的 derivative cache namespace，不会覆盖另一种配置尺寸下的缓存。
 
 `media_processing_registry_json` 是统一媒体处理注册表，用来管理内置 `images`、内置 `lofty`、VIPS CLI、FFmpeg CLI、FFprobe CLI 的启用状态、能力用途、后缀绑定和命令路径。缩略图与媒体元数据都走这条注册表；`media_metadata_enabled` 只保留为媒体元数据总开关，单类媒体是否启用由对应处理器控制。
 

@@ -389,6 +389,7 @@ mod tests {
             sub: "1".to_string(),
             user_id: 1,
             session_version: 1,
+            password_change: false,
             jti: None,
             token_type: TokenType::Access,
             exp: usize::MAX, // 永不过期，只测 version
@@ -397,6 +398,7 @@ mod tests {
             session_version: 2,
             status: crate::types::UserStatus::Active,
             role: crate::types::UserRole::User,
+            must_change_password: false,
         };
         let err = ensure_session_current(&claims, snapshot).unwrap_err();
         assert_eq!(err.code(), "E012");
@@ -408,6 +410,7 @@ mod tests {
             sub: "1".to_string(),
             user_id: 1,
             session_version: 1,
+            password_change: false,
             jti: None,
             token_type: TokenType::Access,
             exp: usize::MAX,
@@ -416,6 +419,7 @@ mod tests {
             session_version: 1,
             status: crate::types::UserStatus::Active,
             role: crate::types::UserRole::User,
+            must_change_password: false,
         };
         assert!(ensure_session_current(&claims, snapshot).is_ok());
     }

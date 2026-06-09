@@ -220,6 +220,8 @@ async fn test_admin_scope_allows_admin_users() {
     assert!(keys.contains(&"archive_preview_max_manifest_bytes"));
     assert!(keys.contains(&"archive_preview_max_duration_secs"));
     assert!(keys.contains(&"thumbnail_max_source_bytes"));
+    assert!(keys.contains(&"thumbnail_max_dimension"));
+    assert!(keys.contains(&"image_preview_max_dimension"));
     assert!(keys.contains(&"media_processing_registry_json"));
     assert!(keys.contains(&"media_metadata_enabled"));
     assert!(keys.contains(&"media_metadata_max_source_bytes"));
@@ -3547,6 +3549,63 @@ async fn test_admin_config() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_admin_config_validates_media_derivative_dimensions() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    for (key, value) in [
+        ("thumbnail_max_dimension", "1".to_string()),
+        (
+            "image_preview_max_dimension",
+            aster_drive::config::operations::MAX_DERIVATIVE_MAX_DIMENSION.to_string(),
+        ),
+    ] {
+        let req = test::TestRequest::put()
+            .uri(&format!("/api/v1/admin/config/{key}"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .set_json(serde_json::json!({ "value": value.as_str() }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200, "{key}={value} should be accepted");
+
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/admin/config/{key}"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["data"]["value"].as_str(), Some(value.as_str()));
+    }
+
+    for (key, invalid) in [
+        ("thumbnail_max_dimension", "0".to_string()),
+        ("thumbnail_max_dimension", "-1".to_string()),
+        ("thumbnail_max_dimension", "12.5".to_string()),
+        ("thumbnail_max_dimension", "abc".to_string()),
+        (
+            "image_preview_max_dimension",
+            (u64::from(aster_drive::config::operations::MAX_DERIVATIVE_MAX_DIMENSION) + 1)
+                .to_string(),
+        ),
+    ] {
+        let req = test::TestRequest::put()
+            .uri(&format!("/api/v1/admin/config/{key}"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .set_json(serde_json::json!({ "value": invalid.as_str() }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        let status = resp.status();
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(status, 400, "{key}={invalid} should be rejected: {body:#?}");
+    }
 }
 
 #[actix_web::test]

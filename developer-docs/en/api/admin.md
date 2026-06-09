@@ -372,6 +372,8 @@ Admin team creation can create a team for another user and give that user the in
 
 Runtime config entries defined by the system cannot be deleted; custom entries can. The single source of truth for system config definitions is `src/config/definitions.rs`.
 
+Media-derivative limits are regular runtime config entries. `thumbnail_max_source_bytes` bounds which original files are accepted for thumbnail generation, while `thumbnail_max_dimension` and `image_preview_max_dimension` bound the rendered longest edge for list thumbnails and preview-panel images. Changing a dimension creates a dimension-specific derivative cache namespace instead of rewriting another configured size.
+
 Custom runtime config entries also have a `visibility` field:
 
 | Visibility | Behavior |
