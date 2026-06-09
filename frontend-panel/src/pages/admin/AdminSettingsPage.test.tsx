@@ -925,10 +925,10 @@ describe("AdminSettingsPage", () => {
 		expect(desktopNav).not.toBeNull();
 		expect(desktopNav).toHaveClass(
 			"sticky",
-			"top-0",
+			"top-2",
 			"self-start",
 			"border-r",
-			"border-border/40",
+			"border-border/50",
 		);
 	});
 

@@ -55,7 +55,7 @@ export function AdminSettingsLoadedContent({
 	return (
 		<div
 			data-testid="settings-content"
-			className="flex flex-col gap-8 transition-[padding-bottom] duration-200 ease-out"
+			className="flex flex-col gap-6 transition-[padding-bottom] duration-[180ms] ease-out"
 			style={{
 				paddingBottom: `${contentBaseBottomPadding + saveBarReservedHeight}px`,
 			}}

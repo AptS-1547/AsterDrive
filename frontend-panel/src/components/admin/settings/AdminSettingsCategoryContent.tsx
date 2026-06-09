@@ -7,9 +7,7 @@ export function AdminSettingsCategoryContent(
 	props: AdminSettingsCategoryContentProps,
 ) {
 	const panelAnimationClass =
-		props.tabDirection === "forward"
-			? "animate-in fade-in duration-300 slide-in-from-right-4 motion-reduce:animate-none"
-			: "animate-in fade-in duration-300 slide-in-from-left-4 motion-reduce:animate-none";
+		"animate-in fade-in duration-150 ease-out motion-reduce:animate-none";
 	const showCategoryHeader = !props.isMobileNavigation;
 
 	return (
