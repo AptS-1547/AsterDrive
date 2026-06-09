@@ -1,4 +1,10 @@
-import { type ChangeEvent, type FormEvent, useRef, useState } from "react";
+import {
+	type ChangeEvent,
+	type FormEvent,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -62,12 +68,12 @@ export function ProfileSettingsView() {
 		value: userDisplayNameValue,
 	});
 
-	if (displayNameState.source !== userDisplayNameValue) {
+	useEffect(() => {
 		setDisplayNameState({
 			source: userDisplayNameValue,
 			value: userDisplayNameValue,
 		});
-	}
+	}, [userDisplayNameValue]);
 
 	const displayNameValue = displayNameState.value;
 	const currentDisplayName =

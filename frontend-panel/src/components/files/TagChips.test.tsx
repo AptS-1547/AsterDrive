@@ -1,11 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import {
-	safeTagColor,
-	TagChip,
-	TagChips,
-	tagColorFromName,
-} from "@/components/files/TagChips";
+import { TagChip, TagChips } from "@/components/files/TagChips";
+import { safeTagColor, tagColorFromName } from "@/components/files/tagColors";
 
 vi.mock("@/components/ui/icon", () => ({
 	Icon: ({ name }: { name: string }) => <span>{name}</span>,

@@ -11,6 +11,7 @@ interface AdminFilterToolbarProps {
 	children: ReactNode;
 	className?: string;
 	contentClassName?: string;
+	/** Initial uncontrolled open state. Later prop changes do not reset the panel. */
 	defaultOpen?: boolean;
 	inline?: boolean;
 	onResetFilters?: () => void;

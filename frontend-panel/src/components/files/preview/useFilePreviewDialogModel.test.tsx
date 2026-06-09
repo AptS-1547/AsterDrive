@@ -580,7 +580,7 @@ describe("useFilePreviewDialogModel", () => {
 		expect(result.current.dialogOverlayClassName).toBeUndefined();
 	});
 
-	it("defaults non-image previews to fullscreen on mobile while preserving manual restore", () => {
+	it("forces non-image previews to fullscreen on mobile", () => {
 		vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
 			matches: query === "(max-width: 767px)",
 			media: query,
@@ -628,8 +628,8 @@ describe("useFilePreviewDialogModel", () => {
 			result.current.handleExpandToggle();
 		});
 
-		expect(result.current.isExpanded).toBe(false);
-		expect(result.current.dialogContentClassName.split(/\s+/)).not.toContain(
+		expect(result.current.isExpanded).toBe(true);
+		expect(result.current.dialogContentClassName.split(/\s+/)).toContain(
 			"top-0",
 		);
 	});

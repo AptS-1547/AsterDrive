@@ -6,15 +6,13 @@ import { logger } from "@/lib/logger";
 import type { ShareStreamSessionInfo } from "@/types/api";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
-import {
-	PreviewSurface,
-	PreviewSurfaceContent,
-	PreviewSurfaceToolbar,
-} from "./PreviewSurface";
+import { PreviewSurface, PreviewSurfaceContent } from "./PreviewSurface";
 import type { PreviewableFileLike } from "./types";
 
 const DEFAULT_ASPECT_RATIO = 16 / 9;
 const DIALOG_CHROME_HEIGHT_REM = 11;
+const VIDEO_SURFACE_CLASS = "border-zinc-900/80 bg-zinc-950";
+const VIDEO_CONTENT_CLASS = "flex items-center justify-center bg-zinc-950";
 
 interface VideoPreviewProps {
 	file: PreviewableFileLike;
@@ -161,10 +159,6 @@ export function VideoPreview({
 	if (streamLinkFailed || mediaFailed) {
 		return (
 			<PreviewSurface>
-				<PreviewSurfaceToolbar
-					icon="FileVideo"
-					label={t("preview_mode_video")}
-				/>
 				<PreviewSurfaceContent>
 					<PreviewError />
 				</PreviewSurfaceContent>
@@ -175,10 +169,6 @@ export function VideoPreview({
 	if (!videoSource) {
 		return (
 			<PreviewSurface>
-				<PreviewSurfaceToolbar
-					icon="FileVideo"
-					label={t("preview_mode_video")}
-				/>
 				<PreviewSurfaceContent>
 					<PreviewLoadingState text={t("loading_preview")} className="h-full" />
 				</PreviewSurfaceContent>
@@ -188,14 +178,10 @@ export function VideoPreview({
 
 	if (playerFailed) {
 		return (
-			<PreviewSurface>
-				<PreviewSurfaceToolbar
-					icon="FileVideo"
-					label={t("preview_mode_video")}
-				/>
-				<PreviewSurfaceContent className="flex items-center justify-center p-4">
+			<PreviewSurface className={VIDEO_SURFACE_CLASS}>
+				<PreviewSurfaceContent className={VIDEO_CONTENT_CLASS}>
 					<div
-						className="w-full overflow-hidden rounded-lg bg-zinc-950"
+						className="w-full overflow-hidden bg-zinc-950"
 						style={previewFrameStyle}
 					>
 						{/* biome-ignore lint/a11y/useMediaCaption: user-uploaded media may not have captions available */}
@@ -214,11 +200,10 @@ export function VideoPreview({
 	}
 
 	return (
-		<PreviewSurface>
-			<PreviewSurfaceToolbar icon="FileVideo" label={t("preview_mode_video")} />
-			<PreviewSurfaceContent className="flex items-center justify-center p-4">
+		<PreviewSurface className={VIDEO_SURFACE_CLASS}>
+			<PreviewSurfaceContent className={VIDEO_CONTENT_CLASS}>
 				<div
-					className="w-full overflow-hidden rounded-lg bg-zinc-950"
+					className="w-full overflow-hidden bg-zinc-950"
 					style={previewFrameStyle}
 				>
 					<div ref={containerRef} className="h-full w-full" />

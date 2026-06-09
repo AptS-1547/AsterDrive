@@ -138,7 +138,7 @@ export function MusicPreview({
 		<PreviewSurface className="min-h-[50vh]">
 			<PreviewSurfaceToolbar
 				icon="FileAudio"
-				label={t("music_player_title")}
+				label={previewMusicTitle(file.name)}
 				meta={statusText}
 			/>
 			<PreviewSurfaceContent>

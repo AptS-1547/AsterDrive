@@ -68,9 +68,11 @@ export function BatchTargetFolderDialog({
 	]);
 	const selectedFolderIdsRef = useRef(selectedFolderIds);
 
-	if (open) {
-		selectedFolderIdsRef.current = selectedFolderIds;
-	}
+	useEffect(() => {
+		if (open) {
+			selectedFolderIdsRef.current = selectedFolderIds;
+		}
+	}, [open, selectedFolderIds]);
 
 	const renderedSelectedFolderIds = open
 		? selectedFolderIds

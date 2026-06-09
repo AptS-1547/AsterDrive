@@ -352,6 +352,36 @@ describe("SecurityMfaSection", () => {
 		);
 	});
 
+	it("ignores repeated setup cancel clicks and clears the pending close timer on unmount", async () => {
+		const { unmount } = render(<SecurityMfaSection />);
+
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "settings:settings_mfa_start_setup",
+			}),
+		);
+		expect(
+			screen.getByText("settings:settings_mfa_intro_title"),
+		).toBeInTheDocument();
+
+		vi.useFakeTimers();
+		const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "core:cancel",
+			}),
+		);
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "core:cancel",
+			}),
+		);
+
+		expect(clearTimeoutSpy).not.toHaveBeenCalled();
+		unmount();
+		expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
+	});
+
 	it("opens the disable MFA code entry directly and disables the factor", async () => {
 		mockState.authService.getMfaStatus.mockResolvedValue(
 			status({

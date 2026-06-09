@@ -33,6 +33,7 @@ import {
 } from "./wopiSessionResource";
 
 const PREVIEW_DIALOG_OPEN_ANIMATION_MS = 120;
+// Matches Tailwind's md breakpoint boundary.
 const MOBILE_PREVIEW_MEDIA_QUERY = "(max-width: 767px)";
 
 export interface FilePreviewDialogProps {
@@ -497,9 +498,10 @@ export function useFilePreviewDialogModel({
 		((activeOption?.mode === "url_template" || activeOption?.mode === "wopi") &&
 			getEmbeddedOptionMode(activeOption) !== "new_tab");
 	const isImagePreview = activeOption?.mode === "image";
-	const shouldAutoExpandPreview = isMobilePreviewViewport || isImagePreview;
-	const isExpanded =
-		shouldAutoExpandPreview && !state.hasManualExpanded
+	const shouldAutoExpandPreview = isImagePreview;
+	const isExpanded = isMobilePreviewViewport
+		? true
+		: shouldAutoExpandPreview && !state.hasManualExpanded
 			? true
 			: state.isExpanded;
 

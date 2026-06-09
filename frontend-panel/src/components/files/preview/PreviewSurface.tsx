@@ -97,9 +97,11 @@ export function PreviewSurfaceMessage({
 	tone = "muted",
 	className,
 }: PreviewSurfaceMessageProps) {
+	const effectiveRole = role ?? (tone === "danger" ? "alert" : undefined);
+
 	return (
 		<div
-			role={role}
+			role={effectiveRole}
 			className={cn(
 				"flex min-h-[12rem] items-center justify-center px-6 py-8 text-center text-sm",
 				tone === "danger" ? "text-destructive" : "text-muted-foreground",

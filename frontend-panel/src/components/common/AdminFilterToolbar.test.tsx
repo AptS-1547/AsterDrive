@@ -43,4 +43,39 @@ describe("AdminFilterToolbar", () => {
 
 		expect(onResetFilters).toHaveBeenCalledTimes(1);
 	});
+
+	it("can render controls expanded by default", () => {
+		render(
+			<AdminFilterToolbar activeFilterCount={0} defaultOpen>
+				<input aria-label="keyword" />
+			</AdminFilterToolbar>,
+		);
+
+		expect(
+			screen.getByRole("button", { name: /hide_filters/ }),
+		).toHaveAttribute("aria-expanded", "true");
+		expect(screen.getByLabelText("keyword")).toBeInTheDocument();
+	});
+
+	it("applies inline layout and custom content classes", () => {
+		render(
+			<AdminFilterToolbar
+				activeFilterCount={0}
+				inline
+				contentClassName="my-content"
+			>
+				<input aria-label="keyword" />
+			</AdminFilterToolbar>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /show_filters/ }));
+
+		expect(screen.getByLabelText("keyword").parentElement).toHaveClass(
+			"my-content",
+		);
+		expect(
+			screen.getByLabelText("keyword").parentElement?.parentElement
+				?.parentElement,
+		).toHaveClass("basis-full");
+	});
 });

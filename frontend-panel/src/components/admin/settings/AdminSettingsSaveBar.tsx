@@ -1,5 +1,10 @@
 import type { RefObject } from "react";
 import { useTranslation } from "react-i18next";
+import {
+	ADMIN_SETTINGS_CONTENT_MAX_WIDTH_CLASS,
+	ADMIN_SETTINGS_SAVE_BAR_ENTER_CLASS,
+	ADMIN_SETTINGS_SAVE_BAR_EXIT_CLASS,
+} from "@/components/admin/settings/adminSettingsAnimation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -43,17 +48,18 @@ export function AdminSettingsSaveBar({
 		>
 			<div
 				className={cn(
-					"mx-auto w-full max-w-5xl origin-bottom will-change-transform motion-reduce:animate-none",
+					"mx-auto w-full origin-bottom will-change-transform motion-reduce:animate-none",
+					ADMIN_SETTINGS_CONTENT_MAX_WIDTH_CLASS,
 					phase === "entering"
-						? "pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-[180ms] ease-out"
+						? ADMIN_SETTINGS_SAVE_BAR_ENTER_CLASS
 						: phase === "visible"
 							? "pointer-events-auto translate-y-0 opacity-100"
-							: "pointer-events-none animate-out fade-out slide-out-to-bottom-2 duration-[140ms] ease-in",
+							: ADMIN_SETTINGS_SAVE_BAR_EXIT_CLASS,
 				)}
 			>
 				<div
 					className={cn(
-						"rounded-lg border bg-background/95 shadow-lg shadow-black/5 ring-1 supports-[backdrop-filter]:bg-background/90 dark:shadow-none",
+						"rounded-lg border bg-card/95 shadow-lg shadow-black/5 ring-1 backdrop-blur supports-[backdrop-filter]:bg-card/90 dark:shadow-none",
 						hasValidationError
 							? "border-destructive/40 ring-destructive/10"
 							: "border-border/70 ring-border/50",

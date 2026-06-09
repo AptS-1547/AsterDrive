@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VideoPreview } from "@/components/files/preview/VideoPreview";
 
@@ -11,6 +11,7 @@ const mockState = vi.hoisted(() => ({
 		destroy: ReturnType<typeof vi.fn>;
 		template: { $video: HTMLVideoElement };
 	}>,
+	loggerWarn: vi.fn(),
 	useBlobUrl: vi.fn(),
 }));
 
@@ -25,8 +26,17 @@ vi.mock("@/hooks/useBlobUrl", () => ({
 	useBlobUrl: (...args: unknown[]) => mockState.useBlobUrl(...args),
 }));
 
+vi.mock("@/lib/logger", () => ({
+	logger: {
+		warn: (...args: unknown[]) => mockState.loggerWarn(...args),
+	},
+}));
+
 vi.mock("artplayer", () => ({
 	default: vi.fn().mockImplementation(function ArtplayerMock(options) {
+		if (options.url.includes("throw-player")) {
+			throw new Error("player init failed");
+		}
 		const instance = {
 			options,
 			destroy: vi.fn(),
@@ -40,6 +50,7 @@ vi.mock("artplayer", () => ({
 describe("VideoPreview", () => {
 	beforeEach(() => {
 		mockState.artplayerInstances = [];
+		mockState.loggerWarn.mockReset();
 		mockState.useBlobUrl.mockReset();
 		HTMLMediaElement.prototype.load = vi.fn();
 	});
@@ -99,5 +110,64 @@ describe("VideoPreview", () => {
 		expect(mockState.artplayerInstances[0].options.url).toBe(
 			"/api/v1/s/share-token/stream/session-token/clip.mp4",
 		);
+	});
+
+	it("renders loading while creating a stream session and an error when creation fails", async () => {
+		const streamError = new Error("stream failed");
+		const mediaStreamLinkFactory = vi.fn(async () => {
+			throw streamError;
+		});
+
+		render(
+			<VideoPreview
+				file={{ name: "clip.mp4", mime_type: "video/mp4" }}
+				path="/s/share-token/download"
+				mediaStreamLinkFactory={mediaStreamLinkFactory}
+			/>,
+		);
+
+		expect(screen.getByText("loading_preview")).toBeInTheDocument();
+		await waitFor(() => {
+			expect(screen.getByRole("alert")).toBeInTheDocument();
+		});
+		expect(mockState.loggerWarn).toHaveBeenCalledWith(
+			"media stream session creation failed",
+			"clip.mp4",
+			streamError,
+		);
+	});
+
+	it("falls back to a native video element when Artplayer initialization fails", async () => {
+		render(
+			<VideoPreview
+				file={{ name: "clip.mp4", mime_type: "video/mp4" }}
+				path="/throw-player"
+			/>,
+		);
+
+		const nativeVideo = await screen.findByLabelText("clip.mp4");
+		expect(nativeVideo).toHaveAttribute("src", "/api/v1/throw-player");
+		expect(mockState.loggerWarn).toHaveBeenCalledWith(
+			"artplayer init failed",
+			"clip.mp4",
+			expect.any(Error),
+		);
+
+		fireEvent.error(nativeVideo);
+		expect(await screen.findByRole("alert")).toBeInTheDocument();
+	});
+
+	it("shows an error when the Artplayer-managed video element fails", async () => {
+		render(
+			<VideoPreview
+				file={{ name: "clip.mp4", mime_type: "video/mp4" }}
+				path="/files/7/download"
+			/>,
+		);
+
+		const playerVideo = mockState.artplayerInstances[0].template.$video;
+		fireEvent.error(playerVideo);
+
+		expect(await screen.findByRole("alert")).toBeInTheDocument();
 	});
 });

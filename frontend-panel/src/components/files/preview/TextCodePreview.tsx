@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/components/ui/button";
-import { Icon } from "@/components/ui/icon";
 import { useFileEditorSession } from "@/hooks/useFileEditorSession";
 import { useTextContent } from "@/hooks/useTextContent";
 import {
@@ -11,11 +9,8 @@ import {
 import { getEditorLanguage } from "./file-capabilities";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
-import {
-	PreviewSurface,
-	PreviewSurfaceContent,
-	PreviewSurfaceToolbar,
-} from "./PreviewSurface";
+import { PreviewSurface, PreviewSurfaceContent } from "./PreviewSurface";
+import { TextCodePreviewToolbar } from "./TextCodePreviewToolbar";
 import type { PreviewableFileLike } from "./types";
 
 interface TextCodePreviewProps {
@@ -102,6 +97,8 @@ export function TextCodePreview({
 		[],
 	);
 
+	const language = getEditorLanguage(file);
+
 	if (loading) {
 		return (
 			<PreviewLoadingState
@@ -115,49 +112,18 @@ export function TextCodePreview({
 		return <PreviewError onRetry={() => void reload()} />;
 	}
 
-	const language = getEditorLanguage(file);
-	const modeText = (modeLabel?.trim() ?? "") || t("files:open_with_code");
-	const statusText = dirty ? t("files:unsaved_changes") : t("core:active");
-	const toolbarMeta = (
-		<span className="inline-flex min-w-0 items-center gap-2">
-			<span className="truncate">{modeText}</span>
-			<span className="shrink-0 text-muted-foreground/60">·</span>
-			<span className="shrink-0">{statusText}</span>
-			{editing ? (
-				<>
-					<span className="shrink-0 text-muted-foreground/60">·</span>
-					<span className="truncate">{t("files:save_shortcut_hint")}</span>
-				</>
-			) : null}
-		</span>
-	);
-	const toolbarActions = !editing ? (
-		editable ? (
-			<Button variant="outline" size="sm" onClick={startEditing}>
-				<Icon name="PencilSimple" className="mr-1 size-3.5" />
-				{t("core:edit")}
-			</Button>
-		) : null
-	) : (
-		<>
-			<Button variant="default" size="sm" onClick={save} disabled={saving}>
-				<Icon name="FloppyDisk" className="mr-1 size-3.5" />
-				{saving ? t("files:saving") : t("core:save")}
-			</Button>
-			<Button variant="outline" size="sm" onClick={cancelEditing}>
-				<Icon name="Undo" className="mr-1 size-3.5" />
-				{t("core:cancel")}
-			</Button>
-		</>
-	);
-
 	return (
 		<PreviewSurface>
-			<PreviewSurfaceToolbar
-				icon="FileCode"
-				label={language}
-				meta={toolbarMeta}
-				actions={toolbarActions}
+			<TextCodePreviewToolbar
+				cancelEditing={cancelEditing}
+				dirty={dirty}
+				editable={editable}
+				editing={editing}
+				language={language}
+				modeLabel={modeLabel}
+				save={save}
+				saving={saving}
+				startEditing={startEditing}
 			/>
 			<PreviewSurfaceContent>
 				<CodePreviewEditor

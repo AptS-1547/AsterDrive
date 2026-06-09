@@ -139,4 +139,39 @@ describe("ConfirmDialog", () => {
 		expect(screen.queryByText("Delete 0 items")).not.toBeInTheDocument();
 		expect(screen.queryByText("Selected 0 items")).not.toBeInTheDocument();
 	});
+
+	it("updates retained content when reopened with new props", () => {
+		const { rerender } = render(
+			<ConfirmDialog
+				open
+				onOpenChange={vi.fn()}
+				title="Delete 5 items"
+				confirmLabel="Delete"
+				onConfirm={vi.fn()}
+			/>,
+		);
+
+		rerender(
+			<ConfirmDialog
+				open={false}
+				onOpenChange={vi.fn()}
+				title="Delete 0 items"
+				confirmLabel="Delete"
+				onConfirm={vi.fn()}
+			/>,
+		);
+		rerender(
+			<ConfirmDialog
+				open
+				onOpenChange={vi.fn()}
+				title="Delete 3 items"
+				confirmLabel="Confirm"
+				onConfirm={vi.fn()}
+			/>,
+		);
+
+		expect(screen.getByText("Delete 3 items")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+		expect(screen.queryByText("Delete 5 items")).not.toBeInTheDocument();
+	});
 });

@@ -47,9 +47,7 @@ export function ConfirmDialog({
 		};
 	}
 
-	const content = open
-		? { confirmLabel, description, title, variant }
-		: contentRef.current;
+	const content = contentRef.current;
 
 	const handleConfirm = () => {
 		onOpenChange(false);

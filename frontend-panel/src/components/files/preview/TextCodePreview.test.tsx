@@ -204,7 +204,6 @@ describe("TextCodePreview", () => {
 				},
 			}),
 		);
-		expect(screen.queryByText("notes.ts")).not.toBeInTheDocument();
 		expect(screen.getByText("typescript")).toBeInTheDocument();
 		expect(screen.getByText("open_with_code")).toBeInTheDocument();
 		expect(screen.getByText("active")).toBeInTheDocument();

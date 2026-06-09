@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useSyncExternalStore } from "react";
 import { PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,36 @@ interface AdminPageHeaderProps {
 	className?: string;
 }
 
+const ADMIN_HEADER_MOBILE_QUERY = "(max-width: 767px)";
+
+function getAdminHeaderMobileSnapshot() {
+	if (typeof window.matchMedia !== "function") {
+		return false;
+	}
+
+	return window.matchMedia(ADMIN_HEADER_MOBILE_QUERY).matches;
+}
+
+function subscribeAdminHeaderMobileLayout(onStoreChange: () => void) {
+	if (typeof window.matchMedia !== "function") {
+		return () => {};
+	}
+
+	const mediaQuery = window.matchMedia(ADMIN_HEADER_MOBILE_QUERY);
+	mediaQuery.addEventListener("change", onStoreChange);
+	return () => {
+		mediaQuery.removeEventListener("change", onStoreChange);
+	};
+}
+
+function useAdminHeaderMobileLayout() {
+	return useSyncExternalStore(
+		subscribeAdminHeaderMobileLayout,
+		getAdminHeaderMobileSnapshot,
+		() => false,
+	);
+}
+
 export function AdminPageHeader({
 	title,
 	description,
@@ -17,6 +47,7 @@ export function AdminPageHeader({
 	toolbar,
 	className,
 }: AdminPageHeaderProps) {
+	const isMobile = useAdminHeaderMobileLayout();
 	const hasMobileControls = actions || toolbar;
 
 	return (
@@ -36,27 +67,18 @@ export function AdminPageHeader({
 						</p>
 					) : null}
 				</div>
-				{actions ? (
-					<div
-						className={cn(
-							"flex-wrap items-center gap-2",
-							toolbar ? "hidden md:flex" : "flex",
-						)}
-					>
-						{actions}
-					</div>
+				{actions && !isMobile ? (
+					<div className="flex flex-wrap items-center gap-2">{actions}</div>
 				) : null}
 			</div>
-			{toolbar && hasMobileControls ? (
-				<div className="flex flex-wrap items-center gap-2 md:hidden">
+			{isMobile && hasMobileControls ? (
+				<div className="flex flex-wrap items-center gap-2">
 					{actions}
 					{toolbar}
 				</div>
 			) : null}
-			{toolbar ? (
-				<div className="hidden flex-wrap items-center gap-2 md:flex">
-					{toolbar}
-				</div>
+			{!isMobile && toolbar ? (
+				<div className="flex flex-wrap items-center gap-2">{toolbar}</div>
 			) : null}
 		</div>
 	);

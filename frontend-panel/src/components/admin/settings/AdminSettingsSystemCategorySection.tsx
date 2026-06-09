@@ -1,6 +1,7 @@
 import { useAdminSettingsCategoryContent } from "@/components/admin/settings/AdminSettingsCategoryContentContext";
 import { AdminSettingsCategoryHeader } from "@/components/admin/settings/AdminSettingsCategoryHeader";
 import { SystemConfigRow } from "@/components/admin/settings/AdminSettingsConfigRows";
+import { ADMIN_SETTINGS_CONTENT_MAX_WIDTH_CLASS } from "@/components/admin/settings/adminSettingsAnimation";
 import {
 	AnimatedCollapsible,
 	getConfigValueType,
@@ -284,7 +285,12 @@ export function AdminSettingsSystemCategorySection({
 				/>
 			) : null}
 			{!hasSubcategorySections ? (
-				<div className="max-w-4xl divide-y divide-border/40">
+				<div
+					className={cn(
+						ADMIN_SETTINGS_CONTENT_MAX_WIDTH_CLASS,
+						"divide-y divide-border/40",
+					)}
+				>
 					{(systemGroups[category] ?? []).map((config) => (
 						<div key={config.key} className="py-4 first:pt-0 last:pb-0">
 							<SystemConfigRow config={config} />
@@ -292,7 +298,9 @@ export function AdminSettingsSystemCategorySection({
 					))}
 				</div>
 			) : (
-				<div className="max-w-5xl space-y-3">
+				<div
+					className={cn(ADMIN_SETTINGS_CONTENT_MAX_WIDTH_CLASS, "space-y-3")}
+				>
 					{systemConfigGroups.map((group) => (
 						<AdminSettingsSystemSubcategoryCard
 							key={getSubcategoryGroupKey(category, group.subcategory)}

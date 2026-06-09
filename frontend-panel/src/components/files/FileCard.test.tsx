@@ -280,6 +280,7 @@ describe("FileCard", () => {
 		fireEvent.click(screen.getByRole("button", { name: "more" }));
 		fireEvent.doubleClick(actionMenu as Element);
 		fireEvent.keyDown(actionMenu as Element, { key: "Enter" });
+		fireEvent.keyDown(actionMenu as Element, { key: "Escape" });
 
 		expect(menuClick).toHaveBeenCalledTimes(1);
 		expect(onClick).not.toHaveBeenCalled();

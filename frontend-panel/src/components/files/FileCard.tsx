@@ -175,7 +175,15 @@ export function FileCard({
 					onPointerDown={(event) => event.stopPropagation()}
 					onClick={(event) => event.stopPropagation()}
 					onDoubleClick={(event) => event.stopPropagation()}
-					onKeyDown={(event) => event.stopPropagation()}
+					onKeyDown={(event) => {
+						if (
+							event.key === "Enter" ||
+							event.key === " " ||
+							event.key === "Spacebar"
+						) {
+							event.stopPropagation();
+						}
+					}}
 				>
 					{actionMenu}
 				</div>

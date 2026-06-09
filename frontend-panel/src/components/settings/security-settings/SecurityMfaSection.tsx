@@ -34,8 +34,12 @@ export function SecurityMfaSection() {
 		actionReducer,
 		EMPTY_ACTION_STATE,
 	);
-	const setupCloseTimerRef = useRef<number | null>(null);
+	const setupCloseTimersRef = useRef<Set<number> | null>(null);
 	const [setupClosing, setSetupClosing] = useState(false);
+	if (setupCloseTimersRef.current === null) {
+		setupCloseTimersRef.current = new Set<number>();
+	}
+	const setupCloseTimers = setupCloseTimersRef.current;
 
 	const load = useCallback(async (options?: { force?: boolean }) => {
 		try {
@@ -54,11 +58,12 @@ export function SecurityMfaSection() {
 
 	useEffect(() => {
 		return () => {
-			if (setupCloseTimerRef.current !== null) {
-				window.clearTimeout(setupCloseTimerRef.current);
+			for (const timer of setupCloseTimers) {
+				window.clearTimeout(timer);
 			}
+			setupCloseTimers.clear();
 		};
-	}, []);
+	}, [setupCloseTimers]);
 
 	const copy = async (value: string, message?: string) => {
 		try {
@@ -72,14 +77,16 @@ export function SecurityMfaSection() {
 	const cancelSetup = () => {
 		if (setupClosing) return;
 		setSetupClosing(true);
-		if (setupCloseTimerRef.current !== null) {
-			window.clearTimeout(setupCloseTimerRef.current);
+		for (const timer of setupCloseTimers) {
+			window.clearTimeout(timer);
 		}
-		setupCloseTimerRef.current = window.setTimeout(() => {
+		setupCloseTimers.clear();
+		const timer = window.setTimeout(() => {
+			setupCloseTimers.delete(timer);
 			dispatchSetup({ type: "reset" });
 			setSetupClosing(false);
-			setupCloseTimerRef.current = null;
 		}, SETUP_EXIT_DURATION_MS);
+		setupCloseTimers.add(timer);
 	};
 
 	const startSetup = async () => {

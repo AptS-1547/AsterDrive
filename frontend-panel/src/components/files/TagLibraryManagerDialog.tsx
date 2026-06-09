@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -13,9 +13,16 @@ import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
 import { tagService } from "@/services/tagService";
 import type { TagInfo } from "@/types/api";
-import { safeTagColor, TAG_COLOR_PALETTE } from "./TagChips";
+import { safeTagColor, TAG_COLOR_PALETTE } from "./tagColors";
 
 const TAG_LIBRARY_MANAGER_LIMIT = 50;
+const CLOSED_INTERACTION_RESET_KEY = "__closed__";
+
+type EditingDraft = {
+	color: string;
+	id: number;
+	name: string;
+};
 
 function sortTags(tags: TagInfo[]) {
 	return [...tags].sort((a, b) =>
@@ -45,22 +52,31 @@ export function TagLibraryManagerDialog({
 	const [loading, setLoading] = useState(false);
 	const [loadingMore, setLoadingMore] = useState(false);
 	const [busyId, setBusyId] = useState<number | null>(null);
-	const [editingId, setEditingId] = useState<number | null>(null);
-	const [editingColor, setEditingColor] = useState("");
-	const [editingName, setEditingName] = useState("");
+	const [editingDraft, setEditingDraft] = useState<EditingDraft | null>(null);
 	const [deleteTarget, setDeleteTarget] = useState<TagInfo | null>(null);
-
 	const normalizedQuery = query.trim();
+	const interactionResetKey = open
+		? normalizedQuery
+		: CLOSED_INTERACTION_RESET_KEY;
+	const currentInteractionResetKeyRef = useRef(interactionResetKey);
+
+	if (currentInteractionResetKeyRef.current !== interactionResetKey) {
+		currentInteractionResetKeyRef.current = interactionResetKey;
+		setEditingDraft(null);
+		setDeleteTarget(null);
+	}
+
 	const hasMore = tags.length < total;
 	const editingTag = useMemo(
-		() => tags.find((tag) => tag.id === editingId) ?? null,
-		[editingId, tags],
+		() => tags.find((tag) => tag.id === editingDraft?.id) ?? null,
+		[editingDraft?.id, tags],
 	);
 	const canSaveEdit =
 		editingTag !== null &&
-		normalizeTagName(editingName).length > 0 &&
-		(normalizeTagName(editingName) !== editingTag.name ||
-			safeTagColor(editingColor) !== safeTagColor(editingTag.color));
+		editingDraft !== null &&
+		normalizeTagName(editingDraft.name).length > 0 &&
+		(normalizeTagName(editingDraft.name) !== editingTag.name ||
+			safeTagColor(editingDraft.color) !== safeTagColor(editingTag.color));
 
 	useEffect(() => {
 		if (!open) {
@@ -70,18 +86,11 @@ export function TagLibraryManagerDialog({
 			setLoading(false);
 			setLoadingMore(false);
 			setBusyId(null);
-			setEditingId(null);
-			setEditingColor("");
-			setEditingName("");
-			setDeleteTarget(null);
 			return;
 		}
 
 		let cancelled = false;
 		setLoading(true);
-		setEditingId(null);
-		setEditingColor("");
-		setEditingName("");
 		tagService
 			.listTags({
 				params: {
@@ -131,22 +140,22 @@ export function TagLibraryManagerDialog({
 
 	const startEdit = (tag: TagInfo) => {
 		setDeleteTarget(null);
-		setEditingId(tag.id);
-		setEditingColor(safeTagColor(tag.color));
-		setEditingName(tag.name);
+		setEditingDraft({
+			color: safeTagColor(tag.color),
+			id: tag.id,
+			name: tag.name,
+		});
 	};
 
 	const cancelEdit = () => {
-		setEditingId(null);
-		setEditingColor("");
-		setEditingName("");
+		setEditingDraft(null);
 	};
 
 	const saveEdit = async () => {
-		if (!editingTag || !canSaveEdit) return;
+		if (!editingTag || !editingDraft || !canSaveEdit) return;
 
-		const name = normalizeTagName(editingName);
-		const color = safeTagColor(editingColor);
+		const name = normalizeTagName(editingDraft.name);
+		const color = safeTagColor(editingDraft.color);
 		setBusyId(editingTag.id);
 		try {
 			const updated = await tagService.patchTag(editingTag.id, { color, name });
@@ -169,7 +178,7 @@ export function TagLibraryManagerDialog({
 			await tagService.deleteTag(tag.id);
 			setTags((current) => current.filter((item) => item.id !== tag.id));
 			setTotal((current) => Math.max(0, current - 1));
-			if (editingId === tag.id) cancelEdit();
+			if (editingDraft?.id === tag.id) cancelEdit();
 			onTagDeleted?.(tag.id);
 			toast.success(t("tag_deleted"));
 		} catch (err) {
@@ -238,7 +247,7 @@ export function TagLibraryManagerDialog({
 							</p>
 						) : tags.length > 0 ? (
 							tags.map((tag) => {
-								const editing = editingId === tag.id;
+								const editing = editingDraft?.id === tag.id;
 								const confirmingDelete = deleteTarget?.id === tag.id;
 								const busy = busyId === tag.id;
 
@@ -255,14 +264,23 @@ export function TagLibraryManagerDialog({
 															<span
 																className="-translate-y-1/2 absolute top-1/2 left-2.5 size-2.5 rounded-full ring-1 ring-black/10"
 																style={{
-																	backgroundColor: safeTagColor(editingColor),
+																	backgroundColor: safeTagColor(
+																		editingDraft?.color,
+																	),
 																}}
 																aria-hidden
 															/>
 															<Input
-																value={editingName}
+																value={editingDraft?.name ?? ""}
 																onChange={(event) =>
-																	setEditingName(event.target.value)
+																	setEditingDraft((draft) =>
+																		draft
+																			? {
+																					...draft,
+																					name: event.target.value,
+																				}
+																			: draft,
+																	)
 																}
 																className="pl-7"
 																maxLength={64}
@@ -312,7 +330,7 @@ export function TagLibraryManagerDialog({
 													<legend className="sr-only">{t("tag_color")}</legend>
 													{TAG_COLOR_PALETTE.map((color) => {
 														const selected =
-															safeTagColor(editingColor) === color;
+															safeTagColor(editingDraft?.color) === color;
 														return (
 															<button
 																key={color}
@@ -326,7 +344,11 @@ export function TagLibraryManagerDialog({
 																	color,
 																})}
 																aria-pressed={selected}
-																onClick={() => setEditingColor(color)}
+																onClick={() =>
+																	setEditingDraft((draft) =>
+																		draft ? { ...draft, color } : draft,
+																	)
+																}
 															>
 																<span
 																	className="size-3.5 rounded-full ring-1 ring-black/10 sm:size-3"

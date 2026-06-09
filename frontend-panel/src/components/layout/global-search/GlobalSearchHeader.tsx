@@ -1,7 +1,7 @@
 import { type KeyboardEvent, type Ref, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
-import { safeTagColor } from "@/components/files/TagChips";
+import { safeTagColor } from "@/components/files/tagColors";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";

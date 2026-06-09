@@ -76,10 +76,7 @@ export function SecurityMfaSetupPanel({
 			</div>
 
 			<div className="p-4">
-				<div
-					key={activeStep}
-					className="animate-in fade-in duration-150 motion-reduce:animate-none"
-				>
+				<div className="animate-in fade-in duration-150 motion-reduce:animate-none">
 					{setupState.step === "intro" ? (
 						<SetupIntro
 							setupBusy={setupState.busy}
