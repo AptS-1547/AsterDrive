@@ -94,10 +94,23 @@ jobs:
           [[ "${{ matrix.target }}" == *windows* ]] && SRC="${SRC}.exe"
           mv "$SRC" "aster_drive_${VERSION}_${{ matrix.name }}"
 
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          case "${{ matrix.target }}" in
+            *windows*)
+              zip -9 "aster_drive_${VERSION}_${{ matrix.name }}.zip" "aster_drive_${VERSION}_${{ matrix.name }}"
+              ;;
+            *)
+              tar -czf "aster_drive_${VERSION}_${{ matrix.name }}.tar.gz" "aster_drive_${VERSION}_${{ matrix.name }}"
+              ;;
+          esac
+
       - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.name }}
           path: aster_drive_*
+          if-no-files-found: error
 
   build-linux-arm:
     needs: build-frontend
@@ -154,10 +167,15 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/}"
           mv "target/${{ matrix.target }}/release/aster_drive" "aster_drive_${VERSION}_${{ matrix.name }}"
 
+      - name: Package
+        run: |
+          tar -czf "aster_drive_${VERSION}_${{ matrix.name }}.tar.gz" "aster_drive_${VERSION}_${{ matrix.name }}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.name }}
           path: aster_drive_*
+          if-no-files-found: error
 
   build-macos:
     needs: build-frontend
@@ -195,10 +213,15 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/}"
           mv target/${{ matrix.target }}/release/aster_drive "aster_drive_${VERSION}_${{ matrix.name }}"
 
+      - name: Package
+        run: |
+          tar -czf "aster_drive_${VERSION}_${{ matrix.name }}.tar.gz" "aster_drive_${VERSION}_${{ matrix.name }}"
+
       - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.name }}
           path: aster_drive_*
+          if-no-files-found: error
 
   build-windows-arm64:
     needs: build-frontend
@@ -229,10 +252,18 @@ jobs:
             -Path "target/aarch64-pc-windows-msvc/release/aster_drive.exe" `
             -Destination "aster_drive_$($env:GITHUB_REF_NAME)_windows_arm64.exe"
 
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "aster_drive_$($env:GITHUB_REF_NAME)_windows_arm64.exe" `
+            -DestinationPath "aster_drive_$($env:GITHUB_REF_NAME)_windows_arm64.zip"
+
       - uses: actions/upload-artifact@v7
         with:
           name: binary-windows_arm64.exe
           path: aster_drive_*
+          if-no-files-found: error
 
   release:
     needs: [build-linux-windows, build-linux-arm, build-macos, build-windows-arm64]
@@ -252,7 +283,7 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          find artifacts -type f -name "aster_drive_*" -exec cp {} release/ \;
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
           cd release && sha256sum * > checksums.txt
 
       - name: Sign checksums
@@ -292,23 +323,25 @@ jobs:
             echo ""
             echo "## Download"
             echo ""
-            echo "| Platform | Architecture | Download |"
-            echo "|----------|--------------|----------|"
-            echo "| Linux | x86_64 | [aster_drive_${{ github.ref_name }}_linux_x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_x86_64) |"
-            echo "| Linux | x86 | [aster_drive_${{ github.ref_name }}_linux_i686](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_i686) |"
-            echo "| Linux | ARM64 | [aster_drive_${{ github.ref_name }}_linux_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_aarch64) |"
-            echo "| Linux | ARMv7 | [aster_drive_${{ github.ref_name }}_linux_armv7](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_armv7) |"
-            echo "| Windows | x86_64 | [aster_drive_${{ github.ref_name }}_windows_x86_64.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_x86_64.exe) |"
-            echo "| Windows | x86 | [aster_drive_${{ github.ref_name }}_windows_i686.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_i686.exe) |"
-            echo "| Windows | ARM64 | [aster_drive_${{ github.ref_name }}_windows_arm64.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_arm64.exe) |"
-            echo "| macOS | x86_64 | [aster_drive_${{ github.ref_name }}_macos_x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_x86_64) |"
-            echo "| macOS | ARM64 | [aster_drive_${{ github.ref_name }}_macos_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_aarch64) |"
+            echo "| Platform | Architecture | Archive |"
+            echo "|----------|--------------|---------|"
+            echo "| Linux | x86_64 | [aster_drive_${{ github.ref_name }}_linux_x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_x86_64.tar.gz) |"
+            echo "| Linux | x86 | [aster_drive_${{ github.ref_name }}_linux_i686.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_i686.tar.gz) |"
+            echo "| Linux | ARM64 | [aster_drive_${{ github.ref_name }}_linux_aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_aarch64.tar.gz) |"
+            echo "| Linux | ARMv7 | [aster_drive_${{ github.ref_name }}_linux_armv7.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_armv7.tar.gz) |"
+            echo "| Windows | x86_64 | [aster_drive_${{ github.ref_name }}_windows_x86_64.exe.zip](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_x86_64.exe.zip) |"
+            echo "| Windows | x86 | [aster_drive_${{ github.ref_name }}_windows_i686.exe.zip](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_i686.exe.zip) |"
+            echo "| Windows | ARM64 | [aster_drive_${{ github.ref_name }}_windows_arm64.zip](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_arm64.zip) |"
+            echo "| macOS | x86_64 | [aster_drive_${{ github.ref_name }}_macos_x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_x86_64.tar.gz) |"
+            echo "| macOS | ARM64 | [aster_drive_${{ github.ref_name }}_macos_aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_aarch64.tar.gz) |"
+            echo ""
+            echo "Extract with \`tar -xzf\` (Linux/macOS) or unzip (Windows)."
             echo ""
             echo "**Checksums**: [checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/checksums.txt)"
             echo ""
             echo "### Verify signatures"
             echo ""
-            echo "All release binaries are signed with [Sigstore cosign](https://docs.sigstore.dev/). To verify:"
+            echo "All release archives are signed with [Sigstore cosign](https://docs.sigstore.dev/). To verify:"
             echo ""
             echo '```bash'
             echo "# Download checksums + signature + certificate"
@@ -321,7 +354,7 @@ jobs:
             echo '  --certificate-oidc-issuer https://token.actions.githubusercontent.com \'
             echo "  --certificate-identity-regexp 'github.com/AptS-1547/AsterDrive'"
             echo ""
-            echo "# Verify binary integrity"
+            echo "# Verify archive integrity"
             echo "sha256sum -c checksums.txt"
             echo '```'
           } > release_body.md
