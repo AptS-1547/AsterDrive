@@ -5,12 +5,61 @@ import {
 	buildUpdatePolicyPayload,
 	getEndpointValidationMessage,
 	getPolicyForm,
+	getS3CompatibleDriverPromotionTarget,
 	hasConnectionFieldChanges,
+	isTencentCosEndpoint,
 } from "@/components/admin/storagePolicyDialogShared";
 import type { StoragePolicy } from "@/types/api";
 
 describe("storagePolicyDialogShared", () => {
 	const t = (key: string) => key;
+
+	it("detects Tencent COS endpoints for generic S3 driver promotion", () => {
+		expect(isTencentCosEndpoint("https://cos.ap-guangzhou.myqcloud.com")).toBe(
+			true,
+		);
+		expect(
+			isTencentCosEndpoint(
+				"https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com",
+			),
+		).toBe(true);
+		expect(isTencentCosEndpoint("https://s3.amazonaws.com")).toBe(false);
+		expect(isTencentCosEndpoint("not a url")).toBe(false);
+
+		const labelFor = (driverType: "tencent_cos") =>
+			driverType === "tencent_cos" ? "Tencent COS" : driverType;
+		expect(
+			getS3CompatibleDriverPromotionTarget(
+				{
+					driver_type: "s3",
+					endpoint: "https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com",
+				},
+				labelFor,
+			),
+		).toEqual({
+			driverLabel: "Tencent COS",
+			driverType: "tencent_cos",
+		});
+		expect(
+			getS3CompatibleDriverPromotionTarget(
+				{
+					driver_type: "s3",
+					endpoint: "https://s3.amazonaws.com",
+				},
+				labelFor,
+			),
+		).toBeNull();
+		expect(
+			getS3CompatibleDriverPromotionTarget(
+				{
+					driver_type: "tencent_cos",
+					endpoint: "https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com",
+				},
+				labelFor,
+			),
+		).toBeNull();
+		expect(getS3CompatibleDriverPromotionTarget(null, labelFor)).toBeNull();
+	});
 
 	it("maps an existing policy into form state", () => {
 		expect(
@@ -62,13 +111,13 @@ describe("storagePolicyDialogShared", () => {
 		});
 	});
 
-	it("builds create payloads with normalized S3 fields", () => {
+	it("builds create payloads with trimmed S3 fields", () => {
 		expect(
 			buildCreatePolicyPayload({
 				name: "Media",
 				driver_type: "s3",
-				endpoint: "https://demo.r2.cloudflarestorage.com/photos",
-				bucket: "",
+				endpoint: " https://s3.example.test/custom/path ",
+				bucket: " photos ",
 				access_key: "AKIA",
 				secret_key: "SECRET",
 				base_path: "videos",
@@ -88,7 +137,7 @@ describe("storagePolicyDialogShared", () => {
 		).toEqual({
 			name: "Media",
 			driver_type: "s3",
-			endpoint: "https://demo.r2.cloudflarestorage.com",
+			endpoint: "https://s3.example.test/custom/path",
 			bucket: "photos",
 			access_key: "AKIA",
 			secret_key: "SECRET",
@@ -100,6 +149,35 @@ describe("storagePolicyDialogShared", () => {
 				s3_upload_strategy: "presigned",
 				s3_download_strategy: "relay_stream",
 			},
+		});
+
+		expect(
+			buildCreatePolicyPayload({
+				name: "Virtual Hosted S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.test",
+				bucket: "photos",
+				access_key: "AKIA",
+				secret_key: "SECRET",
+				base_path: "",
+				remote_node_id: "",
+				max_file_size: "",
+				chunk_size: "5",
+				is_default: false,
+				content_dedup: false,
+				remote_download_strategy: "relay_stream",
+				remote_upload_strategy: "relay_stream",
+				s3_upload_strategy: "relay_stream",
+				s3_download_strategy: "relay_stream",
+				s3_path_style: false,
+				storage_native_processing_enabled: false,
+				thumbnail_processor: null,
+				thumbnail_extensions: [],
+			}).options,
+		).toEqual({
+			s3_upload_strategy: "relay_stream",
+			s3_download_strategy: "relay_stream",
+			s3_path_style: false,
 		});
 	});
 
@@ -274,6 +352,10 @@ describe("storagePolicyDialogShared", () => {
 			secret_key: undefined,
 			base_path: "tenant-a/uploads",
 			remote_node_id: 9,
+			options: {
+				remote_download_strategy: "presigned",
+				remote_upload_strategy: "presigned",
+			},
 		});
 	});
 

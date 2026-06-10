@@ -32,16 +32,25 @@ interface StoragePolicyDialogProps {
 	form: PolicyFormData;
 	policyCapacity: StoragePolicyCapacityInfo | null;
 	policyCapacityLoading: boolean;
+	s3CompatibleDriverSuggestionTargetLabel: string | null;
+	s3DriverPromotionBlocked: boolean;
+	s3DriverPromotionConfirmOpen: boolean;
+	s3DriverPromotionSubmitting: boolean;
+	s3DriverPromotionTargetLabel: string | null;
 	remoteNodes: RemoteNodeInfo[];
 	submitting: boolean;
 	createStep: number;
 	createStepTouched: boolean;
 	endpointValidationMessage: string | null;
 	saveAnywayConfirmOpen: boolean;
+	onApplyS3CompatibleDriverSuggestion: () => void;
 	onOpenChange: (open: boolean) => void;
 	onCancelSaveAnyway: () => void;
+	onCancelS3DriverPromotion: () => void;
 	onConfirmSaveAnyway: () => void;
+	onConfirmS3DriverPromotion: () => void;
 	onSubmit: () => void;
+	onRequestS3DriverPromotion: () => void;
 	onRunConnectionTest: () => Promise<boolean>;
 	onFieldChange: <K extends keyof PolicyFormData>(
 		key: K,
@@ -80,16 +89,25 @@ function useStoragePolicyDialogContent({
 	form,
 	policyCapacity,
 	policyCapacityLoading,
+	s3CompatibleDriverSuggestionTargetLabel,
+	s3DriverPromotionBlocked,
+	s3DriverPromotionConfirmOpen,
+	s3DriverPromotionSubmitting,
+	s3DriverPromotionTargetLabel,
 	remoteNodes,
 	submitting,
 	createStep,
 	createStepTouched,
 	endpointValidationMessage,
 	saveAnywayConfirmOpen,
+	onApplyS3CompatibleDriverSuggestion,
 	onOpenChange,
 	onCancelSaveAnyway,
+	onCancelS3DriverPromotion,
 	onConfirmSaveAnyway,
+	onConfirmS3DriverPromotion,
 	onSubmit,
+	onRequestS3DriverPromotion,
 	onRunConnectionTest,
 	onFieldChange,
 	onDriverTypeChange,
@@ -375,8 +393,14 @@ function useStoragePolicyDialogContent({
 								onCreateStepChange={onCreateStepChange}
 								onDriverTypeChange={onDriverTypeChange}
 								onFieldChange={onFieldChange}
+								onApplyS3CompatibleDriverSuggestion={
+									onApplyS3CompatibleDriverSuggestion
+								}
 								onSyncNormalizedS3Form={onSyncNormalizedS3Form}
 								remoteNodes={remoteNodes}
+								s3CompatibleDriverSuggestionTargetLabel={
+									s3CompatibleDriverSuggestionTargetLabel
+								}
 								stepAnimationKey={stepAnimationKey}
 								storageOptions={storageOptions}
 								summaryItems={createSummaryItems}
@@ -392,10 +416,16 @@ function useStoragePolicyDialogContent({
 								form={form}
 								policyCapacity={policyCapacity}
 								policyCapacityLoading={policyCapacityLoading}
+								s3DriverPromotionBlocked={s3DriverPromotionBlocked}
+								s3DriverPromotionConfirmOpen={s3DriverPromotionConfirmOpen}
+								s3DriverPromotionSubmitting={s3DriverPromotionSubmitting}
+								s3DriverPromotionTargetLabel={s3DriverPromotionTargetLabel}
 								onFieldChange={onFieldChange}
+								onCancelS3DriverPromotion={onCancelS3DriverPromotion}
+								onConfirmS3DriverPromotion={onConfirmS3DriverPromotion}
+								onRequestS3DriverPromotion={onRequestS3DriverPromotion}
 								onSyncNormalizedS3Form={onSyncNormalizedS3Form}
 								remoteNodes={remoteNodes}
-								summaryItems={createSummaryItems}
 							/>
 						)}
 					</div>

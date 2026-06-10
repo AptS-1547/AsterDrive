@@ -13,6 +13,8 @@ struct PolicyUploadSessionSpec<'a> {
     policy_id: i64,
     user_id: i64,
     s3_temp_key: Option<&'a str>,
+    status: Option<aster_drive::types::UploadSessionStatus>,
+    expires_at: Option<chrono::DateTime<Utc>>,
 }
 
 async fn create_policy_upload_session(
@@ -20,7 +22,6 @@ async fn create_policy_upload_session(
     spec: PolicyUploadSessionSpec<'_>,
 ) {
     use aster_drive::db::repository::upload_session_repo;
-    use aster_drive::types::UploadSessionStatus;
     use sea_orm::Set;
 
     let now = Utc::now();
@@ -38,12 +39,14 @@ async fn create_policy_upload_session(
             received_count: Set(1),
             folder_id: Set(None),
             policy_id: Set(spec.policy_id),
-            status: Set(UploadSessionStatus::Uploading),
+            status: Set(spec
+                .status
+                .unwrap_or(aster_drive::types::UploadSessionStatus::Uploading)),
             s3_temp_key: Set(spec.s3_temp_key.map(str::to_string)),
             s3_multipart_id: Set(None),
             file_id: Set(None),
             created_at: Set(now),
-            expires_at: Set(now + Duration::hours(1)),
+            expires_at: Set(spec.expires_at.unwrap_or(now + Duration::hours(1))),
             updated_at: Set(now),
         },
     )
@@ -84,6 +87,7 @@ async fn test_user_default_policy_switch_updates_snapshot_immediately() {
                 secret_key: String::new(),
                 base_path: alternate_base_path.clone(),
                 remote_node_id: None,
+                options: Default::default(),
             },
             max_file_size: 0,
             chunk_size: None,
@@ -210,7 +214,8 @@ async fn test_policy_crud() {
             "max_file_size": 104857600,
             "chunk_size": 8388608,
             "options": serde_json::json!({
-                "s3_upload_strategy": "presigned"
+                "s3_upload_strategy": "presigned",
+                "s3_path_style": false
             })
         }))
         .to_request();
@@ -220,6 +225,7 @@ async fn test_policy_crud() {
     assert_eq!(body["data"]["name"], "Test S3");
     assert_eq!(body["data"]["chunk_size"], 8_388_608);
     assert_eq!(body["data"]["options"]["s3_upload_strategy"], "presigned");
+    assert_eq!(body["data"]["options"]["s3_path_style"], false);
     let policy_id = body["data"]["id"].as_i64().unwrap();
 
     // 获取单个
@@ -230,6 +236,8 @@ async fn test_policy_crud() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["options"]["s3_path_style"], false);
 
     // 更新策略
     let req = test::TestRequest::patch()
@@ -262,6 +270,418 @@ async fn test_policy_crud() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
     assert_eq!(body["data"]["total"], 1);
+}
+
+#[actix_web::test]
+async fn test_policy_promotes_generic_s3_policy_to_tencent_cos() {
+    use aster_drive::services::policy_service;
+    use aster_drive::types::{
+        DriverType, S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions,
+        parse_storage_policy_options,
+    };
+
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let policy = policy_service::create(
+        &state,
+        policy_service::CreateStoragePolicyInput {
+            name: "COS via S3".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::S3,
+                endpoint: "https://cos.ap-guangzhou.myqcloud.com".to_string(),
+                bucket: "bucket-1250000000".to_string(),
+                access_key: "ak".to_string(),
+                secret_key: "sk".to_string(),
+                base_path: "tenant/prefix".to_string(),
+                remote_node_id: None,
+                options: Default::default(),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            allowed_types: None,
+            options: Some(StoragePolicyOptions {
+                s3_upload_strategy: Some(S3UploadStrategy::Presigned),
+                s3_download_strategy: Some(S3DownloadStrategy::Presigned),
+                s3_path_style: Some(false),
+                ..Default::default()
+            }),
+        },
+    )
+    .await
+    .unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policies/{}/promote-s3-driver",
+            policy.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target_driver_type": "tencent_cos",
+            "endpoint": "https://cos.ap-guangzhou.myqcloud.com",
+            "bucket": "bucket-1250000000"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["driver_type"], "tencent_cos");
+    assert_eq!(body["data"]["bucket"], "bucket-1250000000");
+    assert_eq!(body["data"]["base_path"], "tenant/prefix");
+    assert_eq!(body["data"]["options"]["s3_upload_strategy"], "presigned");
+    assert_eq!(body["data"]["options"]["s3_download_strategy"], "presigned");
+    assert_eq!(body["data"]["options"]["s3_path_style"], false);
+
+    let stored = aster_drive::db::repository::policy_repo::find_by_id(&db, policy.id)
+        .await
+        .unwrap();
+    assert_eq!(stored.driver_type, DriverType::TencentCos);
+    assert_eq!(stored.bucket, "bucket-1250000000");
+    assert_eq!(stored.base_path, "tenant/prefix");
+    let stored_options = parse_storage_policy_options(stored.options.as_ref());
+    assert_eq!(
+        stored_options.effective_s3_upload_strategy(),
+        S3UploadStrategy::Presigned
+    );
+    assert_eq!(
+        stored_options.effective_s3_download_strategy(),
+        S3DownloadStrategy::Presigned
+    );
+    assert!(!stored_options.effective_s3_path_style());
+}
+
+#[actix_web::test]
+async fn test_policy_promote_s3_driver_rejects_bucket_change() {
+    use aster_drive::services::policy_service;
+    use aster_drive::types::DriverType;
+
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let policy = policy_service::create(
+        &state,
+        policy_service::CreateStoragePolicyInput {
+            name: "Bucket Guard S3".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::S3,
+                endpoint: "https://cos.ap-guangzhou.myqcloud.com".to_string(),
+                bucket: "bucket-1250000000".to_string(),
+                access_key: "ak".to_string(),
+                secret_key: "sk".to_string(),
+                base_path: "tenant/prefix".to_string(),
+                remote_node_id: None,
+                options: Default::default(),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            allowed_types: None,
+            options: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policies/{}/promote-s3-driver",
+            policy.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target_driver_type": "tencent_cos",
+            "endpoint": "https://cos.ap-guangzhou.myqcloud.com",
+            "bucket": "other-bucket-1250000000"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "bucket cannot be changed by S3-compatible driver promotion"
+    );
+}
+
+#[actix_web::test]
+async fn test_policy_promote_s3_driver_rejects_non_generic_s3_source() {
+    use aster_drive::services::policy_service;
+    use aster_drive::types::DriverType;
+
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let base_path = format!(
+        "/tmp/asterdrive-policy-promote-non-s3-{}",
+        uuid::Uuid::new_v4()
+    );
+    std::fs::create_dir_all(&base_path).unwrap();
+    let policy = policy_service::create(
+        &state,
+        policy_service::CreateStoragePolicyInput {
+            name: "Local Source".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::Local,
+                endpoint: String::new(),
+                bucket: String::new(),
+                access_key: String::new(),
+                secret_key: String::new(),
+                base_path,
+                remote_node_id: None,
+                options: Default::default(),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            allowed_types: None,
+            options: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policies/{}/promote-s3-driver",
+            policy.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target_driver_type": "tencent_cos",
+            "endpoint": "https://cos.ap-guangzhou.myqcloud.com",
+            "bucket": "bucket-1250000000"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "only generic S3-compatible policies can be promoted"
+    );
+}
+
+#[actix_web::test]
+async fn test_policy_promote_s3_driver_rejects_unsupported_target() {
+    use aster_drive::services::policy_service;
+    use aster_drive::types::DriverType;
+
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let policy = policy_service::create(
+        &state,
+        policy_service::CreateStoragePolicyInput {
+            name: "Unsupported Target S3".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::S3,
+                endpoint: "https://s3.amazonaws.com".to_string(),
+                bucket: "bucket-a".to_string(),
+                access_key: "ak".to_string(),
+                secret_key: "sk".to_string(),
+                base_path: "tenant/prefix".to_string(),
+                remote_node_id: None,
+                options: Default::default(),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            allowed_types: None,
+            options: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policies/{}/promote-s3-driver",
+            policy.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target_driver_type": "s3",
+            "endpoint": "https://s3.amazonaws.com",
+            "bucket": "bucket-a"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "promoting S3-compatible policy to 's3' is not supported"
+    );
+
+    let stored = aster_drive::db::repository::policy_repo::find_by_id(&db, policy.id)
+        .await
+        .unwrap();
+    assert_eq!(stored.driver_type, DriverType::S3);
+}
+
+#[actix_web::test]
+async fn test_policy_promote_s3_driver_rejects_active_upload_sessions() {
+    use aster_drive::services::policy_service;
+    use aster_drive::types::DriverType;
+
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let policy = policy_service::create(
+        &state,
+        policy_service::CreateStoragePolicyInput {
+            name: "Active Session S3".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::S3,
+                endpoint: "https://cos.ap-guangzhou.myqcloud.com".to_string(),
+                bucket: "bucket-1250000000".to_string(),
+                access_key: "ak".to_string(),
+                secret_key: "sk".to_string(),
+                base_path: "tenant/prefix".to_string(),
+                remote_node_id: None,
+                options: Default::default(),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            allowed_types: None,
+            options: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let user = aster_drive::db::repository::user_repo::find_by_username(&db, "testuser")
+        .await
+        .unwrap()
+        .expect("registered user should exist");
+    let upload_id = uuid::Uuid::new_v4().to_string();
+    create_policy_upload_session(
+        &state,
+        PolicyUploadSessionSpec {
+            upload_id: &upload_id,
+            policy_id: policy.id,
+            user_id: user.id,
+            s3_temp_key: None,
+            status: None,
+            expires_at: None,
+        },
+    )
+    .await;
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policies/{}/promote-s3-driver",
+            policy.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target_driver_type": "tencent_cos",
+            "endpoint": "https://cos.ap-guangzhou.myqcloud.com",
+            "bucket": "bucket-1250000000"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "cannot promote policy: 1 active upload session(s) still reference it"
+    );
+
+    let stored = aster_drive::db::repository::policy_repo::find_by_id(&db, policy.id)
+        .await
+        .unwrap();
+    assert_eq!(stored.driver_type, DriverType::S3);
+}
+
+#[actix_web::test]
+async fn test_policy_promote_s3_driver_ignores_expired_upload_sessions() {
+    use aster_drive::services::policy_service;
+    use aster_drive::types::DriverType;
+
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let policy = policy_service::create(
+        &state,
+        policy_service::CreateStoragePolicyInput {
+            name: "Expired Session S3".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::S3,
+                endpoint: "https://cos.ap-guangzhou.myqcloud.com".to_string(),
+                bucket: "bucket-1250000000".to_string(),
+                access_key: "ak".to_string(),
+                secret_key: "sk".to_string(),
+                base_path: "tenant/prefix".to_string(),
+                remote_node_id: None,
+                options: Default::default(),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            allowed_types: None,
+            options: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let user = aster_drive::db::repository::user_repo::find_by_username(&db, "testuser")
+        .await
+        .unwrap()
+        .expect("registered user should exist");
+    let upload_id = uuid::Uuid::new_v4().to_string();
+    create_policy_upload_session(
+        &state,
+        PolicyUploadSessionSpec {
+            upload_id: &upload_id,
+            policy_id: policy.id,
+            user_id: user.id,
+            s3_temp_key: None,
+            status: None,
+            expires_at: Some(Utc::now() - Duration::hours(1)),
+        },
+    )
+    .await;
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/policies/{}/promote-s3-driver",
+            policy.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target_driver_type": "tencent_cos",
+            "endpoint": "https://cos.ap-guangzhou.myqcloud.com",
+            "bucket": "bucket-1250000000"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let stored = aster_drive::db::repository::policy_repo::find_by_id(&db, policy.id)
+        .await
+        .unwrap();
+    assert_eq!(stored.driver_type, DriverType::TencentCos);
 }
 
 #[actix_web::test]
@@ -317,6 +737,8 @@ async fn test_policy_delete_rejects_upload_sessions_unless_forced() {
             policy_id,
             user_id: user.id,
             s3_temp_key: None,
+            status: None,
+            expires_at: None,
         },
     )
     .await;
@@ -422,6 +844,8 @@ async fn test_policy_force_delete_schedules_late_temp_object_cleanup() {
             policy_id,
             user_id: user.id,
             s3_temp_key: Some(&temp_key),
+            status: None,
+            expires_at: None,
         },
     )
     .await;
@@ -519,6 +943,7 @@ async fn test_policy_force_delete_still_rejects_blob_references() {
                 secret_key: String::new(),
                 base_path,
                 remote_node_id: None,
+                options: Default::default(),
             },
             max_file_size: 0,
             chunk_size: None,
@@ -1779,6 +2204,7 @@ async fn test_resolve_policy_fails_when_policy_group_has_no_matching_rule() {
                 secret_key: String::new(),
                 base_path: overflow_path.clone(),
                 remote_node_id: None,
+                options: Default::default(),
             },
             max_file_size: 0,
             chunk_size: None,

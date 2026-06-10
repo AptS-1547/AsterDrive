@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import type { SharedFieldProps } from "./StoragePolicyFieldTypes";
 
@@ -62,6 +63,9 @@ export function S3ConnectionFields({
 					<p className="text-xs text-destructive">{bucketError}</p>
 				) : null}
 			</div>
+			{form.driver_type === "s3" ? (
+				<S3PathStyleField form={form} t={t} onFieldChange={onFieldChange} />
+			) : null}
 			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">
 					<Label htmlFor="access_key">{t("access_key")}</Label>
@@ -98,5 +102,21 @@ export function S3ConnectionFields({
 				</div>
 			</div>
 		</>
+	);
+}
+
+function S3PathStyleField({ form, onFieldChange, t }: SharedFieldProps) {
+	return (
+		<div className="space-y-2 pt-1">
+			<div className="flex items-center gap-2">
+				<Switch
+					id="s3_path_style"
+					checked={form.s3_path_style ?? true}
+					onCheckedChange={(value) => onFieldChange("s3_path_style", value)}
+				/>
+				<Label htmlFor="s3_path_style">{t("s3_path_style")}</Label>
+			</div>
+			<p className="text-xs text-muted-foreground">{t("s3_path_style_desc")}</p>
+		</div>
 	);
 }

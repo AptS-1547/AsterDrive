@@ -123,6 +123,12 @@ describe("StoragePolicyBasicFields", () => {
 			"placeholder",
 			"0 = core:unlimited",
 		);
+		expect(screen.getByText("max_file_size_desc")).toBeInTheDocument();
+		expect(screen.getByText("chunk_size_desc")).toBeInTheDocument();
+		expect(screen.getByTestId("policy-limits-fields")).toHaveClass(
+			"grid",
+			"md:grid-cols-2",
+		);
 
 		fireEvent.change(screen.getByLabelText("core:name"), {
 			target: { value: "Primary" },

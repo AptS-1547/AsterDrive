@@ -37,13 +37,13 @@ describe("managedIngressProfileDialogShared", () => {
 		});
 	});
 
-	it("builds create payloads with normalized s3 fields", () => {
+	it("builds create payloads with trimmed s3 fields", () => {
 		expect(
 			buildCreateManagedIngressProfilePayload({
 				name: "Archive",
 				driver_type: "s3",
-				endpoint: "https://demo.r2.cloudflarestorage.com/uploads",
-				bucket: "",
+				endpoint: " https://s3.example.test/uploads ",
+				bucket: " uploads ",
 				access_key: "ACCESS",
 				secret_key: "SECRET",
 				base_path: "tenant-a/incoming",
@@ -53,7 +53,7 @@ describe("managedIngressProfileDialogShared", () => {
 		).toEqual({
 			name: "Archive",
 			driver_type: "s3",
-			endpoint: "https://demo.r2.cloudflarestorage.com",
+			endpoint: "https://s3.example.test/uploads",
 			bucket: "uploads",
 			access_key: "ACCESS",
 			secret_key: "SECRET",
@@ -69,8 +69,8 @@ describe("managedIngressProfileDialogShared", () => {
 				{
 					name: "Archive",
 					driver_type: "s3",
-					endpoint: "https://demo.r2.cloudflarestorage.com/uploads",
-					bucket: "",
+					endpoint: "https://s3.example.test/uploads",
+					bucket: "uploads",
 					access_key: "",
 					secret_key: "",
 					base_path: "tenant-a/incoming",
@@ -81,7 +81,7 @@ describe("managedIngressProfileDialogShared", () => {
 					profile_key: "igp_archive",
 					name: "Archive",
 					driver_type: "s3",
-					endpoint: "https://demo.r2.cloudflarestorage.com",
+					endpoint: "https://s3.example.test",
 					bucket: "uploads",
 					base_path: "tenant-a/incoming",
 					max_file_size: 1024,
@@ -96,7 +96,7 @@ describe("managedIngressProfileDialogShared", () => {
 		).toEqual({
 			name: "Archive",
 			driver_type: "s3",
-			endpoint: "https://demo.r2.cloudflarestorage.com",
+			endpoint: "https://s3.example.test/uploads",
 			bucket: "uploads",
 			base_path: "tenant-a/incoming",
 			max_file_size: 0,

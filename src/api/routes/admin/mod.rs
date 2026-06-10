@@ -16,7 +16,8 @@ pub use crate::api::dto::admin::{
     CreateUserInvitationReq, CreateUserReq, DeletePolicyQuery, DryRunStoragePolicyMigrationReq,
     ExecuteConfigActionReq, ExecuteConfigActionResp, MigratePolicyGroupAssignmentsReq,
     PatchPolicyGroupReq, PatchPolicyReq, PatchRemoteNodeReq, PatchUserReq, PolicyGroupItemReq,
-    ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq, TestRemoteNodeParamsReq,
+    PromoteS3CompatiblePolicyDriverReq, ResetUserPasswordReq, SetConfigReq, TestPolicyParamsReq,
+    TestRemoteNodeParamsReq,
 };
 
 pub(crate) mod audit_logs;
@@ -52,8 +53,8 @@ pub use overview::get_overview;
 pub use policies::{
     create_policy, create_policy_group, delete_policy, delete_policy_group, get_policy,
     get_policy_capacity, get_policy_group, list_policies, list_policy_groups,
-    migrate_policy_group_assignments, test_policy_connection, test_policy_params, update_policy,
-    update_policy_group,
+    migrate_policy_group_assignments, promote_s3_compatible_policy_driver, test_policy_connection,
+    test_policy_params, update_policy, update_policy_group,
 };
 pub use remote_nodes::{
     create_remote_node, create_remote_node_enrollment_token, create_remote_node_ingress_profile,
@@ -103,6 +104,10 @@ pub fn routes(
                     .route(
                         "/policies/{id}/test",
                         web::post().to(test_policy_connection),
+                    )
+                    .route(
+                        "/policies/{id}/promote-s3-driver",
+                        web::post().to(promote_s3_compatible_policy_driver),
                     )
                     .route("/policies/test", web::post().to(test_policy_params))
                     // remote nodes

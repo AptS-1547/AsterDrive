@@ -23,6 +23,7 @@ const mockState = vi.hoisted(() => ({
 	listRemoteNodes: vi.fn(),
 	loading: false,
 	navigate: vi.fn(),
+	promoteS3CompatibleDriver: vi.fn(),
 	reload: vi.fn(),
 	remoteNodes: [] as Array<Record<string, unknown>>,
 	searchParams: "",
@@ -45,7 +46,10 @@ vi.mock("react-router-dom", () => ({
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string) => {
+		t: (key: string, values?: Record<string, string | number>) => {
+			if (typeof values?.driver === "string") {
+				return `${key}:${values.driver}`;
+			}
 			switch (key) {
 				case "driver_type_local":
 					return "Local";
@@ -128,6 +132,16 @@ vi.mock("@/components/common/ConfirmDialog", () => ({
 				</button>
 			</div>
 		) : null,
+}));
+
+vi.mock("@/components/common/AnimatedCollapsible", () => ({
+	AnimatedCollapsible: ({
+		children,
+		open,
+	}: {
+		children: React.ReactNode;
+		open: boolean;
+	}) => (open ? <div>{children}</div> : null),
 }));
 
 vi.mock("@/components/layout/AdminLayout", () => ({
@@ -518,6 +532,8 @@ vi.mock("@/services/adminService", () => ({
 		})),
 		list: (...args: unknown[]) => mockState.listPolicies(...args),
 		listAll: async () => mockState.items,
+		promoteS3CompatibleDriver: (...args: unknown[]) =>
+			mockState.promoteS3CompatibleDriver(...args),
 		testConnection: (...args: unknown[]) => mockState.testConnection(...args),
 		testParams: (...args: unknown[]) => mockState.testParams(...args),
 		update: (...args: unknown[]) => mockState.update(...args),
@@ -587,6 +603,7 @@ describe("AdminPoliciesPage", () => {
 		mockState.listRemoteNodes.mockReset();
 		mockState.loading = false;
 		mockState.navigate.mockReset();
+		mockState.promoteS3CompatibleDriver.mockReset();
 		mockState.reload.mockReset();
 		mockState.remoteNodes = [];
 		mockState.searchParams = "";
@@ -647,10 +664,21 @@ describe("AdminPoliciesPage", () => {
 		}));
 		mockState.testConnection.mockResolvedValue(undefined);
 		mockState.testParams.mockResolvedValue(undefined);
+		mockState.promoteS3CompatibleDriver.mockImplementation(
+			async (id, payload) =>
+				createPolicy({
+					...((mockState.items.find((policy) => policy.id === id) ??
+						{}) as Record<string, unknown>),
+					driver_type: (payload as { target_driver_type: string })
+						.target_driver_type,
+					id,
+				}),
+		);
 		mockState.update.mockImplementation(async (id, payload) =>
 			createPolicy({
+				...((mockState.items.find((policy) => policy.id === id) ??
+					{}) as Record<string, unknown>),
 				...(payload as Record<string, unknown>),
-				driver_type: "s3",
 				id,
 			}),
 		);
@@ -1105,6 +1133,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: undefined,
 				driver_type: "local",
 				endpoint: undefined,
+				options: {},
 				remote_node_id: undefined,
 				secret_key: undefined,
 			});
@@ -1291,6 +1320,10 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 				remote_node_id: undefined,
 				secret_key: undefined,
 			});
@@ -1354,9 +1387,6 @@ describe("AdminPoliciesPage", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
 
-		// The connection test payload intentionally includes only connection
-		// fields; normalized storage-native suffix options are asserted in the
-		// create payload below.
 		await waitFor(() => {
 			expect(mockState.testParams).toHaveBeenCalledWith({
 				access_key: "AKID",
@@ -1364,6 +1394,15 @@ describe("AdminPoliciesPage", () => {
 				bucket: "media-1250000000",
 				driver_type: "tencent_cos",
 				endpoint: "https://cos.ap-guangzhou.myqcloud.com",
+				options: {
+					media_metadata_extensions: ["mp4", "mov"],
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+					storage_native_media_metadata_enabled: true,
+					storage_native_processing_enabled: true,
+					thumbnail_extensions: ["png", "jpg", "webp"],
+					thumbnail_processor: "storage_native",
+				},
 				remote_node_id: undefined,
 				secret_key: "SECRET",
 			});
@@ -1393,6 +1432,49 @@ describe("AdminPoliciesPage", () => {
 			});
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");
+	});
+
+	it("suggests the specialized driver when a generic S3 create uses a known provider endpoint", () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("s3");
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "COS via S3" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: {
+				value: "https://media-1250000000.cos.ap-guangzhou.myqcloud.com",
+			},
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "media-1250000000" },
+		});
+
+		expect(
+			screen.getByText("policy_s3_driver_suggestion_title:Tencent COS"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("policy_s3_driver_suggestion_desc:Tencent COS"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /policy_s3_driver_suggestion_action:Tencent COS/,
+			}),
+		);
+
+		expect(screen.getByText("cos_endpoint_hint")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("COS via S3")).toBeInTheDocument();
+		expect(
+			screen.getByDisplayValue(
+				"https://media-1250000000.cos.ap-guangzhou.myqcloud.com",
+			),
+		).toBeInTheDocument();
+		expect(screen.getByDisplayValue("media-1250000000")).toBeInTheDocument();
+		expect(
+			screen.queryByText("policy_s3_driver_suggestion_title:Tencent COS"),
+		).not.toBeInTheDocument();
 	});
 
 	it("tests remote policy params and creates a bound remote policy", async () => {
@@ -1429,6 +1511,10 @@ describe("AdminPoliciesPage", () => {
 				bucket: undefined,
 				driver_type: "remote",
 				endpoint: undefined,
+				options: {
+					remote_download_strategy: "relay_stream",
+					remote_upload_strategy: "relay_stream",
+				},
 				remote_node_id: 7,
 				secret_key: undefined,
 			});
@@ -1602,11 +1688,7 @@ describe("AdminPoliciesPage", () => {
 		openEditPolicy("Edit Me");
 
 		const editShell = screen.getByTestId("policy-edit-shell");
-		expect(editShell).toHaveClass(
-			"grid",
-			"gap-6",
-			"lg:grid-cols-[300px_minmax(0,1fr)]",
-		);
+		expect(editShell).toHaveClass("space-y-4");
 		expect(
 			screen.getByText("policy_editor_overview_title"),
 		).toBeInTheDocument();
@@ -1614,22 +1696,28 @@ describe("AdminPoliciesPage", () => {
 			screen.queryByText("policy_editor_storage_title"),
 		).not.toBeInTheDocument();
 		expect(screen.getByText("policy_editor_rules_title")).toBeInTheDocument();
-		expect(screen.getByTestId("policy-summary-card")).toBeInTheDocument();
-		expect(screen.getByTestId("policy-summary-card").parentElement).toHaveClass(
-			"order-2",
-			"lg:sticky",
-			"lg:top-0",
-			"lg:order-1",
-			"lg:self-start",
+		expect(screen.queryByTestId("policy-summary-card")).not.toBeInTheDocument();
+		expect(screen.getByTestId("policy-edit-context-bar")).toBeInTheDocument();
+		expect(screen.getByText("policy_edit_context_title")).toBeInTheDocument();
+		expect(
+			screen.getByText("policy_edit_default_disabled"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("policy_edit_context_local_desc"),
+		).toBeInTheDocument();
+		expect(screen.getByText("policy_capacity_title")).toBeInTheDocument();
+		expect(screen.getByTestId("policy-edit-capacity-summary")).toHaveClass(
+			"md:border-l",
+			"md:pl-4",
 		);
 		expect(
 			screen.queryByText("policy_wizard_driver_panel_title"),
 		).not.toBeInTheDocument();
-		expect(screen.getByTestId("policy-driver-badge")).toHaveAttribute(
+		expect(screen.getByTestId("policy-edit-driver-badge")).toHaveAttribute(
 			"data-variant",
 			"outline",
 		);
-		expect(screen.getByTestId("policy-driver-badge")).toHaveClass(
+		expect(screen.getByTestId("policy-edit-driver-badge")).toHaveClass(
 			"bg-emerald-500/10",
 			"text-emerald-600",
 		);
@@ -1664,11 +1752,11 @@ describe("AdminPoliciesPage", () => {
 		openEditPolicy("Archive S3");
 
 		expect(screen.getByText("s3_endpoint_hint")).toBeInTheDocument();
-		expect(screen.getByTestId("policy-driver-badge")).toHaveAttribute(
+		expect(screen.getByTestId("policy-edit-driver-badge")).toHaveAttribute(
 			"data-variant",
 			"outline",
 		);
-		expect(screen.getByTestId("policy-driver-badge")).toHaveClass(
+		expect(screen.getByTestId("policy-edit-driver-badge")).toHaveClass(
 			"bg-blue-500/10",
 			"text-blue-600",
 		);
@@ -1714,6 +1802,10 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 				remote_node_id: undefined,
 				secret_key: "NEWSECRET",
 			});
@@ -1755,6 +1847,135 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});
 
+	it("promotes a saved generic S3 policy to a specialized S3-compatible driver", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 21,
+				name: "Legacy COS S3",
+				driver_type: "s3",
+				endpoint: "https://media-1250000000.cos.ap-guangzhou.myqcloud.com",
+				bucket: "media-1250000000",
+				base_path: "tenant-cos",
+				options: {
+					s3_download_strategy: "presigned",
+					s3_upload_strategy: "presigned",
+					s3_path_style: false,
+				},
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Legacy COS S3");
+
+		expect(
+			screen.getByText("policy_s3_driver_promotion_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("policy_s3_driver_promotion_desc:Tencent COS"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /policy_s3_driver_promotion_action:Tencent COS/,
+			}),
+		);
+		expect(
+			screen.getByText("policy_s3_driver_promotion_confirm_desc:Tencent COS"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "policy_s3_driver_promotion_confirm",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.promoteS3CompatibleDriver).toHaveBeenCalledWith(21, {
+				target_driver_type: "tencent_cos",
+				endpoint: "https://media-1250000000.cos.ap-guangzhou.myqcloud.com",
+				bucket: "media-1250000000",
+			});
+		});
+		expect(mockState.update).not.toHaveBeenCalled();
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"policy_s3_driver_promotion_success:Tencent COS",
+		);
+		expect(screen.getByTestId("policy-edit-driver-badge")).toHaveTextContent(
+			"Tencent COS",
+		);
+		expect(
+			screen.getByText("policy_storage_native_section_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText("policy_s3_driver_promotion_title"),
+		).not.toBeInTheDocument();
+	});
+
+	it("shows the specialized driver promotion hint while editing a matching S3 draft", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 22,
+				name: "Draft COS S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "draft-bucket",
+				base_path: "tenant-draft",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Draft COS S3");
+
+		expect(
+			screen.queryByText("policy_s3_driver_promotion_title"),
+		).not.toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: {
+				value: "https://draft-bucket.cos.ap-guangzhou.myqcloud.com",
+			},
+		});
+
+		expect(
+			screen.getByText("policy_s3_driver_promotion_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("policy_s3_driver_promotion_desc:Tencent COS"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("policy_s3_driver_promotion_unsaved_blocked"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", {
+				name: /policy_s3_driver_promotion_action:Tencent COS/,
+			}),
+		).toBeDisabled();
+
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledWith(
+				22,
+				expect.objectContaining({
+					endpoint: "https://draft-bucket.cos.ap-guangzhou.myqcloud.com",
+				}),
+			);
+		});
+		expect(screen.getByDisplayValue("Draft COS S3")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", {
+				name: /policy_s3_driver_promotion_action:Tencent COS/,
+			}),
+		).toBeEnabled();
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
 	it("parses and updates local content dedup options", async () => {
 		mockState.items = [
 			createPolicy({
@@ -1791,7 +2012,7 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});
 
-	it("splits an R2 bucket path into the endpoint and bucket inputs on blur", () => {
+	it("trims S3-compatible endpoint and bucket inputs on blur without provider-specific rewriting", () => {
 		render(<AdminPoliciesPage />);
 
 		openCreateWizard("s3");
@@ -1799,32 +2020,13 @@ describe("AdminPoliciesPage", () => {
 		const endpointInput = screen.getByLabelText("endpoint");
 		fireEvent.change(endpointInput, {
 			target: {
-				value: "https://demo-account.r2.cloudflarestorage.com/photos",
+				value: " https://s3.example.test/custom/path ",
 			},
 		});
 		fireEvent.blur(endpointInput);
 
 		expect(
-			screen.getByDisplayValue("https://demo-account.r2.cloudflarestorage.com"),
-		).toBeInTheDocument();
-		expect(screen.getByDisplayValue("photos")).toBeInTheDocument();
-	});
-
-	it("marks public r2.dev endpoints as invalid", () => {
-		render(<AdminPoliciesPage />);
-
-		openCreateWizard("s3");
-
-		const endpointInput = screen.getByLabelText("endpoint");
-		fireEvent.change(endpointInput, {
-			target: {
-				value: "https://pub-dsaifhoiuahfas.r2.dev/aster-drive",
-			},
-		});
-
-		expect(endpointInput).toHaveAttribute("aria-invalid", "true");
-		expect(
-			screen.getByText("s3_endpoint_public_r2_dev_error"),
+			screen.getByDisplayValue("https://s3.example.test/custom/path"),
 		).toBeInTheDocument();
 	});
 
@@ -1891,6 +2093,10 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				driver_type: "s3",
 				endpoint: "http://s3.example.com",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 				remote_node_id: undefined,
 				secret_key: undefined,
 			});
@@ -2012,6 +2218,10 @@ describe("AdminPoliciesPage", () => {
 				bucket: "relay-bucket",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 				remote_node_id: undefined,
 				secret_key: "NEWSECRET",
 			});
@@ -2049,7 +2259,7 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});
 
-	it("shows unlimited for zero max file size while preserving raw limit inputs in edit mode", () => {
+	it("preserves zero limit inputs in edit mode", () => {
 		mockState.items = [
 			createPolicy({
 				id: 8,
@@ -2069,7 +2279,6 @@ describe("AdminPoliciesPage", () => {
 
 		expect(screen.getByDisplayValue("Direct Put S3")).toBeInTheDocument();
 		expect(screen.getAllByDisplayValue("0")).toHaveLength(2);
-		expect(screen.getByText("core:unlimited")).toBeInTheDocument();
 		expect(screen.queryByDisplayValue("5")).not.toBeInTheDocument();
 	});
 
@@ -2106,6 +2315,10 @@ describe("AdminPoliciesPage", () => {
 				bucket: "broken-bucket",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 				remote_node_id: undefined,
 				secret_key: "BROKENSECRET",
 			});
@@ -2290,6 +2503,10 @@ describe("AdminPoliciesPage", () => {
 				bucket: "broken-bucket",
 				driver_type: "s3",
 				endpoint: "https://s3.example.com",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 				remote_node_id: undefined,
 				secret_key: undefined,
 			});

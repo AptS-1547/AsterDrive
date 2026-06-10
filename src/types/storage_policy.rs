@@ -258,6 +258,8 @@ pub struct StoragePolicyOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_download_strategy: Option<S3DownloadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_path_style: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_download_strategy: Option<RemoteDownloadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_upload_strategy: Option<RemoteUploadStrategy>,
@@ -294,6 +296,13 @@ impl StoragePolicyOptions {
     pub fn effective_s3_download_strategy(&self) -> S3DownloadStrategy {
         self.s3_download_strategy
             .unwrap_or(S3DownloadStrategy::RelayStream)
+    }
+
+    pub fn effective_s3_path_style(&self) -> bool {
+        // Keep legacy S3-compatible policies path-style by default. MinIO/RustFS
+        // deployments often rely on /bucket/key addressing, while AWS S3 and
+        // other virtual-hosted-compatible services can opt out explicitly.
+        self.s3_path_style.unwrap_or(true)
     }
 
     pub fn effective_remote_download_strategy(&self) -> RemoteDownloadStrategy {
@@ -601,6 +610,15 @@ mod tests {
     }
 
     #[test]
+    fn s3_path_style_defaults_to_enabled_and_can_be_disabled() {
+        let options = parse_storage_policy_options("{}");
+        assert!(options.effective_s3_path_style());
+
+        let options = parse_storage_policy_options(r#"{"s3_path_style":false}"#);
+        assert!(!options.effective_s3_path_style());
+    }
+
+    #[test]
     fn remote_download_strategy_defaults_to_relay_stream() {
         let options = StoragePolicyOptions::default();
         assert_eq!(
@@ -850,6 +868,13 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"s3_download_strategy":"presigned"}"#);
+
+        let json = serde_json::to_string(&StoragePolicyOptions {
+            s3_path_style: Some(false),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"s3_path_style":false}"#);
 
         let json = serde_json::to_string(&StoragePolicyOptions {
             remote_download_strategy: Some(RemoteDownloadStrategy::Presigned),

@@ -224,6 +224,21 @@ pub async fn count_by_policy<C: ConnectionTrait>(db: &C, policy_id: i64) -> Resu
         .map_err(AsterError::from)
 }
 
+pub async fn count_active_by_policy<C: ConnectionTrait>(db: &C, policy_id: i64) -> Result<u64> {
+    let now = chrono::Utc::now();
+    UploadSession::find()
+        .filter(upload_session::Column::PolicyId.eq(policy_id))
+        .filter(upload_session::Column::ExpiresAt.gt(now))
+        .filter(upload_session::Column::Status.is_in([
+            UploadSessionStatus::Uploading,
+            UploadSessionStatus::Assembling,
+            UploadSessionStatus::Presigned,
+        ]))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_recoverable_by_owner<C: ConnectionTrait>(
     db: &C,
     user_id: i64,

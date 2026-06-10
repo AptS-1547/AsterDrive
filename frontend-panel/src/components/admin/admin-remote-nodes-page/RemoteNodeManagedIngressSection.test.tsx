@@ -309,7 +309,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 			target: { value: "S3 upload" },
 		});
 		fireEvent.change(screen.getByLabelText("endpoint"), {
-			target: { value: "https://account.r2.cloudflarestorage.com/raw-bucket" },
+			target: { value: "https://s3.example.test/raw-bucket" },
 		});
 		fireEvent.change(screen.getByLabelText("bucket"), {
 			target: { value: " raw-bucket " },
@@ -328,7 +328,7 @@ describe("RemoteNodeManagedIngressSection", () => {
 					access_key: "access",
 					bucket: "raw-bucket",
 					driver_type: "s3",
-					endpoint: "https://account.r2.cloudflarestorage.com",
+					endpoint: "https://s3.example.test/raw-bucket",
 					name: "S3 upload",
 					secret_key: "secret",
 				}),

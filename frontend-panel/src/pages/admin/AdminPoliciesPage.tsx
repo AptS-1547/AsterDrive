@@ -16,6 +16,7 @@ import {
 	getEndpointValidationMessage,
 	getPolicyConnectionTestKey,
 	getPolicyForm,
+	getS3CompatibleDriverPromotionTarget,
 	hasConnectionFieldChanges,
 	isS3CompatibleDriver,
 	normalizePolicyForm,
@@ -30,6 +31,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { usePendingAction } from "@/hooks/usePendingAction";
 import { usePendingId } from "@/hooks/usePendingId";
 import { invalidateAdminPolicyLookup } from "@/lib/adminPolicyLookup";
 import {
@@ -77,6 +79,20 @@ const DEFAULT_POLICY_SORT_ORDER = "desc" as const satisfies SortOrder;
 const CREATE_LAST_STEP = 2;
 const POLICY_UPLOAD_SESSION_BLOCKER_CODE =
 	ApiErrorCode.PolicyUploadSessionsExist;
+
+function policyFormHasUnsavedChanges(
+	form: PolicyFormData,
+	policy: StoragePolicy | null,
+) {
+	if (!policy) {
+		return false;
+	}
+
+	return (
+		JSON.stringify(normalizePolicyForm(form)) !==
+		JSON.stringify(normalizePolicyForm(getPolicyForm(policy)))
+	);
+}
 
 function useAdminPoliciesPageContent() {
 	const { t } = useTranslation("admin");
@@ -140,6 +156,8 @@ function useAdminPoliciesPageContent() {
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
 	const [submitting, setSubmitting] = useState(false);
 	const [saveAnywayConfirmOpen, setSaveAnywayConfirmOpen] = useState(false);
+	const [s3DriverPromotionConfirmOpen, setS3DriverPromotionConfirmOpen] =
+		useState(false);
 	const [migrationDialogOpen, setMigrationDialogOpen] = useState(false);
 	const [migrationPolicies, setMigrationPolicies] = useState<StoragePolicy[]>(
 		[],
@@ -160,7 +178,35 @@ function useAdminPoliciesPageContent() {
 		pendingId: deletingPolicyId,
 		runWithPending: runWithDeletingPolicy,
 	} = usePendingId<number>();
+	const {
+		pending: s3DriverPromotionSubmitting,
+		runWithPending: runWithS3DriverPromotion,
+	} = usePendingAction();
 	const endpointValidationMessage = getEndpointValidationMessage(form, t);
+	const getS3CompatiblePromotionDriverLabel = (driverType: "tencent_cos") =>
+		driverType === "tencent_cos" ? t("driver_type_tencent_cos") : driverType;
+	const savedS3DriverPromotionTarget = getS3CompatibleDriverPromotionTarget(
+		editingPolicy,
+		getS3CompatiblePromotionDriverLabel,
+	);
+	// Draft detection gives immediate feedback while editing; only the saved
+	// target is allowed to submit the in-place promotion request.
+	const draftS3DriverPromotionTarget = getS3CompatibleDriverPromotionTarget(
+		editingId !== null
+			? { driver_type: form.driver_type, endpoint: form.endpoint }
+			: null,
+		getS3CompatiblePromotionDriverLabel,
+	);
+	const s3DriverPromotionTarget =
+		draftS3DriverPromotionTarget ?? savedS3DriverPromotionTarget;
+	const s3CompatibleDriverSuggestionTarget =
+		getS3CompatibleDriverPromotionTarget(
+			{ driver_type: form.driver_type, endpoint: form.endpoint },
+			getS3CompatiblePromotionDriverLabel,
+		);
+	const s3DriverPromotionBlocked =
+		s3DriverPromotionTarget != null &&
+		policyFormHasUnsavedChanges(form, editingPolicy);
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
@@ -290,6 +336,7 @@ function useAdminPoliciesPageContent() {
 	const resetDialogState = () => {
 		policyCapacityRequestSerial.current += 1;
 		setSaveAnywayConfirmOpen(false);
+		setS3DriverPromotionConfirmOpen(false);
 		setPolicyCapacity(null);
 		setPolicyCapacityLoading(false);
 		setValidatedConnectionKey(null);
@@ -383,6 +430,7 @@ function useAdminPoliciesPageContent() {
 		value: PolicyFormData[K],
 	) => {
 		setSaveAnywayConfirmOpen(false);
+		setS3DriverPromotionConfirmOpen(false);
 		setForm((prev) => {
 			if (key === "storage_native_processing_enabled") {
 				const enabled = value as boolean;
@@ -413,6 +461,7 @@ function useAdminPoliciesPageContent() {
 
 	const setDriverType = (driverType: DriverType) => {
 		setSaveAnywayConfirmOpen(false);
+		setS3DriverPromotionConfirmOpen(false);
 		setValidatedConnectionKey(null);
 		setCreateStepTouched(false);
 		setForm((prev) => {
@@ -476,6 +525,7 @@ function useAdminPoliciesPageContent() {
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "relay_stream",
+				s3_path_style: true,
 			};
 		});
 	};
@@ -549,6 +599,10 @@ function useAdminPoliciesPageContent() {
 					buildUpdatePolicyPayload(currentForm),
 				);
 				invalidateAdminPolicyLookup();
+				setEditingId(updated.id);
+				setEditingPolicy(updated);
+				setForm(getPolicyForm(updated));
+				setValidatedConnectionKey(null);
 				setPolicies((prev) =>
 					prev.map((policy) => (policy.id === editingId ? updated : policy)),
 				);
@@ -567,8 +621,8 @@ function useAdminPoliciesPageContent() {
 					await reload();
 				}
 				toast.success(t("policy_created"));
+				handleDialogOpenChange(false);
 			}
-			handleDialogOpenChange(false);
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -621,6 +675,66 @@ function useAdminPoliciesPageContent() {
 	const confirmSaveAnyway = () => {
 		setSaveAnywayConfirmOpen(false);
 		void submitPolicy(true);
+	};
+
+	const requestS3DriverPromotion = () => {
+		if (!savedS3DriverPromotionTarget || s3DriverPromotionBlocked) {
+			return;
+		}
+		setSaveAnywayConfirmOpen(false);
+		setS3DriverPromotionConfirmOpen(true);
+	};
+
+	const cancelS3DriverPromotion = () => {
+		setS3DriverPromotionConfirmOpen(false);
+	};
+
+	const confirmS3DriverPromotion = () => {
+		if (
+			!editingPolicy ||
+			!savedS3DriverPromotionTarget ||
+			s3DriverPromotionBlocked
+		) {
+			return;
+		}
+
+		void runWithS3DriverPromotion(async () => {
+			try {
+				const updated = await adminPolicyService.promoteS3CompatibleDriver(
+					editingPolicy.id,
+					{
+						target_driver_type: savedS3DriverPromotionTarget.driverType,
+						endpoint: editingPolicy.endpoint,
+						bucket: editingPolicy.bucket,
+					},
+				);
+				setS3DriverPromotionConfirmOpen(false);
+				setEditingId(updated.id);
+				setEditingPolicy(updated);
+				setForm(getPolicyForm(updated));
+				setPolicies((prev) =>
+					prev.map((policy) => (policy.id === updated.id ? updated : policy)),
+				);
+				setPolicyCapacity((prev) =>
+					prev == null ? prev : { ...prev, driver_type: updated.driver_type },
+				);
+				invalidateAdminPolicyLookup();
+				toast.success(
+					t("policy_s3_driver_promotion_success", {
+						driver: savedS3DriverPromotionTarget.driverLabel,
+					}),
+				);
+			} catch (error) {
+				handleApiError(error);
+			}
+		});
+	};
+
+	const applyS3CompatibleDriverSuggestion = () => {
+		if (!s3CompatibleDriverSuggestionTarget) {
+			return;
+		}
+		setDriverType(s3CompatibleDriverSuggestionTarget.driverType);
 	};
 
 	const handleCreateBack = () => {
@@ -864,16 +978,31 @@ function useAdminPoliciesPageContent() {
 					form={form}
 					policyCapacity={policyCapacity}
 					policyCapacityLoading={policyCapacityLoading}
+					s3CompatibleDriverSuggestionTargetLabel={
+						s3CompatibleDriverSuggestionTarget?.driverLabel ?? null
+					}
+					s3DriverPromotionBlocked={s3DriverPromotionBlocked}
+					s3DriverPromotionConfirmOpen={s3DriverPromotionConfirmOpen}
+					s3DriverPromotionSubmitting={s3DriverPromotionSubmitting}
+					s3DriverPromotionTargetLabel={
+						s3DriverPromotionTarget?.driverLabel ?? null
+					}
 					remoteNodes={remoteNodes}
 					submitting={submitting}
 					createStep={createStep}
 					createStepTouched={createStepTouched}
 					endpointValidationMessage={endpointValidationMessage}
 					saveAnywayConfirmOpen={saveAnywayConfirmOpen}
+					onApplyS3CompatibleDriverSuggestion={
+						applyS3CompatibleDriverSuggestion
+					}
 					onCancelSaveAnyway={cancelSaveAnyway}
+					onCancelS3DriverPromotion={cancelS3DriverPromotion}
 					onConfirmSaveAnyway={confirmSaveAnyway}
+					onConfirmS3DriverPromotion={confirmS3DriverPromotion}
 					onDialogOpenChange={handleDialogOpenChange}
 					onSubmit={handleSubmit}
+					onRequestS3DriverPromotion={requestS3DriverPromotion}
 					onRunConnectionTest={() => runConnectionTest()}
 					onFieldChange={setField}
 					onDriverTypeChange={setDriverType}

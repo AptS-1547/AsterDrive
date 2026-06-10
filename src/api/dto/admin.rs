@@ -163,6 +163,17 @@ pub struct TestPolicyParamsReq {
     pub base_path: Option<String>,
     #[validate(range(min = 1, message = "remote_node_id must be greater than 0"))]
     pub remote_node_id: Option<i64>,
+    #[validate(nested)]
+    pub options: Option<crate::types::StoragePolicyOptions>,
+}
+
+/// Promote an S3-compatible storage policy to a specialized S3-compatible driver.
+#[derive(Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PromoteS3CompatiblePolicyDriverReq {
+    pub target_driver_type: crate::types::DriverType,
+    pub endpoint: String,
+    pub bucket: String,
 }
 
 /// Create a remote node.

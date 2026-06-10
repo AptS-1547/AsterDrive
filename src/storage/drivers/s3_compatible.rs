@@ -31,7 +31,9 @@ impl S3CompatibleDriver {
     }
 
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
-        Self::new_with_s3_options(policy, S3DriverOptions::default())
+        Ok(Self {
+            inner: Arc::new(S3Driver::new(policy)?),
+        })
     }
 
     pub fn new_with_s3_options(

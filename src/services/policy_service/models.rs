@@ -124,6 +124,7 @@ pub struct StoragePolicyConnectionInput {
     pub secret_key: String,
     pub base_path: String,
     pub remote_node_id: Option<i64>,
+    pub options: StoragePolicyOptions,
 }
 
 #[derive(Debug, Clone)]
@@ -151,6 +152,13 @@ pub struct UpdateStoragePolicyInput {
     pub is_default: Option<bool>,
     pub allowed_types: Option<Vec<String>>,
     pub options: Option<StoragePolicyOptions>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PromoteS3CompatiblePolicyDriverInput {
+    pub target_driver_type: DriverType,
+    pub endpoint: String,
+    pub bucket: String,
 }
 
 #[derive(Debug, Clone)]

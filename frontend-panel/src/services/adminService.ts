@@ -54,6 +54,7 @@ import type {
 	LockPage,
 	MigratePolicyGroupAssignmentsRequest,
 	PolicyGroupAssignmentMigrationResult,
+	PromoteS3CompatiblePolicyDriverRequest,
 	RemoteCreateIngressProfileRequest,
 	RemoteEnrollmentCommandInfo,
 	RemoteIngressProfileInfo,
@@ -312,6 +313,11 @@ export const adminPolicyService = {
 
 	testParams: (data: TestPolicyParamsRequest) =>
 		api.post<void>("/admin/policies/test", data),
+
+	promoteS3CompatibleDriver: (
+		id: number,
+		data: PromoteS3CompatiblePolicyDriverRequest,
+	) => api.post<StoragePolicy>(`/admin/policies/${id}/promote-s3-driver`, data),
 
 	createMigration: (data: CreateStoragePolicyMigrationRequest) =>
 		api.post<TaskInfo>("/admin/storage-migrations", data),

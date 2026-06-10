@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
 	DefaultPolicyToggle,
@@ -23,6 +24,9 @@ import {
 	isS3CompatibleDriver,
 	type PolicyFormData,
 } from "@/components/admin/storagePolicyDialogShared";
+import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { DriverType, RemoteNodeInfo } from "@/types/api";
 import type {
@@ -44,8 +48,10 @@ interface StoragePolicyCreateWizardProps {
 	onCreateStepChange: (step: number) => void;
 	onDriverTypeChange: (driverType: DriverType) => void;
 	onFieldChange: StoragePolicyFieldChangeHandler;
+	onApplyS3CompatibleDriverSuggestion: () => void;
 	onSyncNormalizedS3Form: () => void;
 	remoteNodes: RemoteNodeInfo[];
+	s3CompatibleDriverSuggestionTargetLabel: string | null;
 	stepAnimationKey: string;
 	storageOptions: StoragePolicyDriverOption[];
 	summaryItems: StoragePolicySummaryItem[];
@@ -64,8 +70,10 @@ export function StoragePolicyCreateWizard({
 	onCreateStepChange,
 	onDriverTypeChange,
 	onFieldChange,
+	onApplyS3CompatibleDriverSuggestion,
 	onSyncNormalizedS3Form,
 	remoteNodes,
+	s3CompatibleDriverSuggestionTargetLabel,
 	stepAnimationKey,
 	storageOptions,
 	summaryItems,
@@ -114,7 +122,13 @@ export function StoragePolicyCreateWizard({
 								currentStorageOption={currentStorageOption}
 								endpointValidationMessage={endpointValidationMessage}
 								form={form}
+								s3CompatibleDriverSuggestionTargetLabel={
+									s3CompatibleDriverSuggestionTargetLabel
+								}
 								onFieldChange={onFieldChange}
+								onApplyS3CompatibleDriverSuggestion={
+									onApplyS3CompatibleDriverSuggestion
+								}
 								onSyncNormalizedS3Form={onSyncNormalizedS3Form}
 								remoteNodes={remoteNodes}
 								t={t}
@@ -287,6 +301,8 @@ interface ConnectionStepProps {
 	currentStorageOption: StoragePolicyDriverOption;
 	endpointValidationMessage: string | null;
 	form: PolicyFormData;
+	s3CompatibleDriverSuggestionTargetLabel: string | null;
+	onApplyS3CompatibleDriverSuggestion: () => void;
 	onFieldChange: StoragePolicyFieldChangeHandler;
 	onSyncNormalizedS3Form: () => void;
 	remoteNodes: RemoteNodeInfo[];
@@ -300,6 +316,8 @@ function ConnectionStep({
 	currentStorageOption,
 	endpointValidationMessage,
 	form,
+	s3CompatibleDriverSuggestionTargetLabel,
+	onApplyS3CompatibleDriverSuggestion,
 	onFieldChange,
 	onSyncNormalizedS3Form,
 	remoteNodes,
@@ -341,6 +359,12 @@ function ConnectionStep({
 			<DriverHelperPanel
 				currentStorageOption={currentStorageOption}
 				driverType={form.driver_type}
+				s3CompatibleDriverSuggestionTargetLabel={
+					s3CompatibleDriverSuggestionTargetLabel
+				}
+				onApplyS3CompatibleDriverSuggestion={
+					onApplyS3CompatibleDriverSuggestion
+				}
 				t={t}
 			/>
 		</div>
@@ -350,14 +374,36 @@ function ConnectionStep({
 interface DriverHelperPanelProps {
 	currentStorageOption: StoragePolicyDriverOption;
 	driverType: DriverType;
+	s3CompatibleDriverSuggestionTargetLabel: string | null;
+	onApplyS3CompatibleDriverSuggestion: () => void;
 	t: Translate;
 }
 
 function DriverHelperPanel({
 	currentStorageOption,
 	driverType,
+	s3CompatibleDriverSuggestionTargetLabel,
+	onApplyS3CompatibleDriverSuggestion,
 	t,
 }: DriverHelperPanelProps) {
+	const [
+		renderedS3CompatibleDriverSuggestionTargetLabel,
+		setRenderedS3CompatibleDriverSuggestionTargetLabel,
+	] = useState(s3CompatibleDriverSuggestionTargetLabel);
+	const showSpecializedDriverSuggestion =
+		driverType === "s3" && s3CompatibleDriverSuggestionTargetLabel != null;
+	const renderedSuggestionTargetLabel =
+		s3CompatibleDriverSuggestionTargetLabel ??
+		renderedS3CompatibleDriverSuggestionTargetLabel;
+
+	useEffect(() => {
+		if (s3CompatibleDriverSuggestionTargetLabel) {
+			setRenderedS3CompatibleDriverSuggestionTargetLabel(
+				s3CompatibleDriverSuggestionTargetLabel,
+			);
+		}
+	}, [s3CompatibleDriverSuggestionTargetLabel]);
+
 	return (
 		<div className="rounded-3xl border border-border/70 bg-muted/20 p-5">
 			<div className="flex items-center gap-3">
@@ -383,6 +429,36 @@ function DriverHelperPanel({
 						? t("policy_wizard_remote_helper")
 						: t("policy_wizard_local_helper")}
 			</p>
+			<AnimatedCollapsible
+				open={showSpecializedDriverSuggestion}
+				contentClassName="pt-4"
+			>
+				{renderedSuggestionTargetLabel ? (
+					<div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
+						<p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+							{t("policy_s3_driver_suggestion_title", {
+								driver: renderedSuggestionTargetLabel,
+							})}
+						</p>
+						<p className="mt-1 text-xs leading-5 text-muted-foreground">
+							{t("policy_s3_driver_suggestion_desc", {
+								driver: renderedSuggestionTargetLabel,
+							})}
+						</p>
+						<Button
+							type="button"
+							variant="outline"
+							className="mt-3 h-8 border-amber-500/30 bg-background/80 px-2.5 text-xs text-amber-800 hover:bg-amber-500/10 dark:text-amber-200"
+							onClick={onApplyS3CompatibleDriverSuggestion}
+						>
+							<Icon name="ArrowsClockwise" className="mr-1 size-3.5" />
+							{t("policy_s3_driver_suggestion_action", {
+								driver: renderedSuggestionTargetLabel,
+							})}
+						</Button>
+					</div>
+				) : null}
+			</AnimatedCollapsible>
 		</div>
 	);
 }

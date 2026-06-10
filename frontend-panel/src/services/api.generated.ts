@@ -372,6 +372,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/policies/{id}/promote-s3-driver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["promote_s3_compatible_policy_driver"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/policies/{id}/test": {
         parameters: {
             query?: never;
@@ -6385,6 +6401,12 @@ export interface components {
         };
         /** @enum {string} */
         PreviewOpenMode: "iframe" | "new_tab";
+        /** @description Promote an S3-compatible storage policy to a specialized S3-compatible driver. */
+        PromoteS3CompatiblePolicyDriverReq: {
+            bucket: string;
+            endpoint: string;
+            target_driver_type: components["schemas"]["DriverType"];
+        };
         PublicBranding: {
             allow_user_registration: boolean;
             description: string;
@@ -7012,6 +7034,7 @@ export interface components {
             s3_download_strategy?: null | components["schemas"]["S3DownloadStrategy"];
             /** Format: int64 */
             s3_operation_timeout_secs?: number | null;
+            s3_path_style?: boolean | null;
             /** Format: int64 */
             s3_read_timeout_secs?: number | null;
             s3_upload_strategy?: null | components["schemas"]["S3UploadStrategy"];
@@ -7330,6 +7353,7 @@ export interface components {
             bucket?: string | null;
             driver_type: components["schemas"]["DriverType"];
             endpoint?: string | null;
+            options?: null | components["schemas"]["StoragePolicyOptions"];
             /** Format: int64 */
             remote_node_id?: number | null;
             secret_key?: string | null;
@@ -9635,6 +9659,85 @@ export interface operations {
                         msg: string;
                     };
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    promote_s3_compatible_policy_driver: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromoteS3CompatiblePolicyDriverReq"];
+            };
+        };
+        responses: {
+            /** @description Policy driver promoted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            allowed_types: string[];
+                            base_path: string;
+                            bucket: string;
+                            /** Format: int64 */
+                            chunk_size: number;
+                            created_at: string;
+                            driver_type: components["schemas"]["DriverType"];
+                            endpoint: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_default: boolean;
+                            /** Format: int64 */
+                            max_file_size: number;
+                            name: string;
+                            options: components["schemas"]["StoragePolicyOptions"];
+                            /** Format: int64 */
+                            remote_node_id?: number | null;
+                            updated_at: string;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Promotion rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

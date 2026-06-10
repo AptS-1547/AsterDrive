@@ -27,26 +27,28 @@ pub struct S3Driver {
 
 #[derive(Debug, Clone, Copy)]
 pub struct S3DriverOptions {
-    pub force_path_style: bool,
+    pub force_path_style: Option<bool>,
 }
 
 impl S3DriverOptions {
     pub const fn path_style() -> Self {
         Self {
-            force_path_style: true,
+            force_path_style: Some(true),
         }
     }
 
     pub const fn virtual_hosted_style() -> Self {
         Self {
-            force_path_style: false,
+            force_path_style: Some(false),
         }
     }
 }
 
 impl Default for S3DriverOptions {
     fn default() -> Self {
-        Self::path_style()
+        Self {
+            force_path_style: None,
+        }
     }
 }
 
@@ -95,13 +97,18 @@ impl S3Driver {
             .read_timeout(options.effective_s3_read_timeout())
             .operation_timeout(options.effective_s3_operation_timeout())
             .build();
+        let force_path_style = driver_options
+            .force_path_style
+            // Provider wrappers such as Tencent COS may override addressing
+            // style explicitly; plain S3 policies read the persisted option.
+            .unwrap_or_else(|| options.effective_s3_path_style());
 
         let mut config_builder = aws_sdk_s3::Config::builder()
             .behavior_version(BehaviorVersion::latest())
             .region(Region::new("auto"))
             .credentials_provider(credentials)
             .timeout_config(timeout_config)
-            .force_path_style(driver_options.force_path_style);
+            .force_path_style(force_path_style);
 
         if !normalized.endpoint.is_empty() {
             config_builder = config_builder.endpoint_url(&normalized.endpoint);

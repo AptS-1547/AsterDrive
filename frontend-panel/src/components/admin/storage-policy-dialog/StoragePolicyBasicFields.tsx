@@ -167,7 +167,10 @@ export function StorageNativeProcessingField({
 
 export function LimitsFields({ form, onFieldChange, t }: SharedFieldProps) {
 	return (
-		<>
+		<div
+			data-testid="policy-limits-fields"
+			className="grid gap-4 md:grid-cols-2"
+		>
 			<div className="space-y-2">
 				<Label htmlFor="max_file_size">{t("max_file_size")} (bytes)</Label>
 				<Input
@@ -178,6 +181,9 @@ export function LimitsFields({ form, onFieldChange, t }: SharedFieldProps) {
 					className={ADMIN_CONTROL_HEIGHT_CLASS}
 					placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
 				/>
+				<p className="text-xs text-muted-foreground">
+					{t("max_file_size_desc")}
+				</p>
 			</div>
 
 			<div className="space-y-2">
@@ -192,7 +198,7 @@ export function LimitsFields({ form, onFieldChange, t }: SharedFieldProps) {
 				/>
 				<p className="text-xs text-muted-foreground">{t("chunk_size_desc")}</p>
 			</div>
-		</>
+		</div>
 	);
 }
 

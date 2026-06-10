@@ -5,19 +5,20 @@ use sea_orm::{ActiveModelTrait, Set};
 
 use crate::api::api_error_code::ApiErrorCode;
 use crate::api::pagination::{AdminPolicySortBy, OffsetPage, SortOrder, load_offset_page};
-use crate::db::repository::{file_repo, managed_follower_repo, policy_group_repo, policy_repo};
+use crate::db::repository::{
+    file_repo, managed_follower_repo, policy_group_repo, policy_repo, upload_session_repo,
+};
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_code};
 use crate::runtime::{RemoteProtocolRuntimeState, SharedRuntimeState, TaskRuntimeState};
 use crate::storage::drivers::tencent_cos::TencentCosDriver;
 use crate::types::{
-    DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
-    parse_storage_policy_options,
+    DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, parse_storage_policy_options,
 };
 
 use super::models::{
-    CreateStoragePolicyInput, StoragePolicy, StoragePolicyCapacityInfo,
-    StoragePolicyConnectionInput, UpdateStoragePolicyInput,
+    CreateStoragePolicyInput, PromoteS3CompatiblePolicyDriverInput, StoragePolicy,
+    StoragePolicyCapacityInfo, StoragePolicyConnectionInput, UpdateStoragePolicyInput,
 };
 use super::shared::{
     SYSTEM_STORAGE_POLICY_ID, ensure_singleton_group_for_policy, lock_default_group_assignment,
@@ -57,6 +58,13 @@ fn ensure_storage_native_thumbnail_supported(
         "storage policy driver '{}' does not expose storage-native thumbnail processing",
         driver_type_name(driver_type),
     )))
+}
+
+fn is_allowed_s3_compatible_promotion(source: DriverType, target: DriverType) -> bool {
+    // Promotion is an in-place metadata switch, not an object copy. Keep this
+    // whitelist explicit so future OSS/OBS-style drivers must add their own
+    // validation and object-compatibility checks before the UI exposes them.
+    matches!((source, target), (DriverType::S3, DriverType::TencentCos))
 }
 
 fn validate_connection_secret(value: &str, field: &str, driver: &str) -> Result<()> {
@@ -172,6 +180,7 @@ pub async fn create(
         secret_key,
         base_path,
         remote_node_id,
+        options: _,
     } = connection;
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
     validate_connection_credentials(driver_type, &access_key, &secret_key)?;
@@ -461,6 +470,135 @@ pub async fn update(
         .map(Into::into)
 }
 
+pub async fn promote_s3_compatible_driver(
+    state: &impl SharedRuntimeState,
+    id: i64,
+    input: PromoteS3CompatiblePolicyDriverInput,
+) -> Result<StoragePolicy> {
+    let existing = policy_repo::find_by_id(state.writer_db(), id).await?;
+    if existing.driver_type != DriverType::S3 {
+        return Err(AsterError::validation_error(
+            "only generic S3-compatible policies can be promoted",
+        ));
+    }
+    if !is_allowed_s3_compatible_promotion(existing.driver_type, input.target_driver_type) {
+        return Err(AsterError::validation_error(format!(
+            "promoting S3-compatible policy to '{}' is not supported",
+            driver_type_name(input.target_driver_type),
+        )));
+    }
+
+    let (normalized_endpoint, normalized_bucket) =
+        normalize_connection_fields(input.target_driver_type, &input.endpoint, &input.bucket)?;
+    if normalized_bucket != existing.bucket {
+        return Err(AsterError::validation_error(
+            "bucket cannot be changed by S3-compatible driver promotion",
+        ));
+    }
+
+    let active_upload_sessions =
+        upload_session_repo::count_active_by_policy(state.writer_db(), id).await?;
+    if active_upload_sessions > 0 {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyUploadSessionsExist,
+            format!(
+                "cannot promote policy: {active_upload_sessions} active upload session(s) still reference it"
+            ),
+        ));
+    }
+
+    let mut candidate_policy = existing.clone();
+    candidate_policy.driver_type = input.target_driver_type;
+    candidate_policy.endpoint = normalized_endpoint.clone();
+    candidate_policy.bucket = normalized_bucket;
+    validate_s3_compatible_promotion_candidate(state, &candidate_policy).await?;
+
+    let txn = crate::db::transaction::begin(state.writer_db()).await?;
+    let active_upload_sessions = upload_session_repo::count_active_by_policy(&txn, id).await?;
+    if active_upload_sessions > 0 {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyUploadSessionsExist,
+            format!(
+                "cannot promote policy: {active_upload_sessions} active upload session(s) still reference it"
+            ),
+        ));
+    }
+    policy_repo::promote_s3_compatible_driver(
+        &txn,
+        id,
+        DriverType::S3,
+        input.target_driver_type,
+        normalized_endpoint,
+    )
+    .await?;
+    crate::db::transaction::commit(txn).await?;
+
+    // 与普通 update 一致：先 invalidate driver，再 reload snapshot。
+    state.driver_registry().invalidate(id);
+    state.policy_snapshot().reload(state.writer_db()).await?;
+    crate::services::config_service::invalidate_public_thumbnail_support_cache();
+
+    policy_repo::find_by_id(state.writer_db(), id)
+        .await
+        .map(Into::into)
+}
+
+async fn validate_s3_compatible_promotion_candidate(
+    state: &impl SharedRuntimeState,
+    candidate_policy: &storage_policy::Model,
+) -> Result<()> {
+    match candidate_policy.driver_type {
+        DriverType::TencentCos => TencentCosDriver::validate_policy(candidate_policy)?,
+        target => {
+            return Err(AsterError::validation_error(format!(
+                "promoting S3-compatible policy to '{}' is not supported",
+                driver_type_name(target),
+            )));
+        }
+    }
+
+    verify_s3_compatible_promotion_sample(state, candidate_policy).await
+}
+
+async fn verify_s3_compatible_promotion_sample(
+    state: &impl SharedRuntimeState,
+    candidate_policy: &storage_policy::Model,
+) -> Result<()> {
+    const PROMOTION_SAMPLE_SIZE: u64 = 10;
+
+    let blobs = file_repo::find_blobs_by_policy_paginated(
+        state.writer_db(),
+        candidate_policy.id,
+        0,
+        PROMOTION_SAMPLE_SIZE,
+    )
+    .await?;
+    if blobs.is_empty() {
+        return Ok(());
+    }
+
+    let driver = state
+        .driver_registry()
+        .build_uncached_driver(candidate_policy)?;
+    for blob in blobs {
+        let metadata = driver.metadata(&blob.storage_path).await.map_err(|error| {
+            AsterError::storage_driver_error(format!(
+                "verify existing object '{}' before S3-compatible driver promotion: {error}",
+                blob.storage_path
+            ))
+        })?;
+        let actual_size = crate::utils::numbers::u64_to_i64(metadata.size, "blob metadata size")?;
+        if actual_size != blob.size {
+            return Err(AsterError::storage_driver_error(format!(
+                "object '{}' size mismatch before S3-compatible driver promotion: expected {}, got {}",
+                blob.storage_path, blob.size, actual_size
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 pub async fn test_default_connection<S: SharedRuntimeState>(state: &S) -> Result<()> {
     let policy = state
         .policy_snapshot()
@@ -493,6 +631,7 @@ pub async fn test_connection_params<S: RemoteProtocolRuntimeState>(
         secret_key,
         base_path,
         remote_node_id,
+        options,
     } = input;
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
     validate_connection_credentials(driver_type, &access_key, &secret_key)?;
@@ -511,7 +650,7 @@ pub async fn test_connection_params<S: RemoteProtocolRuntimeState>(
         remote_node_id,
         max_file_size: 0,
         allowed_types: StoredStoragePolicyAllowedTypes::empty(),
-        options: StoredStoragePolicyOptions::empty(),
+        options: serialize_options(&options)?,
         is_default: false,
         chunk_size: 0,
         created_at: chrono::Utc::now(),

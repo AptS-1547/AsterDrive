@@ -48,7 +48,7 @@ export function AnimatedCollapsible({
 }) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const contentRef = useRef<HTMLDivElement | null>(null);
-	const [mounted, setMounted] = useState(false);
+	const [mounted, setMounted] = useState(open);
 
 	const shouldRender = open || mounted;
 

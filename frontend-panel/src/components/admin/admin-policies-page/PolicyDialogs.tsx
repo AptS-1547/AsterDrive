@@ -28,11 +28,19 @@ interface PolicyDialogsProps {
 	form: PolicyFormData;
 	policyCapacity: StoragePolicyCapacityInfo | null;
 	policyCapacityLoading: boolean;
+	s3CompatibleDriverSuggestionTargetLabel: string | null;
+	s3DriverPromotionBlocked: boolean;
+	s3DriverPromotionConfirmOpen: boolean;
+	s3DriverPromotionSubmitting: boolean;
+	s3DriverPromotionTargetLabel: string | null;
 	remoteNodes: RemoteNodeInfo[];
 	saveAnywayConfirmOpen: boolean;
 	submitting: boolean;
+	onApplyS3CompatibleDriverSuggestion: () => void;
 	onCancelSaveAnyway: () => void;
+	onCancelS3DriverPromotion: () => void;
 	onConfirmSaveAnyway: () => void;
+	onConfirmS3DriverPromotion: () => void;
 	onCreateBack: () => void;
 	onCreateNext: () => void;
 	onCreateStepChange: (step: number) => void;
@@ -42,6 +50,7 @@ interface PolicyDialogsProps {
 		key: K,
 		value: PolicyFormData[K],
 	) => void;
+	onRequestS3DriverPromotion: () => void;
 	onRunConnectionTest: () => Promise<boolean>;
 	onSubmit: () => void;
 	onSyncNormalizedS3Form: () => void;
@@ -60,17 +69,26 @@ export function PolicyDialogs({
 	form,
 	policyCapacity,
 	policyCapacityLoading,
+	s3CompatibleDriverSuggestionTargetLabel,
+	s3DriverPromotionBlocked,
+	s3DriverPromotionConfirmOpen,
+	s3DriverPromotionSubmitting,
+	s3DriverPromotionTargetLabel,
 	remoteNodes,
 	saveAnywayConfirmOpen,
 	submitting,
+	onApplyS3CompatibleDriverSuggestion,
 	onCancelSaveAnyway,
+	onCancelS3DriverPromotion,
 	onConfirmSaveAnyway,
+	onConfirmS3DriverPromotion,
 	onCreateBack,
 	onCreateNext,
 	onCreateStepChange,
 	onDialogOpenChange,
 	onDriverTypeChange,
 	onFieldChange,
+	onRequestS3DriverPromotion,
 	onRunConnectionTest,
 	onSubmit,
 	onSyncNormalizedS3Form,
@@ -99,16 +117,29 @@ export function PolicyDialogs({
 				form={form}
 				policyCapacity={policyCapacity}
 				policyCapacityLoading={policyCapacityLoading}
+				s3CompatibleDriverSuggestionTargetLabel={
+					s3CompatibleDriverSuggestionTargetLabel
+				}
+				s3DriverPromotionBlocked={s3DriverPromotionBlocked}
+				s3DriverPromotionConfirmOpen={s3DriverPromotionConfirmOpen}
+				s3DriverPromotionSubmitting={s3DriverPromotionSubmitting}
+				s3DriverPromotionTargetLabel={s3DriverPromotionTargetLabel}
 				remoteNodes={remoteNodes}
 				submitting={submitting}
 				createStep={createStep}
 				createStepTouched={createStepTouched}
 				endpointValidationMessage={endpointValidationMessage}
 				saveAnywayConfirmOpen={saveAnywayConfirmOpen}
+				onApplyS3CompatibleDriverSuggestion={
+					onApplyS3CompatibleDriverSuggestion
+				}
 				onOpenChange={onDialogOpenChange}
 				onCancelSaveAnyway={onCancelSaveAnyway}
+				onCancelS3DriverPromotion={onCancelS3DriverPromotion}
 				onConfirmSaveAnyway={onConfirmSaveAnyway}
+				onConfirmS3DriverPromotion={onConfirmS3DriverPromotion}
 				onSubmit={onSubmit}
+				onRequestS3DriverPromotion={onRequestS3DriverPromotion}
 				onRunConnectionTest={onRunConnectionTest}
 				onFieldChange={onFieldChange}
 				onDriverTypeChange={onDriverTypeChange}

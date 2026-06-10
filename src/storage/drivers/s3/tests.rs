@@ -157,29 +157,11 @@ fn sample_policy(endpoint: &str, bucket: &str) -> storage_policy::Model {
 }
 
 #[test]
-fn new_normalizes_r2_bucket_path() {
-    let driver = S3Driver::new(&sample_policy(
-        "https://demo-account.r2.cloudflarestorage.com/photos",
-        "",
-    ))
-    .expect("normalized R2 driver");
+fn new_keeps_generic_s3_endpoint_path_unchanged() {
+    let driver = S3Driver::new(&sample_policy("https://s3.example.test/custom/path", "archive"))
+        .expect("generic S3-compatible driver");
 
-    assert_eq!(driver.bucket, "photos");
-}
-
-#[test]
-fn new_maps_r2_validation_errors_to_storage_driver_errors() {
-    let err = match S3Driver::new(&sample_policy("https://pub-demo.r2.dev", "photos")) {
-        Ok(_) => panic!("public R2 endpoint should fail"),
-        Err(err) => err,
-    };
-
-    assert_eq!(err.code(), "E031");
-    assert!(
-        err.message().contains("Cloudflare R2 endpoint"),
-        "expected R2 validation context in '{}'",
-        err.message()
-    );
+    assert_eq!(driver.bucket, "archive");
 }
 
 #[test]
@@ -215,11 +197,20 @@ fn new_applies_timeout_config_from_policy_options() {
 async fn presigned_put_url_uses_configured_addressing_style() {
     let path_style_driver = S3Driver::new(&sample_policy("https://s3.example.test", "bucket"))
         .expect("path-style driver");
-    let virtual_hosted_driver = S3Driver::new_with_options(
+    let override_virtual_hosted_driver = S3Driver::new_with_options(
         &sample_policy("https://s3.example.test", "bucket"),
         S3DriverOptions::virtual_hosted_style(),
     )
-    .expect("virtual-hosted driver");
+    .expect("override virtual-hosted driver");
+    let mut virtual_hosted_policy = sample_policy("https://s3.example.test", "bucket");
+    virtual_hosted_policy.options = serialize_storage_policy_options(&StoragePolicyOptions {
+        s3_path_style: Some(false),
+        ..Default::default()
+    })
+    .expect("options should serialize");
+    let virtual_hosted_driver =
+        S3Driver::new_with_options(&virtual_hosted_policy, S3DriverOptions::default())
+            .expect("virtual-hosted driver");
 
     let path_style = path_style_driver
         .presigned_put_url("folder/file.txt", Duration::from_secs(60))
@@ -231,14 +222,26 @@ async fn presigned_put_url_uses_configured_addressing_style() {
         .await
         .expect("virtual-hosted presign")
         .expect("virtual-hosted URL");
+    let override_virtual_hosted = override_virtual_hosted_driver
+        .presigned_put_url("folder/file.txt", Duration::from_secs(60))
+        .await
+        .expect("override virtual-hosted presign")
+        .expect("override virtual-hosted URL");
 
     let path_style = url::Url::parse(&path_style).expect("path-style URL parse");
     let virtual_hosted = url::Url::parse(&virtual_hosted).expect("virtual-hosted URL parse");
+    let override_virtual_hosted =
+        url::Url::parse(&override_virtual_hosted).expect("override virtual-hosted URL parse");
 
     assert_eq!(path_style.host_str(), Some("s3.example.test"));
     assert_eq!(path_style.path(), "/bucket/folder/file.txt");
     assert_eq!(virtual_hosted.host_str(), Some("bucket.s3.example.test"));
     assert_eq!(virtual_hosted.path(), "/folder/file.txt");
+    assert_eq!(
+        override_virtual_hosted.host_str(),
+        Some("bucket.s3.example.test")
+    );
+    assert_eq!(override_virtual_hosted.path(), "/folder/file.txt");
 }
 
 #[tokio::test]

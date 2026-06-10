@@ -3,7 +3,7 @@
 use crate::api::dto::admin::{
     AdminPolicyGroupListQuery, AdminPolicyListQuery, CreatePolicyGroupReq, CreatePolicyReq,
     DeletePolicyQuery, MigratePolicyGroupAssignmentsReq, PatchPolicyGroupReq, PatchPolicyReq,
-    PolicyGroupItemReq, TestPolicyParamsReq,
+    PolicyGroupItemReq, PromoteS3CompatiblePolicyDriverReq, TestPolicyParamsReq,
 };
 use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
@@ -26,6 +26,7 @@ fn build_policy_connection_input(
     secret_key: Option<String>,
     base_path: Option<String>,
     remote_node_id: Option<i64>,
+    options: crate::types::StoragePolicyOptions,
 ) -> policy_service::StoragePolicyConnectionInput {
     policy_service::StoragePolicyConnectionInput {
         driver_type,
@@ -35,6 +36,7 @@ fn build_policy_connection_input(
         secret_key: secret_key.unwrap_or_default(),
         base_path: base_path.unwrap_or_default(),
         remote_node_id,
+        options,
     }
 }
 
@@ -50,6 +52,7 @@ impl From<CreatePolicyReq> for policy_service::CreateStoragePolicyInput {
                 value.secret_key,
                 value.base_path,
                 value.remote_node_id,
+                crate::types::StoragePolicyOptions::default(),
             ),
             max_file_size: value.max_file_size.unwrap_or(0),
             chunk_size: value.chunk_size,
@@ -89,7 +92,20 @@ impl From<TestPolicyParamsReq> for policy_service::StoragePolicyConnectionInput 
             value.secret_key,
             value.base_path,
             value.remote_node_id,
+            value.options.unwrap_or_default(),
         )
+    }
+}
+
+impl From<PromoteS3CompatiblePolicyDriverReq>
+    for policy_service::PromoteS3CompatiblePolicyDriverInput
+{
+    fn from(value: PromoteS3CompatiblePolicyDriverReq) -> Self {
+        Self {
+            target_driver_type: value.target_driver_type,
+            endpoint: value.endpoint,
+            bucket: value.bucket,
+        }
     }
 }
 
@@ -260,6 +276,41 @@ pub async fn update_policy(
     let policy =
         policy_service::update_with_audit(state.get_ref(), *path, body.into_inner().into(), &ctx)
             .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/policies/{id}/promote-s3-driver",
+    tag = "admin",
+    operation_id = "promote_s3_compatible_policy_driver",
+    params(("id" = i64, Path, description = "Policy ID")),
+    request_body = PromoteS3CompatiblePolicyDriverReq,
+    responses(
+        (status = 200, description = "Policy driver promoted", body = inline(ApiResponse<policy_service::StoragePolicy>)),
+        (status = 400, description = "Promotion rejected"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn promote_s3_compatible_policy_driver(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+    body: web::Json<PromoteS3CompatiblePolicyDriverReq>,
+) -> Result<HttpResponse> {
+    validate_request(&*body)?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let policy = policy_service::promote_s3_compatible_driver_with_audit(
+        state.get_ref(),
+        *path,
+        body.into_inner().into(),
+        &ctx,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 

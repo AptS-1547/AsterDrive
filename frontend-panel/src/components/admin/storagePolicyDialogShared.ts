@@ -1,7 +1,4 @@
-import {
-	isPublicR2DevUrl,
-	normalizeS3ConnectionFields,
-} from "@/lib/s3Endpoint";
+import { normalizeS3ConnectionFields } from "@/lib/s3Endpoint";
 import type {
 	CreatePolicyRequest,
 	DriverType,
@@ -23,6 +20,53 @@ export type {
 
 export function isS3CompatibleDriver(driverType: DriverType) {
 	return driverType === "s3" || driverType === "tencent_cos";
+}
+
+export type S3CompatiblePromotionDriverType = Extract<
+	DriverType,
+	"tencent_cos"
+>;
+
+export interface S3CompatibleDriverPromotionTarget {
+	driverLabel: string;
+	driverType: S3CompatiblePromotionDriverType;
+}
+
+export function isTencentCosEndpoint(endpoint: string) {
+	const trimmedEndpoint = endpoint.trim();
+	if (!trimmedEndpoint) {
+		return false;
+	}
+
+	try {
+		const host = new URL(trimmedEndpoint).hostname.toLowerCase();
+		return host === "myqcloud.com" || host.endsWith(".myqcloud.com");
+	} catch {
+		return false;
+	}
+}
+
+export function getS3CompatibleDriverPromotionTarget(
+	policy: {
+		driver_type: DriverType;
+		endpoint: string;
+	} | null,
+	getDriverLabel: (driverType: S3CompatiblePromotionDriverType) => string,
+): S3CompatibleDriverPromotionTarget | null {
+	if (policy?.driver_type !== "s3") {
+		return null;
+	}
+
+	// Keep provider detection centralized so future OSS/OBS promotions only need
+	// one UI registry change plus the matching backend allowlist entry.
+	if (isTencentCosEndpoint(policy.endpoint)) {
+		return {
+			driverLabel: getDriverLabel("tencent_cos"),
+			driverType: "tencent_cos",
+		};
+	}
+
+	return null;
 }
 
 export const DEFAULT_STORAGE_NATIVE_THUMBNAIL_EXTENSIONS = [
@@ -66,6 +110,7 @@ export interface PolicyFormData {
 	remote_upload_strategy: RemoteUploadStrategy;
 	s3_upload_strategy: S3UploadStrategy;
 	s3_download_strategy: S3DownloadStrategy;
+	s3_path_style?: boolean;
 	storage_native_processing_enabled: boolean;
 	storage_native_media_metadata_enabled?: boolean;
 	thumbnail_processor: StoragePolicyOptions["thumbnail_processor"];
@@ -92,6 +137,10 @@ export function getEffectiveS3DownloadStrategy(
 	options: StoragePolicyOptions,
 ): S3DownloadStrategy {
 	return options.s3_download_strategy ?? "relay_stream";
+}
+
+export function getEffectiveS3PathStyle(options: StoragePolicyOptions) {
+	return options.s3_path_style ?? true;
 }
 
 export function getEffectiveRemoteDownloadStrategy(
@@ -123,6 +172,9 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 			s3_upload_strategy: form.s3_upload_strategy,
 			s3_download_strategy: form.s3_download_strategy,
 		});
+		if (form.driver_type === "s3" && form.s3_path_style === false) {
+			options.s3_path_style = false;
+		}
 	}
 
 	if (form.storage_native_processing_enabled) {
@@ -173,6 +225,9 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 		remote_upload_strategy: getEffectiveRemoteUploadStrategy(options),
 		s3_upload_strategy: getEffectiveS3UploadStrategy(options),
 		s3_download_strategy: getEffectiveS3DownloadStrategy(options),
+		...(policy.driver_type === "s3"
+			? { s3_path_style: getEffectiveS3PathStyle(options) }
+			: {}),
 		storage_native_processing_enabled:
 			options.storage_native_processing_enabled === true,
 		thumbnail_processor:
@@ -224,6 +279,7 @@ export function buildPolicyTestPayload(form: PolicyFormData) {
 		secret_key: normalizedForm.secret_key || undefined,
 		base_path: normalizedForm.base_path || undefined,
 		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
+		options: buildPolicyOptions(normalizedForm),
 	};
 }
 
@@ -324,6 +380,7 @@ export function getPolicyConnectionTestKey(form: PolicyFormData) {
 		secret_key: normalizedForm.secret_key,
 		base_path: normalizedForm.base_path,
 		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
+		options: buildPolicyOptions(normalizedForm),
 	});
 }
 
@@ -351,10 +408,6 @@ export function getEndpointValidationMessage(
 		return t("s3_endpoint_protocol_required_error");
 	}
 
-	if (form.driver_type === "s3" && isPublicR2DevUrl(trimmedEndpoint)) {
-		return t("s3_endpoint_public_r2_dev_error");
-	}
-
 	return null;
 }
 
@@ -375,6 +428,7 @@ export const emptyForm: PolicyFormData = {
 	remote_upload_strategy: "relay_stream",
 	s3_upload_strategy: "relay_stream",
 	s3_download_strategy: "relay_stream",
+	s3_path_style: true,
 	storage_native_processing_enabled: false,
 	storage_native_media_metadata_enabled: false,
 	thumbnail_processor: null,

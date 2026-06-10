@@ -349,6 +349,8 @@ export type UpdatePolicyRequest = components["schemas"]["PatchPolicyReq"];
 export type PatchRemoteNodeReq = components["schemas"]["PatchRemoteNodeReq"];
 export type TestPolicyParamsRequest =
 	components["schemas"]["TestPolicyParamsReq"];
+export type PromoteS3CompatiblePolicyDriverRequest =
+	components["schemas"]["PromoteS3CompatiblePolicyDriverReq"];
 export type TestRemoteNodeParamsReq =
 	components["schemas"]["TestRemoteNodeParamsReq"];
 export type UpdateRemoteNodeRequest =

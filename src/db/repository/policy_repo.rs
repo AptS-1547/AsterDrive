@@ -5,6 +5,7 @@ use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::db::repository::sort::{order_by_column_with_id, order_by_id};
 use crate::entities::storage_policy::{self, Entity as StoragePolicy};
 use crate::errors::{AsterError, Result};
+use crate::types::DriverType;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, Set, sea_query::Expr,
@@ -174,6 +175,29 @@ pub async fn set_only_default<C: ConnectionTrait>(db: &C, id: i64) -> Result<()>
         .exec(db)
         .await
         .map_err(AsterError::from)?;
+    Ok(())
+}
+
+pub async fn promote_s3_compatible_driver<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    source_driver_type: DriverType,
+    target_driver_type: DriverType,
+    endpoint: String,
+) -> Result<()> {
+    let policy = lock_by_id(db, id).await?;
+    if policy.driver_type != source_driver_type {
+        return Err(AsterError::validation_error(format!(
+            "storage policy #{id} is not a {} policy",
+            source_driver_type.as_str()
+        )));
+    }
+
+    let mut active: storage_policy::ActiveModel = policy.into();
+    active.driver_type = Set(target_driver_type);
+    active.endpoint = Set(endpoint);
+    active.updated_at = Set(chrono::Utc::now());
+    active.update(db).await.map_err(AsterError::from)?;
     Ok(())
 }
 

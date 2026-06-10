@@ -16,14 +16,15 @@ pub use groups::{
 };
 pub use models::{
     CreateStoragePolicyGroupInput, CreateStoragePolicyInput, PolicyGroupAssignmentMigrationResult,
-    StoragePolicy, StoragePolicyCapacityInfo, StoragePolicyConnectionInput, StoragePolicyGroupInfo,
-    StoragePolicyGroupItemInfo, StoragePolicyGroupItemInput, StoragePolicySummaryInfo,
-    UpdateStoragePolicyGroupInput, UpdateStoragePolicyInput,
+    PromoteS3CompatiblePolicyDriverInput, StoragePolicy, StoragePolicyCapacityInfo,
+    StoragePolicyConnectionInput, StoragePolicyGroupInfo, StoragePolicyGroupItemInfo,
+    StoragePolicyGroupItemInput, StoragePolicySummaryInfo, UpdateStoragePolicyGroupInput,
+    UpdateStoragePolicyInput,
 };
 pub(crate) use policies::capacity_info_or_status;
 pub use policies::{
-    capacity_info, create, delete, get, list_paginated, test_connection, test_connection_params,
-    test_default_connection, update,
+    capacity_info, create, delete, get, list_paginated, promote_s3_compatible_driver,
+    test_connection, test_connection_params, test_default_connection, update,
 };
 
 fn driver_type_audit_name(driver_type: DriverType) -> &'static str {
@@ -71,6 +72,26 @@ pub async fn update_with_audit(
     audit_ctx: &AuditContext,
 ) -> Result<StoragePolicy> {
     let policy = update(state, id, input).await?;
+    audit_service::log_with_details(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminUpdatePolicy,
+        crate::services::audit_service::AuditEntityType::StoragePolicy,
+        Some(policy.id),
+        Some(&policy.name),
+        || policy_audit_details(&policy),
+    )
+    .await;
+    Ok(policy)
+}
+
+pub async fn promote_s3_compatible_driver_with_audit(
+    state: &impl SharedRuntimeState,
+    id: i64,
+    input: PromoteS3CompatiblePolicyDriverInput,
+    audit_ctx: &AuditContext,
+) -> Result<StoragePolicy> {
+    let policy = promote_s3_compatible_driver(state, id, input).await?;
     audit_service::log_with_details(
         state,
         audit_ctx,
