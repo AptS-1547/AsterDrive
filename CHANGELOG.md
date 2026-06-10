@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.0-alpha.4] - 2026-06-11
+
+### Release Highlights
+
+**AsterDrive `0.3.0-alpha.4` 聚焦 PWA 启动性能审计、API 错误码细粒度分类、Service Worker 缓存优化和数据库类型约束统一。** 本版本新增启动性能监测工具链，可自动生成性能报告和 Web Vitals 指标；API 错误码按模块（search, policy, storage, tasks）分层细化，提升调试和文档准确度；Service Worker 缓存策略重构以支持精细粒度版本控制；运行时数据库类型约束统一为 `DatabaseConnection`，移除 `ConnectionTrait` 泛型冗余。同时更新安全策略文档支持分支标识为 `master`，修复文档示例。
+
+- **PWA 启动性能审计** — 自动化性能测试脚本、Web Vitals 指标收集、HTML 报告生成
+- **API 错误码细粒度分类** — search / policy / storage / tasks 模块独立错误码集
+- **Service Worker 缓存优化** — 支持版本级别缓存隔离和更新策略
+- **数据库类型约束统一** — `ConnectionTrait` 泛型移除，使用 `DatabaseConnection` trait object
+- **文档和配置更新** — 安全策略分支引用更新、Cargo.toml 优化
+
+### Added
+
+- **PWA 启动性能审计工具**
+  - 新增 `frontend-panel/scripts/audit-startup.mjs` 自动化审计脚本
+  - Web Vitals 指标收集（LCP、FID、CLS、FCP、TTFB）
+  - HTML 报告生成，支持分数评级和详细指标
+  - 性能基线和阈值检测
+
+- **API 错误码细粒度分类（Breaking）**
+  - `search` 模块：`search.invalid_query`、`search.query_timeout` 等
+  - `policy` 模块：`policy.not_found`、`policy.driver_type_mismatch` 等
+  - `storage` 模块：`storage.quota_exceeded`、`storage.access_denied` 等
+  - `tasks` 模块：`tasks.not_found`、`tasks.invalid_state` 等
+  - 文档同步更新，所有错误码映射到细分类别
+
+- **Service Worker 缓存版本隔离**
+  - 版本级别缓存键支持（cache name 包含应用版本）
+  - PWA 路由预热阶段增强
+  - 缓存更新和清理策略优化
+
+### Changed
+
+- **数据库访问类型统一（Breaking on internal API）**
+  - `ConnectionTrait` 泛型完全移除
+  - 所有服务层和 API 路由使用 `DatabaseConnection` trait object
+  - 零成本抽象，行为完全一致
+  - 影响 40+ 个文件
+
+- **文档和配置更新**
+  - `SECURITY.md` 支持分支从 `main` 更新为 `master`
+  - `CONTRIBUTING.md` 示例仓库 URL 更新
+  - `Cargo.toml` release 配置：`strip = false` → `strip = true`
+
+### Fixed
+
+- **启动性能测试覆盖**
+  - 新增 `frontend-panel/src/lib/pwaWarmupLoaders.test.ts` 单元测试
+  - 改进初始化路由加载逻辑验证
+
+### Database Migrations
+
+无新增迁移。
+
+### Statistics
+
+- 150 files changed, 3676 insertions(+), 1022 deletions(-)
+- 6 commits
+
+---
+
 ## [v0.3.0-alpha.3] - 2026-06-10
 
 ### Release Highlights
@@ -4605,7 +4667,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.2...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.4...HEAD
+[v0.3.0-alpha.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.3...v0.3.0-alpha.4
+[v0.3.0-alpha.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.2...v0.3.0-alpha.3
 [v0.3.0-alpha.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.1...v0.3.0-alpha.2
 [v0.3.0-alpha.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.7...v0.3.0-alpha.1
 [v0.2.7]: https://github.com/AptS-1547/AsterDrive/compare/v0.2.6...v0.2.7
