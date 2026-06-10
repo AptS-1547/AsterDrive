@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { RouterProvider } from "react-router-dom";
 import { Toaster, toast } from "sonner";
 import { usePwaUpdate } from "@/hooks/usePwaUpdate";
@@ -6,6 +6,7 @@ import i18n, { ensureAllI18nNamespaces } from "@/i18n";
 import { runWhenIdle } from "@/lib/idleTask";
 import { useMusicPlayerHostMountRequested } from "@/lib/musicPlayerMountSignal";
 import { router } from "@/router";
+import { Loading } from "@/router/Loading";
 import { useAuthStore } from "@/stores/authStore";
 import {
 	resolveActiveDisplayTimeZone,
@@ -65,13 +66,10 @@ function scheduleSupportConfigLoads() {
 	);
 }
 
-function scheduleFullLocaleLoad() {
-	return runWhenIdle(
-		() => {
-			void ensureAllI18nNamespaces();
-		},
-		{ fallbackDelayMs: 1_200, timeoutMs: 3_000 },
-	);
+function warmupPwaChunks(role: string | undefined) {
+	void import("@/lib/pwaWarmup").then(({ warmupRouteChunks }) => {
+		warmupRouteChunks(role === "admin" ? "admin" : "user");
+	});
 }
 
 async function consumeExternalAuthSuccessRedirect() {
@@ -92,10 +90,13 @@ async function consumeExternalAuthSuccessRedirect() {
 }
 
 function App() {
+	const [authenticatedLocaleReady, setAuthenticatedLocaleReady] =
+		useState(false);
 	const checkAuth = useAuthStore((s) => s.checkAuth);
 	const isChecking = useAuthStore((s) => s.isChecking);
 	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 	const bootOffline = useAuthStore((s) => s.bootOffline);
+	const userRole = useAuthStore((s) => s.user?.role);
 	const storageEventStreamEnabled = useAuthStore(
 		(s) => s.user?.preferences?.storage_event_stream_enabled !== false,
 	);
@@ -104,12 +105,13 @@ function App() {
 	);
 	const shouldMountMusicPlayer = useMusicPlayerHostMountRequested();
 	usePwaUpdate();
+	const shouldHoldAuthenticatedRoute =
+		isAuthenticated && !isChecking && !authenticatedLocaleReady;
 
 	useEffect(() => {
 		const skipInitialAuthCheck = shouldSkipInitialAuthCheck(
 			window.location.pathname,
 		);
-		const cancelFullLocaleLoad = scheduleFullLocaleLoad();
 		loadPublicConfig();
 		if (!skipInitialAuthCheck) {
 			checkAuth();
@@ -117,13 +119,34 @@ function App() {
 			useAuthStore.setState({ isChecking: false });
 		}
 		useThemeStore.getState().init();
-		return cancelFullLocaleLoad;
 	}, [checkAuth]);
 
 	useEffect(() => {
 		if (isChecking || !isAuthenticated) return;
 		return scheduleSupportConfigLoads();
 	}, [isAuthenticated, isChecking]);
+
+	useEffect(() => {
+		if (isChecking || !isAuthenticated) {
+			setAuthenticatedLocaleReady(false);
+			return;
+		}
+
+		let cancelled = false;
+		void ensureAllI18nNamespaces().then(() => {
+			if (cancelled) return;
+			setAuthenticatedLocaleReady(true);
+		});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [isAuthenticated, isChecking]);
+
+	useEffect(() => {
+		if (isChecking || !isAuthenticated || !authenticatedLocaleReady) return;
+		warmupPwaChunks(userRole);
+	}, [authenticatedLocaleReady, isAuthenticated, isChecking, userRole]);
 
 	useEffect(() => {
 		if (isChecking || !isAuthenticated) return;
@@ -147,6 +170,8 @@ function App() {
 				<Suspense fallback={null}>
 					<OfflineBootFallback />
 				</Suspense>
+			) : shouldHoldAuthenticatedRoute ? (
+				<Loading />
 			) : (
 				<RouterProvider router={router} />
 			)}

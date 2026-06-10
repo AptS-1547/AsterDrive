@@ -135,6 +135,7 @@ export default defineConfig(({ command }) => {
 								"assets/PdfPreview-*.js",
 								"assets/PdfPreview-*.css",
 								"assets/pdf.worker.min-*.mjs",
+								"assets/vendor-react-icons-*.js",
 								"pdfjs/**",
 								"static/preview-apps/**",
 								"static/external-auth/**",

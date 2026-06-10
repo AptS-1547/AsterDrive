@@ -13,9 +13,29 @@ const loginRouteWarmupLoader = {
 export const userRouteWarmupLoaders = [
 	loginRouteWarmupLoader,
 	{
+		key: "route:file-browser",
+		label: "FileBrowserPage",
+		load: () => import("@/pages/FileBrowserPage"),
+	},
+	{
+		key: "route:category-browser",
+		label: "CategoryBrowserPage",
+		load: () => import("@/pages/CategoryBrowserPage"),
+	},
+	{
+		key: "route:search-browser",
+		label: "SearchBrowserPage",
+		load: () => import("@/pages/SearchBrowserPage"),
+	},
+	{
 		key: "route:my-shares",
 		label: "MySharesPage",
 		load: () => import("@/pages/MySharesPage"),
+	},
+	{
+		key: "route:tasks",
+		label: "TasksPage",
+		load: () => import("@/pages/TasksPage"),
 	},
 	{
 		key: "route:trash",
@@ -32,9 +52,39 @@ export const userRouteWarmupLoaders = [
 		label: "WebdavAccountsPage",
 		load: () => import("@/pages/WebdavAccountsPage"),
 	},
+	{
+		key: "route:team-manage",
+		label: "TeamManagePage",
+		load: () => import("@/pages/TeamManagePage"),
+	},
+	{
+		key: "route:force-password-change",
+		label: "ForcePasswordChangePage",
+		load: () => import("@/pages/ForcePasswordChangePage"),
+	},
+	{
+		key: "route:reset-password",
+		label: "ResetPasswordPage",
+		load: () => import("@/pages/ResetPasswordPage"),
+	},
+	{
+		key: "route:invite-register",
+		label: "InviteRegisterPage",
+		load: () => import("@/pages/InviteRegisterPage"),
+	},
+	{
+		key: "route:share-view",
+		label: "ShareViewPage",
+		load: () => import("@/pages/ShareViewPage"),
+	},
 ] satisfies WarmupLoaderEntry[];
 
 export const adminRouteWarmupLoaders = [
+	{
+		key: "route:admin-overview",
+		label: "AdminOverviewPage",
+		load: () => import("@/pages/admin/AdminOverviewPage"),
+	},
 	{
 		key: "route:admin-users",
 		label: "AdminUsersPage",
@@ -46,14 +96,39 @@ export const adminRouteWarmupLoaders = [
 		load: () => import("@/pages/admin/AdminUserInvitationsPage"),
 	},
 	{
+		key: "route:admin-teams",
+		label: "AdminTeamsPage",
+		load: () => import("@/pages/admin/AdminTeamsPage"),
+	},
+	{
+		key: "route:admin-team-detail",
+		label: "AdminTeamDetailPage",
+		load: () => import("@/pages/admin/AdminTeamDetailPage"),
+	},
+	{
 		key: "route:admin-policies",
 		label: "AdminPoliciesPage",
 		load: () => import("@/pages/admin/AdminPoliciesPage"),
 	},
 	{
+		key: "route:admin-remote-nodes",
+		label: "AdminRemoteNodesPage",
+		load: () => import("@/pages/admin/AdminRemoteNodesPage"),
+	},
+	{
 		key: "route:admin-external-auth",
 		label: "AdminExternalAuthPage",
 		load: () => import("@/pages/admin/AdminExternalAuthPage"),
+	},
+	{
+		key: "route:admin-policy-groups",
+		label: "AdminPolicyGroupsPage",
+		load: () => import("@/pages/admin/AdminPolicyGroupsPage"),
+	},
+	{
+		key: "route:admin-tasks",
+		label: "AdminTasksPage",
+		load: () => import("@/pages/admin/AdminTasksPage"),
 	},
 	{
 		key: "route:admin-settings",
@@ -64,6 +139,11 @@ export const adminRouteWarmupLoaders = [
 		key: "route:admin-shares",
 		label: "AdminSharesPage",
 		load: () => import("@/pages/admin/AdminSharesPage"),
+	},
+	{
+		key: "route:admin-files",
+		label: "AdminFilesPage",
+		load: () => import("@/pages/admin/AdminFilesPage"),
 	},
 	{
 		key: "route:admin-locks",

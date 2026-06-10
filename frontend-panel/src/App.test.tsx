@@ -8,7 +8,10 @@ const mockState = vi.hoisted(() => ({
 		checkAuth: vi.fn(),
 		isAuthenticated: false,
 		isChecking: false,
-		user: null as { role?: string } | null,
+		user: null as {
+			preferences?: { storage_event_stream_enabled?: boolean };
+			role?: string;
+		} | null,
 	},
 	frontendConfigLoad: vi.fn(),
 	initFrontendConfigRuntime: vi.fn(),
@@ -23,6 +26,7 @@ const mockState = vi.hoisted(() => ({
 	themeInit: vi.fn(),
 	thumbnailSupportLoad: vi.fn(),
 	toastSuccess: vi.fn(),
+	warmupRouteChunks: vi.fn(),
 }));
 
 vi.mock("react-router-dom", () => ({
@@ -74,6 +78,11 @@ vi.mock("@/components/music/MusicPlayerHost", () => ({
 vi.mock("@/lib/musicPlayerMountSignal", () => ({
 	useMusicPlayerHostMountRequested: () =>
 		mockState.musicPlayerHostMountRequested,
+}));
+
+vi.mock("@/lib/pwaWarmup", () => ({
+	warmupRouteChunks: (...args: unknown[]) =>
+		mockState.warmupRouteChunks(...args),
 }));
 
 vi.mock("@/stores/frontendConfigStore", () => ({
@@ -158,6 +167,7 @@ describe("App", () => {
 		mockState.themeInit.mockReset();
 		mockState.thumbnailSupportLoad.mockReset();
 		mockState.toastSuccess.mockReset();
+		mockState.warmupRouteChunks.mockReset();
 		vi.useRealTimers();
 	});
 
@@ -219,10 +229,11 @@ describe("App", () => {
 
 		await vi.advanceTimersByTimeAsync(1200);
 
-		expect(mockState.ensureAllI18nNamespaces).toHaveBeenCalledTimes(1);
+		expect(mockState.ensureAllI18nNamespaces).not.toHaveBeenCalled();
 		expect(mockState.previewAppsLoad).not.toHaveBeenCalled();
 		expect(mockState.thumbnailSupportLoad).not.toHaveBeenCalled();
 		expect(mockState.mediaDataSupportLoad).not.toHaveBeenCalled();
+		expect(mockState.warmupRouteChunks).not.toHaveBeenCalled();
 
 		Object.defineProperty(document, "visibilityState", {
 			configurable: true,
@@ -254,10 +265,35 @@ describe("App", () => {
 		await vi.advanceTimersByTimeAsync(300_000);
 
 		expect(mockState.frontendConfigLoad).toHaveBeenCalledTimes(1);
+		expect(mockState.warmupRouteChunks).toHaveBeenCalledWith("user");
 		await vi.waitFor(() => {
+			expect(mockState.ensureAllI18nNamespaces).toHaveBeenCalledTimes(1);
 			expect(mockState.previewAppsLoad).toHaveBeenCalledTimes(1);
 			expect(mockState.thumbnailSupportLoad).toHaveBeenCalledTimes(1);
 			expect(mockState.mediaDataSupportLoad).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("holds authenticated routes until the full locale bundle is ready", async () => {
+		let resolveLocale!: () => void;
+		mockState.ensureAllI18nNamespaces.mockReturnValueOnce(
+			new Promise<void>((resolve) => {
+				resolveLocale = resolve;
+			}),
+		);
+		mockState.authStore.isAuthenticated = true;
+		mockState.authStore.isChecking = false;
+
+		render(<App />);
+
+		expect(screen.queryByTestId("router-provider")).not.toBeInTheDocument();
+		expect(mockState.warmupRouteChunks).not.toHaveBeenCalled();
+
+		resolveLocale();
+
+		await waitFor(() => {
+			expect(screen.getByTestId("router-provider")).toBeInTheDocument();
+			expect(mockState.warmupRouteChunks).toHaveBeenCalledWith("user");
 		});
 	});
 
@@ -327,15 +363,29 @@ describe("App", () => {
 		expect(window.location.search).toBe("");
 	});
 
-	it("does not warm route chunks after auth is ready", async () => {
+	it("warms route chunks after auth is ready", async () => {
 		mockState.authStore.isAuthenticated = true;
 		mockState.authStore.isChecking = false;
 
 		render(<App />);
 
-		await Promise.resolve();
+		await waitFor(() => {
+			expect(mockState.warmupRouteChunks).toHaveBeenCalledWith("user");
+		});
 
 		expect(screen.queryByTestId("music-player-host")).not.toBeInTheDocument();
+	});
+
+	it("warms admin route chunks for admin users", async () => {
+		mockState.authStore.isAuthenticated = true;
+		mockState.authStore.isChecking = false;
+		mockState.authStore.user = { role: "admin" };
+
+		render(<App />);
+
+		await waitFor(() => {
+			expect(mockState.warmupRouteChunks).toHaveBeenCalledWith("admin");
+		});
 	});
 
 	it("loads the music player host only after it is requested", async () => {
