@@ -7,6 +7,7 @@ import {
 } from "@/lib/pwaWarmupLoaders";
 
 vi.mock("@/pages/LoginPage", () => ({ default: "LoginPage" }));
+vi.mock("@/pages/ErrorPage", () => ({ default: "ErrorPage" }));
 vi.mock("@/pages/FileBrowserPage", () => ({ default: "FileBrowserPage" }));
 vi.mock("@/pages/CategoryBrowserPage", () => ({
 	default: "CategoryBrowserPage",
@@ -122,6 +123,7 @@ describe("pwaWarmupLoaders", () => {
 	it("defines stable keys for each warmup queue", () => {
 		expect(userRouteWarmupLoaders.map((loader) => loader.key)).toEqual([
 			"route:login",
+			"route:error",
 			"route:file-browser",
 			"route:category-browser",
 			"route:search-browser",

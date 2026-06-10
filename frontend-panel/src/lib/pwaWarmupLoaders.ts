@@ -13,6 +13,11 @@ const loginRouteWarmupLoader = {
 export const userRouteWarmupLoaders = [
 	loginRouteWarmupLoader,
 	{
+		key: "route:error",
+		label: "ErrorPage",
+		load: () => import("@/pages/ErrorPage"),
+	},
+	{
 		key: "route:file-browser",
 		label: "FileBrowserPage",
 		load: () => import("@/pages/FileBrowserPage"),
