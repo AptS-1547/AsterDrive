@@ -184,10 +184,14 @@ pub fn direct_routes(
 ) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.public, &network_trust.trusted_proxies);
 
-    web::scope("")
-        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
-        .route("/d/{token}/{filename}", web::get().to(download_direct))
-        .route("/pv/{token}/{filename}", web::get().to(download_preview))
+    (
+        web::resource("/d/{token}/{filename}")
+            .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
+            .route(web::get().to(download_direct)),
+        web::resource("/pv/{token}/{filename}")
+            .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
+            .route(web::get().to(download_preview)),
+    )
 }
 
 #[api_docs_macros::path(
@@ -1273,16 +1277,27 @@ mod tests {
                     &NetworkTrustConfig::default(),
                 ))
                 .route(
+                    "/",
+                    web::get().to(|| async { HttpResponse::Ok().body("root") }),
+                )
+                .route(
                     "/after",
                     web::get().to(|| async { HttpResponse::Ok().finish() }),
                 ),
         )
         .await;
 
-        let req = test::TestRequest::get().uri("/after").to_request();
-        let resp = test::call_service(&app, req).await;
+        let root_req = test::TestRequest::get().uri("/").to_request();
+        let root_resp = test::call_service(&app, root_req).await;
+        assert_eq!(root_resp.status(), StatusCode::OK);
+        let root_body = body::to_bytes(root_resp.into_body())
+            .await
+            .expect("root response body should be readable");
+        assert_eq!(root_body.as_ref(), b"root");
 
-        assert_eq!(resp.status(), StatusCode::OK);
+        let after_req = test::TestRequest::get().uri("/after").to_request();
+        let after_resp = test::call_service(&app, after_req).await;
+        assert_eq!(after_resp.status(), StatusCode::OK);
     }
 
     #[actix_web::test]

@@ -1,6 +1,6 @@
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect,
+    ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -86,8 +86,8 @@ pub async fn find_admin_files_paginated(
     Ok((items, total))
 }
 
-pub async fn find_admin_file_by_id<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_admin_file_by_id(
+    db: &DatabaseConnection,
     id: i64,
 ) -> Result<(file::Model, file_blob::Model)> {
     let (file, blob) = File::find_by_id(id)
@@ -106,7 +106,7 @@ pub async fn find_admin_file_by_id<C: ConnectionTrait>(
     Ok((file, blob))
 }
 
-pub async fn find_by_blob_id<C: ConnectionTrait>(db: &C, blob_id: i64) -> Result<Vec<file::Model>> {
+pub async fn find_by_blob_id(db: &DatabaseConnection, blob_id: i64) -> Result<Vec<file::Model>> {
     File::find()
         .filter(file::Column::BlobId.eq(blob_id))
         .order_by_asc(file::Column::Id)
@@ -115,8 +115,8 @@ pub async fn find_by_blob_id<C: ConnectionTrait>(db: &C, blob_id: i64) -> Result
         .map_err(AsterError::from)
 }
 
-pub async fn find_admin_blob_uploader_refs_for_blobs<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_admin_blob_uploader_refs_for_blobs(
+    db: &DatabaseConnection,
     blob_ids: &[i64],
 ) -> Result<HashMap<i64, Vec<AdminBlobUploaderRef>>> {
     if blob_ids.is_empty() {

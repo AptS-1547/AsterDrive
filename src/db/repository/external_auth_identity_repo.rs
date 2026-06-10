@@ -2,8 +2,8 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
-    QueryOrder, sea_query::Expr,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
 };
 
 use crate::entities::external_auth_identity::{self, Entity as ExternalAuthIdentity};
@@ -19,8 +19,8 @@ pub struct CreateExternalAuthIdentityInput<'a> {
     pub now: chrono::DateTime<Utc>,
 }
 
-pub async fn list_for_user<C: ConnectionTrait>(
-    db: &C,
+pub async fn list_for_user(
+    db: &DatabaseConnection,
     user_id: i64,
 ) -> Result<Vec<external_auth_identity::Model>> {
     ExternalAuthIdentity::find()
@@ -133,7 +133,7 @@ pub async fn touch_login<C: ConnectionTrait>(
     Ok(result.rows_affected == 1)
 }
 
-pub async fn delete_for_user<C: ConnectionTrait>(db: &C, id: i64, user_id: i64) -> Result<bool> {
+pub async fn delete_for_user(db: &DatabaseConnection, id: i64, user_id: i64) -> Result<bool> {
     let result = ExternalAuthIdentity::delete_many()
         .filter(external_auth_identity::Column::Id.eq(id))
         .filter(external_auth_identity::Column::UserId.eq(user_id))

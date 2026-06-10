@@ -12,8 +12,8 @@ use crate::types::EntityType;
 const ENTITY_PROPERTY_BATCH_CHUNK_SIZE: usize = 500;
 
 /// 查询实体的所有属性
-pub async fn find_by_entity<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_by_entity(
+    db: &DatabaseConnection,
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<Vec<entity_property::Model>> {
@@ -26,8 +26,8 @@ pub async fn find_by_entity<C: ConnectionTrait>(
 }
 
 /// 查询实体的单个属性
-pub async fn find_by_key<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_by_key(
+    db: &DatabaseConnection,
     entity_type: EntityType,
     entity_id: i64,
     namespace: &str,
@@ -287,8 +287,8 @@ pub struct EntityTagBindingRow {
     pub tag_id: String,
 }
 
-pub async fn find_tag_bindings_for_entities<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_tag_bindings_for_entities(
+    db: &DatabaseConnection,
     namespace: &str,
     file_ids: &[i64],
     folder_ids: &[i64],
@@ -326,8 +326,8 @@ pub async fn find_tag_bindings_for_entities<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
-pub async fn find_entity_ids_by_tag_ids<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_entity_ids_by_tag_ids(
+    db: &DatabaseConnection,
     namespace: &str,
     entity_type: EntityType,
     tag_ids: &[i64],

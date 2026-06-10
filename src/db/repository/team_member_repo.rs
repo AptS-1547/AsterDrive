@@ -192,15 +192,15 @@ pub async fn find_active_team_access<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
-pub async fn list_by_user_with_team<C: ConnectionTrait>(
-    db: &C,
+pub async fn list_by_user_with_team(
+    db: &DatabaseConnection,
     user_id: i64,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
     list_by_user_with_team_filtered(db, user_id, None, None, None, None).await
 }
 
-pub async fn list_by_user_with_team_filtered<C: ConnectionTrait>(
-    db: &C,
+pub async fn list_by_user_with_team_filtered(
+    db: &DatabaseConnection,
     user_id: i64,
     keyword: Option<&str>,
     limit: Option<u64>,
@@ -211,15 +211,15 @@ pub async fn list_by_user_with_team_filtered<C: ConnectionTrait>(
         .await
 }
 
-pub async fn list_by_user_with_archived_team<C: ConnectionTrait>(
-    db: &C,
+pub async fn list_by_user_with_archived_team(
+    db: &DatabaseConnection,
     user_id: i64,
 ) -> Result<Vec<(team_member::Model, team::Model)>> {
     list_by_user_with_archived_team_filtered(db, user_id, None, None, None, None).await
 }
 
-pub async fn list_by_user_with_archived_team_filtered<C: ConnectionTrait>(
-    db: &C,
+pub async fn list_by_user_with_archived_team_filtered(
+    db: &DatabaseConnection,
     user_id: i64,
     keyword: Option<&str>,
     limit: Option<u64>,
@@ -230,8 +230,8 @@ pub async fn list_by_user_with_archived_team_filtered<C: ConnectionTrait>(
         .await
 }
 
-async fn list_by_user_with_team_for_archived_state<C: ConnectionTrait>(
-    db: &C,
+async fn list_by_user_with_team_for_archived_state(
+    db: &DatabaseConnection,
     user_id: i64,
     archived: bool,
     keyword: Option<&str>,

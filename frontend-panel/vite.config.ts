@@ -120,13 +120,25 @@ export default defineConfig(({ command }) => {
 				workbox: {
 					globPatterns: isDevServer
 						? []
-						: ["**/*.{html,js,css,ico,png,svg,woff2,ttf,mjs,bcmap}"],
+						: [
+								"index.html",
+								"assets/index-*.js",
+								"assets/index-*.css",
+								"assets/rolldown-runtime-*.js",
+								"assets/vendor-react-*.js",
+								"assets/vendor-router-*.js",
+								"assets/vendor-i18n-*.js",
+								"assets/http-*.js",
+							],
 					globIgnores: isDevServer
 						? []
 						: [
 								"assets/PdfPreview-*.js",
 								"assets/PdfPreview-*.css",
 								"assets/pdf.worker.min-*.mjs",
+								"pdfjs/**",
+								"static/preview-apps/**",
+								"static/external-auth/**",
 							],
 					navigateFallback: "index.html",
 					navigateFallbackDenylist: [/^\/api\//, /^\/health\//, /^\/d\//],

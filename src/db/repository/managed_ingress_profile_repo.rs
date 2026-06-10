@@ -5,19 +5,15 @@ use crate::entities::managed_ingress_profile::{self, Entity as ManagedIngressPro
 use crate::errors::{AsterError, Result, validation_error_with_code};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, Set,
 };
 
-pub async fn find_by_id<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_by_id(
+    db: &DatabaseConnection,
     id: i64,
 ) -> Result<managed_ingress_profile::Model> {
-    ManagedIngressProfile::find_by_id(id)
-        .one(db)
-        .await
-        .map_err(AsterError::from)?
-        .ok_or_else(|| AsterError::record_not_found(format!("managed_ingress_profile #{id}")))
+    find_by_id_in_connection(db, id).await
 }
 
 pub async fn find_by_binding_and_profile_key<C: ConnectionTrait>(
@@ -33,8 +29,8 @@ pub async fn find_by_binding_and_profile_key<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
-pub async fn find_all_by_binding<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_all_by_binding(
+    db: &DatabaseConnection,
     master_binding_id: i64,
 ) -> Result<Vec<managed_ingress_profile::Model>> {
     ManagedIngressProfile::find()
@@ -47,8 +43,8 @@ pub async fn find_all_by_binding<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
-pub async fn find_default_by_binding<C: ConnectionTrait>(
-    db: &C,
+pub async fn find_default_by_binding(
+    db: &DatabaseConnection,
     master_binding_id: i64,
 ) -> Result<Option<managed_ingress_profile::Model>> {
     ManagedIngressProfile::find()
@@ -111,7 +107,7 @@ pub async fn set_only_default_for_binding(
     master_binding_id: i64,
     profile_id: i64,
 ) -> Result<()> {
-    let existing = find_by_id(db, profile_id).await?;
+    let existing = find_by_id_in_connection(db, profile_id).await?;
     if existing.master_binding_id != master_binding_id {
         return Err(validation_error_with_code(
             ApiErrorCode::ManagedIngressBindingMismatch,
@@ -136,4 +132,15 @@ pub async fn set_only_default_for_binding(
     active.updated_at = Set(chrono::Utc::now());
     update(db, active).await?;
     Ok(())
+}
+
+async fn find_by_id_in_connection<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+) -> Result<managed_ingress_profile::Model> {
+    ManagedIngressProfile::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .ok_or_else(|| AsterError::record_not_found(format!("managed_ingress_profile #{id}")))
 }
