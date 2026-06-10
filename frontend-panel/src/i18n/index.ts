@@ -1,5 +1,7 @@
-import i18n, { type ResourceKey } from "i18next";
+import { createInstance, type ResourceKey } from "i18next";
 import { initReactI18next } from "react-i18next";
+
+const i18n = createInstance();
 
 type SupportedLanguage = "en" | "zh";
 
@@ -17,7 +19,7 @@ function detectLanguage(): SupportedLanguage {
 	return normalizeLanguage(navigator.language);
 }
 
-const ALL_NAMESPACES = [
+export const ALL_NAMESPACES = [
 	"core",
 	"files",
 	"auth",
@@ -43,14 +45,6 @@ const INITIAL_LOCALE_REQUESTS: readonly LocaleLoadRequest[] = [
 	{ namespace: "errors", parts: ["generic", "auth"] },
 	"offline",
 ];
-const LANGUAGE_SWITCH_BASE_NAMESPACES = [
-	"core",
-	"login",
-	"validation",
-	"errors",
-	"offline",
-] as const;
-
 export type LocaleNamespace = (typeof ALL_NAMESPACES)[number];
 
 type LocaleModule = { default: ResourceKey };
@@ -170,20 +164,6 @@ const SPLIT_NAMESPACE_PARTS: Partial<
 		"pagination",
 	],
 };
-
-function isLocaleNamespace(namespace: string): namespace is LocaleNamespace {
-	return (ALL_NAMESPACES as readonly string[]).includes(namespace);
-}
-
-function getLanguageSwitchNamespaces(): LocaleNamespace[] {
-	const usedNamespaces = i18n.reportNamespaces?.getUsedNamespaces?.() ?? [];
-	return [
-		...new Set([
-			...LANGUAGE_SWITCH_BASE_NAMESPACES,
-			...usedNamespaces.filter(isLocaleNamespace),
-		]),
-	];
-}
 
 function normalizeLocaleRequest(
 	request: LocaleLoadRequest,
@@ -340,6 +320,21 @@ export async function ensureI18nNamespaces(
 	await ensureNamespaces(normalizeLanguage(language), namespaces);
 }
 
+const allNamespaceLoadPromises = new Map<SupportedLanguage, Promise<void>>();
+
+export function ensureAllI18nNamespaces(language: string = i18n.language) {
+	const lang = normalizeLanguage(language);
+	const existing = allNamespaceLoadPromises.get(lang);
+	if (existing) return existing;
+
+	const promise = ensureNamespaces(lang, ALL_NAMESPACES).catch((error) => {
+		allNamespaceLoadPromises.delete(lang);
+		throw error;
+	});
+	allNamespaceLoadPromises.set(lang, promise);
+	return promise;
+}
+
 const lang = detectLanguage();
 const initialLocale = await loadLocale(lang, INITIAL_LOCALE_REQUESTS);
 
@@ -357,7 +352,6 @@ for (const { namespace, parts } of initialLocale.loadedRequests) {
 	rememberLoadedParts(lang, namespace, parts);
 }
 
-// 切换语言时按需加载目标语言包
 const _changeLanguage = i18n.changeLanguage.bind(i18n);
 i18n.changeLanguage = async (newLang?: string, ...args) => {
 	if (newLang) {
@@ -367,7 +361,7 @@ i18n.changeLanguage = async (newLang?: string, ...args) => {
 		} catch {
 			// ignore storage errors (private browsing, quota)
 		}
-		await ensureNamespaces(targetLang, getLanguageSwitchNamespaces());
+		await ensureAllI18nNamespaces(targetLang);
 		return _changeLanguage(targetLang, ...args);
 	}
 	return _changeLanguage(newLang, ...args);

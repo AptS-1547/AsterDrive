@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("i18next", () => ({
+vi.mock("@/i18n", () => ({
 	default: {
 		t: (key: string) => `validation:${key}`,
 	},

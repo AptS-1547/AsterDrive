@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { RouterProvider } from "react-router-dom";
 import { Toaster, toast } from "sonner";
 import { usePwaUpdate } from "@/hooks/usePwaUpdate";
-import i18n from "@/i18n";
+import i18n, { ensureAllI18nNamespaces } from "@/i18n";
 import { runWhenIdle } from "@/lib/idleTask";
 import { useMusicPlayerHostMountRequested } from "@/lib/musicPlayerMountSignal";
 import { router } from "@/router";
@@ -65,10 +65,20 @@ function scheduleSupportConfigLoads() {
 	);
 }
 
-function consumeExternalAuthSuccessRedirect() {
+function scheduleFullLocaleLoad() {
+	return runWhenIdle(
+		() => {
+			void ensureAllI18nNamespaces();
+		},
+		{ fallbackDelayMs: 1_200, timeoutMs: 3_000 },
+	);
+}
+
+async function consumeExternalAuthSuccessRedirect() {
 	const searchParams = new URLSearchParams(window.location.search);
 	if (searchParams.get("external_auth") !== "success") return;
 
+	await ensureAllI18nNamespaces();
 	toast.success(i18n.t("auth:login_success"), {
 		id: "external-auth-login-success",
 	});
@@ -99,6 +109,7 @@ function App() {
 		const skipInitialAuthCheck = shouldSkipInitialAuthCheck(
 			window.location.pathname,
 		);
+		const cancelFullLocaleLoad = scheduleFullLocaleLoad();
 		loadPublicConfig();
 		if (!skipInitialAuthCheck) {
 			checkAuth();
@@ -106,6 +117,7 @@ function App() {
 			useAuthStore.setState({ isChecking: false });
 		}
 		useThemeStore.getState().init();
+		return cancelFullLocaleLoad;
 	}, [checkAuth]);
 
 	useEffect(() => {
@@ -116,7 +128,7 @@ function App() {
 	useEffect(() => {
 		if (isChecking || !isAuthenticated) return;
 
-		consumeExternalAuthSuccessRedirect();
+		void consumeExternalAuthSuccessRedirect();
 	}, [isAuthenticated, isChecking]);
 
 	useEffect(() => {

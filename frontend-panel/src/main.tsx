@@ -6,6 +6,7 @@ import App from "./App.tsx";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element not found");
+root.querySelector("[data-aster-boot-loading]")?.remove();
 createRoot(root).render(
 	<StrictMode>
 		<App />

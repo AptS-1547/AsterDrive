@@ -15,6 +15,7 @@ const mockState = vi.hoisted(() => ({
 	displayTimeZoneStore: {
 		preference: "browser",
 	},
+	ensureAllI18nNamespaces: vi.fn(),
 	previewAppsLoad: vi.fn(),
 	mediaDataSupportLoad: vi.fn(),
 	musicPlayerHostMountRequested: false,
@@ -39,6 +40,7 @@ vi.mock("@/i18n", () => ({
 	default: {
 		t: (key: string) => key,
 	},
+	ensureAllI18nNamespaces: () => mockState.ensureAllI18nNamespaces(),
 }));
 
 vi.mock("@/router", () => ({
@@ -145,6 +147,8 @@ describe("App", () => {
 		mockState.authStore.isChecking = false;
 		mockState.authStore.user = null;
 		mockState.displayTimeZoneStore.preference = "browser";
+		mockState.ensureAllI18nNamespaces.mockReset();
+		mockState.ensureAllI18nNamespaces.mockResolvedValue(undefined);
 		mockState.musicPlayerHostMountRequested = false;
 		mockState.frontendConfigLoad.mockReset();
 		mockState.initFrontendConfigRuntime.mockReset();
@@ -172,6 +176,7 @@ describe("App", () => {
 		expect(mockState.previewAppsLoad).not.toHaveBeenCalled();
 		expect(mockState.thumbnailSupportLoad).not.toHaveBeenCalled();
 		expect(mockState.mediaDataSupportLoad).not.toHaveBeenCalled();
+		expect(mockState.ensureAllI18nNamespaces).not.toHaveBeenCalled();
 		expect(mockState.authStore.checkAuth).not.toHaveBeenCalled();
 		expect(mockState.setAuthState).toHaveBeenCalledWith({ isChecking: false });
 	});
@@ -210,9 +215,11 @@ describe("App", () => {
 		expect(mockState.previewAppsLoad).not.toHaveBeenCalled();
 		expect(mockState.thumbnailSupportLoad).not.toHaveBeenCalled();
 		expect(mockState.mediaDataSupportLoad).not.toHaveBeenCalled();
+		expect(mockState.ensureAllI18nNamespaces).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(1200);
 
+		expect(mockState.ensureAllI18nNamespaces).toHaveBeenCalledTimes(1);
 		expect(mockState.previewAppsLoad).not.toHaveBeenCalled();
 		expect(mockState.thumbnailSupportLoad).not.toHaveBeenCalled();
 		expect(mockState.mediaDataSupportLoad).not.toHaveBeenCalled();
@@ -277,7 +284,7 @@ describe("App", () => {
 		expect(window.location.search).toBe("?external_auth=success");
 	});
 
-	it("shows and consumes the external auth success redirect toast after auth is ready", () => {
+	it("shows and consumes the external auth success redirect toast after auth is ready", async () => {
 		mockState.authStore.isAuthenticated = true;
 		mockState.authStore.isChecking = false;
 		window.history.replaceState(
@@ -288,23 +295,33 @@ describe("App", () => {
 
 		render(<App />);
 
-		expect(mockState.toastSuccess).toHaveBeenCalledWith("auth:login_success", {
-			id: "external-auth-login-success",
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"auth:login_success",
+				{
+					id: "external-auth-login-success",
+				},
+			);
 		});
 		expect(window.location.pathname).toBe("/");
 		expect(window.location.search).toBe("?view=grid");
 		expect(window.location.hash).toBe("#files");
 	});
 
-	it("removes the external auth success query when it is the only search parameter", () => {
+	it("removes the external auth success query when it is the only search parameter", async () => {
 		mockState.authStore.isAuthenticated = true;
 		mockState.authStore.isChecking = false;
 		window.history.replaceState({}, "", "/tasks?external_auth=success");
 
 		render(<App />);
 
-		expect(mockState.toastSuccess).toHaveBeenCalledWith("auth:login_success", {
-			id: "external-auth-login-success",
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"auth:login_success",
+				{
+					id: "external-auth-login-success",
+				},
+			);
 		});
 		expect(window.location.pathname).toBe("/tasks");
 		expect(window.location.search).toBe("");

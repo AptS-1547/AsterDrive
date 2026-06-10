@@ -1,4 +1,3 @@
-import type { ReportNamespaces } from "react-i18next";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiErrorCode } from "@/types/api-helpers";
 
@@ -29,31 +28,53 @@ describe("i18n", () => {
 
 		expect(i18n.hasResourceBundle("zh", "core")).toBe(true);
 		expect(i18n.hasResourceBundle("zh", "login")).toBe(true);
-		expect(i18n.hasResourceBundle("zh", "auth")).toBe(false);
 		expect(i18n.getResource("zh", "login", "passkey_sign_in")).toBe(
 			"使用 Passkey 登录",
 		);
-		expect(i18n.hasResourceBundle("zh", "admin")).toBe(false);
-		expect(i18n.hasResourceBundle("zh", "settings")).toBe(false);
-		expect(i18n.hasResourceBundle("zh", "files")).toBe(false);
-		expect(i18n.hasResourceBundle("zh", "share")).toBe(false);
-		expect(i18n.hasResourceBundle("zh", "tasks")).toBe(false);
+		expect(i18n.getResource("zh", "auth", "login_success")).toBeUndefined();
+		expect(
+			i18n.getResource("zh", "admin", "overview_total_users"),
+		).toBeUndefined();
+		expect(
+			i18n.getResource("zh", "settings", "settings_passkeys_section"),
+		).toBeUndefined();
+		expect(i18n.getResource("zh", "files", "upload_success")).toBeUndefined();
+		expect(i18n.getResource("zh", "share", "my_shares_title")).toBeUndefined();
+		expect(i18n.getResource("zh", "tasks", "title")).toBeUndefined();
 	});
 
-	it("loads already used namespaces before resolving a language switch", async () => {
+	it("loads all namespaces before resolving a language switch", async () => {
 		localStorage.setItem("aster-language", "zh");
 		const i18n = await loadModule();
 
-		i18n.reportNamespaces = {
-			addUsedNamespaces: () => undefined,
-			getUsedNamespaces: () => ["settings"],
-		} satisfies ReportNamespaces;
 		i18n.removeResourceBundle("en", "settings");
+		i18n.removeResourceBundle("en", "files");
+		i18n.removeResourceBundle("en", "admin");
 
 		await i18n.changeLanguage("en");
 
 		expect(i18n.language).toBe("en");
 		expect(i18n.hasResourceBundle("en", "settings")).toBe(true);
+		expect(i18n.hasResourceBundle("en", "files")).toBe(true);
+		expect(i18n.hasResourceBundle("en", "admin")).toBe(true);
+	});
+
+	it("loads all namespaces on demand", async () => {
+		localStorage.setItem("aster-language", "zh");
+		const module = await loadI18nModule();
+		const i18n = module.default;
+
+		expect(i18n.getResource("zh", "files", "upload_success")).toBeUndefined();
+		expect(
+			i18n.getResource("zh", "admin", "overview_total_users"),
+		).toBeUndefined();
+		expect(i18n.getResource("zh", "share", "my_shares_title")).toBeUndefined();
+
+		await module.ensureAllI18nNamespaces("zh");
+
+		expect(i18n.t("files:upload_success")).toBe("上传完成");
+		expect(i18n.t("admin:overview_total_users")).toBe("总用户数");
+		expect(i18n.t("share:my_shares_title")).toBe("我的分享");
 	});
 
 	it("merges split locale files into their original namespaces", async () => {

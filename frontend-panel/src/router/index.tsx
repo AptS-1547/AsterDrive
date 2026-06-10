@@ -1,6 +1,6 @@
 import { type ComponentType, lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import { ensureI18nNamespaces, type LocaleNamespace } from "@/i18n";
+import { ensureAllI18nNamespaces } from "@/i18n";
 import { AdminRoute } from "./AdminRoute";
 import { Loading } from "./Loading";
 import { LoginGuard } from "./LoginGuard";
@@ -10,128 +10,71 @@ import { TeamWorkspaceRoute } from "./TeamWorkspaceRoute";
 
 function lazyPage<TProps extends object>(
 	load: () => Promise<{ default: ComponentType<TProps> }>,
-	namespaces: readonly LocaleNamespace[] = [],
+	options: { preloadI18n?: boolean } = {},
 ) {
 	return lazy<ComponentType<TProps>>(async () => {
 		const [module] = await Promise.all([
 			load(),
-			ensureI18nNamespaces(namespaces),
+			options.preloadI18n === false
+				? Promise.resolve()
+				: ensureAllI18nNamespaces(),
 		]);
 		return module;
 	});
 }
 
-const LoginPage = lazyPage(() => import("@/pages/LoginPage"));
+const LoginPage = lazyPage(() => import("@/pages/LoginPage"), {
+	preloadI18n: false,
+});
 const ForcePasswordChangePage = lazyPage(
 	() => import("@/pages/ForcePasswordChangePage"),
-	["auth", "settings"],
 );
-const ResetPasswordPage = lazyPage(
-	() => import("@/pages/ResetPasswordPage"),
-	["auth"],
-);
-const InviteRegisterPage = lazyPage(
-	() => import("@/pages/InviteRegisterPage"),
-	["auth"],
-);
-const FileBrowserPage = lazyPage(
-	() => import("@/pages/FileBrowserPage"),
-	["files"],
-);
+const ResetPasswordPage = lazyPage(() => import("@/pages/ResetPasswordPage"));
+const InviteRegisterPage = lazyPage(() => import("@/pages/InviteRegisterPage"));
+const FileBrowserPage = lazyPage(() => import("@/pages/FileBrowserPage"));
 const CategoryBrowserPage = lazyPage(
 	() => import("@/pages/CategoryBrowserPage"),
-	["files"],
 );
-const SearchBrowserPage = lazyPage(
-	() => import("@/pages/SearchBrowserPage"),
-	["files", "search"],
-);
+const SearchBrowserPage = lazyPage(() => import("@/pages/SearchBrowserPage"));
 const AdminOverviewPage = lazyPage(
 	() => import("@/pages/admin/AdminOverviewPage"),
-	["admin"],
 );
-const AdminUsersPage = lazyPage(
-	() => import("@/pages/admin/AdminUsersPage"),
-	["admin"],
-);
+const AdminUsersPage = lazyPage(() => import("@/pages/admin/AdminUsersPage"));
 const AdminUserInvitationsPage = lazyPage(
 	() => import("@/pages/admin/AdminUserInvitationsPage"),
-	["admin"],
 );
-const AdminTeamsPage = lazyPage(
-	() => import("@/pages/admin/AdminTeamsPage"),
-	["admin"],
-);
+const AdminTeamsPage = lazyPage(() => import("@/pages/admin/AdminTeamsPage"));
 const AdminTeamDetailPage = lazyPage(
 	() => import("@/pages/admin/AdminTeamDetailPage"),
-	["admin", "settings"],
 );
 const AdminPoliciesPage = lazyPage(
 	() => import("@/pages/admin/AdminPoliciesPage"),
-	["admin"],
 );
 const AdminRemoteNodesPage = lazyPage(
 	() => import("@/pages/admin/AdminRemoteNodesPage"),
-	["admin"],
 );
 const AdminExternalAuthPage = lazyPage(
 	() => import("@/pages/admin/AdminExternalAuthPage"),
-	["admin"],
 );
 const AdminPolicyGroupsPage = lazyPage(
 	() => import("@/pages/admin/AdminPolicyGroupsPage"),
-	["admin"],
 );
-const AdminTasksPage = lazyPage(
-	() => import("@/pages/admin/AdminTasksPage"),
-	["admin", "tasks"],
-);
+const AdminTasksPage = lazyPage(() => import("@/pages/admin/AdminTasksPage"));
 const AdminSettingsPage = lazyPage(
 	() => import("@/pages/admin/AdminSettingsPage"),
-	["admin"],
 );
-const AdminSharesPage = lazyPage(
-	() => import("@/pages/admin/AdminSharesPage"),
-	["admin"],
-);
-const AdminFilesPage = lazyPage(
-	() => import("@/pages/admin/AdminFilesPage"),
-	["admin"],
-);
-const AdminLocksPage = lazyPage(
-	() => import("@/pages/admin/AdminLocksPage"),
-	["admin"],
-);
-const AdminAboutPage = lazyPage(
-	() => import("@/pages/admin/AdminAboutPage"),
-	["admin"],
-);
-const ShareViewPage = lazyPage(
-	() => import("@/pages/ShareViewPage"),
-	["share", "files"],
-);
-const WebdavAccountsPage = lazyPage(
-	() => import("@/pages/WebdavAccountsPage"),
-	["webdav"],
-);
-const TrashPage = lazyPage(() => import("@/pages/TrashPage"), ["files"]);
-const SettingsPage = lazyPage(
-	() => import("@/pages/SettingsPage"),
-	["settings"],
-);
-const TeamManagePage = lazyPage(
-	() => import("@/pages/TeamManagePage"),
-	["settings"],
-);
-const MySharesPage = lazyPage(
-	() => import("@/pages/MySharesPage"),
-	["share", "files"],
-);
-const TasksPage = lazyPage(() => import("@/pages/TasksPage"), ["tasks"]);
-const AdminAuditPage = lazyPage(
-	() => import("@/pages/admin/AdminAuditPage"),
-	["admin"],
-);
+const AdminSharesPage = lazyPage(() => import("@/pages/admin/AdminSharesPage"));
+const AdminFilesPage = lazyPage(() => import("@/pages/admin/AdminFilesPage"));
+const AdminLocksPage = lazyPage(() => import("@/pages/admin/AdminLocksPage"));
+const AdminAboutPage = lazyPage(() => import("@/pages/admin/AdminAboutPage"));
+const ShareViewPage = lazyPage(() => import("@/pages/ShareViewPage"));
+const WebdavAccountsPage = lazyPage(() => import("@/pages/WebdavAccountsPage"));
+const TrashPage = lazyPage(() => import("@/pages/TrashPage"));
+const SettingsPage = lazyPage(() => import("@/pages/SettingsPage"));
+const TeamManagePage = lazyPage(() => import("@/pages/TeamManagePage"));
+const MySharesPage = lazyPage(() => import("@/pages/MySharesPage"));
+const TasksPage = lazyPage(() => import("@/pages/TasksPage"));
+const AdminAuditPage = lazyPage(() => import("@/pages/admin/AdminAuditPage"));
 const ErrorPage = lazyPage(() => import("@/pages/ErrorPage"));
 
 const errorElement = (

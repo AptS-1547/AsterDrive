@@ -1,8 +1,8 @@
-import i18next from "i18next";
 import { z } from "zod/v4";
+import i18n from "@/i18n";
 
 function translateValidation(key: string): string {
-	return i18next.t(key, { ns: "validation" });
+	return i18n.t(key, { ns: "validation" });
 }
 
 export const usernameSchema = z
