@@ -24,6 +24,7 @@ test.describe
 				"Audit Log",
 			);
 
+			await page.getByRole("button", { name: /Filters/ }).click();
 			await expect(page.getByPlaceholder("Filter by action...")).toHaveValue(
 				"team_create",
 			);

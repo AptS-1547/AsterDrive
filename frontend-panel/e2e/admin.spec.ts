@@ -36,6 +36,7 @@ test.describe
 				timeout: 30_000,
 			});
 
+			await page.getByRole("button", { name: "Filters" }).click();
 			await page
 				.getByPlaceholder("Search by username, email, or ID...")
 				.fill(username);

@@ -213,7 +213,7 @@ test.describe
 				}),
 			).toBeVisible();
 			await expect(
-				sidebarScroll.getByRole("button", { exact: true, name: "Images" }),
+				sidebarScroll.getByRole("link", { exact: true, name: "Images" }),
 			).toBeVisible();
 			await expect(
 				sidebarScroll.getByRole("link", { name: "Trash" }),
@@ -253,8 +253,11 @@ test.describe
 
 			await toggleItemSelection(page, firstFile.name);
 			await toggleItemSelection(page, secondFile.name);
-			await expect(page.getByText("2 selected")).toBeVisible();
-			await page.getByRole("button", { exact: true, name: "Copy" }).click();
+			const selectionToolbar = page.getByTestId(
+				"file-browser-selection-toolbar",
+			);
+			await expect(selectionToolbar.getByText("2 selected")).toBeVisible();
+			await page.getByRole("button", { exact: true, name: "Copy to" }).click();
 			await chooseTargetFolder(page, copyTarget, "Copy here");
 
 			await openFolder(page, copyTarget);
@@ -268,7 +271,7 @@ test.describe
 			await navigateToRoot(page);
 			await toggleItemSelection(page, firstFile.name);
 			await toggleItemSelection(page, secondFile.name);
-			await page.getByRole("button", { exact: true, name: "Move" }).click();
+			await page.getByRole("button", { exact: true, name: "Move to" }).click();
 			await chooseTargetFolder(page, moveTarget, "Move here");
 			await expectItemMissing(page, firstFile.name);
 			await expectItemMissing(page, secondFile.name);

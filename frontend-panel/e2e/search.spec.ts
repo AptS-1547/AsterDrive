@@ -1,3 +1,4 @@
+import type { Locator } from "@playwright/test";
 import { authenticate } from "./support/auth";
 import {
 	createFolderFromSurface,
@@ -8,6 +9,18 @@ import {
 } from "./support/files";
 import { uniqueName } from "./support/fixtures";
 import { expect, test } from "./support/test";
+
+async function openSearchFilters(searchDialog: Locator, targetName: string) {
+	const target = searchDialog.getByRole("button", { name: targetName });
+	const alreadyVisible = await target
+		.waitFor({ state: "visible", timeout: 1_000 })
+		.then(() => true)
+		.catch(() => false);
+	if (!alreadyVisible) {
+		await searchDialog.getByRole("button", { name: "Filters" }).click();
+	}
+	await expect(target).toBeVisible();
+}
 
 test.describe
 	.serial("Search E2E", () => {
@@ -55,6 +68,7 @@ test.describe
 			await searchDialog
 				.getByPlaceholder("Search files and folders...")
 				.fill(token);
+			await openSearchFilters(searchDialog, "Files only");
 			await searchDialog.getByRole("button", { name: "Files only" }).click();
 			await searchDialog
 				.getByRole("button", { exact: true, name: "Search" })
@@ -70,6 +84,7 @@ test.describe
 			await searchDialog
 				.getByPlaceholder("Search files and folders...")
 				.fill(token);
+			await openSearchFilters(searchDialog, "Folders only");
 			await searchDialog.getByRole("button", { name: "Folders only" }).click();
 			await searchDialog
 				.getByRole("button", { exact: true, name: "Search" })

@@ -57,7 +57,11 @@ export async function expectProtectedFolderSharePreview(
 	await expect(page.getByText(fileName, { exact: true })).toBeVisible({
 		timeout: 30_000,
 	});
-	await page.getByRole("button", { exact: true, name: fileName }).click();
+	await page
+		.getByRole("button")
+		.filter({ has: page.getByText(fileName, { exact: true }) })
+		.first()
+		.click();
 	await chooseOpenMethodIfPrompted(page, "Image preview", 5_000);
 
 	const dialog = page.getByRole("dialog");
