@@ -1,6 +1,5 @@
 import { type ComponentType, lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import { ensureAllI18nNamespaces } from "@/i18n";
 import { AdminRoute } from "./AdminRoute";
 import { Loading } from "./Loading";
 import { LoginGuard } from "./LoginGuard";
@@ -10,22 +9,11 @@ import { TeamWorkspaceRoute } from "./TeamWorkspaceRoute";
 
 function lazyPage<TProps extends object>(
 	load: () => Promise<{ default: ComponentType<TProps> }>,
-	options: { preloadI18n?: boolean } = {},
 ) {
-	return lazy<ComponentType<TProps>>(async () => {
-		const [module] = await Promise.all([
-			load(),
-			options.preloadI18n === false
-				? Promise.resolve()
-				: ensureAllI18nNamespaces(),
-		]);
-		return module;
-	});
+	return lazy<ComponentType<TProps>>(load);
 }
 
-const LoginPage = lazyPage(() => import("@/pages/LoginPage"), {
-	preloadI18n: false,
-});
+const LoginPage = lazyPage(() => import("@/pages/LoginPage"));
 const ForcePasswordChangePage = lazyPage(
 	() => import("@/pages/ForcePasswordChangePage"),
 );

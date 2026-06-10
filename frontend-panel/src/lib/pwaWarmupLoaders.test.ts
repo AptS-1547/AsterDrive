@@ -7,21 +7,53 @@ import {
 } from "@/lib/pwaWarmupLoaders";
 
 vi.mock("@/pages/LoginPage", () => ({ default: "LoginPage" }));
+vi.mock("@/pages/ErrorPage", () => ({ default: "ErrorPage" }));
+vi.mock("@/pages/FileBrowserPage", () => ({ default: "FileBrowserPage" }));
+vi.mock("@/pages/CategoryBrowserPage", () => ({
+	default: "CategoryBrowserPage",
+}));
+vi.mock("@/pages/SearchBrowserPage", () => ({ default: "SearchBrowserPage" }));
 vi.mock("@/pages/MySharesPage", () => ({ default: "MySharesPage" }));
+vi.mock("@/pages/TasksPage", () => ({ default: "TasksPage" }));
 vi.mock("@/pages/TrashPage", () => ({ default: "TrashPage" }));
 vi.mock("@/pages/SettingsPage", () => ({ default: "SettingsPage" }));
 vi.mock("@/pages/WebdavAccountsPage", () => ({
 	default: "WebdavAccountsPage",
 }));
+vi.mock("@/pages/TeamManagePage", () => ({ default: "TeamManagePage" }));
+vi.mock("@/pages/ForcePasswordChangePage", () => ({
+	default: "ForcePasswordChangePage",
+}));
+vi.mock("@/pages/ResetPasswordPage", () => ({ default: "ResetPasswordPage" }));
+vi.mock("@/pages/InviteRegisterPage", () => ({
+	default: "InviteRegisterPage",
+}));
+vi.mock("@/pages/ShareViewPage", () => ({ default: "ShareViewPage" }));
+vi.mock("@/pages/admin/AdminOverviewPage", () => ({
+	default: "AdminOverviewPage",
+}));
 vi.mock("@/pages/admin/AdminUsersPage", () => ({ default: "AdminUsersPage" }));
 vi.mock("@/pages/admin/AdminUserInvitationsPage", () => ({
 	default: "AdminUserInvitationsPage",
 }));
+vi.mock("@/pages/admin/AdminTeamsPage", () => ({ default: "AdminTeamsPage" }));
+vi.mock("@/pages/admin/AdminTeamDetailPage", () => ({
+	default: "AdminTeamDetailPage",
+}));
 vi.mock("@/pages/admin/AdminPoliciesPage", () => ({
 	default: "AdminPoliciesPage",
 }));
+vi.mock("@/pages/admin/AdminRemoteNodesPage", () => ({
+	default: "AdminRemoteNodesPage",
+}));
 vi.mock("@/pages/admin/AdminExternalAuthPage", () => ({
 	default: "AdminExternalAuthPage",
+}));
+vi.mock("@/pages/admin/AdminPolicyGroupsPage", () => ({
+	default: "AdminPolicyGroupsPage",
+}));
+vi.mock("@/pages/admin/AdminTasksPage", () => ({
+	default: "AdminTasksPage",
 }));
 vi.mock("@/pages/admin/AdminSettingsPage", () => ({
 	default: "AdminSettingsPage",
@@ -29,6 +61,7 @@ vi.mock("@/pages/admin/AdminSettingsPage", () => ({
 vi.mock("@/pages/admin/AdminSharesPage", () => ({
 	default: "AdminSharesPage",
 }));
+vi.mock("@/pages/admin/AdminFilesPage", () => ({ default: "AdminFilesPage" }));
 vi.mock("@/pages/admin/AdminLocksPage", () => ({ default: "AdminLocksPage" }));
 vi.mock("@/pages/admin/AdminAuditPage", () => ({ default: "AdminAuditPage" }));
 vi.mock("@/pages/admin/AdminAboutPage", () => ({ default: "AdminAboutPage" }));
@@ -90,18 +123,35 @@ describe("pwaWarmupLoaders", () => {
 	it("defines stable keys for each warmup queue", () => {
 		expect(userRouteWarmupLoaders.map((loader) => loader.key)).toEqual([
 			"route:login",
+			"route:error",
+			"route:file-browser",
+			"route:category-browser",
+			"route:search-browser",
 			"route:my-shares",
+			"route:tasks",
 			"route:trash",
 			"route:settings",
 			"route:webdav-accounts",
+			"route:team-manage",
+			"route:force-password-change",
+			"route:reset-password",
+			"route:invite-register",
+			"route:share-view",
 		]);
 		expect(adminRouteWarmupLoaders.map((loader) => loader.key)).toEqual([
+			"route:admin-overview",
 			"route:admin-users",
 			"route:admin-user-invitations",
+			"route:admin-teams",
+			"route:admin-team-detail",
 			"route:admin-policies",
+			"route:admin-remote-nodes",
 			"route:admin-external-auth",
+			"route:admin-policy-groups",
+			"route:admin-tasks",
 			"route:admin-settings",
 			"route:admin-shares",
+			"route:admin-files",
 			"route:admin-locks",
 			"route:admin-audit",
 			"route:admin-about",

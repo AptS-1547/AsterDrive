@@ -9,6 +9,7 @@
 		"dev": "vite",
 		"prebuild": "bun run extract:pdfjs-cmaps",
 		"build": "tsgo -b && vite build",
+		"postbuild": "node ./scripts/audit-startup.mjs",
 		"generate-api": "openapi-typescript ./generated/openapi.json -o ./src/services/api.generated.ts",
 		"check": "tsgo -b && biome check .",
 		"check:fix": "biome check --write .",
