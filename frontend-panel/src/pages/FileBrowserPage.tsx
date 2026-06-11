@@ -115,6 +115,17 @@ export default function FileBrowserPage() {
 	}, []);
 
 	useEffect(() => {
+		return runWhenIdle(
+			() => {
+				void import("@/lib/pwaWarmup").then(({ warmupPreviewEngines }) => {
+					warmupPreviewEngines();
+				});
+			},
+			{ fallbackDelayMs: 900, timeoutMs: 2_000 },
+		);
+	}, []);
+
+	useEffect(() => {
 		if (!hasMoreFiles || loadingMore) return;
 		const el = sentinelRef.current;
 		if (!el) return;
