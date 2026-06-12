@@ -7,7 +7,9 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse};
 use xmltree::{Element, XMLNode};
 
-use crate::webdav::dav::{DavFileSystem, DavLock, DavLockSystem, FsError, OpenOptions};
+use crate::webdav::dav::{
+    DavFileSystem, DavLock, DavLockPreflightError, DavLockSystem, FsError, OpenOptions,
+};
 use crate::webdav::protocol::{self, Depth};
 use crate::webdav::{
     child_elements, dav_element, encode_href, fs, fs_error_response, href_for_dav_path,
@@ -121,6 +123,15 @@ pub(crate) async fn handle_lock(
     }
     if shared.is_none() || !write_lock {
         return responses::bad_request();
+    }
+
+    if let Err(error) = lock_system.prepare_lock(&path).await {
+        return match error {
+            DavLockPreflightError::LimitExceeded => responses::webdav_lock_limit_exceeded(),
+            DavLockPreflightError::GeneralFailure => {
+                responses::empty(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        };
     }
 
     let resource_existed = match ensure_lock_target_exists(dav_fs, &path, depth).await {

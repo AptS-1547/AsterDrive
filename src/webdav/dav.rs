@@ -235,7 +235,17 @@ pub struct DavLock {
 
 pub type LsFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DavLockPreflightError {
+    LimitExceeded,
+    GeneralFailure,
+}
+
 pub trait DavLockSystem: Send + Sync {
+    fn prepare_lock(&self, _path: &DavPath) -> LsFuture<'_, Result<(), DavLockPreflightError>> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn lock(
         &self,
         path: &DavPath,

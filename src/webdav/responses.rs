@@ -156,6 +156,13 @@ pub(crate) fn unsupported_root_proppatch() -> HttpResponse {
     forbidden_text("PROPPATCH on the WebDAV mount root is not supported")
 }
 
+pub(crate) fn webdav_lock_limit_exceeded() -> HttpResponse {
+    text(
+        StatusCode::INSUFFICIENT_STORAGE,
+        "WebDAV active lock limit exceeded",
+    )
+}
+
 pub(crate) fn fs_error_response(err: FsError) -> HttpResponse {
     empty(fs_error_status(&err))
 }

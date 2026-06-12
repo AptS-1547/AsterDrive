@@ -18,6 +18,7 @@ mod runtime_config;
 mod schema;
 pub mod site_url;
 pub mod system_config;
+pub mod webdav;
 pub mod wopi;
 
 pub use runtime_config::RuntimeConfig;

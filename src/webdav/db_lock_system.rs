@@ -7,13 +7,14 @@ use chrono::Utc;
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use xmltree::Element;
 
+use crate::config::webdav;
 use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::types::EntityType;
-use crate::webdav::dav::{DavLock, DavLockSystem, DavPath, LsFuture};
+use crate::webdav::dav::{DavLock, DavLockPreflightError, DavLockSystem, DavPath, LsFuture};
 use crate::webdav::path_resolver::{self, ResolvedNode};
 
 /// 数据库支持的 WebDAV 锁系统
@@ -79,9 +80,49 @@ impl DbLockSystem {
         )
         .await;
     }
+
+    fn max_active_locks_per_owner(&self) -> u64 {
+        self.audit_state
+            .as_ref()
+            .map(|state| webdav::max_active_locks_per_user(state.runtime_config()))
+            .unwrap_or(crate::config::definitions::DEFAULT_WEBDAV_MAX_ACTIVE_LOCKS_PER_USER)
+    }
+
+    async fn ensure_lock_quota<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<(), DavLockPreflightError> {
+        let owner_id = self.scope.actor_user_id();
+        let max_active_locks = self.max_active_locks_per_owner();
+        let active_locks = lock_repo::count_active_by_owner(db, owner_id, now)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    owner_id,
+                    error = %error,
+                    "failed to count active WebDAV locks for owner"
+                );
+                DavLockPreflightError::GeneralFailure
+            })?;
+        if active_locks >= max_active_locks {
+            tracing::warn!(
+                owner_id,
+                active_locks,
+                max_active_locks,
+                "WebDAV active lock limit exceeded"
+            );
+            return Err(DavLockPreflightError::LimitExceeded);
+        }
+        Ok(())
+    }
 }
 
 impl DavLockSystem for DbLockSystem {
+    fn prepare_lock(&self, _path: &DavPath) -> LsFuture<'_, Result<(), DavLockPreflightError>> {
+        Box::pin(async move { self.ensure_lock_quota(&self.db, Utc::now()).await })
+    }
+
     fn lock(
         &self,
         path: &DavPath,
@@ -131,6 +172,10 @@ impl DavLockSystem for DbLockSystem {
                         return Err(model_to_dav_lock(&existing));
                     }
                 }
+
+                self.ensure_lock_quota(&txn, now)
+                    .await
+                    .map_err(|_| empty_dav_lock(&path_owned))?;
 
                 let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
                 let timeout_at =
