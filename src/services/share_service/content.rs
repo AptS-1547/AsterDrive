@@ -562,15 +562,26 @@ async fn download_share_resource_with_disposition(
         .await;
     }
 
-    match share_repo::increment_download_count(state.writer_db(), share.id).await {
-        Ok(true) => {
-            invalidate_share_token_record_cache_for_share(state, share).await;
-            if share.max_downloads > 0
-                && share.download_count.saturating_add(1) >= share.max_downloads
-            {
-                invalidate_active_share_target_cache_for_share(state, share).await;
+    let counted_share = match share_repo::increment_download_count(state.writer_db(), share.id)
+        .await
+    {
+        Ok(true) => match share_repo::find_by_id(state.writer_db(), share.id).await {
+            Ok(updated) => {
+                invalidate_share_token_record_cache_for_share(state, &updated).await;
+                if updated.max_downloads > 0 && updated.download_count >= updated.max_downloads {
+                    invalidate_active_share_target_cache_for_share(state, &updated).await;
+                }
+                updated
             }
-        }
+            Err(error) => {
+                tracing::warn!(
+                    share_id = share.id,
+                    "failed to reload share after download count increment: {error}"
+                );
+                invalidate_share_token_record_cache_for_share(state, share).await;
+                return Err(error);
+            }
+        },
         Ok(false) => {
             return Err(AsterError::share_download_limit("download limit reached"));
         }
@@ -581,6 +592,16 @@ async fn download_share_resource_with_disposition(
             );
             return Err(error);
         }
+    };
+
+    {
+        let share = &counted_share;
+        tracing::debug!(
+            share_id = share.id,
+            download_count = share.download_count,
+            max_downloads = share.max_downloads,
+            "reserved shared download slot"
+        );
     }
 
     match file_service::build_download_outcome_with_disposition_and_range(

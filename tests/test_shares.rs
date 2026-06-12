@@ -792,6 +792,60 @@ async fn test_share_download_limit() {
 }
 
 #[actix_web::test]
+async fn test_share_download_limit_counter_is_atomic_under_concurrency() {
+    use aster_drive::db::repository::share_repo;
+
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target": file_target(file_id),
+            "max_downloads": 1
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_id = body["data"]["id"].as_i64().unwrap();
+
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..32 {
+        let db = state.writer_db().clone();
+        tasks.spawn(async move { share_repo::increment_download_count(&db, share_id).await });
+    }
+
+    let mut reserved = 0;
+    let mut rejected = 0;
+    while let Some(result) = tasks.join_next().await {
+        match result.unwrap().unwrap() {
+            true => reserved += 1,
+            false => rejected += 1,
+        }
+    }
+
+    assert_eq!(
+        reserved, 1,
+        "only one concurrent request may reserve the slot"
+    );
+    assert_eq!(
+        rejected, 31,
+        "all other concurrent requests must be rejected"
+    );
+
+    let share = share_repo::find_by_id(state.writer_db(), share_id)
+        .await
+        .unwrap();
+    assert_eq!(share.download_count, 1);
+    assert_eq!(share.max_downloads, 1);
+}
+
+#[actix_web::test]
 async fn test_share_stream_session_counts_once_across_ranges_and_survives_limit() {
     let state = common::setup().await;
     let app = create_test_app!(state);
