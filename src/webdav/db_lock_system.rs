@@ -134,7 +134,7 @@ impl DavLockSystem for DbLockSystem {
 
                 let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
                 let timeout_at =
-                    timeout_dur.and_then(|d| chrono::Duration::from_std(d).ok().map(|cd| now + cd));
+                    lock_timeout_at(now, timeout_dur).map_err(|_| empty_dav_lock(&path_owned))?;
                 let owner_info = owner_xml.clone().map(|xml| {
                     crate::services::lock_service::ResourceLockOwnerInfo::Webdav(
                         crate::services::lock_service::WebdavLockOwnerInfo { xml },
@@ -255,8 +255,7 @@ impl DavLockSystem for DbLockSystem {
 
         Box::pin(async move {
             let now = Utc::now();
-            let new_timeout_at =
-                timeout_dur.and_then(|d| chrono::Duration::from_std(d).ok().map(|cd| now + cd));
+            let new_timeout_at = lock_timeout_at(now, timeout_dur).map_err(|_| ())?;
 
             let lock = lock_repo::refresh(&self.db, &token_owned, new_timeout_at)
                 .await
@@ -544,6 +543,19 @@ fn empty_dav_lock(path: &DavPath) -> DavLock {
         timeout: None,
         shared: false,
         deep: false,
+    }
+}
+
+fn lock_timeout_at(
+    now: chrono::DateTime<Utc>,
+    timeout: Option<Duration>,
+) -> Result<Option<chrono::DateTime<Utc>>, ()> {
+    match timeout {
+        Some(timeout) => {
+            let chrono_timeout = chrono::Duration::from_std(timeout).map_err(|_| ())?;
+            Ok(Some(now + chrono_timeout))
+        }
+        None => Ok(None),
     }
 }
 

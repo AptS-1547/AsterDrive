@@ -4555,6 +4555,36 @@ async fn test_webdav_lock_rejects_invalid_lockinfo_and_timeout_headers() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400, "invalid Timeout must be rejected");
 
+    let req = test::TestRequest::with_uri("/webdav/overflow-timeout.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Timeout", "Second-9223372036854775808"))
+        .set_payload(valid_lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "oversized Timeout values must be rejected instead of becoming infinite locks"
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/infinite-timeout.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Timeout", "Infinite"))
+        .set_payload(valid_lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        201,
+        "Infinite Timeout should be clamped to the server maximum"
+    );
+
     let req = test::TestRequest::with_uri("/webdav/later-timeout.txt")
         .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
         .insert_header(("Authorization", auth.clone()))

@@ -15,6 +15,8 @@ use crate::webdav::{
     request_path, responses, text_element,
 };
 
+const MAX_LOCK_DURATION_SECS: u64 = 604_800;
+
 pub(crate) async fn handle_lock(
     req: &HttpRequest,
     dav_fs: &fs::AsterDavFs,
@@ -193,7 +195,7 @@ fn parse_lock_token_header(value: &header::HeaderValue) -> Result<String, HttpRe
 
 fn parse_timeout(headers: &header::HeaderMap) -> Result<Option<Duration>, HttpResponse> {
     let Some(raw) = headers.get("Timeout") else {
-        return Ok(None);
+        return Ok(Some(Duration::from_secs(MAX_LOCK_DURATION_SECS)));
     };
     let raw = raw.to_str().map_err(|_| invalid_timeout_header())?;
     for candidate in raw
@@ -202,12 +204,15 @@ fn parse_timeout(headers: &header::HeaderMap) -> Result<Option<Duration>, HttpRe
         .filter(|value| !value.is_empty())
     {
         if candidate.eq_ignore_ascii_case("Infinite") {
-            return Ok(None);
+            return Ok(Some(Duration::from_secs(MAX_LOCK_DURATION_SECS)));
         }
         if let Some(seconds) = candidate
             .strip_prefix("Second-")
             .and_then(|seconds| seconds.parse::<u64>().ok())
         {
+            if seconds > MAX_LOCK_DURATION_SECS {
+                return Err(invalid_timeout_header());
+            }
             return Ok(Some(Duration::from_secs(seconds)));
         }
     }
