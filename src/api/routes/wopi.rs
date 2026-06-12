@@ -22,6 +22,7 @@ use crate::api::dto::wopi::WopiAccessQuery;
 use crate::config::site_url;
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{audit_service, file_service, wopi_service};
+use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -50,18 +51,22 @@ pub async fn check_file_info(
     query: web::Query<WopiAccessQuery>,
 ) -> HttpResponse {
     if let Err(error) = validate_request(&*query) {
-        return protocol_error_response(error);
+        return wopi_no_store(protocol_error_response(error));
     }
+    let access_token = match wopi_access_token(&req, &query) {
+        Ok(access_token) => access_token,
+        Err(response) => return response,
+    };
     match wopi_service::check_file_info(
         state.get_ref(),
         *path,
-        &query.access_token,
+        access_token,
         request_source(state.get_ref(), &req),
     )
     .await
     {
-        Ok(info) => HttpResponse::Ok().json(info),
-        Err(error) => protocol_error_response(error),
+        Ok(info) => wopi_no_store(HttpResponse::Ok().json(info)),
+        Err(error) => wopi_no_store(protocol_error_response(error)),
     }
 }
 
@@ -72,8 +77,12 @@ pub async fn get_file_contents(
     query: web::Query<WopiAccessQuery>,
 ) -> HttpResponse {
     if let Err(error) = validate_request(&*query) {
-        return protocol_error_response(error);
+        return wopi_no_store(protocol_error_response(error));
     }
+    let access_token = match wopi_access_token(&req, &query) {
+        Ok(access_token) => access_token,
+        Err(response) => return response,
+    };
     let audit_info = audit_service::AuditRequestInfo::from_request(&req);
     let if_none_match = req
         .headers()
@@ -83,7 +92,7 @@ pub async fn get_file_contents(
     match wopi_service::get_file_contents(
         state.get_ref(),
         *path,
-        &query.access_token,
+        access_token,
         if_none_match,
         max_expected_size,
         &audit_info,
@@ -102,9 +111,9 @@ pub async fn get_file_contents(
                     version_value,
                 );
             }
-            response
+            wopi_no_store(response)
         }
-        Err(error) => protocol_error_response(error),
+        Err(error) => wopi_no_store(protocol_error_response(error)),
     }
 }
 
@@ -116,19 +125,23 @@ pub async fn put_file_contents(
     mut payload: web::Payload,
 ) -> HttpResponse {
     if let Err(error) = validate_request(&*query) {
-        return protocol_error_response(error);
+        return wopi_no_store(protocol_error_response(error));
     }
+    let access_token = match wopi_access_token(&req, &query) {
+        Ok(access_token) => access_token,
+        Err(response) => return response,
+    };
     let audit_info = audit_service::AuditRequestInfo::from_request(&req);
     let override_value = header_value(&req, "X-WOPI-Override");
     if !override_value.eq_ignore_ascii_case("PUT") {
-        return HttpResponse::NotImplemented().finish();
+        return wopi_no_store(HttpResponse::NotImplemented().finish());
     }
 
     match wopi_service::put_file_contents(
         state.get_ref(),
         wopi_service::WopiPutFileRequest {
             file_id: *path,
-            access_token: &query.access_token,
+            access_token,
             payload: &mut payload,
             content_length: request_content_length(&req),
             requested_lock: optional_header_value(&req, "X-WOPI-Lock"),
@@ -138,11 +151,15 @@ pub async fn put_file_contents(
     )
     .await
     {
-        Ok(wopi_service::WopiPutFileResult::Success { item_version }) => HttpResponse::Ok()
-            .insert_header(("X-WOPI-ItemVersion", item_version))
-            .finish(),
-        Ok(wopi_service::WopiPutFileResult::Conflict(conflict)) => conflict_response(&conflict),
-        Err(error) => protocol_error_response(error),
+        Ok(wopi_service::WopiPutFileResult::Success { item_version }) => wopi_no_store(
+            HttpResponse::Ok()
+                .insert_header(("X-WOPI-ItemVersion", item_version))
+                .finish(),
+        ),
+        Ok(wopi_service::WopiPutFileResult::Conflict(conflict)) => {
+            wopi_no_store(conflict_response(&conflict))
+        }
+        Err(error) => wopi_no_store(protocol_error_response(error)),
     }
 }
 
@@ -154,8 +171,12 @@ pub async fn file_operation(
     mut payload: web::Payload,
 ) -> HttpResponse {
     if let Err(error) = validate_request(&*query) {
-        return protocol_error_response(error);
+        return wopi_no_store(protocol_error_response(error));
     }
+    let access_token = match wopi_access_token(&req, &query) {
+        Ok(access_token) => access_token,
+        Err(response) => return response,
+    };
     let audit_info = audit_service::AuditRequestInfo::from_request(&req);
     let override_value = header_value(&req, "X-WOPI-Override");
     let requested_lock = optional_header_value(&req, "X-WOPI-Lock").unwrap_or_default();
@@ -166,7 +187,7 @@ pub async fn file_operation(
             state.get_ref(),
             wopi_service::WopiPutRelativeRequest {
                 file_id: *path,
-                access_token: &query.access_token,
+                access_token,
                 payload: &mut payload,
                 suggested_target: optional_header_value(&req, "X-WOPI-SuggestedTarget"),
                 relative_target: optional_header_value(&req, "X-WOPI-RelativeTarget"),
@@ -183,12 +204,12 @@ pub async fn file_operation(
         .await
         {
             Ok(wopi_service::WopiPutRelativeResult::Success(response)) => {
-                HttpResponse::Ok().json(response)
+                wopi_no_store(HttpResponse::Ok().json(response))
             }
             Ok(wopi_service::WopiPutRelativeResult::Conflict(conflict)) => {
-                put_relative_conflict_response(&conflict)
+                wopi_no_store(put_relative_conflict_response(&conflict))
             }
-            Err(error) => protocol_error_response(error),
+            Err(error) => wopi_no_store(protocol_error_response(error)),
         };
     }
 
@@ -196,16 +217,20 @@ pub async fn file_operation(
         return match wopi_service::get_lock(
             state.get_ref(),
             *path,
-            &query.access_token,
+            access_token,
             request_source(state.get_ref(), &req),
         )
         .await
         {
-            Ok(wopi_service::WopiGetLockResult::Success { current_lock }) => HttpResponse::Ok()
-                .insert_header(("X-WOPI-Lock", current_lock))
-                .finish(),
-            Ok(wopi_service::WopiGetLockResult::Conflict(conflict)) => conflict_response(&conflict),
-            Err(error) => protocol_error_response(error),
+            Ok(wopi_service::WopiGetLockResult::Success { current_lock }) => wopi_no_store(
+                HttpResponse::Ok()
+                    .insert_header(("X-WOPI-Lock", current_lock))
+                    .finish(),
+            ),
+            Ok(wopi_service::WopiGetLockResult::Conflict(conflict)) => {
+                wopi_no_store(conflict_response(&conflict))
+            }
+            Err(error) => wopi_no_store(protocol_error_response(error)),
         };
     }
 
@@ -213,7 +238,7 @@ pub async fn file_operation(
         return match wopi_service::rename_file(
             state.get_ref(),
             *path,
-            &query.access_token,
+            access_token,
             optional_header_value(&req, "X-WOPI-RequestedName"),
             optional_header_value(&req, "X-WOPI-Lock"),
             &audit_info,
@@ -222,15 +247,15 @@ pub async fn file_operation(
         .await
         {
             Ok(wopi_service::WopiRenameFileResult::Success(response)) => {
-                HttpResponse::Ok().json(response)
+                wopi_no_store(HttpResponse::Ok().json(response))
             }
             Ok(wopi_service::WopiRenameFileResult::Conflict(conflict)) => {
-                conflict_response(&conflict)
+                wopi_no_store(conflict_response(&conflict))
             }
             Ok(wopi_service::WopiRenameFileResult::InvalidName { reason }) => {
-                invalid_file_name_response(&reason)
+                wopi_no_store(invalid_file_name_response(&reason))
             }
-            Err(error) => protocol_error_response(error),
+            Err(error) => wopi_no_store(protocol_error_response(error)),
         };
     }
 
@@ -238,15 +263,15 @@ pub async fn file_operation(
         return match wopi_service::put_user_info(
             state.get_ref(),
             *path,
-            &query.access_token,
+            access_token,
             &mut payload,
             &audit_info,
             request_source(state.get_ref(), &req),
         )
         .await
         {
-            Ok(()) => HttpResponse::Ok().finish(),
-            Err(error) => protocol_error_response(error),
+            Ok(()) => wopi_no_store(HttpResponse::Ok().finish()),
+            Err(error) => wopi_no_store(protocol_error_response(error)),
         };
     }
 
@@ -254,7 +279,7 @@ pub async fn file_operation(
         wopi_service::unlock_and_relock_file(
             state.get_ref(),
             *path,
-            &query.access_token,
+            access_token,
             requested_lock,
             old_lock,
             &audit_info,
@@ -265,7 +290,7 @@ pub async fn file_operation(
         wopi_service::lock_file(
             state.get_ref(),
             *path,
-            &query.access_token,
+            access_token,
             requested_lock,
             &audit_info,
             request_source(state.get_ref(), &req),
@@ -275,7 +300,7 @@ pub async fn file_operation(
         wopi_service::unlock_file(
             state.get_ref(),
             *path,
-            &query.access_token,
+            access_token,
             requested_lock,
             &audit_info,
             request_source(state.get_ref(), &req),
@@ -285,23 +310,46 @@ pub async fn file_operation(
         wopi_service::refresh_lock(
             state.get_ref(),
             *path,
-            &query.access_token,
+            access_token,
             requested_lock,
             &audit_info,
             request_source(state.get_ref(), &req),
         )
         .await
     } else {
-        return HttpResponse::NotImplemented().finish();
+        return wopi_no_store(HttpResponse::NotImplemented().finish());
     };
 
     match result {
-        Ok(wopi_service::WopiLockOperationResult::Success) => HttpResponse::Ok().finish(),
-        Ok(wopi_service::WopiLockOperationResult::Conflict(conflict)) => {
-            conflict_response(&conflict)
+        Ok(wopi_service::WopiLockOperationResult::Success) => {
+            wopi_no_store(HttpResponse::Ok().finish())
         }
-        Err(error) => protocol_error_response(error),
+        Ok(wopi_service::WopiLockOperationResult::Conflict(conflict)) => {
+            wopi_no_store(conflict_response(&conflict))
+        }
+        Err(error) => wopi_no_store(protocol_error_response(error)),
     }
+}
+
+fn wopi_access_token<'a>(
+    req: &'a HttpRequest,
+    query: &'a WopiAccessQuery,
+) -> Result<&'a str, HttpResponse> {
+    if let Some(token) = optional_header_value(req, "X-WOPI-Token") {
+        return Ok(token);
+    }
+    if let Some(token) = query.access_token.as_deref() {
+        let token = token.trim();
+        if token.is_empty() {
+            return Err(wopi_no_store(protocol_error_response(
+                crate::errors::AsterError::validation_error("value cannot be empty"),
+            )));
+        }
+        return Ok(token);
+    }
+    Err(wopi_no_store(protocol_error_response(
+        crate::errors::AsterError::validation_error("access_token is required"),
+    )))
 }
 
 fn conflict_response(conflict: &wopi_service::WopiConflict) -> HttpResponse {
@@ -338,6 +386,14 @@ fn invalid_file_name_response(reason: &str) -> HttpResponse {
 
 fn protocol_error_response(error: crate::errors::AsterError) -> HttpResponse {
     actix_web::ResponseError::error_response(&error)
+}
+
+fn wopi_no_store(mut response: HttpResponse) -> HttpResponse {
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-store"),
+    );
+    response
 }
 
 fn header_value(req: &HttpRequest, name: &str) -> String {
@@ -385,4 +441,67 @@ fn request_content_length(req: &HttpRequest) -> Option<i64> {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok())
         .and_then(|value| crate::utils::numbers::u64_to_i64(value, "content length").ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{wopi_access_token, wopi_no_store};
+    use crate::api::dto::wopi::WopiAccessQuery;
+    use actix_web::HttpResponse;
+    use actix_web::http::header;
+
+    #[test]
+    fn wopi_access_token_prefers_header_over_query() {
+        let req = actix_web::test::TestRequest::default()
+            .insert_header(("X-WOPI-Token", "header-token"))
+            .uri("/api/v1/wopi/files/1?access_token=query-token")
+            .to_http_request();
+        let query = WopiAccessQuery {
+            access_token: Some("query-token".to_string()),
+        };
+
+        let token = wopi_access_token(&req, &query).expect("header token should be accepted");
+
+        assert_eq!(token, "header-token");
+    }
+
+    #[test]
+    fn wopi_access_token_falls_back_to_query_for_wopi_clients() {
+        let req = actix_web::test::TestRequest::default().to_http_request();
+        let query = WopiAccessQuery {
+            access_token: Some("query-token".to_string()),
+        };
+
+        let token = wopi_access_token(&req, &query).expect("query token should remain supported");
+
+        assert_eq!(token, "query-token");
+    }
+
+    #[test]
+    fn wopi_access_token_rejects_missing_token() {
+        let req = actix_web::test::TestRequest::default().to_http_request();
+        let query = WopiAccessQuery { access_token: None };
+
+        let response = wopi_access_token(&req, &query).expect_err("missing token should fail");
+
+        assert_eq!(response.status(), actix_web::http::StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL),
+            Some(&header::HeaderValue::from_static("no-store"))
+        );
+    }
+
+    #[test]
+    fn wopi_no_store_overwrites_existing_cache_control() {
+        let response = HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "public, max-age=60"))
+            .finish();
+
+        let response = wopi_no_store(response);
+
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL),
+            Some(&header::HeaderValue::from_static("no-store"))
+        );
+    }
 }

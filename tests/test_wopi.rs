@@ -320,6 +320,12 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
     assert_eq!(resp.status(), 200);
     assert_eq!(
         resp.headers()
+            .get("Cache-Control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+    assert_eq!(
+        resp.headers()
             .get("X-Frame-Options")
             .and_then(|value| value.to_str().ok()),
         Some(X_FRAME_OPTIONS_VALUE)
@@ -355,6 +361,33 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
         body["Version"]
             .as_str()
             .is_some_and(|value| !value.is_empty())
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/wopi/files/{file_id}"))
+        .insert_header(("X-WOPI-Token", wopi_access_token.as_str()))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("Cache-Control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/wopi/files/{file_id}"))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    assert_eq!(
+        resp.headers()
+            .get("Cache-Control")
+            .and_then(|value| value.to_str().ok()),
+        Some("no-store")
     );
 }
 

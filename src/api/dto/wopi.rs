@@ -12,6 +12,5 @@ use validator::Validate;
     derive(IntoParams, ToSchema)
 )]
 pub struct WopiAccessQuery {
-    #[validate(custom(function = "crate::api::dto::validation::validate_non_blank"))]
-    pub access_token: String,
+    pub access_token: Option<String>,
 }
