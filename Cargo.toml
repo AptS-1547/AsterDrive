@@ -6,6 +6,7 @@ authors = [
     "AptS-1547 <apts-1547@esaps.net>",
     "AptS-1548 <apts-1548@esaps.net>",
     "AptS-1738 <apts-1738@esaps.net>",
+    "AptS-1543 <apts-1543@esaps.net>",
 ]
 repository = "https://github.com/AptS-1547/AsterDrive"
 license = "MIT"
