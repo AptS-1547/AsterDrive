@@ -57,6 +57,15 @@ vi.mock("@/i18n", () => ({
 		ensureI18nNamespacesMock(...args),
 }));
 
+vi.mock("react", async () => {
+	const actual = await vi.importActual<typeof import("react")>("react");
+
+	return {
+		...actual,
+		lazy: (load: () => Promise<unknown>) => load,
+	};
+});
+
 vi.mock("react-router-dom", async () => {
 	const actual =
 		await vi.importActual<typeof import("react-router-dom")>(
@@ -98,27 +107,30 @@ function flattenRoutes(items: TestRoute[]): TestRoute[] {
 	]);
 }
 
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+	return (
+		value != null && typeof (value as { then?: unknown }).then === "function"
+	);
+}
+
 async function resolveLazyElement(element: unknown) {
 	const targetElement =
 		(element as { type?: unknown; props?: { children?: unknown } } | undefined)
 			?.props?.children ?? element;
-	const type = (targetElement as { type?: unknown } | undefined)?.type as
-		| {
-				_payload?: unknown;
-				_init?: (payload: unknown) => unknown;
-		  }
-		| undefined;
+	const type = (targetElement as { type?: unknown } | undefined)?.type;
 
-	if (!type?._init) {
+	if (typeof type !== "function") {
 		throw new Error("expected lazy route element");
 	}
 
 	try {
-		return type._init(type._payload);
+		const result = type();
+		return isThenable(result) ? await result : result;
 	} catch (error) {
-		if (error instanceof Promise) {
+		if (isThenable(error)) {
 			await error;
-			return type._init(type._payload);
+			const result = type();
+			return isThenable(result) ? await result : result;
 		}
 		throw error;
 	}
