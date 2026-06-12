@@ -36,9 +36,8 @@ use aster_drive::storage::remote_protocol::{
     sign_presigned_request,
 };
 use aster_drive::types::{
-    DriverType, NullablePatch, RemoteDownloadStrategy, RemoteNodeTransportMode,
-    RemoteUploadStrategy, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
-    serialize_storage_policy_options,
+    DriverType, RemoteDownloadStrategy, RemoteNodeTransportMode, RemoteUploadStrategy,
+    StoragePolicyOptions, StoredStoragePolicyAllowedTypes, serialize_storage_policy_options,
 };
 use bytes::Bytes;
 use chrono::{Duration as ChronoDuration, Utc};
@@ -1300,16 +1299,7 @@ async fn setup_browser_presigned_cors_fixture(
     let folder = folder_service::create(&consumer_state, user.id, &format!("{label}-folder"), None)
         .await
         .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let init = upload_service::init_upload(
         &consumer_state,
@@ -2668,16 +2658,7 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
     let folder = folder_service::create(&consumer_state, user.id, "remote-folder", None)
         .await
         .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let upload_bytes = b"hello remote storage over internal api";
     let upload_path = write_temp_upload_file(
@@ -4280,16 +4261,7 @@ async fn test_remote_presigned_download_redirects_to_follower() {
         folder_service::create(&consumer_state, user.id, "remote-presigned-download", None)
             .await
             .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let body = b"hello remote presigned download".to_vec();
     let upload_path = write_temp_upload_file(
@@ -5029,16 +5001,7 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
     let folder = folder_service::create(&consumer_state, user.id, "remote-thumbs", None)
         .await
         .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let png_bytes = build_test_png();
     let upload_path = write_temp_upload_file(
@@ -5172,16 +5135,7 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
     let folder = folder_service::create(&consumer_state, user.id, "remote-presigned", None)
         .await
         .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let body = b"presigned-remote-upload".to_vec();
     let init = upload_service::init_upload(
@@ -5362,16 +5316,7 @@ async fn test_force_delete_policy_cleans_late_remote_presigned_put_e2e() {
     let folder = folder_service::create(&consumer_state, user.id, "late-remote-presigned", None)
         .await
         .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let body = b"late remote presigned write after force delete".to_vec();
     let init = upload_service::init_upload(
@@ -5542,16 +5487,7 @@ async fn test_remote_relay_stream_direct_upload_e2e() {
     let folder = folder_service::create(&consumer_state, user.id, "remote-relay-direct", None)
         .await
         .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let login = auth_service::login(&consumer_state, "remrelaydir", "pass1234", None, None)
         .await
@@ -5704,16 +5640,7 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
     let folder = folder_service::create(&consumer_state, user.id, "remote-browser-cors", None)
         .await
         .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let body = b"presigned-browser-cors".to_vec();
     let init = upload_service::init_upload(
@@ -5946,16 +5873,7 @@ async fn test_remote_presigned_download_browser_cors_allows_get() {
     )
     .await
     .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let body = b"presigned-download-browser-cors".to_vec();
     let upload_path = write_temp_upload_file(
@@ -6246,16 +6164,7 @@ async fn test_remote_relay_stream_chunked_upload_e2e() {
     let folder = folder_service::create(&consumer_state, user.id, "remote-relay-chunked", None)
         .await
         .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let body = b"remote-relay-chunked-upload".to_vec();
     let init = upload_service::init_upload(
@@ -6548,16 +6457,7 @@ async fn test_remote_presigned_upload_browser_cors_accepts_master_url_with_path_
         folder_service::create(&consumer_state, user.id, "remote-browser-origin-path", None)
             .await
             .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let init = upload_service::init_upload(
         &consumer_state,
@@ -6680,16 +6580,7 @@ async fn test_remote_presigned_upload_browser_cors_rejects_disabled_binding() {
     )
     .await
     .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let init = upload_service::init_upload(
         &consumer_state,
@@ -7124,16 +7015,7 @@ async fn test_remote_presigned_multipart_upload_composes_on_provider_without_ass
         folder_service::create(&consumer_state, user.id, "remote-presigned-multipart", None)
             .await
             .expect("remote folder should be created");
-    folder_service::update(
-        &consumer_state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(remote_policy.id),
-    )
-    .await
-    .expect("remote policy should bind to folder");
+    common::bind_policy_to_folder(&consumer_state, folder.id, remote_policy.id).await;
 
     let body = b"multipart-remote-upload".to_vec();
     let init = upload_service::init_upload(

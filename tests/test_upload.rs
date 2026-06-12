@@ -3295,7 +3295,7 @@ async fn test_force_delete_policy_cleans_late_s3_presigned_put_e2e() {
     use aster_drive::services::{
         auth_service, folder_service, policy_service, task_service, upload_service,
     };
-    use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus, NullablePatch};
+    use aster_drive::types::{BackgroundTaskKind, BackgroundTaskStatus};
     use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
     use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
@@ -3333,16 +3333,7 @@ async fn test_force_delete_policy_cleans_late_s3_presigned_put_e2e() {
     let folder = folder_service::create(&state, user.id, "late-s3-presigned", None)
         .await
         .unwrap();
-    folder_service::update(
-        &state,
-        folder.id,
-        user.id,
-        None,
-        NullablePatch::Absent,
-        NullablePatch::Value(policy.id),
-    )
-    .await
-    .unwrap();
+    common::bind_policy_to_folder(&state, folder.id, policy.id).await;
 
     let data = b"late s3 presigned write after force delete".to_vec();
     let init = upload_service::init_upload(

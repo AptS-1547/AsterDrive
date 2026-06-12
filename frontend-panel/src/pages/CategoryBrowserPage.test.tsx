@@ -253,7 +253,15 @@ vi.mock("@/components/files/TagLibraryManagerDialog", () => ({
 }));
 
 vi.mock("@/pages/file-browser/FileBrowserDialogs", () => ({
-	FileBrowserDialogs: () => null,
+	FileBrowserDialogs: ({
+		onFolderPolicyClose,
+	}: {
+		onFolderPolicyClose: () => void;
+	}) => (
+		<button type="button" onClick={onFolderPolicyClose}>
+			close folder policy
+		</button>
+	),
 }));
 
 vi.mock("@/components/files/preview/imagePreviewNavigation", () => ({
@@ -348,6 +356,18 @@ describe("CategoryBrowserPage", () => {
 			"true",
 		);
 		expect(mockState.clearSelection).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the unused folder policy close callback harmless", () => {
+		render(<CategoryBrowserPage />);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "close folder policy" }),
+		);
+
+		expect(
+			screen.getByRole("button", { name: "close folder policy" }),
+		).toBeInTheDocument();
 	});
 
 	it("selects all visible category files with Command+A", async () => {

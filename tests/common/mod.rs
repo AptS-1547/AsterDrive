@@ -59,6 +59,22 @@ pub async fn set_foreign_key_checks(
     db.execute_unprepared(sql).await.map(|_| ())
 }
 
+#[allow(dead_code)]
+pub async fn bind_policy_to_folder(
+    state: &aster_drive::runtime::PrimaryAppState,
+    folder_id: i64,
+    policy_id: i64,
+) {
+    aster_drive::services::folder_service::admin_set_policy_with_audit(
+        state,
+        folder_id,
+        Some(policy_id),
+        &aster_drive::services::audit_service::AuditContext::system(),
+    )
+    .await
+    .expect("policy should bind to folder");
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestDatabaseBackend {
     Sqlite,

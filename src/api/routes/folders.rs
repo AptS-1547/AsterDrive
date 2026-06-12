@@ -8,12 +8,13 @@ use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
 use crate::api::routes::{files, team_scope};
 use crate::config::{NetworkTrustConfig, RateLimitConfig};
-use crate::errors::Result;
+use crate::errors::{Result, auth_forbidden_with_code};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::AuditContext, auth_service::Claims, folder_service,
     workspace_storage_service::WorkspaceStorageScope,
 };
+use crate::{api::api_error_code::ApiErrorCode, types::NullablePatch};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -702,6 +703,12 @@ pub(crate) async fn patch_folder_response(
     body: &PatchFolderReq,
 ) -> Result<HttpResponse> {
     validate_request(body)?;
+    if body.includes_policy_id() {
+        return Err(auth_forbidden_with_code(
+            ApiErrorCode::AuthAdminRequired,
+            "omit policy_id from regular folder PATCH requests unless changing storage policy; binding or clearing a folder storage policy requires the admin-only folder storage policy API with an admin token",
+        ));
+    }
     let ctx = AuditContext::from_request(req, claims);
     let folder = folder_service::update_in_scope_with_audit(
         state,
@@ -709,7 +716,7 @@ pub(crate) async fn patch_folder_response(
         folder_id,
         body.name.clone(),
         body.parent_id,
-        body.policy_id,
+        NullablePatch::Absent,
         &ctx,
     )
     .await?;

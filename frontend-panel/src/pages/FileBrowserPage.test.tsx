@@ -6,7 +6,7 @@ import {
 	waitFor,
 	within,
 } from "@testing-library/react";
-import { type Ref, useImperativeHandle } from "react";
+import { type Ref, useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FILE_BROWSER_FEEDBACK_DURATION_MS } from "@/lib/constants";
 import {
@@ -28,6 +28,7 @@ const mockState = vi.hoisted(() => ({
 	startAuthenticatedDownload: vi.fn(),
 	dispatchEvent: vi.fn(),
 	fileBrowserContext: null as Record<string, unknown> | null,
+	folderPolicyPreload: vi.fn(),
 	formatBatchToast: vi.fn(),
 	handleApiError: vi.fn(),
 	idleTasks: [] as Array<() => void>,
@@ -63,6 +64,10 @@ const mockState = vi.hoisted(() => ({
 	},
 	readInternalDragData: vi.fn(),
 	refreshUser: vi.fn(),
+	authUser: {
+		id: 1,
+		role: "user" as "admin" | "user",
+	},
 	searchParams: new URLSearchParams("name=Projects"),
 	setFileLock: vi.fn(),
 	setFolderLock: vi.fn(),
@@ -97,6 +102,7 @@ const mockState = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
 	triggerFileUpload: vi.fn(),
 	triggerFolderUpload: vi.fn(),
+	uploadAreaConnected: true,
 	useKeyboardShortcuts: vi.fn(),
 	warmupPreviewEngines: vi.fn(),
 	workspace: {
@@ -544,6 +550,26 @@ vi.mock("@/components/files/FileInfoDialog", () => ({
 	}) => (open ? <div>{`info:${file?.name ?? folder?.name ?? ""}`}</div> : null),
 }));
 
+vi.mock("@/components/files/FolderPolicyDialog", () => ({
+	FolderPolicyDialog: ({
+		folder,
+		onOpenChange,
+		open,
+	}: {
+		folder?: { id: number; name: string } | null;
+		onOpenChange?: (open: boolean) => void;
+		open: boolean;
+	}) =>
+		open ? (
+			<div>
+				<div>{`folder-policy:${folder?.name ?? ""}`}</div>
+				<button type="button" onClick={() => onOpenChange?.(false)}>
+					close-folder-policy
+				</button>
+			</div>
+		) : null,
+}));
+
 vi.mock("@/components/files/OfflineDownloadDialog", () => ({
 	OfflineDownloadDialog: ({
 		open,
@@ -696,10 +722,20 @@ vi.mock("@/components/files/UploadArea", () => ({
 			triggerFolderUpload: () => void;
 		}>;
 	}) {
-		useImperativeHandle(ref, () => ({
-			triggerFileUpload: mockState.triggerFileUpload,
-			triggerFolderUpload: mockState.triggerFolderUpload,
-		}));
+		const connected = mockState.uploadAreaConnected;
+		// biome-ignore lint/correctness/useExhaustiveDependencies: test mock reads an external flag so rerender can simulate ref disconnect/reconnect.
+		useEffect(() => {
+			if (typeof ref !== "function") return;
+			ref(
+				connected
+					? {
+							triggerFileUpload: mockState.triggerFileUpload,
+							triggerFolderUpload: mockState.triggerFolderUpload,
+						}
+					: null,
+			);
+			return () => ref(null);
+		}, [connected, ref]);
 		return <div>{children}</div>;
 	},
 }));
@@ -945,14 +981,19 @@ vi.mock("@/lib/authenticatedDownload", () => ({
 
 vi.mock("@/stores/authStore", () => {
 	const useAuthStore = <T,>(
-		selector: (state: { refreshUser: typeof mockState.refreshUser }) => T,
+		selector: (state: {
+			refreshUser: typeof mockState.refreshUser;
+			user: typeof mockState.authUser;
+		}) => T,
 	) =>
 		selector({
 			refreshUser: mockState.refreshUser,
+			user: mockState.authUser,
 		});
 
 	useAuthStore.getState = () => ({
 		refreshUser: mockState.refreshUser,
+		user: mockState.authUser,
 	});
 
 	return { useAuthStore };
@@ -1026,6 +1067,7 @@ function getFileBrowserContext() {
 		onDelete: (type: "file" | "folder", id: number) => Promise<void>;
 		onDownload: (fileId: number, fileName: string) => void;
 		onFileClick: (file: Record<string, unknown>) => void;
+		onFolderPolicy?: (folder: { id: number; name: string }) => void;
 		onInfo: (type: "file" | "folder", id: number) => void;
 		onMove: (type: "file" | "folder", id: number) => void;
 		onRename: (type: "file" | "folder", id: number, name: string) => void;
@@ -1071,6 +1113,7 @@ describe("FileBrowserPage", () => {
 		mockState.startAuthenticatedDownload.mockResolvedValue(undefined);
 		mockState.dispatchEvent.mockReset();
 		mockState.fileBrowserContext = null;
+		mockState.folderPolicyPreload.mockReset();
 		mockState.formatBatchToast.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.idleTasks = [];
@@ -1100,6 +1143,10 @@ describe("FileBrowserPage", () => {
 		mockState.thumbnailSupportStore.load.mockReset();
 		mockState.readInternalDragData.mockReset();
 		mockState.refreshUser.mockReset();
+		mockState.authUser = {
+			id: 1,
+			role: "user",
+		};
 		mockState.setFileLock.mockReset();
 		mockState.setFolderLock.mockReset();
 		mockState.store.clearSelection.mockReset();
@@ -1117,6 +1164,7 @@ describe("FileBrowserPage", () => {
 		mockState.toastSuccess.mockReset();
 		mockState.triggerFileUpload.mockReset();
 		mockState.triggerFolderUpload.mockReset();
+		mockState.uploadAreaConnected = true;
 		mockState.useKeyboardShortcuts.mockReset();
 		mockState.warmupPreviewEngines.mockReset();
 		mockState.workspace = { kind: "personal" };
@@ -1205,6 +1253,33 @@ describe("FileBrowserPage", () => {
 		expect(mockState.store.setViewMode).toHaveBeenCalledWith("list");
 		expect(mockState.store.setSortBy).toHaveBeenCalledWith("updated_at");
 		expect(mockState.store.setSortOrder).toHaveBeenCalledWith("desc");
+	});
+
+	it("does not expose folder policy management to regular users", () => {
+		render(<FileBrowserPage />);
+
+		expect(getFileBrowserContext().onFolderPolicy).toBeUndefined();
+	});
+
+	it("opens folder policy management for admins", async () => {
+		mockState.authUser = {
+			id: 1,
+			role: "admin",
+		};
+		render(<FileBrowserPage />);
+
+		const context = getFileBrowserContext();
+		expect(context.onFolderPolicy).toBeTypeOf("function");
+
+		act(() => {
+			context.onFolderPolicy?.({ id: 5, name: "Docs" });
+		});
+
+		expect(await screen.findByText("folder-policy:Docs")).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole("button", { name: "close-folder-policy" }),
+		);
+		expect(screen.queryByText("folder-policy:Docs")).not.toBeInTheDocument();
 	});
 
 	it("refreshes and navigates from breadcrumb and folder open actions, and opens the preview", async () => {
@@ -1572,6 +1647,54 @@ describe("FileBrowserPage", () => {
 			screen.getAllByRole("button", { name: /upload_folder/ })[0],
 		);
 
+		expect(mockState.triggerFileUpload).toHaveBeenCalledTimes(1);
+		expect(mockState.triggerFolderUpload).toHaveBeenCalledTimes(1);
+	});
+
+	it("disables upload actions while the upload area ref is disconnected and restores them after reconnect", async () => {
+		const { rerender } = render(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(
+				screen.getAllByRole("button", { name: /upload_file/ })[0],
+			).toBeEnabled();
+		});
+
+		mockState.uploadAreaConnected = false;
+		rerender(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(
+				screen.getAllByRole("button", { name: /upload_file/ })[0],
+			).toBeDisabled();
+			expect(
+				screen.getAllByRole("button", { name: /upload_folder/ })[0],
+			).toBeDisabled();
+		});
+
+		fireEvent.click(screen.getAllByRole("button", { name: /upload_file/ })[0]);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: /upload_folder/ })[0],
+		);
+		expect(mockState.triggerFileUpload).not.toHaveBeenCalled();
+		expect(mockState.triggerFolderUpload).not.toHaveBeenCalled();
+
+		mockState.uploadAreaConnected = true;
+		rerender(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(
+				screen.getAllByRole("button", { name: /upload_file/ })[0],
+			).toBeEnabled();
+			expect(
+				screen.getAllByRole("button", { name: /upload_folder/ })[0],
+			).toBeEnabled();
+		});
+
+		fireEvent.click(screen.getAllByRole("button", { name: /upload_file/ })[0]);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: /upload_folder/ })[0],
+		);
 		expect(mockState.triggerFileUpload).toHaveBeenCalledTimes(1);
 		expect(mockState.triggerFolderUpload).toHaveBeenCalledTimes(1);
 	});
