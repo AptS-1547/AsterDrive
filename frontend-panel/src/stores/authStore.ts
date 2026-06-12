@@ -19,10 +19,12 @@ import type {
 	MePartialResponse,
 	MeResponse,
 	UserPreferences,
+	UserProfileInfo,
 } from "@/types/api";
 
 const CACHED_USER_KEY = "aster-cached-user";
 const EXPIRES_AT_KEY = "aster-auth-expires-at";
+const THUMBNAIL_CACHE_NAMESPACE_KEY = "aster-thumbnail-cache-namespace";
 const REFRESH_BUFFER_MS = 120_000;
 const REFRESH_RETRY_MS = 60_000;
 export const SESSION_REFRESH_THRESHOLD_MS = 30_000;
@@ -35,18 +37,44 @@ interface RefreshUserOptions {
 	fields?: MeField[];
 }
 
-function getCachedUser(): MeResponse | null {
+type CachedUser = Partial<MeResponse> & {
+	access_token_expires_at?: number | null;
+	preferences?: UserPreferences | null;
+	profile?: UserProfileInfo | null;
+};
+
+function sanitizeCachedUser(value: unknown): CachedUser | null {
+	if (!value || typeof value !== "object") return null;
+	const source = value as Partial<MeResponse>;
+	const cached: CachedUser = {};
+	if (source.profile) cached.profile = source.profile;
+	if (source.preferences !== undefined) cached.preferences = source.preferences;
+	if (source.access_token_expires_at !== undefined) {
+		cached.access_token_expires_at = source.access_token_expires_at;
+	}
+	return Object.keys(cached).length > 0 ? cached : null;
+}
+
+function getCachedUser(): CachedUser | null {
 	try {
 		const raw = localStorage.getItem(CACHED_USER_KEY);
-		return raw ? JSON.parse(raw) : null;
+		if (!raw) return null;
+		const cached = sanitizeCachedUser(JSON.parse(raw));
+		if (cached) {
+			localStorage.setItem(CACHED_USER_KEY, JSON.stringify(cached));
+		} else {
+			localStorage.removeItem(CACHED_USER_KEY);
+		}
+		return cached;
 	} catch {
 		return null;
 	}
 }
 
-function setCachedUser(user: MeResponse | null) {
-	if (user) {
-		localStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
+function setCachedUser(user: MeResponse | CachedUser | null) {
+	const cached = sanitizeCachedUser(user);
+	if (cached) {
+		localStorage.setItem(CACHED_USER_KEY, JSON.stringify(cached));
 	} else {
 		localStorage.removeItem(CACHED_USER_KEY);
 	}
@@ -70,6 +98,7 @@ function getStoredExpiresAt(): number | null {
 		const expiresAt = Number(raw);
 		if (Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
 			sessionStorage.removeItem(EXPIRES_AT_KEY);
+			sessionStorage.removeItem(THUMBNAIL_CACHE_NAMESPACE_KEY);
 			return null;
 		}
 
@@ -83,6 +112,7 @@ function setStoredExpiresAt(expiresAt: number | null) {
 	try {
 		if (expiresAt === null) {
 			sessionStorage.removeItem(EXPIRES_AT_KEY);
+			sessionStorage.removeItem(THUMBNAIL_CACHE_NAMESPACE_KEY);
 			return;
 		}
 		sessionStorage.setItem(EXPIRES_AT_KEY, String(expiresAt));
@@ -124,6 +154,36 @@ function applyServerPreferences(prefs: UserPreferences): void {
 	if (prefs.language) void i18n.changeLanguage(prefs.language);
 }
 
+function cachedUserToOfflineUser(cached: CachedUser | null): MeResponse | null {
+	if (!cached) return null;
+	return {
+		id: 0,
+		username: "",
+		email: "",
+		email_verified: false,
+		pending_email: null,
+		role: "user",
+		status: "active",
+		must_change_password: false,
+		policy_group_id: null,
+		storage_used: 0,
+		storage_quota: 0,
+		access_token_expires_at: cached.access_token_expires_at ?? 0,
+		created_at: "",
+		updated_at: "",
+		profile: cached.profile ?? {
+			avatar: {
+				source: "none",
+				url_512: null,
+				url_1024: null,
+				version: 0,
+			},
+			display_name: null,
+		},
+		preferences: cached.preferences ?? null,
+	};
+}
+
 interface AuthState {
 	isAuthenticated: boolean;
 	isChecking: boolean;
@@ -144,6 +204,7 @@ interface AuthState {
 }
 
 const initialCachedUser = getCachedUser();
+const initialOfflineUser = cachedUserToOfflineUser(initialCachedUser);
 const initialExpiresAt = getStoredExpiresAt();
 const LOGGED_OUT_STATE = {
 	isAuthenticated: false,
@@ -290,7 +351,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 	isChecking: true,
 	isAuthStale: initialCachedUser !== null,
 	bootOffline: false,
-	user: initialCachedUser,
+	user: initialOfflineUser,
 	expiresAt: initialExpiresAt,
 
 	login: async (identifier, password) => {
@@ -353,17 +414,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 			// 网络错误（离线）时用缓存的用户信息保持登录态
 			if (!isSessionAuthFailure(error)) {
 				const cached = getCachedUser();
+				const offlineUser = cachedUserToOfflineUser(cached);
 				const expiresAt =
 					getExpiresAtFromUser(cached) ??
 					get().expiresAt ??
 					getStoredExpiresAt();
-				if (cached) {
+				if (offlineUser) {
 					set({
 						isAuthenticated: true,
 						isChecking: false,
 						isAuthStale: true,
 						bootOffline: false,
-						user: cached,
+						user: offlineUser,
 						expiresAt,
 					});
 					if (expiresAt) get().startAutoRefresh();

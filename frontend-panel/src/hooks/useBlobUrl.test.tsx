@@ -385,13 +385,13 @@ describe("useBlobUrl", () => {
 		await module.clearPersistedBlobUrlCache();
 	});
 
-	it("namespaces persisted thumbnail blobs by the current user", async () => {
+	it("namespaces persisted thumbnail blobs by the session cache namespace", async () => {
 		const { cache } = installCacheStorage();
-		localStorage.setItem("aster-cached-user", JSON.stringify({ id: 1 }));
+		sessionStorage.setItem("aster-thumbnail-cache-namespace", "session-a");
 		mockState.get.mockResolvedValueOnce({
 			status: 200,
-			data: new Blob(["user-1-image"]),
-			headers: { etag: '"etag-user-1"' },
+			data: new Blob(["session-a-image"]),
+			headers: { etag: '"etag-session-a"' },
 		});
 		let module = await loadHookModule();
 
@@ -404,11 +404,11 @@ describe("useBlobUrl", () => {
 		first.unmount();
 		module.clearBlobUrlCache();
 
-		localStorage.setItem("aster-cached-user", JSON.stringify({ id: 2 }));
+		sessionStorage.setItem("aster-thumbnail-cache-namespace", "session-b");
 		mockState.get.mockResolvedValueOnce({
 			status: 200,
-			data: new Blob(["user-2-image"]),
-			headers: { etag: '"etag-user-2"' },
+			data: new Blob(["session-b-image"]),
+			headers: { etag: '"etag-session-b"' },
 		});
 		module = await loadHookModule();
 
@@ -422,10 +422,10 @@ describe("useBlobUrl", () => {
 		expect(mockState.get).toHaveBeenCalledTimes(2);
 		expect(cache.store.size).toBe(2);
 		expect(
-			[...cache.store.keys()].some((key) => key.includes("user%3A1")),
+			[...cache.store.keys()].some((key) => key.includes("session-a")),
 		).toBe(true);
 		expect(
-			[...cache.store.keys()].some((key) => key.includes("user%3A2")),
+			[...cache.store.keys()].some((key) => key.includes("session-b")),
 		).toBe(true);
 
 		second.unmount();

@@ -46,7 +46,7 @@ const BLOB_FETCH_LIMITS: Record<BlobFetchLane, number> = {
 };
 const PERSISTED_THUMBNAIL_CACHE_NAME = "aster-thumbnail-blobs-v1";
 const PERSISTED_THUMBNAIL_CACHE_PREFIX = "/__asterdrive_thumbnail_cache__/";
-const CACHED_USER_KEY = "aster-cached-user";
+const THUMBNAIL_CACHE_NAMESPACE_KEY = "aster-thumbnail-cache-namespace";
 const blobUrlCache = new Map<string, BlobCacheEntry>();
 const blobUrlListeners = new Map<string, Set<() => void>>();
 const pendingBlobFetches: Record<BlobFetchLane, Array<() => void>> = {
@@ -82,16 +82,16 @@ function cacheStorageAvailable() {
 
 function currentPersistedThumbnailNamespace() {
 	try {
-		const raw = globalThis.localStorage?.getItem(CACHED_USER_KEY);
-		if (raw) {
-			const user = JSON.parse(raw) as { id?: unknown };
-			if (
-				(typeof user.id === "number" && Number.isSafeInteger(user.id)) ||
-				typeof user.id === "string"
-			) {
-				return `user:${String(user.id)}`;
-			}
-		}
+		const storage = globalThis.sessionStorage;
+		const existing = storage?.getItem(THUMBNAIL_CACHE_NAMESPACE_KEY);
+		if (existing) return existing;
+
+		const next =
+			typeof globalThis.crypto?.randomUUID === "function"
+				? globalThis.crypto.randomUUID()
+				: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+		storage?.setItem(THUMBNAIL_CACHE_NAMESPACE_KEY, next);
+		return next;
 	} catch {
 		// Ignore storage/parse errors and fall back to an anonymous namespace.
 	}
