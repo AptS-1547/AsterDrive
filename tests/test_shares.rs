@@ -175,6 +175,10 @@ async fn test_shares_crud() {
 #[actix_web::test]
 async fn test_shared_thumbnail_returns_304_for_matching_if_none_match() {
     let state = common::setup().await;
+    if state.writer_db().get_database_backend() == sea_orm::DbBackend::Sqlite {
+        eprintln!("skipping real concurrent download counter test on SQLite single-writer pool");
+        return;
+    }
     let app = create_test_app!(state.clone());
 
     let (token, _) = register_and_login!(app);
@@ -794,6 +798,85 @@ async fn test_share_download_limit() {
 }
 
 #[actix_web::test]
+async fn test_share_download_limit_counter_is_atomic_under_concurrency() {
+    use aster_drive::db::repository::share_repo;
+    use aster_drive::utils::raii::TempDirGuard;
+
+    let temp_dir = std::env::temp_dir().join(format!(
+        "asterdrive-share-download-race-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&temp_dir).expect("share race test db dir should be created");
+    let _temp_dir_guard = TempDirGuard::new(temp_dir.clone(), "share download race test db");
+    let database_url = format!("sqlite://{}?mode=rwc", temp_dir.join("shares.db").display());
+
+    let state = common::setup_with_database_url(&database_url).await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target": file_target(file_id),
+            "max_downloads": 1
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_id = body["data"]["id"].as_i64().unwrap();
+
+    let mut dbs = Vec::new();
+    for _ in 0..32 {
+        let cfg = aster_drive::config::DatabaseConfig {
+            url: database_url.clone(),
+            pool_size: 1,
+            retry_count: 0,
+        };
+        dbs.push(
+            aster_drive::db::connect_with_metrics(
+                &cfg,
+                aster_drive::metrics_core::NoopMetrics::arc(),
+            )
+            .await
+            .expect("share race test connection should open"),
+        );
+    }
+
+    let mut tasks = tokio::task::JoinSet::new();
+    for db in dbs {
+        tasks.spawn(async move { share_repo::increment_download_count(&db, share_id).await });
+    }
+
+    let mut reserved = 0;
+    let mut rejected = 0;
+    while let Some(result) = tasks.join_next().await {
+        match result.unwrap().unwrap() {
+            true => reserved += 1,
+            false => rejected += 1,
+        }
+    }
+
+    assert_eq!(
+        reserved, 1,
+        "only one concurrent request may reserve the slot"
+    );
+    assert_eq!(
+        rejected, 31,
+        "all other concurrent requests must be rejected"
+    );
+
+    let share = share_repo::find_by_id(state.writer_db(), share_id)
+        .await
+        .unwrap();
+    assert_eq!(share.download_count, 1);
+    assert_eq!(share.max_downloads, 1);
+}
+
+#[actix_web::test]
 async fn test_share_stream_session_counts_once_across_ranges_and_survives_limit() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -1337,6 +1420,8 @@ async fn test_password_protected_share_stream_session_requires_cookie() {
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .insert_header(("User-Agent", "AsterDrive Share Client/1.0"))
+        .peer_addr("203.0.113.42:12345".parse().unwrap())
         .set_json(serde_json::json!({"password": "secret"}))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1348,6 +1433,8 @@ async fn test_password_protected_share_stream_session_requires_cookie() {
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/s/{share_token}/stream-session"))
         .insert_header(("Cookie", cookie_header.as_str()))
+        .insert_header(("User-Agent", "AsterDrive Share Client/1.0"))
+        .peer_addr("203.0.113.42:12345".parse().unwrap())
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -1364,6 +1451,8 @@ async fn test_password_protected_share_stream_session_requires_cookie() {
     let req = test::TestRequest::get()
         .uri(&stream_path)
         .insert_header(("Cookie", cookie_header))
+        .insert_header(("User-Agent", "AsterDrive Share Client/1.0"))
+        .peer_addr("203.0.113.42:12345".parse().unwrap())
         .insert_header(("Range", "bytes=0-3"))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1560,7 +1649,7 @@ async fn test_password_protected_share_preview_link_requires_cookie_but_does_not
     assert_eq!(resp.status(), 200);
     assert_eq!(
         resp.headers().get("Content-Disposition").unwrap(),
-        r#"inline; filename="secret-report.docx""#
+        "inline; filename*=UTF-8''secret%2Dreport.docx"
     );
 
     let req = test::TestRequest::get()
@@ -1617,7 +1706,7 @@ async fn test_folder_share_file_preview_link_supports_public_inline_access() {
     assert_eq!(resp.status(), 200);
     assert_eq!(
         resp.headers().get("Content-Disposition").unwrap(),
-        r#"inline; filename="test-in-folder.txt""#
+        "inline; filename*=UTF-8''test%2Din%2Dfolder.txt"
     );
 }
 
@@ -1971,6 +2060,8 @@ async fn test_share_forged_cookie_rejected() {
     // 用正确流程验证密码
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .insert_header(("User-Agent", "AsterDrive Share Client/1.0"))
+        .peer_addr("203.0.113.42:12345".parse().unwrap())
         .set_json(serde_json::json!({"password": "secret"}))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
@@ -1980,6 +2071,38 @@ async fn test_share_forged_cookie_rejected() {
     let signed_cookie = common::extract_cookie(&resp, &format!("aster_share_{share_token}"))
         .expect("should get signed cookie");
 
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/download"))
+        .insert_header((
+            "Cookie",
+            format!("aster_share_{share_token}={signed_cookie}"),
+        ))
+        .insert_header(("User-Agent", "AsterDrive Share Client/2.0"))
+        .peer_addr("203.0.113.42:12345".parse().unwrap())
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "cookie verified for one user agent must not replay from another"
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/download"))
+        .insert_header((
+            "Cookie",
+            format!("aster_share_{share_token}={signed_cookie}"),
+        ))
+        .insert_header(("User-Agent", "AsterDrive Share Client/1.0"))
+        .peer_addr("203.0.114.10:12345".parse().unwrap())
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "cookie verified for one IPv4 /24 must not replay from another subnet"
+    );
+
     // 用签名 cookie 下载 → 应成功
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/s/{share_token}/download"))
@@ -1987,6 +2110,8 @@ async fn test_share_forged_cookie_rejected() {
             "Cookie",
             format!("aster_share_{share_token}={signed_cookie}"),
         ))
+        .insert_header(("User-Agent", "AsterDrive Share Client/1.0"))
+        .peer_addr("203.0.113.99:12345".parse().unwrap())
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(

@@ -10,10 +10,12 @@ use crate::services::workspace_storage_service::{
     StorePreuploadedNondedupParams, check_quota, cleanup_preuploaded_blob_upload,
     prepare_non_dedup_blob_upload, store_preuploaded_nondedup,
 };
+use crate::storage::BlobMetadata;
+use crate::utils::numbers::u64_to_i64;
 
 use super::common::{
     DirectUploadParams, upload_direct_relay_shutdown_failed, upload_direct_relay_write_failed,
-    upload_empty_file_error, upload_field_read_failed,
+    upload_empty_file_error, upload_field_read_failed, upload_size_mismatch_error,
 };
 
 pub(super) async fn upload_streaming_direct(
@@ -116,13 +118,48 @@ pub(super) async fn upload_streaming_direct(
                 return Err(err);
             }
 
+            let metadata = match driver.metadata(&storage_path).await {
+                Ok(metadata) => metadata,
+                Err(err) => {
+                    cleanup_preuploaded_blob_upload(
+                        driver.as_ref(),
+                        &prepared_upload,
+                        "direct stream metadata error",
+                    )
+                    .await;
+                    return Err(err);
+                }
+            };
+            let actual_size =
+                match validate_streaming_direct_uploaded_size(metadata, declared_size, policy) {
+                    Ok(actual_size) => actual_size,
+                    Err(err) => {
+                        cleanup_preuploaded_blob_upload(
+                            driver.as_ref(),
+                            &prepared_upload,
+                            "direct stream size validation failure",
+                        )
+                        .await;
+                        return Err(err);
+                    }
+                };
+            if let Err(err) = check_quota(state.writer_db(), scope, actual_size).await {
+                cleanup_preuploaded_blob_upload(
+                    driver.as_ref(),
+                    &prepared_upload,
+                    "direct stream quota validation failure",
+                )
+                .await;
+                return Err(err);
+            }
+
             return store_preuploaded_nondedup(
                 state,
                 StorePreuploadedNondedupParams {
                     scope,
                     folder_id,
                     filename: &filename,
-                    size: declared_size,
+                    size: actual_size,
                     existing_file_id: None,
                     skip_lock_check: false,
                     policy,
@@ -135,4 +172,130 @@ pub(super) async fn upload_streaming_direct(
     }
 
     Err(upload_empty_file_error())
+}
+
+fn validate_streaming_direct_uploaded_size(
+    metadata: BlobMetadata,
+    declared_size: i64,
+    policy: &crate::entities::storage_policy::Model,
+) -> Result<i64> {
+    let actual_size = u64_to_i64(metadata.size, "streaming direct uploaded size")?;
+    if actual_size != declared_size {
+        return Err(upload_size_mismatch_error(declared_size, actual_size));
+    }
+    if policy.max_file_size > 0 && actual_size > policy.max_file_size {
+        return Err(AsterError::file_too_large(format!(
+            "file size {} exceeds limit {}",
+            actual_size, policy.max_file_size
+        )));
+    }
+    Ok(actual_size)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_streaming_direct_uploaded_size;
+    use crate::storage::BlobMetadata;
+
+    fn policy_with_max_file_size(max_file_size: i64) -> crate::entities::storage_policy::Model {
+        let now = chrono::Utc::now();
+        crate::entities::storage_policy::Model {
+            id: 1,
+            name: "test".to_string(),
+            driver_type: crate::types::DriverType::S3,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key: String::new(),
+            secret_key: String::new(),
+            base_path: String::new(),
+            remote_node_id: None,
+            max_file_size,
+            allowed_types: crate::types::StoredStoragePolicyAllowedTypes::empty(),
+            options: crate::types::StoredStoragePolicyOptions::empty(),
+            is_default: true,
+            chunk_size: 5_242_880,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn validate_streaming_direct_uploaded_size_rejects_declared_size_mismatch() {
+        let policy = policy_with_max_file_size(0);
+        let error = validate_streaming_direct_uploaded_size(
+            BlobMetadata {
+                size: 10,
+                content_type: None,
+            },
+            1,
+            &policy,
+        )
+        .expect_err("actual uploaded size must match declared size");
+
+        assert!(error.message().contains("size mismatch"));
+    }
+
+    #[test]
+    fn validate_streaming_direct_uploaded_size_accepts_exact_policy_boundary() {
+        let policy = policy_with_max_file_size(10);
+        let actual_size = validate_streaming_direct_uploaded_size(
+            BlobMetadata {
+                size: 10,
+                content_type: None,
+            },
+            10,
+            &policy,
+        )
+        .expect("actual size equal to max_file_size should be accepted");
+
+        assert_eq!(actual_size, 10);
+    }
+
+    #[test]
+    fn validate_streaming_direct_uploaded_size_accepts_unlimited_policy() {
+        let policy = policy_with_max_file_size(0);
+        let actual_size = validate_streaming_direct_uploaded_size(
+            BlobMetadata {
+                size: 1024,
+                content_type: None,
+            },
+            1024,
+            &policy,
+        )
+        .expect("max_file_size 0 should allow any matching declared size");
+
+        assert_eq!(actual_size, 1024);
+    }
+
+    #[test]
+    fn validate_streaming_direct_uploaded_size_checks_policy_against_actual_size() {
+        let policy = policy_with_max_file_size(8);
+        let error = validate_streaming_direct_uploaded_size(
+            BlobMetadata {
+                size: 10,
+                content_type: None,
+            },
+            10,
+            &policy,
+        )
+        .expect_err("actual uploaded size must respect policy max_file_size");
+
+        assert!(error.message().contains("exceeds limit 8"));
+    }
+
+    #[test]
+    fn validate_streaming_direct_uploaded_size_rejects_metadata_size_outside_i64() {
+        let policy = policy_with_max_file_size(0);
+        let error = validate_streaming_direct_uploaded_size(
+            BlobMetadata {
+                size: i64::MAX as u64 + 1,
+                content_type: None,
+            },
+            i64::MAX,
+            &policy,
+        )
+        .expect_err("metadata size outside i64 must be rejected");
+
+        assert!(error.message().contains("streaming direct uploaded size"));
+    }
 }

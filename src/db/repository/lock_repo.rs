@@ -2,8 +2,8 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, ExprTrait,
-    QueryFilter, QueryOrder, QuerySelect, Select, Set,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
+    ExprTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, Set,
     sea_query::{Expr, Query, SelectStatement},
 };
 
@@ -422,6 +422,27 @@ pub async fn find_by_owner<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+/// Count active locks owned by a user.
+///
+/// `timeout_at = NULL` is treated as active for compatibility with legacy or
+/// non-WebDAV lock rows.
+pub async fn count_active_by_owner<C: ConnectionTrait>(
+    db: &C,
+    owner_id: i64,
+    now: chrono::DateTime<Utc>,
+) -> Result<u64> {
+    ResourceLock::find()
+        .filter(resource_lock::Column::OwnerId.eq(owner_id))
+        .filter(
+            Condition::any()
+                .add(resource_lock::Column::TimeoutAt.is_null())
+                .add(resource_lock::Column::TimeoutAt.gte(now)),
+        )
+        .count(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 /// 批量删除用户持有的所有资源锁
 pub async fn delete_all_by_owner<C: ConnectionTrait>(db: &C, owner_id: i64) -> Result<u64> {
     let res = ResourceLock::delete_many()
@@ -435,7 +456,7 @@ pub async fn delete_all_by_owner<C: ConnectionTrait>(db: &C, owner_id: i64) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{DbBackend, QueryTrait};
+    use sea_orm::{Database, DbBackend, QueryTrait};
 
     #[test]
     fn postgres_clear_file_locked_flags_sql_requires_absent_replacement_lock() {
@@ -453,6 +474,47 @@ mod tests {
             sql.contains(r#""resource_locks"."entity_id" = "files"."id""#),
             "{sql}"
         );
+    }
+
+    #[tokio::test]
+    async fn count_active_by_owner_counts_null_and_future_timeouts_only() {
+        let db = Database::connect("sqlite::memory:")
+            .await
+            .expect("in-memory sqlite should connect");
+        let schema = sea_orm::Schema::new(DbBackend::Sqlite);
+        db.execute(&schema.create_table_from_entity(ResourceLock))
+            .await
+            .expect("resource_locks test table should be created");
+
+        let now = Utc::now();
+        for (owner_id, timeout_at) in [
+            (42, None),
+            (42, Some(now + chrono::Duration::seconds(60))),
+            (42, Some(now - chrono::Duration::seconds(60))),
+            (7, Some(now + chrono::Duration::seconds(60))),
+        ] {
+            create(
+                &db,
+                resource_lock::ActiveModel {
+                    token: Set(format!("token-{owner_id}-{timeout_at:?}")),
+                    entity_type: Set(EntityType::File),
+                    entity_id: Set(owner_id),
+                    path: Set(format!("/{owner_id}-{timeout_at:?}.txt")),
+                    owner_id: Set(Some(owner_id)),
+                    timeout_at: Set(timeout_at),
+                    shared: Set(false),
+                    deep: Set(false),
+                    created_at: Set(now),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("test lock should insert");
+        }
+
+        assert_eq!(count_active_by_owner(&db, 42, now).await.unwrap(), 2);
+        assert_eq!(count_active_by_owner(&db, 7, now).await.unwrap(), 1);
+        assert_eq!(count_active_by_owner(&db, 99, now).await.unwrap(), 0);
     }
 
     #[test]

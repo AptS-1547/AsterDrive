@@ -7,13 +7,16 @@ use chrono::Utc;
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use xmltree::Element;
 
-use crate::db::repository::{file_repo, folder_repo, lock_repo};
+use crate::config::webdav;
+use crate::db::repository::{file_repo, folder_repo, lock_repo, user_repo};
 use crate::entities::resource_lock;
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::{self, AuditContext};
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::types::EntityType;
-use crate::webdav::dav::{DavLock, DavLockSystem, DavPath, LsFuture};
+use crate::webdav::dav::{
+    DavLock, DavLockError, DavLockPreflightError, DavLockSystem, DavPath, LsFuture,
+};
 use crate::webdav::path_resolver::{self, ResolvedNode};
 
 /// 数据库支持的 WebDAV 锁系统
@@ -79,9 +82,57 @@ impl DbLockSystem {
         )
         .await;
     }
+
+    fn max_active_locks_per_owner(&self) -> u64 {
+        self.audit_state
+            .as_ref()
+            .map(|state| webdav::max_active_locks_per_user(state.runtime_config()))
+            .unwrap_or(crate::config::definitions::DEFAULT_WEBDAV_MAX_ACTIVE_LOCKS_PER_USER)
+    }
+
+    async fn ensure_lock_quota<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<(), DavLockPreflightError> {
+        let owner_id = self.scope.actor_user_id();
+        let max_active_locks = self.max_active_locks_per_owner();
+        user_repo::lock_by_id(db, owner_id).await.map_err(|error| {
+            tracing::warn!(
+                owner_id,
+                error = %error,
+                "failed to lock WebDAV lock owner row"
+            );
+            DavLockPreflightError::GeneralFailure
+        })?;
+        let active_locks = lock_repo::count_active_by_owner(db, owner_id, now)
+            .await
+            .map_err(|error| {
+                tracing::warn!(
+                    owner_id,
+                    error = %error,
+                    "failed to count active WebDAV locks for owner"
+                );
+                DavLockPreflightError::GeneralFailure
+            })?;
+        if active_locks >= max_active_locks {
+            tracing::warn!(
+                owner_id,
+                active_locks,
+                max_active_locks,
+                "WebDAV active lock limit exceeded"
+            );
+            return Err(DavLockPreflightError::LimitExceeded);
+        }
+        Ok(())
+    }
 }
 
 impl DavLockSystem for DbLockSystem {
+    fn prepare_lock(&self, _path: &DavPath) -> LsFuture<'_, Result<(), DavLockPreflightError>> {
+        Box::pin(async move { self.ensure_lock_quota(&self.db, Utc::now()).await })
+    }
+
     fn lock(
         &self,
         path: &DavPath,
@@ -90,7 +141,7 @@ impl DavLockSystem for DbLockSystem {
         timeout: Option<Duration>,
         shared: bool,
         deep: bool,
-    ) -> LsFuture<'_, Result<DavLock, DavLock>> {
+    ) -> LsFuture<'_, Result<DavLock, DavLockError>> {
         let path_str = normalize_path(path);
         let path_owned = path.clone();
         let principal_owned = principal.map(|s| s.to_string());
@@ -101,21 +152,38 @@ impl DavLockSystem for DbLockSystem {
         Box::pin(async move {
             let txn = crate::db::transaction::begin(&self.db)
                 .await
-                .map_err(|_| empty_dav_lock(&path_owned))?;
+                .map_err(|error| {
+                    tracing::warn!(error = %error, path = %path_str, "failed to begin WebDAV lock transaction");
+                    DavLockError::Backend
+                })?;
             let result = async {
                 let now = Utc::now();
 
                 let (entity_type, entity_id) =
                     resolve_path_to_entity(&txn, self.scope, self.root_folder_id, &path_str)
                         .await
-                        .map_err(|_| empty_dav_lock(&path_owned))?;
+                        .map_err(|error| {
+                            tracing::warn!(error = ?error, path = %path_str, "failed to resolve WebDAV lock target");
+                            DavLockError::Backend
+                        })?;
                 lock_target_entity(&txn, entity_type, entity_id)
                     .await
-                    .map_err(|_| empty_dav_lock(&path_owned))?;
+                    .map_err(|error| {
+                        tracing::warn!(
+                            error = %error,
+                            entity_type = ?entity_type,
+                            entity_id,
+                            "failed to lock WebDAV target entity"
+                        );
+                        DavLockError::Backend
+                    })?;
 
                 let mut overlapping = find_overlapping_locks(&txn, &path_str, deep)
                     .await
-                    .map_err(|_| empty_dav_lock(&path_owned))?;
+                    .map_err(|error| {
+                        tracing::warn!(error = %error, path = %path_str, "failed to find overlapping WebDAV locks");
+                        DavLockError::Backend
+                    })?;
                 overlapping.sort_by_key(|lock| lock.id);
 
                 for existing in overlapping {
@@ -128,13 +196,21 @@ impl DavLockSystem for DbLockSystem {
                     }
 
                     if !shared || !existing.shared {
-                        return Err(model_to_dav_lock(&existing));
+                        return Err(DavLockError::Conflict(model_to_dav_lock(&existing)));
                     }
                 }
 
+                self.ensure_lock_quota(&txn, now).await.map_err(|error| {
+                    if matches!(error, DavLockPreflightError::LimitExceeded) {
+                        DavLockError::LimitExceeded
+                    } else {
+                        DavLockError::Backend
+                    }
+                })?;
+
                 let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
-                let timeout_at =
-                    timeout_dur.and_then(|d| chrono::Duration::from_std(d).ok().map(|cd| now + cd));
+                let timeout_at = lock_timeout_at(now, timeout_dur)
+                    .map_err(|_| DavLockError::Backend)?;
                 let owner_info = owner_xml.clone().map(|xml| {
                     crate::services::lock_service::ResourceLockOwnerInfo::Webdav(
                         crate::services::lock_service::WebdavLockOwnerInfo { xml },
@@ -154,7 +230,10 @@ impl DavLockSystem for DbLockSystem {
                         crate::services::lock_service::serialize_resource_lock_owner_info(
                             owner_info.as_ref(),
                         )
-                        .map_err(|_| empty_dav_lock(&path_owned))?,
+                        .map_err(|error| {
+                            tracing::warn!(error = %error, path = %path_str, "failed to serialize WebDAV lock owner");
+                            DavLockError::Backend
+                        })?,
                     ),
                     timeout_at: sea_orm::Set(timeout_at),
                     shared: sea_orm::Set(shared),
@@ -165,7 +244,10 @@ impl DavLockSystem for DbLockSystem {
 
                 lock_repo::create(&txn, model)
                     .await
-                    .map_err(|_| empty_dav_lock(&path_owned))?;
+                    .map_err(|error| {
+                        tracing::warn!(error = %error, path = %path_str, "failed to create WebDAV lock");
+                        DavLockError::Backend
+                    })?;
                 crate::services::lock_service::set_entity_locked(
                     &txn,
                     entity_type,
@@ -173,7 +255,15 @@ impl DavLockSystem for DbLockSystem {
                     true,
                 )
                 .await
-                .map_err(|_| empty_dav_lock(&path_owned))?;
+                .map_err(|error| {
+                    tracing::warn!(
+                        error = %error,
+                        entity_type = ?entity_type,
+                        entity_id,
+                        "failed to mark WebDAV lock target as locked"
+                    );
+                    DavLockError::Backend
+                })?;
 
                 Ok((
                     DavLock {
@@ -196,15 +286,18 @@ impl DavLockSystem for DbLockSystem {
                 Ok((lock, entity_type, entity_id)) => {
                     crate::db::transaction::commit(txn)
                         .await
-                        .map_err(|_| empty_dav_lock(&path_owned))?;
+                        .map_err(|error| {
+                            tracing::warn!(error = %error, path = %path_str, "failed to commit WebDAV lock transaction");
+                            DavLockError::Backend
+                        })?;
                     self.log_lock_action(entity_type, entity_id, true).await;
                     Ok(lock)
                 }
-                Err(conflict) => {
+                Err(error) => {
                     if let Err(error) = crate::db::transaction::rollback(txn).await {
                         tracing::warn!(error = %error, "failed to rollback WebDAV lock transaction");
                     }
-                    Err(conflict)
+                    Err(error)
                 }
             }
         })
@@ -255,16 +348,21 @@ impl DavLockSystem for DbLockSystem {
 
         Box::pin(async move {
             let now = Utc::now();
-            let new_timeout_at =
-                timeout_dur.and_then(|d| chrono::Duration::from_std(d).ok().map(|cd| now + cd));
+
+            let current_lock = lock_repo::find_by_token(&self.db, &token_owned)
+                .await
+                .map_err(|_| ())?
+                .ok_or(())?;
+            if !unlock_request_targets_lock_scope(&current_lock.path, current_lock.deep, &path_str)
+            {
+                return Err(());
+            }
+            let new_timeout_at = lock_timeout_at(now, timeout_dur).map_err(|_| ())?;
 
             let lock = lock_repo::refresh(&self.db, &token_owned, new_timeout_at)
                 .await
                 .map_err(|_| ())?
                 .ok_or(())?;
-            if !unlock_request_targets_lock_scope(&lock.path, lock.deep, &path_str) {
-                return Err(());
-            }
             self.log_lock_action(lock.entity_type, lock.entity_id, true)
                 .await;
             let owner = lock_owner_xml(&lock)
@@ -534,16 +632,16 @@ fn path_is_ancestor(parent: &str, child: &str) -> bool {
         .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
-fn empty_dav_lock(path: &DavPath) -> DavLock {
-    DavLock {
-        token: String::new(),
-        path: Box::new(path.clone()),
-        principal: None,
-        owner: None,
-        timeout_at: None,
-        timeout: None,
-        shared: false,
-        deep: false,
+fn lock_timeout_at(
+    now: chrono::DateTime<Utc>,
+    timeout: Option<Duration>,
+) -> Result<Option<chrono::DateTime<Utc>>, ()> {
+    match timeout {
+        Some(timeout) => {
+            let chrono_timeout = chrono::Duration::from_std(timeout).map_err(|_| ())?;
+            Ok(Some(now + chrono_timeout))
+        }
+        None => Ok(None),
     }
 }
 

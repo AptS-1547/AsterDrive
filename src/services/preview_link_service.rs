@@ -209,7 +209,7 @@ fn build_link_for_file(
     payload: &PreviewTokenPayload,
     request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<PreviewLinkInfo> {
-    let token = encode_file_token(file, payload, &state.config().auth.jwt_secret)?;
+    let token = encode_file_token(file, payload, &state.config().auth.direct_link_secret)?;
     Ok(PreviewLinkInfo {
         path: preview_path(state.runtime_config(), &token, &file.name, request_origin),
         expires_at: decode_expiry(payload.exp)?,
@@ -224,7 +224,12 @@ fn build_link_for_shared_file(
     payload: &PreviewTokenPayload,
     request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<PreviewLinkInfo> {
-    let token = encode_shared_token(share, file, payload, &state.config().auth.jwt_secret)?;
+    let token = encode_shared_token(
+        share,
+        file,
+        payload,
+        &state.config().auth.direct_link_secret,
+    )?;
     Ok(PreviewLinkInfo {
         path: preview_path(state.runtime_config(), &token, &file.name, request_origin),
         expires_at: decode_expiry(payload.exp)?,
@@ -291,7 +296,7 @@ async fn resolve_token(
                 &file,
                 payload_segment,
                 signature,
-                &state.config().auth.jwt_secret,
+                &state.config().auth.direct_link_secret,
             )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",
@@ -306,7 +311,7 @@ async fn resolve_token(
                 &file,
                 payload_segment,
                 signature,
-                &state.config().auth.jwt_secret,
+                &state.config().auth.direct_link_secret,
             )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",
@@ -326,7 +331,7 @@ async fn resolve_token(
                 &file,
                 payload_segment,
                 signature,
-                &state.config().auth.jwt_secret,
+                &state.config().auth.direct_link_secret,
             )? {
                 return Err(AsterError::share_not_found(
                     "preview link token signature mismatch",

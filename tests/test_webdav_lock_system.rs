@@ -3,6 +3,7 @@
 #[macro_use]
 mod common;
 use aster_drive::runtime::SharedRuntimeState;
+use aster_drive::webdav::dav::DavLockError;
 
 use std::io::Cursor;
 use std::time::Duration;
@@ -137,6 +138,62 @@ async fn test_db_lock_system_deep_lock_supports_check_refresh_discover_and_delet
 }
 
 #[actix_web::test]
+async fn test_db_lock_system_rejects_unrepresentable_timeout() {
+    use aster_drive::db::repository::lock_repo;
+    use aster_drive::services::{auth_service, file_service};
+    use aster_drive::webdav::dav::{DavLockSystem, DavPath};
+    use aster_drive::webdav::db_lock_system::DbLockSystem;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davlocks-timeout",
+        "davlocks-timeout@example.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
+    let temp_path = write_temp_fixture("timeout.txt", "timeout content");
+    file_service::store_from_temp(
+        &state,
+        user.id,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "timeout.txt",
+            &temp_path,
+            "timeout content".len() as i64,
+        ),
+    )
+    .await
+    .unwrap();
+
+    let lock_system = DbLockSystem::new(state.writer_db().clone(), user.id, None);
+    let path = DavPath::new("/timeout.txt").unwrap();
+    let result = lock_system
+        .lock(
+            &path,
+            Some("tester"),
+            None,
+            Some(Duration::from_secs(u64::MAX)),
+            false,
+            false,
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "unrepresentable lock timeout must be rejected instead of persisted as infinite"
+    );
+    assert!(
+        lock_repo::find_by_path_prefix(state.writer_db(), "/timeout.txt")
+            .await
+            .unwrap()
+            .is_empty(),
+        "rejected timeout must not create a persisted lock"
+    );
+}
+
+#[actix_web::test]
 async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts() {
     use aster_drive::db::repository::{file_repo, lock_repo};
     use aster_drive::services::{auth_service, file_service, lock_service};
@@ -219,6 +276,9 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
         )
         .await
         .unwrap_err();
+    let DavLockError::Conflict(conflict) = conflict else {
+        panic!("active replacement lock should reject conflicting exclusive lock");
+    };
     assert_eq!(conflict.token, replacement.token);
 
     assert!(
@@ -329,6 +389,9 @@ async fn test_db_lock_system_allows_shared_locks_and_keeps_locked_until_last_unl
         )
         .await
         .unwrap_err();
+    let DavLockError::Conflict(exclusive_conflict) = exclusive_conflict else {
+        panic!("shared locks should reject conflicting exclusive lock");
+    };
     assert!(
         [first.token.as_str(), second.token.as_str()].contains(&exclusive_conflict.token.as_str())
     );
@@ -408,5 +471,8 @@ async fn test_db_lock_system_exclusive_lock_blocks_shared_lock() {
         )
         .await
         .unwrap_err();
+    let DavLockError::Conflict(shared_conflict) = shared_conflict else {
+        panic!("exclusive lock should reject shared lock with a conflict");
+    };
     assert_eq!(shared_conflict.token, exclusive.token);
 }

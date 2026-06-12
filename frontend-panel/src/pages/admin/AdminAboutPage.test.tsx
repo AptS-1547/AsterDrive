@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminAboutPage from "@/pages/admin/AdminAboutPage";
 
 const mockState = {
+	formatDateTime: vi.fn((value: string) => `formatted:${value}`),
+	getInfo: vi.fn(),
 	toastInfo: vi.fn(),
 };
 
@@ -12,9 +14,19 @@ vi.mock("react-i18next", () => ({
 	}),
 }));
 
+vi.mock("@/lib/format", () => ({
+	formatDateTime: (value: string) => mockState.formatDateTime(value),
+}));
+
 vi.mock("sonner", () => ({
 	toast: {
 		info: (...args: unknown[]) => mockState.toastInfo(...args),
+	},
+}));
+
+vi.mock("@/services/adminService", () => ({
+	adminSystemService: {
+		getInfo: (...args: unknown[]) => mockState.getInfo(...args),
 	},
 }));
 
@@ -91,6 +103,12 @@ vi.mock("@/components/ui/icon", () => ({
 
 describe("AdminAboutPage", () => {
 	beforeEach(() => {
+		mockState.formatDateTime.mockReset();
+		mockState.formatDateTime.mockImplementation(
+			(value: string) => `formatted:${value}`,
+		);
+		mockState.getInfo.mockReset();
+		mockState.getInfo.mockRejectedValue(new Error("offline"));
 		mockState.toastInfo.mockReset();
 	});
 
@@ -101,12 +119,53 @@ describe("AdminAboutPage", () => {
 		expect(screen.getByRole("img", { name: "AsterDrive" })).toBeInTheDocument();
 		expect(screen.getAllByText("v0.0.1-alpha.11")).toHaveLength(2);
 		expect(screen.getAllByText("about_channel_alpha")).toHaveLength(2);
+		expect(screen.getByText("about_build_time_unknown")).toBeInTheDocument();
 		expect(
 			screen.getByRole("link", { name: /about_open_docs/i }),
 		).toHaveAttribute("href", "https://drive.astercosm.com/");
 		expect(
 			screen.getByRole("link", { name: /about_view_repository/i }),
 		).toHaveAttribute("href", "https://github.com/AptS-1547/AsterDrive");
+	});
+
+	it("loads backend version and build time from admin system info", async () => {
+		mockState.getInfo.mockResolvedValueOnce({
+			version: "0.3.0",
+			build_time: "2026-06-13T00:00:00Z",
+		});
+
+		render(<AdminAboutPage />);
+
+		expect(await screen.findAllByText("v0.3.0")).toHaveLength(2);
+		expect(screen.queryByText("2026-06-13T00:00:00Z")).not.toBeInTheDocument();
+		expect(
+			screen.getByText("formatted:2026-06-13T00:00:00Z"),
+		).toBeInTheDocument();
+	});
+
+	it("falls back when backend build time is invalid or cannot be formatted", async () => {
+		mockState.getInfo.mockResolvedValueOnce({
+			version: "0.3.0",
+			build_time: "not-a-date",
+		});
+		const { unmount } = render(<AdminAboutPage />);
+
+		expect(await screen.findAllByText("v0.3.0")).toHaveLength(2);
+		expect(screen.getByText("about_build_time_unknown")).toBeInTheDocument();
+		expect(mockState.formatDateTime).not.toHaveBeenCalled();
+		unmount();
+
+		mockState.getInfo.mockResolvedValueOnce({
+			version: "0.3.1",
+			build_time: "2026-06-13T00:00:00Z",
+		});
+		mockState.formatDateTime.mockImplementationOnce(() => {
+			throw new Error("unsupported locale");
+		});
+		render(<AdminAboutPage />);
+
+		expect(await screen.findAllByText("v0.3.1")).toHaveLength(2);
+		expect(screen.getByText("about_build_time_unknown")).toBeInTheDocument();
 	});
 
 	it("reveals a version easter egg after five version badge clicks", () => {

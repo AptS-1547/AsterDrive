@@ -77,6 +77,19 @@ describe("useAuthStore", () => {
 		});
 		expect(useAuthStore.getState().expiresAt).toEqual(expect.any(Number));
 		expect(localStorage.getItem("aster-cached-user")).not.toBeNull();
+		const cached = JSON.parse(
+			localStorage.getItem("aster-cached-user") ?? "{}",
+		);
+		expect(cached).toEqual({
+			access_token_expires_at: user.access_token_expires_at,
+			preferences: user.preferences,
+			profile: user.profile,
+		});
+		expect(cached.id).toBeUndefined();
+		expect(cached.email).toBeUndefined();
+		expect(cached.role).toBeUndefined();
+		expect(cached.storage_quota).toBeUndefined();
+		expect(cached.storage_used).toBeUndefined();
 		expect(sessionStorage.getItem("aster-auth-expires-at")).not.toBeNull();
 		expect(useThemeStore.getState()).toMatchObject({
 			mode: "dark",
@@ -148,8 +161,22 @@ describe("useAuthStore", () => {
 			isChecking: false,
 			isAuthStale: true,
 			bootOffline: false,
-			user: cachedUser,
+			user: {
+				email: "",
+				role: "user",
+				storage_quota: 0,
+				storage_used: 0,
+				access_token_expires_at: cachedUser.access_token_expires_at,
+				preferences: cachedUser.preferences,
+				profile: cachedUser.profile,
+			},
 		});
+		const stored = JSON.parse(
+			localStorage.getItem("aster-cached-user") ?? "{}",
+		);
+		expect(stored.email).toBeUndefined();
+		expect(stored.role).toBeUndefined();
+		expect(stored.storage_quota).toBeUndefined();
 	});
 
 	it("hydrates expiresAt from auth me when bootstrapping auth state", async () => {

@@ -320,6 +320,36 @@ async fn setup_with_custom_webdav_config(
     .await
 }
 
+async fn setup_webdav_with_runtime_config(
+    key: &str,
+    value: &str,
+) -> impl actix_web::dev::Service<
+    actix_http::Request,
+    Response = actix_web::dev::ServiceResponse,
+    Error = actix_web::Error,
+> {
+    let state = common::setup().await;
+    state
+        .runtime_config
+        .apply(common::system_config_model(key, value));
+    let db1 = state.writer_db().clone();
+    let db2 = state.writer_db().clone();
+    let webdav_config = WebDavConfig::default();
+
+    test::init_service(
+        App::new()
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                aster_drive::api::configure_primary(cfg, &db1);
+            }),
+    )
+    .await
+}
+
 #[actix_web::test]
 async fn test_webdav_propfind_root() {
     let app = setup_with_webdav!();
@@ -4069,6 +4099,62 @@ async fn test_webdav_lock_unlock() {
 }
 
 #[actix_web::test]
+async fn test_webdav_lock_resource_abuse_limit_rejects_new_placeholder_without_creating_file() {
+    let app = setup_webdav_with_runtime_config(
+        aster_drive::config::definitions::WEBDAV_MAX_ACTIVE_LOCKS_PER_USER_KEY,
+        "1",
+    )
+    .await;
+    let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+  <D:owner><D:href>testuser</D:href></D:owner>
+</D:lockinfo>"#;
+
+    let req = test::TestRequest::with_uri("/webdav/locked-empty-1.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Timeout", "Second-3600"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        201,
+        "first LOCK on an unmapped file should still create an RFC 4918 locked empty resource"
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/locked-empty-2.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Timeout", "Second-3600"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        507,
+        "second active LOCK should hit the per-user resource-abuse guard"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/locked-empty-2.txt")
+        .insert_header(("Authorization", auth))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "failed LOCK must not create the placeholder resource"
+    );
+}
+
+#[actix_web::test]
 async fn test_webdav_copy_locked_source_does_not_require_source_lock_token() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
@@ -4554,6 +4640,36 @@ async fn test_webdav_lock_rejects_invalid_lockinfo_and_timeout_headers() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400, "invalid Timeout must be rejected");
+
+    let req = test::TestRequest::with_uri("/webdav/overflow-timeout.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Timeout", "Second-9223372036854775808"))
+        .set_payload(valid_lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "oversized Timeout values must be rejected instead of becoming infinite locks"
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/infinite-timeout.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Timeout", "Infinite"))
+        .set_payload(valid_lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        201,
+        "Infinite Timeout should be clamped to the server maximum"
+    );
 
     let req = test::TestRequest::with_uri("/webdav/later-timeout.txt")
         .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())

@@ -7,13 +7,18 @@ use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse};
 use xmltree::{Element, XMLNode};
 
-use crate::webdav::dav::{DavFileSystem, DavLock, DavLockSystem, FsError, OpenOptions};
+use crate::webdav::dav::{
+    DavFileSystem, DavLock, DavLockError, DavLockPreflightError, DavLockSystem, FsError,
+    OpenOptions,
+};
 use crate::webdav::protocol::{self, Depth};
 use crate::webdav::{
     child_elements, dav_element, encode_href, fs, fs_error_response, href_for_dav_path,
     lock_token_matches_request_uri_response, lock_token_submitted_response, request_origin,
     request_path, responses, text_element,
 };
+
+const MAX_LOCK_DURATION_SECS: u64 = 604_800;
 
 pub(crate) async fn handle_lock(
     req: &HttpRequest,
@@ -79,6 +84,10 @@ pub(crate) async fn handle_lock(
         Err(resp) => return resp,
     };
 
+    if crate::webdav::reject_xml_dtd_or_entity(body).is_err() {
+        return responses::no_external_entities();
+    }
+
     let tree = match Element::parse(Cursor::new(body)) {
         Ok(tree) => tree,
         Err(_) => return responses::invalid_xml_body(),
@@ -121,6 +130,15 @@ pub(crate) async fn handle_lock(
         return responses::bad_request();
     }
 
+    if let Err(error) = lock_system.prepare_lock(&path).await {
+        return match error {
+            DavLockPreflightError::LimitExceeded => responses::webdav_lock_limit_exceeded(),
+            DavLockPreflightError::GeneralFailure => {
+                responses::empty(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        };
+    }
+
     let resource_existed = match ensure_lock_target_exists(dav_fs, &path, depth).await {
         Ok(resource_existed) => resource_existed,
         Err(err) => return fs_error_response(err),
@@ -138,9 +156,11 @@ pub(crate) async fn handle_lock(
         .await
     {
         Ok(lock) => lock,
-        Err(lock) => {
+        Err(DavLockError::Conflict(lock)) => {
             return lock_token_submitted_response(StatusCode::LOCKED, prefix, &lock.path);
         }
+        Err(DavLockError::LimitExceeded) => return responses::webdav_lock_limit_exceeded(),
+        Err(DavLockError::Backend) => return responses::empty(StatusCode::INTERNAL_SERVER_ERROR),
     };
 
     let status = if resource_existed {
@@ -193,7 +213,7 @@ fn parse_lock_token_header(value: &header::HeaderValue) -> Result<String, HttpRe
 
 fn parse_timeout(headers: &header::HeaderMap) -> Result<Option<Duration>, HttpResponse> {
     let Some(raw) = headers.get("Timeout") else {
-        return Ok(None);
+        return Ok(Some(Duration::from_secs(MAX_LOCK_DURATION_SECS)));
     };
     let raw = raw.to_str().map_err(|_| invalid_timeout_header())?;
     for candidate in raw
@@ -202,12 +222,15 @@ fn parse_timeout(headers: &header::HeaderMap) -> Result<Option<Duration>, HttpRe
         .filter(|value| !value.is_empty())
     {
         if candidate.eq_ignore_ascii_case("Infinite") {
-            return Ok(None);
+            return Ok(Some(Duration::from_secs(MAX_LOCK_DURATION_SECS)));
         }
         if let Some(seconds) = candidate
             .strip_prefix("Second-")
             .and_then(|seconds| seconds.parse::<u64>().ok())
         {
+            if seconds > MAX_LOCK_DURATION_SECS {
+                return Err(invalid_timeout_header());
+            }
             return Ok(Some(Duration::from_secs(seconds)));
         }
     }
@@ -378,4 +401,84 @@ fn lock_response(
 
 fn is_dav_element(element: &Element, local_name: &str) -> bool {
     element.name == local_name && element.namespace.as_deref() == Some("DAV:")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_LOCK_DURATION_SECS, parse_timeout};
+    use actix_web::http::header::{HeaderMap, HeaderName, HeaderValue};
+    use std::time::Duration;
+
+    fn timeout_header(value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_static("timeout"),
+            HeaderValue::from_str(value).expect("timeout test header should parse"),
+        );
+        headers
+    }
+
+    #[test]
+    fn parse_timeout_defaults_to_server_max_duration() {
+        let headers = HeaderMap::new();
+
+        let timeout = parse_timeout(&headers)
+            .expect("missing Timeout should use default")
+            .expect("missing Timeout should not create an infinite lock");
+
+        assert_eq!(timeout, Duration::from_secs(MAX_LOCK_DURATION_SECS));
+    }
+
+    #[test]
+    fn parse_timeout_clamps_infinite_to_server_max_duration() {
+        let headers = timeout_header("Infinite");
+
+        let timeout = parse_timeout(&headers)
+            .expect("Infinite should be accepted")
+            .expect("Infinite should be clamped instead of stored as None");
+
+        assert_eq!(timeout, Duration::from_secs(MAX_LOCK_DURATION_SECS));
+    }
+
+    #[test]
+    fn parse_timeout_accepts_exact_server_max_duration() {
+        let headers = timeout_header("Second-604800");
+
+        let timeout = parse_timeout(&headers)
+            .expect("exact max timeout should be accepted")
+            .expect("exact max timeout should produce a duration");
+
+        assert_eq!(timeout, Duration::from_secs(MAX_LOCK_DURATION_SECS));
+    }
+
+    #[test]
+    fn parse_timeout_rejects_above_server_max_duration() {
+        let headers = timeout_header("Second-604801");
+
+        assert!(
+            parse_timeout(&headers).is_err(),
+            "timeout above server maximum must be rejected"
+        );
+    }
+
+    #[test]
+    fn parse_timeout_rejects_u64_values_too_large_for_chrono() {
+        let headers = timeout_header("Second-9223372036854775808");
+
+        assert!(
+            parse_timeout(&headers).is_err(),
+            "overflow-sized timeout must be rejected before DB conversion"
+        );
+    }
+
+    #[test]
+    fn parse_timeout_skips_unsupported_candidate_before_valid_timeout() {
+        let headers = timeout_header("nonsense, Second-60");
+
+        let timeout = parse_timeout(&headers)
+            .expect("later valid Timeout candidate should be accepted")
+            .expect("valid Timeout candidate should produce a duration");
+
+        assert_eq!(timeout, Duration::from_secs(60));
+    }
 }

@@ -17,6 +17,7 @@ use crate::config::media_processing;
 use crate::config::offline_download;
 use crate::config::operations;
 use crate::config::site_url;
+use crate::config::webdav;
 use crate::config::wopi;
 use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
@@ -149,6 +150,9 @@ where
             Ok(normalized)
         }
         cors::CORS_MAX_AGE_SECS_KEY => cors::normalize_max_age_config_value(value),
+        webdav::WEBDAV_MAX_ACTIVE_LOCKS_PER_USER_KEY => {
+            webdav::normalize_max_active_locks_per_user_config_value(value)
+        }
         operations::MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY
         | operations::BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY
         | operations::BACKGROUND_TASK_DISPATCH_IDLE_MAX_INTERVAL_SECS_KEY

@@ -213,7 +213,12 @@ fn build_session_for_shared_file(
     payload: &ShareStreamSessionPayload,
     request_origin: Option<crate::services::preview_link_service::RequestOrigin<'_>>,
 ) -> Result<ShareStreamSessionInfo> {
-    let token = encode_shared_session(share, file, payload, &state.config().auth.jwt_secret)?;
+    let token = encode_shared_session(
+        share,
+        file,
+        payload,
+        &state.config().auth.direct_link_secret,
+    )?;
     Ok(ShareStreamSessionInfo {
         path: stream_path(
             state.runtime_config(),
@@ -284,7 +289,7 @@ async fn resolve_session_target(
         &file,
         payload_segment,
         signature,
-        &state.config().auth.jwt_secret,
+        &state.config().auth.direct_link_secret,
     ) {
         return Err(AsterError::share_not_found(
             "share stream session token signature mismatch",

@@ -33,7 +33,7 @@ pub(crate) async fn create_token_in_scope(
     file_id: i64,
 ) -> Result<DirectLinkTokenInfo> {
     let file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
-    let token = build_token(&file, &state.config().auth.jwt_secret)?;
+    let token = build_token(&file, &state.config().auth.direct_link_secret)?;
     Ok(DirectLinkTokenInfo { token })
 }
 
@@ -55,7 +55,7 @@ pub(crate) async fn resolve_file_for_download(
     let file_id = parsed.file_id();
     let file = load_public_file(state, file_id).await?;
 
-    if !verify_token_signature(&file, &parsed, &state.config().auth.jwt_secret)? {
+    if !verify_token_signature(&file, &parsed, &state.config().auth.direct_link_secret)? {
         return Err(AsterError::share_not_found(
             "direct link token signature mismatch",
         ));
@@ -222,9 +222,10 @@ fn verify_token_signature(
                 .is_ok())
         }
         ParsedDirectLinkToken::Legacy { signature, .. } => {
-            // Compatibility only. The legacy verifier intentionally reproduces
-            // the old 6-character signature algorithm so existing public links
-            // keep working. New tokens never use this path.
+            // Compatibility only: legacy_signature_for_file reproduces the old
+            // 6-character signature algorithm, but verification still depends
+            // on auth.direct_link_secret, so rotating that secret invalidates
+            // legacy links. New tokens never use this path.
             let expected = legacy_signature_for_file(file, secret)?;
             Ok(*signature == expected)
         }
@@ -429,6 +430,18 @@ mod tests {
     }
 
     #[test]
+    fn verify_v2_token_rejects_jwt_secret_when_direct_link_secret_differs() {
+        let file = test_file();
+        let token = build_token(&file, "dedicated-direct-link-secret").unwrap();
+        let parsed = parse_token(&token).unwrap();
+
+        assert!(
+            !verify_token_signature(&file, &parsed, "jwt-secret").unwrap(),
+            "direct link tokens must not validate with auth.jwt_secret"
+        );
+    }
+
+    #[test]
     fn verify_v2_token_rejects_wrong_scope() {
         let file = test_file();
         let mut other_file = test_file();
@@ -449,6 +462,21 @@ mod tests {
         };
 
         assert!(verify_token_signature(&file, &parsed, "secret").unwrap());
+    }
+
+    #[test]
+    fn verify_legacy_token_rejects_jwt_secret_when_direct_link_secret_differs() {
+        let file = test_file();
+        let signature = legacy_signature_for_file(&file, "dedicated-direct-link-secret").unwrap();
+        let parsed = ParsedDirectLinkToken::Legacy {
+            file_id: file.id,
+            signature: &signature,
+        };
+
+        assert!(
+            !verify_token_signature(&file, &parsed, "jwt-secret").unwrap(),
+            "legacy direct links must also be scoped to direct_link_secret"
+        );
     }
 
     #[test]

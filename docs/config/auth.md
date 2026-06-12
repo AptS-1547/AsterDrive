@@ -12,6 +12,8 @@
 ```toml
 [auth]
 jwt_secret = "<首次生成的一串随机密钥>"
+share_cookie_secret = "<首次生成的一串随机密钥>"
+direct_link_secret = "<首次生成的一串随机密钥>"
 mfa_secret_key = "<首次生成的一串随机密钥>"
 bootstrap_insecure_cookies = false
 ```
@@ -23,9 +25,16 @@ bootstrap_insecure_cookies = false
 ::: warning 正式环境固定它，避免来回改动
 一旦修改：
 - 当前所有登录会话失效
-- 公开分享的密码验证 Cookie 失效
 - 所有人都要重新登录
 :::
+
+### `share_cookie_secret`
+
+这是公开分享密码验证 Cookie 的 HMAC 密钥。修改后，已通过密码验证的分享访问 Cookie 会失效，用户需要重新输入分享密码。
+
+### `direct_link_secret`
+
+这是公共直链、预览链接和分享流式播放会话的 HMAC 密钥。修改后，已生成的直链和短期预览 / 流式会话 token 会失效，需要重新生成。
 
 ### `mfa_secret_key`
 
@@ -249,6 +258,8 @@ bootstrap_insecure_cookies = true
 ```toml
 [auth]
 jwt_secret = "replace-with-your-own-secret"
+share_cookie_secret = "replace-with-share-cookie-secret"
+direct_link_secret = "replace-with-direct-link-secret"
 mfa_secret_key = "replace-with-another-stable-secret"
 bootstrap_insecure_cookies = false
 ```
@@ -257,6 +268,8 @@ bootstrap_insecure_cookies = false
 
 ```bash
 ASTER__AUTH__JWT_SECRET="replace-with-your-own-secret"
+ASTER__AUTH__SHARE_COOKIE_SECRET="replace-with-share-cookie-secret"
+ASTER__AUTH__DIRECT_LINK_SECRET="replace-with-direct-link-secret"
 ASTER__AUTH__MFA_SECRET_KEY="replace-with-another-stable-secret"
 ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=false
 ```

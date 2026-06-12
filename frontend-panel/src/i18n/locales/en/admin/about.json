@@ -3,6 +3,8 @@
 	"about_tagline": "A self-hosted cloud storage console.",
 	"about_summary": "Manage files, share links, user permissions, storage policies, WebDAV access, and runtime configuration. AsterDrive ships the Rust backend and React admin panel together for personal, team, and private deployments.",
 	"about_version": "Current version",
+	"about_build_time": "Build time",
+	"about_build_time_unknown": "Unknown",
 	"about_channel": "Release channel",
 	"about_channel_release": "Stable",
 	"about_channel_development": "Development",

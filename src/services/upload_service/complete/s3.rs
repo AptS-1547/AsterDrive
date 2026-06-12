@@ -3,13 +3,15 @@ use chrono::Utc;
 use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::{file, upload_session};
-use crate::errors::{Result, upload_assembly_error_with_code};
+use crate::errors::{AsterError, Result, upload_assembly_error_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::shared::{
     run_upload_completion_stage, upload_completion_error_is_retryable,
 };
+use crate::services::workspace_scope_service::WorkspaceStorageScope;
 use crate::services::workspace_storage_service;
 use crate::storage::StorageDriver;
+use crate::storage::traits::multipart::{MultipartStorageDriver, UploadedMultipartPart};
 use crate::types::UploadSessionStatus;
 use crate::utils::numbers::u64_to_i64;
 
@@ -302,6 +304,49 @@ async fn complete_s3_multipart_upload_session(
         "completed multipart upload session",
         async {
             completed_parts.sort_by_key(|(part_number, _)| *part_number);
+            let actual_part_size = verify_uploaded_multipart_parts(
+                multipart.as_ref(),
+                temp_key,
+                multipart_id,
+                &session,
+                &completed_parts,
+            )
+            .await;
+            let actual_part_size = match actual_part_size {
+                Ok(actual_part_size) => actual_part_size,
+                Err(error) => {
+                    if should_abort_multipart_after_preflight_error(&error) {
+                        abort_multipart_upload_after_preflight_failure(
+                            multipart.as_ref(),
+                            temp_key,
+                            multipart_id,
+                            &session.id,
+                        )
+                        .await;
+                    }
+                    return Err(error);
+                }
+            };
+
+            if let Err(error) = workspace_storage_service::check_quota(
+                db,
+                workspace_scope_from_session(&session),
+                actual_part_size,
+            )
+            .await
+            {
+                if should_abort_multipart_after_preflight_error(&error) {
+                    abort_multipart_upload_after_preflight_failure(
+                        multipart.as_ref(),
+                        temp_key,
+                        multipart_id,
+                        &session.id,
+                    )
+                    .await;
+                }
+                return Err(error);
+            }
+
             // multipart complete 之前要先把 part 列表排序；驱动层依赖有序 part 序列。
             if let Err(error) = multipart
                 .complete_multipart_upload(temp_key, multipart_id, completed_parts)
@@ -353,13 +398,160 @@ async fn complete_s3_multipart_upload_session(
     .await
 }
 
+fn should_abort_multipart_after_preflight_error(error: &AsterError) -> bool {
+    matches!(error, AsterError::StorageQuotaExceeded(_))
+        || matches!(
+            error.api_error_code(),
+            ApiErrorCode::UploadIncompleteParts
+                | ApiErrorCode::UploadMissingPart
+                | ApiErrorCode::UploadTempObjectSizeMismatch
+        )
+}
+
+async fn verify_uploaded_multipart_parts(
+    multipart: &dyn MultipartStorageDriver,
+    temp_key: &str,
+    multipart_id: &str,
+    session: &upload_session::Model,
+    completed_parts: &[(i32, String)],
+) -> Result<i64> {
+    let mut uploaded_parts = multipart
+        .list_uploaded_part_details(temp_key, multipart_id)
+        .await?;
+    uploaded_parts.sort_by_key(|part| part.part_number);
+    validate_uploaded_part_numbers(session, completed_parts, &uploaded_parts)?;
+    let actual_size = sum_uploaded_part_sizes(&uploaded_parts)?;
+    if actual_size != session.total_size {
+        return Err(upload_assembly_error_with_code(
+            ApiErrorCode::UploadTempObjectSizeMismatch,
+            format!(
+                "multipart size mismatch: declared {} but uploaded parts total {}",
+                session.total_size, actual_size
+            ),
+        ));
+    }
+    Ok(actual_size)
+}
+
+fn validate_uploaded_part_numbers(
+    session: &upload_session::Model,
+    completed_parts: &[(i32, String)],
+    uploaded_parts: &[UploadedMultipartPart],
+) -> Result<()> {
+    if completed_parts.len() != uploaded_parts.len() {
+        return Err(upload_assembly_error_with_code(
+            ApiErrorCode::UploadIncompleteParts,
+            format!(
+                "expected {} completed parts, got {} uploaded parts",
+                completed_parts.len(),
+                uploaded_parts.len()
+            ),
+        ));
+    }
+
+    let expected_parts =
+        crate::utils::numbers::i32_to_usize(session.total_chunks, "upload session total_chunks")?;
+    if completed_parts.len() != expected_parts {
+        return Err(upload_assembly_error_with_code(
+            ApiErrorCode::UploadIncompleteParts,
+            format!(
+                "expected {} parts, got {}",
+                session.total_chunks,
+                completed_parts.len()
+            ),
+        ));
+    }
+
+    for (expected_part_number, ((completed_part_number, _), uploaded_part)) in
+        (1..=session.total_chunks).zip(completed_parts.iter().zip(uploaded_parts))
+    {
+        if *completed_part_number != expected_part_number {
+            return Err(upload_assembly_error_with_code(
+                ApiErrorCode::UploadMissingPart,
+                format!(
+                    "missing completed part {}; got {}",
+                    expected_part_number, completed_part_number
+                ),
+            ));
+        }
+        if uploaded_part.part_number != expected_part_number {
+            return Err(upload_assembly_error_with_code(
+                ApiErrorCode::UploadMissingPart,
+                format!(
+                    "missing uploaded part {}; got {}",
+                    expected_part_number, uploaded_part.part_number
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn sum_uploaded_part_sizes(uploaded_parts: &[UploadedMultipartPart]) -> Result<i64> {
+    uploaded_parts.iter().try_fold(0i64, |total, part| {
+        if part.size < 0 {
+            return Err(upload_assembly_error_with_code(
+                ApiErrorCode::UploadTempObjectSizeMismatch,
+                format!(
+                    "multipart part {} has invalid negative size {}",
+                    part.part_number, part.size
+                ),
+            ));
+        }
+        total.checked_add(part.size).ok_or_else(|| {
+            upload_assembly_error_with_code(
+                ApiErrorCode::UploadTempObjectSizeMismatch,
+                "multipart uploaded part size total overflow",
+            )
+        })
+    })
+}
+
+async fn abort_multipart_upload_after_preflight_failure(
+    multipart: &dyn MultipartStorageDriver,
+    temp_key: &str,
+    multipart_id: &str,
+    upload_id: &str,
+) {
+    if let Err(error) = multipart
+        .abort_multipart_upload(temp_key, multipart_id)
+        .await
+    {
+        tracing::warn!(
+            upload_id = %upload_id,
+            temp_key = %temp_key,
+            "failed to abort multipart upload after preflight failure: {error}"
+        );
+    }
+}
+
+fn workspace_scope_from_session(session: &upload_session::Model) -> WorkspaceStorageScope {
+    match session.team_id {
+        Some(team_id) => WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: session.user_id,
+        },
+        None => WorkspaceStorageScope::Personal {
+            user_id: session.user_id,
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::copy_presigned_object_to_final_key;
-    use crate::errors::Result;
-    use crate::storage::{BlobMetadata, StorageDriver};
+    use super::{
+        copy_presigned_object_to_final_key, should_abort_multipart_after_preflight_error,
+        sum_uploaded_part_sizes, validate_uploaded_part_numbers, verify_uploaded_multipart_parts,
+    };
+    use crate::api::api_error_code::ApiErrorCode;
+    use crate::entities::upload_session;
+    use crate::errors::{AsterError, Result, upload_assembly_error_with_code};
+    use crate::storage::traits::UploadedMultipartPart;
+    use crate::storage::{BlobMetadata, MultipartStorageDriver, StorageDriver};
     use async_trait::async_trait;
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
     use tokio::io::AsyncRead;
 
     #[derive(Default)]
@@ -405,6 +597,58 @@ mod tests {
         }
     }
 
+    struct ListingMultipartDriver {
+        parts: Vec<UploadedMultipartPart>,
+    }
+
+    #[async_trait]
+    impl MultipartStorageDriver for ListingMultipartDriver {
+        async fn create_multipart_upload(&self, _path: &str) -> Result<String> {
+            unreachable!()
+        }
+
+        async fn presigned_upload_part_url(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _expires: Duration,
+        ) -> Result<String> {
+            unreachable!()
+        }
+
+        async fn complete_multipart_upload(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _parts: Vec<(i32, String)>,
+        ) -> Result<()> {
+            unreachable!()
+        }
+
+        async fn upload_multipart_part(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+            _part_number: i32,
+            _data: &[u8],
+        ) -> Result<String> {
+            unreachable!()
+        }
+
+        async fn abort_multipart_upload(&self, _path: &str, _upload_id: &str) -> Result<()> {
+            unreachable!()
+        }
+
+        async fn list_uploaded_part_details(
+            &self,
+            _path: &str,
+            _upload_id: &str,
+        ) -> Result<Vec<UploadedMultipartPart>> {
+            Ok(self.parts.clone())
+        }
+    }
+
     #[tokio::test]
     async fn copy_presigned_object_to_final_key_reuses_verified_temp_size() {
         let driver = Arc::new(CountingCopyDriver::default());
@@ -426,5 +670,186 @@ mod tests {
             vec![final_key],
             "temp object metadata should be reused instead of fetched again"
         );
+    }
+
+    fn test_session(total_size: i64, total_chunks: i32) -> upload_session::Model {
+        upload_session::Model {
+            id: "session".to_string(),
+            user_id: 1,
+            team_id: None,
+            frontend_client_id: None,
+            filename: "file.bin".to_string(),
+            total_size,
+            chunk_size: 5,
+            total_chunks,
+            received_count: 0,
+            folder_id: None,
+            policy_id: 1,
+            status: crate::types::UploadSessionStatus::Assembling,
+            s3_temp_key: Some("temp".to_string()),
+            s3_multipart_id: Some("multipart".to_string()),
+            file_id: None,
+            created_at: chrono::Utc::now(),
+            expires_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn validate_uploaded_part_numbers_rejects_extra_uploaded_part() {
+        let session = test_session(10, 2);
+        let completed_parts = vec![(1, "etag-1".to_string()), (2, "etag-2".to_string())];
+        let uploaded_parts = vec![
+            UploadedMultipartPart {
+                part_number: 1,
+                size: 5,
+            },
+            UploadedMultipartPart {
+                part_number: 2,
+                size: 5,
+            },
+            UploadedMultipartPart {
+                part_number: 3,
+                size: 5,
+            },
+        ];
+
+        let error = validate_uploaded_part_numbers(&session, &completed_parts, &uploaded_parts)
+            .expect_err("extra provider part should be rejected");
+        assert!(error.to_string().contains("uploaded parts"));
+    }
+
+    #[test]
+    fn validate_uploaded_part_numbers_requires_sequential_parts() {
+        let session = test_session(10, 2);
+        let completed_parts = vec![(2, "etag-2".to_string()), (3, "etag-3".to_string())];
+        let uploaded_parts = vec![
+            UploadedMultipartPart {
+                part_number: 2,
+                size: 5,
+            },
+            UploadedMultipartPart {
+                part_number: 3,
+                size: 5,
+            },
+        ];
+
+        let error = validate_uploaded_part_numbers(&session, &completed_parts, &uploaded_parts)
+            .expect_err("non-sequential parts should be rejected");
+        assert!(error.to_string().contains("missing completed part 1"));
+    }
+
+    #[tokio::test]
+    async fn verify_uploaded_multipart_parts_accepts_exact_provider_sizes() {
+        let session = test_session(12, 3);
+        let completed_parts = vec![
+            (1, "etag-1".to_string()),
+            (2, "etag-2".to_string()),
+            (3, "etag-3".to_string()),
+        ];
+        let multipart = ListingMultipartDriver {
+            parts: vec![
+                UploadedMultipartPart {
+                    part_number: 3,
+                    size: 2,
+                },
+                UploadedMultipartPart {
+                    part_number: 1,
+                    size: 5,
+                },
+                UploadedMultipartPart {
+                    part_number: 2,
+                    size: 5,
+                },
+            ],
+        };
+
+        let actual_size = verify_uploaded_multipart_parts(
+            &multipart,
+            "temp-key",
+            "multipart-id",
+            &session,
+            &completed_parts,
+        )
+        .await
+        .expect("exact provider part sizes should verify");
+
+        assert_eq!(actual_size, 12);
+    }
+
+    #[tokio::test]
+    async fn verify_uploaded_multipart_parts_rejects_declared_size_mismatch() {
+        let session = test_session(11, 2);
+        let completed_parts = vec![(1, "etag-1".to_string()), (2, "etag-2".to_string())];
+        let multipart = ListingMultipartDriver {
+            parts: vec![
+                UploadedMultipartPart {
+                    part_number: 1,
+                    size: 5,
+                },
+                UploadedMultipartPart {
+                    part_number: 2,
+                    size: 7,
+                },
+            ],
+        };
+
+        let error = verify_uploaded_multipart_parts(
+            &multipart,
+            "temp-key",
+            "multipart-id",
+            &session,
+            &completed_parts,
+        )
+        .await
+        .expect_err("provider size sum must match declared session size");
+
+        assert!(error.to_string().contains("multipart size mismatch"));
+    }
+
+    #[test]
+    fn sum_uploaded_part_sizes_rejects_overflow() {
+        let parts = vec![
+            UploadedMultipartPart {
+                part_number: 1,
+                size: i64::MAX,
+            },
+            UploadedMultipartPart {
+                part_number: 2,
+                size: 1,
+            },
+        ];
+
+        let error = sum_uploaded_part_sizes(&parts).expect_err("overflow should be rejected");
+        assert!(error.to_string().contains("overflow"));
+    }
+
+    #[test]
+    fn sum_uploaded_part_sizes_rejects_negative_size() {
+        let parts = vec![UploadedMultipartPart {
+            part_number: 1,
+            size: -1,
+        }];
+
+        let error = sum_uploaded_part_sizes(&parts).expect_err("negative size should be rejected");
+        assert!(error.to_string().contains("negative size"));
+    }
+
+    #[test]
+    fn preflight_abort_policy_keeps_transient_provider_errors_retryable() {
+        let transient = AsterError::storage_driver_error("provider list_parts failed");
+        assert!(!should_abort_multipart_after_preflight_error(&transient));
+    }
+
+    #[test]
+    fn preflight_abort_policy_aborts_deterministic_consistency_errors() {
+        let mismatch = upload_assembly_error_with_code(
+            ApiErrorCode::UploadTempObjectSizeMismatch,
+            "multipart size mismatch",
+        );
+        let quota = AsterError::storage_quota_exceeded("quota exceeded");
+
+        assert!(should_abort_multipart_after_preflight_error(&mismatch));
+        assert!(should_abort_multipart_after_preflight_error(&quota));
     }
 }

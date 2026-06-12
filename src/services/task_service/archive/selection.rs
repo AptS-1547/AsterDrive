@@ -18,7 +18,9 @@ use crate::entities::{file, folder, share};
 use crate::errors::{AsterError, Result};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{
-    batch_service, folder_service, share_service,
+    batch_service,
+    download_headers::DownloadDisposition,
+    folder_service, share_service,
     task_service::types::CreateArchiveTaskParams,
     workspace_storage_service::{self, WorkspaceResourceScope, WorkspaceStorageScope},
 };
@@ -145,7 +147,7 @@ pub(crate) async fn stream_archive_download_in_scope(
         .content_type("application/zip")
         .insert_header((
             "Content-Disposition",
-            format!(r#"attachment; filename="{}""#, archive_name),
+            DownloadDisposition::Attachment.header_value(&archive_name),
         ))
         .insert_header(("Content-Encoding", "identity"))
         .streaming(reader_stream))
@@ -227,7 +229,7 @@ pub(crate) async fn stream_shared_archive_download(
         .content_type("application/zip")
         .insert_header((
             "Content-Disposition",
-            format!(r#"attachment; filename="{}""#, archive_name),
+            DownloadDisposition::Attachment.header_value(&archive_name),
         ))
         .insert_header(("Content-Encoding", "identity"))
         .streaming(reader_stream))

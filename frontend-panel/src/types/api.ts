@@ -53,6 +53,7 @@ export type ApiResponse<T = unknown> = {
 };
 export type HealthResponse = components["schemas"]["HealthResponse"];
 export type MemoryStatsResponse = components["schemas"]["MemoryStatsResponse"];
+export type SystemInfoResponse = components["schemas"]["SystemInfoResponse"];
 
 // Auth and user
 export type AvatarInfo = components["schemas"]["AvatarInfo"];

@@ -73,6 +73,18 @@ function createCachedUser() {
 		username: "cached-user",
 		email: "cached@example.com",
 		access_token_expires_at: Math.floor(Date.now() / 1000) + 60,
+		profile: {
+			avatar: {
+				source: "none",
+				url_512: null,
+				url_1024: null,
+				version: 0,
+			},
+			display_name: "Cached User",
+		},
+		preferences: {
+			storage_event_stream_enabled: true,
+		},
 	};
 }
 
@@ -190,11 +202,59 @@ describe("useAuthStore edge cases", () => {
 			isChecking: false,
 			isAuthStale: true,
 			bootOffline: false,
-			user: cachedUser,
+			user: {
+				email: "",
+				role: "user",
+				storage_quota: 0,
+				storage_used: 0,
+				access_token_expires_at: cachedUser.access_token_expires_at,
+				preferences: cachedUser.preferences,
+				profile: cachedUser.profile,
+			},
 		});
-		expect(localStorage.getItem("aster-cached-user")).toBe(
-			JSON.stringify(cachedUser),
+		const stored = JSON.parse(
+			localStorage.getItem("aster-cached-user") ?? "{}",
 		);
+		expect(stored).toEqual({
+			access_token_expires_at: cachedUser.access_token_expires_at,
+			preferences: cachedUser.preferences,
+			profile: cachedUser.profile,
+		});
+		expect(stored.id).toBeUndefined();
+		expect(stored.email).toBeUndefined();
+		useAuthStore.getState().stopAutoRefresh();
+	});
+
+	it("migrates older cached users by removing sensitive persisted fields", async () => {
+		const cachedUser = createCachedUser();
+		localStorage.setItem(
+			"aster-cached-user",
+			JSON.stringify({
+				...cachedUser,
+				role: "admin",
+				storage_quota: 1024,
+				storage_used: 64,
+			}),
+		);
+		mockState.me.mockRejectedValue(new Error("offline"));
+		mockState.isAxiosError.mockReturnValue(false);
+		const { useAuthStore } = await loadStore();
+
+		await useAuthStore.getState().checkAuth();
+
+		const stored = JSON.parse(
+			localStorage.getItem("aster-cached-user") ?? "{}",
+		);
+		expect(stored).toEqual({
+			access_token_expires_at: cachedUser.access_token_expires_at,
+			preferences: cachedUser.preferences,
+			profile: cachedUser.profile,
+		});
+		expect(stored.id).toBeUndefined();
+		expect(stored.email).toBeUndefined();
+		expect(stored.role).toBeUndefined();
+		expect(stored.storage_quota).toBeUndefined();
+		expect(stored.storage_used).toBeUndefined();
 		useAuthStore.getState().stopAutoRefresh();
 	});
 
@@ -355,11 +415,26 @@ describe("useAuthStore edge cases", () => {
 			isAuthenticated: true,
 			isAuthStale: true,
 			bootOffline: false,
-			user: cachedUser,
+			user: {
+				email: "",
+				role: "user",
+				storage_quota: 0,
+				storage_used: 0,
+				access_token_expires_at: cachedUser.access_token_expires_at,
+				preferences: cachedUser.preferences,
+				profile: cachedUser.profile,
+			},
 		});
-		expect(localStorage.getItem("aster-cached-user")).toBe(
-			JSON.stringify(cachedUser),
+		const stored = JSON.parse(
+			localStorage.getItem("aster-cached-user") ?? "{}",
 		);
+		expect(stored).toEqual({
+			access_token_expires_at: cachedUser.access_token_expires_at,
+			preferences: cachedUser.preferences,
+			profile: cachedUser.profile,
+		});
+		expect(stored.id).toBeUndefined();
+		expect(stored.email).toBeUndefined();
 		expect(sessionStorage.getItem("aster-auth-expires-at")).not.toBeNull();
 		useAuthStore.getState().stopAutoRefresh();
 	});

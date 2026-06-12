@@ -144,12 +144,17 @@ fn ensure_stable_default_config_keys(
     let Some(auth_table) = auth_item.as_table_mut() else {
         return Err(AsterError::config_error("auth must be a table"));
     };
-    if !auth_table.contains_key("mfa_secret_key") {
-        auth_table.insert(
-            "mfa_secret_key",
-            value(crate::config::AuthConfig::default().mfa_secret_key),
-        );
-        changed = true;
+    let auth_defaults = crate::config::AuthConfig::default();
+    for (key, secret) in [
+        ("jwt_secret", auth_defaults.jwt_secret),
+        ("share_cookie_secret", auth_defaults.share_cookie_secret),
+        ("direct_link_secret", auth_defaults.direct_link_secret),
+        ("mfa_secret_key", auth_defaults.mfa_secret_key),
+    ] {
+        if !auth_table.contains_key(key) && std::env::var_os(auth_env_name(key)).is_none() {
+            auth_table.insert(key, value(secret));
+            changed = true;
+        }
     }
 
     if !changed {
@@ -173,6 +178,10 @@ fn ensure_stable_default_config_keys(
         );
     }
     Ok(Some(updated))
+}
+
+fn auth_env_name(key: &str) -> String {
+    format!("ASTER__AUTH__{}", key.to_ascii_uppercase())
 }
 
 fn resolve_loaded_paths(base_dir: &Path, config_path: &Path, cfg: &mut Config) -> Result<()> {
@@ -199,6 +208,7 @@ mod tests {
         DEFAULT_TEMP_DIR, DEFAULT_UPLOAD_TEMP_DIR,
     };
     use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
 
     fn make_temp_dir(test_name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -214,6 +224,41 @@ mod tests {
             std::fs::create_dir_all(parent).unwrap();
         }
         std::fs::write(path, content).unwrap();
+    }
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct EnvVarGuard {
+        name: &'static str,
+        old: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.old {
+                    Some(old) => std::env::set_var(self.name, old),
+                    None => std::env::remove_var(self.name),
+                }
+            }
+        }
+    }
+
+    fn with_env_var<T>(name: &'static str, value: &str, run: impl FnOnce() -> T) -> T {
+        let _lock = env_lock()
+            .lock()
+            .expect("config loader env test lock should not be poisoned");
+        let _env = EnvVarGuard {
+            name,
+            old: std::env::var_os(name),
+        };
+        unsafe {
+            std::env::set_var(name, value);
+        }
+        run()
     }
 
     #[test]
@@ -242,8 +287,96 @@ mod tests {
         assert!(generated.contains(r#"managed_ingress_local_root = "managed-ingress""#));
         assert!(generated.contains("[network_trust]"));
         assert!(generated.contains(r#"trusted_proxies = []"#));
+        assert!(generated.contains("jwt_secret"));
+        assert!(generated.contains("share_cookie_secret"));
+        assert!(generated.contains("direct_link_secret"));
+        assert!(generated.contains("mfa_secret_key"));
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_backfills_missing_auth_secrets_without_reusing_existing_jwt_secret() {
+        let dir = make_temp_dir("backfill-auth-secrets");
+        let legacy_jwt_secret = "legacy-jwt-secret";
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            format!(
+                r#"[auth]
+jwt_secret = "{legacy_jwt_secret}"
+"#
+            )
+            .as_bytes(),
+        );
+
+        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
+
+        assert_eq!(cfg.auth.jwt_secret, legacy_jwt_secret);
+        assert!(!cfg.auth.share_cookie_secret.is_empty());
+        assert!(!cfg.auth.direct_link_secret.is_empty());
+        assert!(!cfg.auth.mfa_secret_key.is_empty());
+        assert_ne!(cfg.auth.share_cookie_secret, legacy_jwt_secret);
+        assert_ne!(cfg.auth.direct_link_secret, legacy_jwt_secret);
+        assert_ne!(cfg.auth.mfa_secret_key, legacy_jwt_secret);
+        assert!(updated.contains("share_cookie_secret"));
+        assert!(updated.contains("direct_link_secret"));
+        assert!(updated.contains("mfa_secret_key"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_backfills_jwt_secret_when_auth_table_is_missing() {
+        let dir = make_temp_dir("backfill-missing-auth-table");
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            br#"[database]
+url = "sqlite://asterdrive.db?mode=rwc"
+"#,
+        );
+
+        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
+
+        assert!(!cfg.auth.jwt_secret.is_empty());
+        assert!(!cfg.auth.share_cookie_secret.is_empty());
+        assert!(!cfg.auth.direct_link_secret.is_empty());
+        assert!(!cfg.auth.mfa_secret_key.is_empty());
+        assert!(updated.contains("[auth]"));
+        assert!(updated.contains("jwt_secret"));
+        assert!(updated.contains("share_cookie_secret"));
+        assert!(updated.contains("direct_link_secret"));
+        assert!(updated.contains("mfa_secret_key"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_does_not_backfill_secret_supplied_by_environment() {
+        with_env_var(
+            "ASTER__AUTH__DIRECT_LINK_SECRET",
+            "env-direct-link-secret",
+            || {
+                let dir = make_temp_dir("skip-env-auth-secret-backfill");
+                write(
+                    &dir.join(DEFAULT_CONFIG_PATH),
+                    br#"[auth]
+jwt_secret = "file-jwt-secret"
+share_cookie_secret = "file-share-secret"
+mfa_secret_key = "file-mfa-secret"
+"#,
+                );
+
+                let cfg = load_from_dir(&dir, None, true).unwrap();
+                let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
+
+                assert_eq!(cfg.auth.direct_link_secret, "env-direct-link-secret");
+                assert!(!updated.contains("direct_link_secret"));
+
+                let _ = std::fs::remove_dir_all(dir);
+            },
+        );
     }
 
     #[test]

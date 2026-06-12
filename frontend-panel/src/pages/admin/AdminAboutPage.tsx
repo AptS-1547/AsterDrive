@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
@@ -12,7 +12,9 @@ import { buttonVariants } from "@/components/ui/buttonVariants";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { config } from "@/config/app";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { adminSystemService } from "@/services/adminService";
 
 const REPOSITORY_URL = "https://github.com/AptS-1547/AsterDrive";
 const DOCS_URL = "https://drive.astercosm.com/";
@@ -178,25 +180,68 @@ function getChannelBadgeClass(channel: ReleaseChannel) {
 	}
 }
 
+function formatBuildTime(value: string | undefined, fallback: string) {
+	if (!value || value === "unknown") return fallback;
+
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) return fallback;
+
+	try {
+		return formatDateTime(value);
+	} catch {
+		return fallback;
+	}
+}
+
 export default function AdminAboutPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("about"));
 	const versionClickCountRef = useRef(0);
 	const appVersion = config.appVersion;
-	const displayVersion = formatDisplayVersion(appVersion);
-	const releaseChannel = resolveReleaseChannel(appVersion);
+	const [systemInfo, setSystemInfo] = useState<{
+		version: string;
+		build_time: string;
+	} | null>(null);
+	const backendVersion = systemInfo?.version ?? appVersion;
+	const displayVersion = formatDisplayVersion(backendVersion);
+	const releaseChannel = resolveReleaseChannel(backendVersion);
+	const buildTimeDisplay = formatBuildTime(
+		systemInfo?.build_time,
+		t("about_build_time_unknown"),
+	);
 	const [versionBadgeClassIndex, setVersionBadgeClassIndex] = useState(0);
-	const [displayReleaseChannel, setDisplayReleaseChannel] =
-		useState(releaseChannel);
-	const topReleaseChannel = displayReleaseChannel;
+	const [releaseChannelOverride, setReleaseChannelOverride] = useState<{
+		version: string;
+		channel: ReleaseChannel;
+	} | null>(null);
+	const topReleaseChannel =
+		releaseChannelOverride?.version === backendVersion
+			? releaseChannelOverride.channel
+			: releaseChannel;
+	useEffect(() => {
+		let cancelled = false;
+		void adminSystemService
+			.getInfo()
+			.then((info) => {
+				if (!cancelled) setSystemInfo(info);
+			})
+			.catch(() => {
+				if (!cancelled) setSystemInfo(null);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 	const handleVersionClick = useCallback(() => {
 		setVersionBadgeClassIndex(
 			(current) => (current + 1) % VERSION_BADGE_CLASSES.length,
 		);
-		setDisplayReleaseChannel(
-			RELEASE_CHANNELS[Math.floor(Math.random() * RELEASE_CHANNELS.length)] ??
+		setReleaseChannelOverride({
+			version: backendVersion,
+			channel:
+				RELEASE_CHANNELS[Math.floor(Math.random() * RELEASE_CHANNELS.length)] ??
 				releaseChannel,
-		);
+		});
 		versionClickCountRef.current += 1;
 		if (versionClickCountRef.current < VERSION_EASTER_EGG_CLICKS) return;
 
@@ -204,9 +249,9 @@ export default function AdminAboutPage() {
 		const message =
 			VERSION_EASTER_EGG_MESSAGES[
 				Math.floor(Math.random() * VERSION_EASTER_EGG_MESSAGES.length)
-			];
+		];
 		toast.info(message);
-	}, [releaseChannel]);
+	}, [backendVersion, releaseChannel]);
 
 	const resourceLinks: {
 		href: string;
@@ -269,6 +314,11 @@ export default function AdminAboutPage() {
 			label: t("about_channel"),
 			value: t(`about_channel_${releaseChannel}`),
 			icon: "Shuffle",
+		},
+		{
+			label: t("about_build_time"),
+			value: buildTimeDisplay,
+			icon: "Clock",
 		},
 		{
 			label: t("about_license"),

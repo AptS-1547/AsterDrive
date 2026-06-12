@@ -1049,6 +1049,8 @@ pub async fn setup_with_database_url(database_url: &str) -> PrimaryAppState {
         },
         auth: aster_drive::config::AuthConfig {
             jwt_secret: "test-secret-key-for-integration-tests".to_string(),
+            share_cookie_secret: "test-share-cookie-secret-for-integration-tests".to_string(),
+            direct_link_secret: "test-direct-link-secret-for-integration-tests".to_string(),
             mfa_secret_key: "test-mfa-secret-key-for-integration-tests".to_string(),
             bootstrap_insecure_cookies: true,
         },

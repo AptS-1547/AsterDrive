@@ -15,6 +15,7 @@ use crate::config::operations;
 use crate::config::{NetworkTrustConfig, RateLimitConfig};
 use crate::errors::{Result, auth_forbidden_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
+use crate::services::audit_service::AuditRequestInfo;
 use crate::services::file_service::ResolvedDownloadRange;
 use crate::services::{
     archive_preview_service, direct_link_service, file_service, media_metadata_service,
@@ -75,6 +76,47 @@ fn build_share_cookie(
 fn share_cookie_value(req: &actix_web::HttpRequest, token: &str) -> Option<String> {
     req.cookie(&share_cookie_name(token))
         .map(|cookie| cookie.value().to_string())
+}
+
+fn share_cookie_binding(
+    req: &actix_web::HttpRequest,
+    state: &PrimaryAppState,
+) -> share_service::ShareCookieBinding {
+    let request_info = AuditRequestInfo::from_request_with_trusted_proxies(
+        req,
+        &state.config().network_trust.trusted_proxies,
+    );
+    share_service::ShareCookieBinding::from_request_parts(
+        request_info.user_agent.as_deref(),
+        request_info.ip_address.as_deref(),
+    )
+}
+
+async fn check_share_cookie(
+    state: &PrimaryAppState,
+    req: &actix_web::HttpRequest,
+    token: &str,
+) -> Result<()> {
+    let cookie_value = share_cookie_value(req, token);
+    let binding = share_cookie_binding(req, state);
+    share_service::check_share_password_cookie(state, token, cookie_value.as_deref(), &binding)
+        .await
+}
+
+async fn check_share_cookie_ignoring_download_limit(
+    state: &PrimaryAppState,
+    req: &actix_web::HttpRequest,
+    token: &str,
+) -> Result<()> {
+    let cookie_value = share_cookie_value(req, token);
+    let binding = share_cookie_binding(req, state);
+    share_service::check_share_password_cookie_ignoring_download_limit(
+        state,
+        token,
+        cookie_value.as_deref(),
+        &binding,
+    )
+    .await
 }
 
 async fn shared_file_range(
@@ -243,9 +285,12 @@ pub async fn verify_password(
     state: web::Data<PrimaryAppState>,
     path: web::Path<String>,
     body: web::Json<VerifyPasswordReq>,
+    req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
+    let binding = share_cookie_binding(&req, state.get_ref());
     let result =
-        share_service::verify_password_and_sign(state.get_ref(), &path, &body.password).await?;
+        share_service::verify_password_and_sign(state.get_ref(), &path, &body.password, &binding)
+            .await?;
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(state.get_ref().runtime_config());
     let cookie = build_share_cookie(
         path.as_str(),
@@ -276,9 +321,7 @@ pub async fn create_preview_link(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let token = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let (scheme, host) = request_origin_parts(&req);
     let link = preview_link_service::create_token_for_shared_file_for_origin(
@@ -315,9 +358,7 @@ pub async fn archive_preview(
     query: web::Query<ArchivePreviewQuery>,
 ) -> Result<HttpResponse> {
     let token = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     match archive_preview_service::preview_shared_file(
         state.get_ref(),
@@ -363,9 +404,7 @@ pub async fn archive_download(
 ) -> Result<HttpResponse> {
     ensure_share_archive_download_enabled(state.get_ref())?;
     let token = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let body = body.into_inner();
     validate_request(&body)?;
@@ -405,9 +444,7 @@ pub async fn archive_download_stream(
 ) -> Result<HttpResponse> {
     ensure_share_archive_download_enabled(state.get_ref())?;
     let (token, ticket) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
     let params = stream_ticket_service::resolve_shared_archive_download_ticket(
         state.get_ref(),
         &token,
@@ -435,9 +472,7 @@ pub async fn create_stream_session(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let token = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let (scheme, host) = request_origin_parts(&req);
     let session = share_stream_service::create_session_for_shared_file_for_origin(
@@ -480,9 +515,7 @@ pub async fn download_shared(
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    let cookie_value = share_cookie_value(&req, path.as_str());
-    share_service::check_share_password_cookie(state.get_ref(), &path, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, path.as_str()).await?;
     let range = shared_file_range(state.get_ref(), path.as_str(), &req).await?;
     let has_range = range.is_some();
 
@@ -584,13 +617,7 @@ pub async fn stream_shared_video(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, session_token, filename) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie_ignoring_download_limit(
-        state.get_ref(),
-        &token,
-        cookie_value.as_deref(),
-    )
-    .await?;
+    check_share_cookie_ignoring_download_limit(state.get_ref(), &req, &token).await?;
     let file = share_stream_service::resolve_file_for_stream(
         state.get_ref(),
         &token,
@@ -638,9 +665,7 @@ pub async fn download_shared_folder_file_handler(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
     let range = shared_folder_file_range(state.get_ref(), &token, file_id, &req).await?;
     let has_range = range.is_some();
 
@@ -683,9 +708,7 @@ pub async fn create_folder_file_preview_link(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let (scheme, host) = request_origin_parts(&req);
     let link = preview_link_service::create_token_for_shared_folder_file_for_origin(
@@ -727,9 +750,7 @@ pub async fn folder_file_archive_preview(
     query: web::Query<ArchivePreviewQuery>,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     match archive_preview_service::preview_shared_folder_file(
         state.get_ref(),
@@ -775,9 +796,7 @@ pub async fn create_folder_file_stream_session(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let (scheme, host) = request_origin_parts(&req);
     let session = share_stream_service::create_session_for_shared_folder_file_for_origin(
@@ -811,9 +830,7 @@ pub async fn list_shared_content(
     query: web::Query<FolderListQuery>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    let cookie_value = share_cookie_value(&req, path.as_str());
-    share_service::check_share_password_cookie(state.get_ref(), &path, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, path.as_str()).await?;
 
     let params = crate::services::folder_service::FolderListParams::from(&query.0);
     let contents = share_service::list_shared_folder(state.get_ref(), &path, &params).await?;
@@ -843,9 +860,7 @@ pub async fn list_shared_subfolder_content(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, folder_id) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let params = crate::services::folder_service::FolderListParams::from(&query.0);
     let contents =
@@ -874,9 +889,7 @@ pub async fn shared_avatar(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, size) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let bytes = share_service::get_share_avatar_bytes(state.get_ref(), &token, size).await?;
     Ok(profile_service::avatar_image_response(bytes))
@@ -904,9 +917,7 @@ pub async fn shared_thumbnail(
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    let cookie_value = share_cookie_value(&req, path.as_str());
-    share_service::check_share_password_cookie(state.get_ref(), &path, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, path.as_str()).await?;
 
     let result = share_service::get_shared_thumbnail(state.get_ref(), &path).await?;
     let if_none_match = req
@@ -947,9 +958,7 @@ pub async fn shared_image_preview(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let token = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let result = share_service::get_shared_image_preview(state.get_ref(), &token).await?;
     let if_none_match = req
@@ -986,9 +995,7 @@ pub async fn shared_media_metadata(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let token = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let lookup = share_service::get_shared_media_metadata(state.get_ref(), &token).await?;
     Ok(media_metadata_response(lookup))
@@ -1020,9 +1027,7 @@ pub async fn shared_folder_file_thumbnail(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let result =
         share_service::get_shared_folder_file_thumbnail(state.get_ref(), &token, file_id).await?;
@@ -1063,9 +1068,7 @@ pub async fn shared_folder_file_media_metadata(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let lookup =
         share_service::get_shared_folder_file_media_metadata(state.get_ref(), &token, file_id)
@@ -1099,9 +1102,7 @@ pub async fn shared_folder_file_image_preview(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    let cookie_value = share_cookie_value(&req, &token);
-    share_service::check_share_password_cookie(state.get_ref(), &token, cookie_value.as_deref())
-        .await?;
+    check_share_cookie(state.get_ref(), &req, &token).await?;
 
     let result =
         share_service::get_shared_folder_file_image_preview(state.get_ref(), &token, file_id)

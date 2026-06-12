@@ -6,7 +6,7 @@ use crate::errors::AsterError;
 use crate::storage::error::StorageErrorKind;
 use crate::storage::traits::driver::{StorageDriver, StoragePathVisitor};
 use crate::storage::traits::extensions::{ListStorageDriver, PresignedStorageDriver};
-use crate::storage::traits::multipart::MultipartStorageDriver;
+use crate::storage::traits::multipart::{MultipartStorageDriver, UploadedMultipartPart};
 use crate::types::{StoragePolicyOptions, serialize_storage_policy_options};
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_smithy_http_client::test_util::{ReplayEvent, StaticReplayClient, capture_request};
@@ -765,15 +765,15 @@ async fn list_uploaded_parts_paginates_with_next_part_marker() {
                 <ListPartsResult>
                     <IsTruncated>true</IsTruncated>
                     <NextPartNumberMarker>2</NextPartNumberMarker>
-                    <Part><PartNumber>1</PartNumber><ETag>"etag-1"</ETag></Part>
-                    <Part><PartNumber>2</PartNumber><ETag>"etag-2"</ETag></Part>
+                    <Part><PartNumber>1</PartNumber><ETag>"etag-1"</ETag><Size>5</Size></Part>
+                    <Part><PartNumber>2</PartNumber><ETag>"etag-2"</ETag><Size>7</Size></Part>
                 </ListPartsResult>"#,
             ),
             replay_event(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
                 <ListPartsResult>
                     <IsTruncated>false</IsTruncated>
-                    <Part><PartNumber>3</PartNumber><ETag>"etag-3"</ETag></Part>
+                    <Part><PartNumber>3</PartNumber><ETag>"etag-3"</ETag><Size>11</Size></Part>
                 </ListPartsResult>"#,
             ),
         ],
@@ -781,11 +781,27 @@ async fn list_uploaded_parts_paginates_with_next_part_marker() {
     );
 
     let parts = driver
-        .list_uploaded_parts("object.bin", "upload-123")
+        .list_uploaded_part_details("object.bin", "upload-123")
         .await
         .expect("parts should list");
 
-    assert_eq!(parts, vec![1, 2, 3]);
+    assert_eq!(
+        parts,
+        vec![
+            UploadedMultipartPart {
+                part_number: 1,
+                size: 5,
+            },
+            UploadedMultipartPart {
+                part_number: 2,
+                size: 7,
+            },
+            UploadedMultipartPart {
+                part_number: 3,
+                size: 11,
+            },
+        ]
+    );
     let requests = http_client
         .actual_requests()
         .map(|request| request.uri().to_string())
