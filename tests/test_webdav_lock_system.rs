@@ -3,6 +3,7 @@
 #[macro_use]
 mod common;
 use aster_drive::runtime::SharedRuntimeState;
+use aster_drive::webdav::dav::DavLockError;
 
 use std::io::Cursor;
 use std::time::Duration;
@@ -275,6 +276,9 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
         )
         .await
         .unwrap_err();
+    let DavLockError::Conflict(conflict) = conflict else {
+        panic!("active replacement lock should reject conflicting exclusive lock");
+    };
     assert_eq!(conflict.token, replacement.token);
 
     assert!(
@@ -385,6 +389,9 @@ async fn test_db_lock_system_allows_shared_locks_and_keeps_locked_until_last_unl
         )
         .await
         .unwrap_err();
+    let DavLockError::Conflict(exclusive_conflict) = exclusive_conflict else {
+        panic!("shared locks should reject conflicting exclusive lock");
+    };
     assert!(
         [first.token.as_str(), second.token.as_str()].contains(&exclusive_conflict.token.as_str())
     );
@@ -464,5 +471,8 @@ async fn test_db_lock_system_exclusive_lock_blocks_shared_lock() {
         )
         .await
         .unwrap_err();
+    let DavLockError::Conflict(shared_conflict) = shared_conflict else {
+        panic!("exclusive lock should reject shared lock with a conflict");
+    };
     assert_eq!(shared_conflict.token, exclusive.token);
 }

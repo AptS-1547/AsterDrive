@@ -160,6 +160,7 @@ pub(crate) async fn handle_lock(
             return lock_token_submitted_response(StatusCode::LOCKED, prefix, &lock.path);
         }
         Err(DavLockError::LimitExceeded) => return responses::webdav_lock_limit_exceeded(),
+        Err(DavLockError::Backend) => return responses::empty(StatusCode::INTERNAL_SERVER_ERROR),
     };
 
     let status = if resource_existed {

@@ -286,6 +286,7 @@ pub enum DavLockPreflightError {
 pub enum DavLockError {
     Conflict(DavLock),
     LimitExceeded,
+    Backend,
 }
 
 pub trait DavLockSystem: Send + Sync {
