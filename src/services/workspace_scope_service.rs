@@ -53,7 +53,7 @@ impl WorkspaceResourceScope {
             let user_id = folder.owner_user_id.ok_or_else(|| {
                 auth_forbidden_with_code(
                     ApiErrorCode::WorkspaceScopeDenied,
-                    "folder has no personal owner",
+                    "folder missing both team_id and owner_user_id: data integrity violation",
                 )
             })?;
             Ok(Self::Personal { user_id })

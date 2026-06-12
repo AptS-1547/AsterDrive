@@ -122,7 +122,7 @@ pub(crate) async fn update_in_scope_with_audit(
     Ok(folder.into())
 }
 
-pub(crate) async fn admin_set_policy_with_audit(
+pub async fn admin_set_policy_with_audit(
     state: &impl StorageChangeRuntimeState,
     folder_id: i64,
     policy_id: Option<i64>,

@@ -6,7 +6,7 @@ import {
 	waitFor,
 	within,
 } from "@testing-library/react";
-import { type Ref, useImperativeHandle } from "react";
+import { type Ref, useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FILE_BROWSER_FEEDBACK_DURATION_MS } from "@/lib/constants";
 import {
@@ -102,6 +102,7 @@ const mockState = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
 	triggerFileUpload: vi.fn(),
 	triggerFolderUpload: vi.fn(),
+	uploadAreaConnected: true,
 	useKeyboardShortcuts: vi.fn(),
 	warmupPreviewEngines: vi.fn(),
 	workspace: {
@@ -721,10 +722,20 @@ vi.mock("@/components/files/UploadArea", () => ({
 			triggerFolderUpload: () => void;
 		}>;
 	}) {
-		useImperativeHandle(ref, () => ({
-			triggerFileUpload: mockState.triggerFileUpload,
-			triggerFolderUpload: mockState.triggerFolderUpload,
-		}));
+		const connected = mockState.uploadAreaConnected;
+		// biome-ignore lint/correctness/useExhaustiveDependencies: test mock reads an external flag so rerender can simulate ref disconnect/reconnect.
+		useEffect(() => {
+			if (typeof ref !== "function") return;
+			ref(
+				connected
+					? {
+							triggerFileUpload: mockState.triggerFileUpload,
+							triggerFolderUpload: mockState.triggerFolderUpload,
+						}
+					: null,
+			);
+			return () => ref(null);
+		}, [connected, ref]);
 		return <div>{children}</div>;
 	},
 }));
@@ -1153,6 +1164,7 @@ describe("FileBrowserPage", () => {
 		mockState.toastSuccess.mockReset();
 		mockState.triggerFileUpload.mockReset();
 		mockState.triggerFolderUpload.mockReset();
+		mockState.uploadAreaConnected = true;
 		mockState.useKeyboardShortcuts.mockReset();
 		mockState.warmupPreviewEngines.mockReset();
 		mockState.workspace = { kind: "personal" };
@@ -1635,6 +1647,54 @@ describe("FileBrowserPage", () => {
 			screen.getAllByRole("button", { name: /upload_folder/ })[0],
 		);
 
+		expect(mockState.triggerFileUpload).toHaveBeenCalledTimes(1);
+		expect(mockState.triggerFolderUpload).toHaveBeenCalledTimes(1);
+	});
+
+	it("disables upload actions while the upload area ref is disconnected and restores them after reconnect", async () => {
+		const { rerender } = render(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(
+				screen.getAllByRole("button", { name: /upload_file/ })[0],
+			).toBeEnabled();
+		});
+
+		mockState.uploadAreaConnected = false;
+		rerender(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(
+				screen.getAllByRole("button", { name: /upload_file/ })[0],
+			).toBeDisabled();
+			expect(
+				screen.getAllByRole("button", { name: /upload_folder/ })[0],
+			).toBeDisabled();
+		});
+
+		fireEvent.click(screen.getAllByRole("button", { name: /upload_file/ })[0]);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: /upload_folder/ })[0],
+		);
+		expect(mockState.triggerFileUpload).not.toHaveBeenCalled();
+		expect(mockState.triggerFolderUpload).not.toHaveBeenCalled();
+
+		mockState.uploadAreaConnected = true;
+		rerender(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(
+				screen.getAllByRole("button", { name: /upload_file/ })[0],
+			).toBeEnabled();
+			expect(
+				screen.getAllByRole("button", { name: /upload_folder/ })[0],
+			).toBeEnabled();
+		});
+
+		fireEvent.click(screen.getAllByRole("button", { name: /upload_file/ })[0]);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: /upload_folder/ })[0],
+		);
 		expect(mockState.triggerFileUpload).toHaveBeenCalledTimes(1);
 		expect(mockState.triggerFolderUpload).toHaveBeenCalledTimes(1);
 	});

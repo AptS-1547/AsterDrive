@@ -233,7 +233,15 @@ vi.mock("@/components/files/TagLibraryManagerDialog", () => ({
 }));
 
 vi.mock("@/pages/file-browser/FileBrowserDialogs", () => ({
-	FileBrowserDialogs: () => null,
+	FileBrowserDialogs: ({
+		onFolderPolicyClose,
+	}: {
+		onFolderPolicyClose: () => void;
+	}) => (
+		<button type="button" onClick={onFolderPolicyClose}>
+			close folder policy
+		</button>
+	),
 }));
 
 vi.mock("@/components/files/preview/imagePreviewNavigation", () => ({
@@ -330,6 +338,18 @@ describe("SearchBrowserPage", () => {
 			"data-has-more",
 			"true",
 		);
+	});
+
+	it("keeps the unused folder policy close callback harmless", () => {
+		render(<SearchBrowserPage />);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "close folder policy" }),
+		);
+
+		expect(
+			screen.getByRole("button", { name: "close folder policy" }),
+		).toBeInTheDocument();
 	});
 
 	it("selects all visible search results with Command+A", async () => {

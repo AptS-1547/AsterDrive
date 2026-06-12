@@ -33,26 +33,6 @@ async fn reload_policy_snapshot(state: &aster_drive::runtime::PrimaryAppState) {
         .unwrap();
 }
 
-async fn bind_policy_to_folder(
-    state: &aster_drive::runtime::PrimaryAppState,
-    folder_id: i64,
-    policy_id: i64,
-) {
-    use aster_drive::db::repository::folder_repo;
-    use sea_orm::{ActiveModelTrait, Set};
-
-    let mut active: aster_drive::entities::folder::ActiveModel = folder_repo::find_by_id(
-        state.writer_db(),
-        folder_id,
-    )
-    .await
-    .unwrap()
-    .into();
-    active.policy_id = Set(Some(policy_id));
-    active.updated_at = Set(chrono::Utc::now());
-    active.update(state.writer_db()).await.unwrap();
-}
-
 async fn set_default_local_content_dedup(
     state: &aster_drive::runtime::PrimaryAppState,
     enabled: bool,
@@ -3353,7 +3333,7 @@ async fn test_force_delete_policy_cleans_late_s3_presigned_put_e2e() {
     let folder = folder_service::create(&state, user.id, "late-s3-presigned", None)
         .await
         .unwrap();
-    bind_policy_to_folder(&state, folder.id, policy.id).await;
+    common::bind_policy_to_folder(&state, folder.id, policy.id).await;
 
     let data = b"late s3 presigned write after force delete".to_vec();
     let init = upload_service::init_upload(

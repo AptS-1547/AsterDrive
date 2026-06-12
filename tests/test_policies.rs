@@ -66,6 +66,33 @@ where
     body["data"]["id"].as_i64().unwrap()
 }
 
+async fn create_nested_folders<S, B>(
+    depth: usize,
+    app: &S,
+    token: &str,
+    start_parent_id: i64,
+) -> i64
+where
+    S: actix_web::dev::Service<
+            actix_http::Request,
+            Response = actix_web::dev::ServiceResponse<B>,
+            Error = actix_web::Error,
+        >,
+    B: actix_web::body::MessageBody + 'static,
+{
+    let mut current_parent_id = start_parent_id;
+    for depth in 1..=depth {
+        current_parent_id = create_personal_folder(
+            app,
+            token,
+            &format!("deep-policy-child-{depth}"),
+            Some(current_parent_id),
+        )
+        .await;
+    }
+    current_parent_id
+}
+
 async fn admin_set_folder_policy<S, B>(
     app: &S,
     token: &str,
@@ -2509,6 +2536,37 @@ async fn test_non_admin_folder_patch_cannot_set_or_clear_policy() {
 }
 
 #[actix_web::test]
+async fn test_regular_folder_patch_omits_policy_id_and_preserves_binding() {
+    use aster_drive::db::repository::folder_repo;
+
+    let state = common::setup().await;
+    let db = state.writer_db().clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let policy_id = create_local_policy_via_admin(&app, &token, "Patch Preserve Policy").await;
+    let folder_id = create_personal_folder(&app, &token, "patch-preserve-policy", None).await;
+
+    let resp = admin_set_folder_policy(&app, &token, folder_id, Some(policy_id)).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "patch-preserve-renamed" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "patch-preserve-renamed");
+    assert_eq!(body["data"]["policy_id"], policy_id);
+
+    let folder = folder_repo::find_by_id(&db, folder_id).await.unwrap();
+    assert_eq!(folder.name, "patch-preserve-renamed");
+    assert_eq!(folder.policy_id, Some(policy_id));
+}
+
+#[actix_web::test]
 async fn test_team_owner_cannot_patch_team_folder_policy() {
     use aster_drive::db::repository::folder_repo;
 
@@ -2660,16 +2718,7 @@ async fn test_folder_policy_inheritance_deep_chain_affects_uploads() {
     let resp = admin_set_folder_policy(&app, &token, root_id, Some(policy_id)).await;
     assert_eq!(resp.status(), 200);
 
-    let mut current_parent_id = root_id;
-    for depth in 1..=12 {
-        current_parent_id = create_personal_folder(
-            &app,
-            &token,
-            &format!("deep-policy-child-{depth}"),
-            Some(current_parent_id),
-        )
-        .await;
-    }
+    let current_parent_id = create_nested_folders(12, &app, &token, root_id).await;
 
     let file_id = upload_test_file_to_folder!(app, token, current_parent_id);
     assert_eq!(uploaded_file_policy_id(&state, file_id).await, policy_id);

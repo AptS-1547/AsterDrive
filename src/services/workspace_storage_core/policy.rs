@@ -123,14 +123,18 @@ pub(crate) fn ensure_policy_available_for_folder_binding(
 ) -> Result<()> {
     if state
         .policy_snapshot()
-        .policy_available_for_outbound_public(policy)
+        .is_policy_available_for_outbound(policy)
     {
         return Ok(());
     }
 
+    let reason = state
+        .policy_snapshot()
+        .describe_policy_outbound_availability(policy)
+        .unwrap_or_else(|| "policy is disabled or unavailable".to_string());
     Err(validation_error_with_code(
         ApiErrorCode::BadRequest,
-        format!("storage policy #{} is not currently available", policy.id),
+        format!("storage policy #{} is not available: {reason}", policy.id),
     ))
 }
 

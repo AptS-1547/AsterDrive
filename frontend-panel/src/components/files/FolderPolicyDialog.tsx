@@ -68,6 +68,7 @@ interface FolderPolicyDialogState {
 	saving: boolean;
 	selectedPolicyId: string;
 	targetKey: string;
+	validationError: string | null;
 }
 
 type FolderPolicyDialogAction =
@@ -82,7 +83,8 @@ type FolderPolicyDialogAction =
 	| { type: "select_policy"; policyId: string }
 	| { type: "save_started" }
 	| { type: "save_succeeded"; folderInfo: FolderInfo }
-	| { type: "save_finished" };
+	| { type: "save_finished" }
+	| { type: "validation_failed"; message: string };
 
 const initialState: FolderPolicyDialogState = {
 	folderInfo: null,
@@ -91,6 +93,7 @@ const initialState: FolderPolicyDialogState = {
 	saving: false,
 	selectedPolicyId: INHERIT_POLICY_VALUE,
 	targetKey: CLOSED_TARGET_KEY,
+	validationError: null,
 };
 
 function nextTargetState(targetKey: string): FolderPolicyDialogState {
@@ -102,6 +105,7 @@ function nextTargetState(targetKey: string): FolderPolicyDialogState {
 		saving: false,
 		selectedPolicyId: INHERIT_POLICY_VALUE,
 		targetKey,
+		validationError: null,
 	};
 }
 
@@ -120,24 +124,30 @@ function folderPolicyDialogReducer(
 				loading: false,
 				policies: action.policies,
 				selectedPolicyId: buildInitialPolicyValue(action.folderInfo),
+				validationError: null,
 			};
 		case "load_failed":
 			if (action.targetKey !== state.targetKey) return state;
 			return { ...state, loading: false };
 		case "select_policy":
-			return { ...state, selectedPolicyId: action.policyId };
+			return {
+				...state,
+				selectedPolicyId: action.policyId,
+				validationError: null,
+			};
 		case "save_started":
-			return { ...state, saving: true };
+			return { ...state, saving: true, validationError: null };
 		case "save_succeeded":
 			return {
 				...state,
 				folderInfo: action.folderInfo,
 				selectedPolicyId: buildInitialPolicyValue(action.folderInfo),
+				validationError: null,
 			};
 		case "save_finished":
 			return { ...state, saving: false };
-		default:
-			return state;
+		case "validation_failed":
+			return { ...state, validationError: action.message };
 	}
 }
 
@@ -160,8 +170,14 @@ export function FolderPolicyDialog({
 
 	const currentState =
 		state.targetKey === targetKey ? state : nextTargetState(targetKey);
-	const { folderInfo, loading, policies, saving, selectedPolicyId } =
-		currentState;
+	const {
+		folderInfo,
+		loading,
+		policies,
+		saving,
+		selectedPolicyId,
+		validationError,
+	} = currentState;
 
 	useEffect(() => {
 		if (targetFolderId == null) return;
@@ -220,7 +236,16 @@ export function FolderPolicyDialog({
 			selectedPolicyId === INHERIT_POLICY_VALUE
 				? null
 				: Number(selectedPolicyId);
-		if (policyId !== null && !Number.isFinite(policyId)) {
+		if (
+			policyId !== null &&
+			(!Number.isFinite(policyId) ||
+				!Number.isInteger(policyId) ||
+				policyId <= 0)
+		) {
+			dispatch({
+				type: "validation_failed",
+				message: t("folder_policy_invalid_policy_id"),
+			});
 			return;
 		}
 
@@ -327,6 +352,11 @@ export function FolderPolicyDialog({
 						{!loading && policies.length === 0 ? (
 							<p className="text-xs text-muted-foreground">
 								{t("folder_policy_empty")}
+							</p>
+						) : null}
+						{validationError ? (
+							<p className="text-xs text-destructive" role="alert">
+								{validationError}
 							</p>
 						) : null}
 					</div>

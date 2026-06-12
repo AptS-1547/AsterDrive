@@ -101,14 +101,22 @@ vi.mock("@/components/ui/select", () => ({
 		onValueChange: (value: string) => void;
 		value: string;
 	}) => (
-		<select
-			aria-label="policy-select"
-			disabled={disabled}
-			value={value}
-			onChange={(event) => onValueChange(event.target.value)}
-		>
-			{children}
-		</select>
+		<>
+			<select
+				aria-label="policy-select"
+				disabled={disabled}
+				value={value}
+				onChange={(event) => onValueChange(event.target.value)}
+			>
+				{children}
+			</select>
+			<button type="button" onClick={() => onValueChange("not-a-number")}>
+				choose invalid policy
+			</button>
+			<button type="button" onClick={() => onValueChange("0")}>
+				choose zero policy
+			</button>
+		</>
 	),
 	SelectContent: ({ children }: { children: React.ReactNode }) => (
 		<>{children}</>
@@ -409,5 +417,40 @@ describe("FolderPolicyDialog", () => {
 		expect(
 			screen.getByRole("button", { name: /folder_policy_save/ }),
 		).toBeDisabled();
+	});
+
+	it("closes from the cancel action after loading completes", async () => {
+		renderDialog();
+
+		await waitFor(() => expect(screen.getByRole("combobox")).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "core:cancel" }));
+
+		expect(mockState.onOpenChange).toHaveBeenCalledWith(false);
+	});
+
+	it("ignores a non-numeric policy value instead of saving it", async () => {
+		renderDialog();
+
+		await waitFor(() => expect(screen.getByRole("combobox")).toBeEnabled());
+		fireEvent.click(
+			screen.getByRole("button", { name: "choose invalid policy" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /folder_policy_save/ }));
+
+		expect(mockState.setPolicy).not.toHaveBeenCalled();
+		expect(mockState.onOpenChange).not.toHaveBeenCalledWith(false);
+	});
+
+	it("blocks non-positive policy ids before saving", async () => {
+		renderDialog();
+
+		await waitFor(() => expect(screen.getByRole("combobox")).toBeEnabled());
+		fireEvent.click(screen.getByRole("button", { name: "choose zero policy" }));
+		fireEvent.click(screen.getByRole("button", { name: /folder_policy_save/ }));
+
+		expect(mockState.setPolicy).not.toHaveBeenCalled();
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"folder_policy_invalid_policy_id",
+		);
 	});
 });

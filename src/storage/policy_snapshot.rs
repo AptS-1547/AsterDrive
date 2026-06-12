@@ -117,8 +117,34 @@ impl PolicySnapshot {
             .ok_or_else(|| AsterError::storage_policy_not_found(format!("policy #{policy_id}")))
     }
 
-    pub fn policy_available_for_outbound_public(&self, policy: &storage_policy::Model) -> bool {
+    pub fn is_policy_available_for_outbound(&self, policy: &storage_policy::Model) -> bool {
         self.policy_available_for_outbound(policy)
+    }
+
+    pub fn describe_policy_outbound_availability(
+        &self,
+        policy: &storage_policy::Model,
+    ) -> Option<String> {
+        if policy.driver_type != crate::types::DriverType::Remote {
+            return None;
+        }
+
+        let Some(remote_node_id) = policy.remote_node_id else {
+            return Some("remote policy has no bound remote node".to_string());
+        };
+
+        if self
+            .snapshot
+            .read()
+            .enabled_remote_node_ids
+            .contains(&remote_node_id)
+        {
+            None
+        } else {
+            Some(format!(
+                "remote node #{remote_node_id} is disabled or unavailable"
+            ))
+        }
     }
 
     pub fn get_policy_group(&self, group_id: i64) -> Option<storage_policy_group::Model> {

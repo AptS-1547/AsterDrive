@@ -15,6 +15,7 @@
 	"folder_policy_current_inherit": "No explicit policy is set",
 	"folder_policy_inherited_hint": "Clearing the value restores the nearest parent folder policy; if none exists, the user or team policy group is used.",
 	"folder_policy_empty": "There are no storage policies to choose from, so only clearing the explicit binding is available.",
+	"folder_policy_invalid_policy_id": "Select a valid storage policy before saving.",
 	"folder_policy_save": "Save policy",
 	"folder_policy_updated": "Folder storage policy updated",
 	"rename": "Rename",

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 const createBrowserRouterMock = vi.fn((routes: unknown) => ({ routes }));
+const ensureI18nNamespacesMock = vi.fn(async () => {});
 
 vi.mock("@/components/layout/AdminSiteUrlMismatchPrompt", () => ({
 	AdminSiteUrlMismatchPrompt: () => null,
@@ -11,6 +12,22 @@ vi.mock("@/components/files/UploadAreaHost", () => ({
 }));
 
 vi.mock("@/pages/ErrorPage", () => ({
+	default: () => null,
+}));
+
+vi.mock("@/pages/ShareViewPage", () => ({
+	default: () => null,
+}));
+
+vi.mock("@/pages/WebdavAccountsPage", () => ({
+	default: () => null,
+}));
+
+vi.mock("@/pages/SettingsPage", () => ({
+	default: () => null,
+}));
+
+vi.mock("@/pages/TeamManagePage", () => ({
 	default: () => null,
 }));
 
@@ -33,6 +50,11 @@ vi.mock("@/stores/workspaceStore", () => ({
 		}),
 		setState: vi.fn(),
 	},
+}));
+
+vi.mock("@/i18n", () => ({
+	ensureI18nNamespaces: (...args: unknown[]) =>
+		ensureI18nNamespacesMock(...args),
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -65,11 +87,7 @@ async function loadRoutes() {
 
 type TestRoute = {
 	children?: TestRoute[];
-	element?: {
-		props?: {
-			to?: string;
-		};
-	};
+	element?: unknown;
 	path?: string;
 };
 
@@ -78,6 +96,36 @@ function flattenRoutes(items: TestRoute[]): TestRoute[] {
 		route,
 		...flattenRoutes(route.children ?? []),
 	]);
+}
+
+async function resolveLazyElement(element: unknown) {
+	const targetElement =
+		(element as { type?: unknown; props?: { children?: unknown } } | undefined)
+			?.props?.children ?? element;
+	const type = (targetElement as { type?: unknown } | undefined)?.type as
+		| {
+				_payload?: unknown;
+				_init?: (payload: unknown) => unknown;
+		  }
+		| undefined;
+
+	if (!type?._init) {
+		throw new Error("expected lazy route element");
+	}
+
+	try {
+		return type._init(type._payload);
+	} catch (error) {
+		if (error instanceof Promise) {
+			await error;
+			return type._init(type._payload);
+		}
+		throw error;
+	}
+}
+
+function routeTo(element: unknown) {
+	return (element as { props?: { to?: string } } | undefined)?.props?.to;
 }
 
 describe("router", () => {
@@ -115,25 +163,34 @@ describe("router", () => {
 			false,
 		);
 		expect(
-			allRoutes.find((route) => route.path === "/admin/settings")?.element
-				?.props?.to,
+			routeTo(
+				allRoutes.find((route) => route.path === "/admin/settings")?.element,
+			),
 		).toBe("/admin/settings/site");
 		expect(
-			allRoutes.find((route) => route.path === "/admin/settings/:section")
-				?.element?.props?.to,
+			routeTo(
+				allRoutes.find((route) => route.path === "/admin/settings/:section")
+					?.element,
+			),
 		).toBe("/admin/settings/site");
 		expect(
-			allRoutes.find((route) => route.path === "/admin/settings/general")
-				?.element?.props?.to,
+			routeTo(
+				allRoutes.find((route) => route.path === "/admin/settings/general")
+					?.element,
+			),
 		).toBe("/admin/settings/site");
 		expect(
-			allRoutes.find((route) => route.path === "/admin/settings/operations")
-				?.element?.props?.to,
+			routeTo(
+				allRoutes.find((route) => route.path === "/admin/settings/operations")
+					?.element,
+			),
 		).toBe("/admin/settings/runtime");
 		expect(
-			allRoutes.find(
-				(route) => route.path === "/admin/settings/file_processing",
-			)?.element?.props?.to,
+			routeTo(
+				allRoutes.find(
+					(route) => route.path === "/admin/settings/file_processing",
+				)?.element,
+			),
 		).toBe("/admin/settings/file-processing");
 	});
 
@@ -167,5 +224,38 @@ describe("router", () => {
 				(route) => route.path === "/settings/teams/:teamId/:section",
 			),
 		).toBe(true);
+	});
+
+	it("loads deferred i18n namespaces before localized lazy route pages", async () => {
+		const routes = (await loadRoutes()) as TestRoute[];
+		const allRoutes = flattenRoutes(routes);
+		const localizedRoutes = [
+			{
+				path: "/s/:token",
+				namespaces: ["core", "share", "files", "errors"],
+			},
+			{
+				path: "/settings/webdav",
+				namespaces: ["core", "admin", "auth", "webdav", "errors"],
+			},
+			{
+				path: "/settings/:section",
+				namespaces: ["core", "files", "settings", "auth", "admin"],
+			},
+			{
+				path: "/settings/teams/:teamId",
+				namespaces: ["core", "settings", "admin", "webdav", "errors"],
+			},
+		];
+
+		for (const routeConfig of localizedRoutes) {
+			const route = allRoutes.find((item) => item.path === routeConfig.path);
+
+			await resolveLazyElement(route?.element);
+
+			expect(ensureI18nNamespacesMock).toHaveBeenLastCalledWith(
+				routeConfig.namespaces,
+			);
+		}
 	});
 });

@@ -6305,8 +6305,6 @@ export interface components {
             name?: string | null;
             /** Format: int64 */
             parent_id?: number | null;
-            /** Format: int64 */
-            policy_id?: number | null;
         };
         /** @description Rename an existing passkey. */
         PatchPasskeyReq: {
@@ -7803,7 +7801,7 @@ export interface components {
         };
         /** @description Query parameters for WOPI file endpoints. */
         WopiAccessQuery: {
-            access_token: string;
+            access_token?: string | null;
         };
         WopiLaunchSession: {
             access_token: string;
@@ -14993,6 +14991,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description ArchiveDownloadUserDisabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     batch_archive_download_stream: {
@@ -15023,6 +15028,13 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ArchiveDownloadUserDisabled */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -20574,7 +20586,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Forbidden */
+            /** @description Forbidden or ArchiveDownloadUserDisabled */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -20618,7 +20630,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Forbidden */
+            /** @description Forbidden or ArchiveDownloadUserDisabled */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25237,11 +25249,14 @@ export interface operations {
     };
     wopi_check_file_info: {
         parameters: {
-            query: {
+            query?: {
                 /** @description WOPI access token */
-                access_token: string;
+                access_token?: string;
             };
-            header?: never;
+            header?: {
+                /** @description WOPI access token header */
+                "X-WOPI-Token"?: string | null;
+            };
             path: {
                 /** @description File ID */
                 id: number;

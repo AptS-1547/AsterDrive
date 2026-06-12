@@ -1,6 +1,7 @@
 import { type ComponentType, lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ensureI18nNamespaces, type LocaleNamespace } from "@/i18n";
+import { logger } from "@/lib/logger";
 import { AdminRoute } from "./AdminRoute";
 import { Loading } from "./Loading";
 import { LoginGuard } from "./LoginGuard";
@@ -19,7 +20,14 @@ function localizedLazyPage<TProps extends object>(
 	load: () => Promise<{ default: ComponentType<TProps> }>,
 ) {
 	return lazyPage(async () => {
-		await ensureI18nNamespaces(namespaces);
+		try {
+			await ensureI18nNamespaces(namespaces);
+		} catch (error) {
+			logger.warn("Failed to preload localized page namespaces", {
+				error,
+				namespaces,
+			});
+		}
 		return load();
 	});
 }

@@ -26,12 +26,15 @@ pub struct PatchFolderReq {
         schema(value_type = Option<i64>)
     )]
     pub parent_id: crate::types::NullablePatch<i64>,
-    #[serde(default)]
-    #[cfg_attr(
-        all(debug_assertions, feature = "openapi"),
-        schema(value_type = Option<i64>)
-    )]
-    pub policy_id: crate::types::NullablePatch<i64>,
+    #[serde(default, rename = "policy_id")]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(ignore))]
+    forbidden_policy_id: crate::types::NullablePatch<i64>,
+}
+
+impl PatchFolderReq {
+    pub fn includes_policy_id(&self) -> bool {
+        self.forbidden_policy_id.is_present()
+    }
 }
 
 /// Lock or unlock a folder.

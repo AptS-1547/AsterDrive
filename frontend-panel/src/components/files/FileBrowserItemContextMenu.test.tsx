@@ -362,6 +362,23 @@ describe("FileBrowserItemContextMenu", () => {
 		);
 	});
 
+	it("does not render the folder policy action for files", () => {
+		const onFolderPolicy = vi.fn();
+		mockState.browserContext.onFolderPolicy = onFolderPolicy;
+
+		render(
+			<FileBrowserItemContextMenu
+				item={{ id: 1, name: "Docs", is_locked: false } as never}
+				isFolder={false}
+			>
+				<div>file</div>
+			</FileBrowserItemContextMenu>,
+		);
+
+		expect(screen.queryByRole("button", { name: "policy" })).toBeNull();
+		expect(onFolderPolicy).not.toHaveBeenCalled();
+	});
+
 	it("maps file actions to the shared browser callbacks", () => {
 		render(
 			<FileBrowserItemContextMenu

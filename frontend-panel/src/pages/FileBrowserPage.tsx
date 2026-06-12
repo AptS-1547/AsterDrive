@@ -82,8 +82,6 @@ function fileBrowserPageUiReducer(
 		case "set_upload_ready":
 			if (state.uploadReady === action.ready) return state;
 			return { ...state, uploadReady: action.ready };
-		default:
-			return state;
 	}
 }
 
@@ -375,9 +373,10 @@ export default function FileBrowserPage() {
 	const handleUploadAreaReady = useCallback(
 		(instance: UploadAreaHandle | null) => {
 			uploadAreaRef.current = instance;
-			if (instance === null || uploadReadyRef.current) return;
-			uploadReadyRef.current = true;
-			dispatchPageUi({ type: "set_upload_ready", ready: true });
+			const ready = instance !== null;
+			if (uploadReadyRef.current === ready) return;
+			uploadReadyRef.current = ready;
+			dispatchPageUi({ type: "set_upload_ready", ready });
 		},
 		[],
 	);

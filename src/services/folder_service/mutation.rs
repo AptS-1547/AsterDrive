@@ -359,7 +359,7 @@ pub(crate) async fn update_in_scope(
     if policy_id.is_present() {
         return Err(auth_forbidden_with_code(
             ApiErrorCode::AuthAdminRequired,
-            "folder storage policy binding is an admin-only operation",
+            "omit policy_id from regular folder PATCH requests unless changing storage policy; binding or clearing a folder storage policy requires the admin-only folder storage policy API with an admin token",
         ));
     }
 

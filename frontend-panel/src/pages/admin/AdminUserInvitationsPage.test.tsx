@@ -601,9 +601,11 @@ describe("AdminUserInvitationsPage", () => {
 				"?pageSize=10",
 			);
 		});
-		expect(mockState.listInvitations).toHaveBeenCalledWith({
-			limit: 10,
-			offset: 0,
+		await waitFor(() => {
+			expect(mockState.listInvitations).toHaveBeenCalledWith({
+				limit: 10,
+				offset: 0,
+			});
 		});
 
 		fireEvent.click(screen.getByRole("button", { name: "copy-created" }));
