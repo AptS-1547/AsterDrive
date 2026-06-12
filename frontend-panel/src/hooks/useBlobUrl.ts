@@ -83,6 +83,7 @@ function cacheStorageAvailable() {
 function currentPersistedThumbnailNamespace() {
 	try {
 		const storage = globalThis.sessionStorage;
+		if (!storage) return null;
 		const existing = storage?.getItem(THUMBNAIL_CACHE_NAMESPACE_KEY);
 		if (existing) return existing;
 
@@ -90,20 +91,49 @@ function currentPersistedThumbnailNamespace() {
 			typeof globalThis.crypto?.randomUUID === "function"
 				? globalThis.crypto.randomUUID()
 				: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+		void cleanupStalePersistedThumbnailNamespaces(next);
 		storage?.setItem(THUMBNAIL_CACHE_NAMESPACE_KEY, next);
 		return next;
 	} catch {
-		// Ignore storage/parse errors and fall back to an anonymous namespace.
+		// Ignore storage/parse errors and disable disk persistence for this request.
 	}
-	return "anonymous";
+	return null;
 }
 
 function persistentThumbnailRequest(path: string) {
+	const namespace = currentPersistedThumbnailNamespace();
+	if (!namespace) return null;
 	const origin = globalThis.location?.origin ?? "http://localhost";
-	const cacheKey = `${currentPersistedThumbnailNamespace()}|${config.apiBaseUrl}|${path}`;
+	const cacheKey = `${namespace}|${config.apiBaseUrl}|${path}`;
 	return new Request(
 		`${origin}${PERSISTED_THUMBNAIL_CACHE_PREFIX}${encodeURIComponent(cacheKey)}`,
 	);
+}
+
+async function cleanupStalePersistedThumbnailNamespaces(namespace: string) {
+	if (!cacheStorageAvailable()) return;
+	try {
+		const cache = await globalThis.caches.open(PERSISTED_THUMBNAIL_CACHE_NAME);
+		const requests = await cache.keys();
+		await Promise.all(
+			requests.map(async (request) => {
+				const markerIndex = request.url.indexOf(
+					PERSISTED_THUMBNAIL_CACHE_PREFIX,
+				);
+				if (markerIndex < 0) return;
+				const encodedKey = request.url.slice(
+					markerIndex + PERSISTED_THUMBNAIL_CACHE_PREFIX.length,
+				);
+				const cacheKey = decodeURIComponent(encodedKey);
+				const requestNamespace = cacheKey.split("|", 1)[0];
+				if (requestNamespace && requestNamespace !== namespace) {
+					await cache.delete(request);
+				}
+			}),
+		);
+	} catch (error) {
+		logger.warn("thumbnail cache namespace cleanup failed", error);
+	}
 }
 
 async function openPersistedThumbnailCache() {
@@ -123,7 +153,9 @@ async function readPersistedThumbnail(
 	if (!cache) return null;
 
 	try {
-		const response = await cache.match(persistentThumbnailRequest(path));
+		const request = persistentThumbnailRequest(path);
+		if (!request) return null;
+		const response = await cache.match(request);
 		if (!response?.ok) return null;
 		return {
 			blob: await response.blob(),
@@ -144,12 +176,14 @@ async function writePersistedThumbnail(
 	if (!cache) return;
 
 	try {
+		const request = persistentThumbnailRequest(path);
+		if (!request) return;
 		const headers = new Headers({
 			"Content-Type": blob.type || "image/webp",
 		});
 		if (etag) headers.set("ETag", etag);
 		await cache.put(
-			persistentThumbnailRequest(path),
+			request,
 			new Response(blob, {
 				headers,
 				status: 200,
@@ -165,7 +199,9 @@ async function deletePersistedThumbnail(path: string) {
 	if (!cache) return;
 
 	try {
-		await cache.delete(persistentThumbnailRequest(path));
+		const request = persistentThumbnailRequest(path);
+		if (!request) return;
+		await cache.delete(request);
 	} catch (error) {
 		logger.warn("thumbnail cache delete failed", path, error);
 	}

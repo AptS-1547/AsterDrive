@@ -8,7 +8,7 @@ use sea_orm::{ConnectionTrait, DatabaseConnection};
 use xmltree::Element;
 
 use crate::config::webdav;
-use crate::db::repository::{file_repo, folder_repo, lock_repo};
+use crate::db::repository::{file_repo, folder_repo, lock_repo, user_repo};
 use crate::entities::resource_lock;
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::audit_service::{self, AuditContext};
@@ -95,6 +95,14 @@ impl DbLockSystem {
     ) -> Result<(), DavLockPreflightError> {
         let owner_id = self.scope.actor_user_id();
         let max_active_locks = self.max_active_locks_per_owner();
+        user_repo::lock_by_id(db, owner_id).await.map_err(|error| {
+            tracing::warn!(
+                owner_id,
+                error = %error,
+                "failed to lock WebDAV lock owner row"
+            );
+            DavLockPreflightError::GeneralFailure
+        })?;
         let active_locks = lock_repo::count_active_by_owner(db, owner_id, now)
             .await
             .map_err(|error| {
@@ -120,7 +128,7 @@ impl DbLockSystem {
 
 impl DavLockSystem for DbLockSystem {
     fn prepare_lock(&self, _path: &DavPath) -> LsFuture<'_, Result<(), DavLockPreflightError>> {
-        Box::pin(async move { self.ensure_lock_quota(&self.db, Utc::now()).await })
+        Box::pin(async move { Ok(()) })
     }
 
     fn lock(
@@ -300,15 +308,21 @@ impl DavLockSystem for DbLockSystem {
 
         Box::pin(async move {
             let now = Utc::now();
+
+            let current_lock = lock_repo::find_by_token(&self.db, &token_owned)
+                .await
+                .map_err(|_| ())?
+                .ok_or(())?;
+            if !unlock_request_targets_lock_scope(&current_lock.path, current_lock.deep, &path_str)
+            {
+                return Err(());
+            }
             let new_timeout_at = lock_timeout_at(now, timeout_dur).map_err(|_| ())?;
 
             let lock = lock_repo::refresh(&self.db, &token_owned, new_timeout_at)
                 .await
                 .map_err(|_| ())?
                 .ok_or(())?;
-            if !unlock_request_targets_lock_scope(&lock.path, lock.deep, &path_str) {
-                return Err(());
-            }
             self.log_lock_action(lock.entity_type, lock.entity_id, true)
                 .await;
             let owner = lock_owner_xml(&lock)

@@ -3,7 +3,7 @@ use chrono::Utc;
 use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::{file, upload_session};
-use crate::errors::{Result, upload_assembly_error_with_code};
+use crate::errors::{AsterError, Result, upload_assembly_error_with_code};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::upload_service::shared::{
     run_upload_completion_stage, upload_completion_error_is_retryable,
@@ -315,13 +315,15 @@ async fn complete_s3_multipart_upload_session(
             let actual_part_size = match actual_part_size {
                 Ok(actual_part_size) => actual_part_size,
                 Err(error) => {
-                    abort_multipart_upload_after_preflight_failure(
-                        multipart.as_ref(),
-                        temp_key,
-                        multipart_id,
-                        &session.id,
-                    )
-                    .await;
+                    if should_abort_multipart_after_preflight_error(&error) {
+                        abort_multipart_upload_after_preflight_failure(
+                            multipart.as_ref(),
+                            temp_key,
+                            multipart_id,
+                            &session.id,
+                        )
+                        .await;
+                    }
                     return Err(error);
                 }
             };
@@ -333,13 +335,15 @@ async fn complete_s3_multipart_upload_session(
             )
             .await
             {
-                abort_multipart_upload_after_preflight_failure(
-                    multipart.as_ref(),
-                    temp_key,
-                    multipart_id,
-                    &session.id,
-                )
-                .await;
+                if should_abort_multipart_after_preflight_error(&error) {
+                    abort_multipart_upload_after_preflight_failure(
+                        multipart.as_ref(),
+                        temp_key,
+                        multipart_id,
+                        &session.id,
+                    )
+                    .await;
+                }
                 return Err(error);
             }
 
@@ -392,6 +396,16 @@ async fn complete_s3_multipart_upload_session(
         },
     )
     .await
+}
+
+fn should_abort_multipart_after_preflight_error(error: &AsterError) -> bool {
+    matches!(error, AsterError::StorageQuotaExceeded(_))
+        || matches!(
+            error.api_error_code(),
+            ApiErrorCode::UploadIncompleteParts
+                | ApiErrorCode::UploadMissingPart
+                | ApiErrorCode::UploadTempObjectSizeMismatch
+        )
 }
 
 async fn verify_uploaded_multipart_parts(
@@ -527,11 +541,12 @@ fn workspace_scope_from_session(session: &upload_session::Model) -> WorkspaceSto
 #[cfg(test)]
 mod tests {
     use super::{
-        copy_presigned_object_to_final_key, sum_uploaded_part_sizes,
-        validate_uploaded_part_numbers, verify_uploaded_multipart_parts,
+        copy_presigned_object_to_final_key, should_abort_multipart_after_preflight_error,
+        sum_uploaded_part_sizes, validate_uploaded_part_numbers, verify_uploaded_multipart_parts,
     };
+    use crate::api::api_error_code::ApiErrorCode;
     use crate::entities::upload_session;
-    use crate::errors::Result;
+    use crate::errors::{AsterError, Result, upload_assembly_error_with_code};
     use crate::storage::traits::UploadedMultipartPart;
     use crate::storage::{BlobMetadata, MultipartStorageDriver, StorageDriver};
     use async_trait::async_trait;
@@ -818,5 +833,23 @@ mod tests {
 
         let error = sum_uploaded_part_sizes(&parts).expect_err("negative size should be rejected");
         assert!(error.to_string().contains("negative size"));
+    }
+
+    #[test]
+    fn preflight_abort_policy_keeps_transient_provider_errors_retryable() {
+        let transient = AsterError::storage_driver_error("provider list_parts failed");
+        assert!(!should_abort_multipart_after_preflight_error(&transient));
+    }
+
+    #[test]
+    fn preflight_abort_policy_aborts_deterministic_consistency_errors() {
+        let mismatch = upload_assembly_error_with_code(
+            ApiErrorCode::UploadTempObjectSizeMismatch,
+            "multipart size mismatch",
+        );
+        let quota = AsterError::storage_quota_exceeded("quota exceeded");
+
+        assert!(should_abort_multipart_after_preflight_error(&mismatch));
+        assert!(should_abort_multipart_after_preflight_error(&quota));
     }
 }

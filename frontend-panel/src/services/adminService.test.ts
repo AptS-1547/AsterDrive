@@ -9,6 +9,7 @@ import {
 	adminPolicyService,
 	adminRemoteNodeService,
 	adminShareService,
+	adminSystemService,
 	adminTaskService,
 	adminUserService,
 } from "@/services/adminService";
@@ -90,6 +91,7 @@ describe("adminService", () => {
 	});
 
 	it("uses bare list endpoints when no query params are provided", () => {
+		adminSystemService.getInfo();
 		adminUserService.list();
 		adminUserService.listInvitations();
 		adminPolicyService.list();
@@ -99,17 +101,18 @@ describe("adminService", () => {
 		adminLockService.list();
 		adminConfigService.list();
 
-		expect(mockState.get).toHaveBeenNthCalledWith(1, "/admin/users");
+		expect(mockState.get).toHaveBeenNthCalledWith(1, "/admin/system-info");
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/admin/users");
 		expect(mockState.get).toHaveBeenNthCalledWith(
-			2,
+			3,
 			"/admin/users/invitations",
 		);
-		expect(mockState.get).toHaveBeenNthCalledWith(3, "/admin/policies");
-		expect(mockState.get).toHaveBeenNthCalledWith(4, "/admin/remote-nodes");
-		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/policy-groups");
-		expect(mockState.get).toHaveBeenNthCalledWith(6, "/admin/shares");
-		expect(mockState.get).toHaveBeenNthCalledWith(7, "/admin/locks");
-		expect(mockState.get).toHaveBeenNthCalledWith(8, "/admin/config");
+		expect(mockState.get).toHaveBeenNthCalledWith(4, "/admin/policies");
+		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/remote-nodes");
+		expect(mockState.get).toHaveBeenNthCalledWith(6, "/admin/policy-groups");
+		expect(mockState.get).toHaveBeenNthCalledWith(7, "/admin/shares");
+		expect(mockState.get).toHaveBeenNthCalledWith(8, "/admin/locks");
+		expect(mockState.get).toHaveBeenNthCalledWith(9, "/admin/config");
 	});
 
 	it("uses admin user invitation endpoints", () => {

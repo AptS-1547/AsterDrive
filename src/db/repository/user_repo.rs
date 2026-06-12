@@ -12,7 +12,7 @@ use crate::errors::{AsterError, Result};
 use crate::types::{UserRole, UserStatus};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, DbBackend,
-    EntityTrait, ExprTrait, PaginatorTrait, QueryFilter, QueryOrder, Select,
+    EntityTrait, ExprTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select,
     sea_query::{Expr, extension::postgres::PgExpr},
 };
 
@@ -72,6 +72,19 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<user::Mod
         .await
         .map_err(AsterError::from)?
         .ok_or_else(|| AsterError::record_not_found(format!("user #{id}")))
+}
+
+pub async fn lock_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<user::Model> {
+    match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => User::find_by_id(id)
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?
+            .ok_or_else(|| AsterError::record_not_found(format!("user #{id}"))),
+        DbBackend::Sqlite => find_by_id(db, id).await,
+        _ => find_by_id(db, id).await,
+    }
 }
 
 pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<user::Model>> {
@@ -448,6 +461,18 @@ mod tests {
             sql.as_str().contains("LOWER(`email`) LIKE '%end-u%'"),
             "{sql}"
         );
+    }
+
+    #[test]
+    fn postgres_owner_lock_query_uses_for_update() {
+        let sql = format!(
+            "{}",
+            User::find_by_id(42)
+                .lock_exclusive()
+                .build(DbBackend::Postgres)
+        );
+
+        assert!(sql.as_str().contains("FOR UPDATE"), "{sql}");
     }
 
     #[test]

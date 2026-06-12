@@ -52,6 +52,10 @@ class MockCache {
 		return this.store.delete(request.url);
 	}
 
+	async keys() {
+		return [...this.store.keys()].map((url) => new Request(url));
+	}
+
 	clear() {
 		this.store.clear();
 	}
@@ -92,6 +96,7 @@ describe("useBlobUrl", () => {
 		vi.useRealTimers();
 		installBlobStreamPolyfill();
 		localStorage.clear();
+		sessionStorage.clear();
 		mockState.get.mockReset();
 		mockState.warn.mockReset();
 		Object.defineProperty(globalThis, "caches", {
@@ -385,7 +390,7 @@ describe("useBlobUrl", () => {
 		await module.clearPersistedBlobUrlCache();
 	});
 
-	it("namespaces persisted thumbnail blobs by the session cache namespace", async () => {
+	it("reclaims persisted thumbnail blobs from stale session cache namespaces", async () => {
 		const { cache } = installCacheStorage();
 		sessionStorage.setItem("aster-thumbnail-cache-namespace", "session-a");
 		mockState.get.mockResolvedValueOnce({
@@ -404,7 +409,8 @@ describe("useBlobUrl", () => {
 		first.unmount();
 		module.clearBlobUrlCache();
 
-		sessionStorage.setItem("aster-thumbnail-cache-namespace", "session-b");
+		sessionStorage.removeItem("aster-thumbnail-cache-namespace");
+		vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValueOnce("session-b");
 		mockState.get.mockResolvedValueOnce({
 			status: 200,
 			data: new Blob(["session-b-image"]),
@@ -420,10 +426,11 @@ describe("useBlobUrl", () => {
 		});
 
 		expect(mockState.get).toHaveBeenCalledTimes(2);
-		expect(cache.store.size).toBe(2);
-		expect(
-			[...cache.store.keys()].some((key) => key.includes("session-a")),
-		).toBe(true);
+		await waitFor(() => {
+			expect(
+				[...cache.store.keys()].some((key) => key.includes("session-a")),
+			).toBe(false);
+		});
 		expect(
 			[...cache.store.keys()].some((key) => key.includes("session-b")),
 		).toBe(true);

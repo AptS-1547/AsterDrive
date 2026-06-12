@@ -74,6 +74,7 @@ import type {
 	SystemConfig,
 	SystemConfigPage,
 	SystemConfigVisibility,
+	SystemInfoResponse,
 	TaskInfo,
 	TaskPage,
 	TeamAuditPage,
@@ -116,6 +117,10 @@ export const adminOverviewService = {
 				event_limit: params?.event_limit,
 			}),
 		),
+};
+
+export const adminSystemService = {
+	getInfo: () => api.get<SystemInfoResponse>("/admin/system-info"),
 };
 
 // --- Users ---

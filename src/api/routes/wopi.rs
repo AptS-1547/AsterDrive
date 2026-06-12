@@ -40,7 +40,8 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
     operation_id = "wopi_check_file_info",
     params(
         ("id" = i64, Path, description = "File ID"),
-        ("access_token" = String, Query, description = "WOPI access token")
+        ("access_token" = Option<String>, Query, description = "WOPI access token"),
+        ("X-WOPI-Token" = Option<String>, Header, description = "WOPI access token header")
     ),
     responses((status = 200, description = "WOPI CheckFileInfo response")),
 )]

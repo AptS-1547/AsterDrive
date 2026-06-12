@@ -222,9 +222,10 @@ fn verify_token_signature(
                 .is_ok())
         }
         ParsedDirectLinkToken::Legacy { signature, .. } => {
-            // Compatibility only. The legacy verifier intentionally reproduces
-            // the old 6-character signature algorithm so existing public links
-            // keep working. New tokens never use this path.
+            // Compatibility only: legacy_signature_for_file reproduces the old
+            // 6-character signature algorithm, but verification still depends
+            // on auth.direct_link_secret, so rotating that secret invalidates
+            // legacy links. New tokens never use this path.
             let expected = legacy_signature_for_file(file, secret)?;
             Ok(*signature == expected)
         }

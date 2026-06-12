@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
@@ -13,6 +13,7 @@ import { Icon, type IconName } from "@/components/ui/icon";
 import { config } from "@/config/app";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { cn } from "@/lib/utils";
+import { adminSystemService } from "@/services/adminService";
 
 const REPOSITORY_URL = "https://github.com/AptS-1547/AsterDrive";
 const DOCS_URL = "https://drive.astercosm.com/";
@@ -183,12 +184,34 @@ export default function AdminAboutPage() {
 	usePageTitle(t("about"));
 	const versionClickCountRef = useRef(0);
 	const appVersion = config.appVersion;
-	const displayVersion = formatDisplayVersion(appVersion);
-	const releaseChannel = resolveReleaseChannel(appVersion);
+	const [systemInfo, setSystemInfo] = useState<{
+		version: string;
+		build_time: string;
+	} | null>(null);
+	const backendVersion = systemInfo?.version ?? appVersion;
+	const displayVersion = formatDisplayVersion(backendVersion);
+	const releaseChannel = resolveReleaseChannel(backendVersion);
 	const [versionBadgeClassIndex, setVersionBadgeClassIndex] = useState(0);
 	const [displayReleaseChannel, setDisplayReleaseChannel] =
 		useState(releaseChannel);
 	const topReleaseChannel = displayReleaseChannel;
+	useEffect(() => {
+		let cancelled = false;
+		void adminSystemService
+			.getInfo()
+			.then((info) => {
+				if (!cancelled) setSystemInfo(info);
+			})
+			.catch(() => {
+				if (!cancelled) setSystemInfo(null);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+	useEffect(() => {
+		setDisplayReleaseChannel(releaseChannel);
+	}, [releaseChannel]);
 	const handleVersionClick = useCallback(() => {
 		setVersionBadgeClassIndex(
 			(current) => (current + 1) % VERSION_BADGE_CLASSES.length,
@@ -269,6 +292,11 @@ export default function AdminAboutPage() {
 			label: t("about_channel"),
 			value: t(`about_channel_${releaseChannel}`),
 			icon: "Shuffle",
+		},
+		{
+			label: t("about_build_time"),
+			value: systemInfo?.build_time ?? t("about_build_time_unknown"),
+			icon: "Clock",
 		},
 		{
 			label: t("about_license"),

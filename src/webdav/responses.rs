@@ -147,6 +147,9 @@ pub(crate) fn invalid_xml_body() -> HttpResponse {
 pub(crate) fn no_external_entities() -> HttpResponse {
     let mut error = dav_element("error");
     error
+        .attributes
+        .insert("xmlns:D".to_string(), "DAV:".to_string());
+    error
         .children
         .push(XMLNode::Element(dav_element("no-external-entities")));
     xml_response(error, StatusCode::FORBIDDEN)
@@ -302,6 +305,7 @@ mod tests {
 
         let body = body_text(response).await;
         assert!(body.contains("no-external-entities"), "{body}");
+        assert!(body.contains("xmlns:D=\"DAV:\""), "{body}");
     }
 
     #[test]

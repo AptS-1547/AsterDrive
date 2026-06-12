@@ -234,7 +234,20 @@ impl MultipartStorageDriver for S3Driver {
             }
 
             if resp.is_truncated() == Some(true) {
-                part_marker = resp.next_part_number_marker().map(|s| s.to_string());
+                part_marker = resp
+                    .next_part_number_marker()
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        resp.parts().last().and_then(|part| {
+                            part.part_number.map(|number| (number + 1).to_string())
+                        })
+                    });
+                if part_marker.is_none() {
+                    return Err(storage_driver_error(
+                        StorageErrorKind::Unknown,
+                        "S3 list_parts response is truncated without a next marker",
+                    ));
+                }
             } else {
                 break;
             }

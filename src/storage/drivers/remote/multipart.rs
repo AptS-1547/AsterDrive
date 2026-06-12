@@ -178,6 +178,7 @@ impl MultipartStorageDriver for RemoteDriver {
                 path.rsplit('/')
                     .next()
                     .and_then(|segment| segment.parse::<i32>().ok())
+                    .filter(|part_number| *part_number > 0)
                     .map(|part_number| (part_number, path))
             })
             .collect::<Vec<_>>();

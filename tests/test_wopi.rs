@@ -293,10 +293,17 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
         "action_url should include encoded WOPISrc, got {action_url}"
     );
     assert_eq!(launch["mode"], "iframe");
+    let now = Utc::now().timestamp_millis();
+    let ttl = launch["access_token_ttl"]
+        .as_i64()
+        .expect("launch session should return access token ttl");
+    let jitter_ms = 5_000;
+    assert!(ttl > now);
     assert!(
-        launch["access_token_ttl"]
-            .as_i64()
-            .is_some_and(|value| value > Utc::now().timestamp_millis())
+        ttl <= now
+            + (aster_drive::config::wopi::DEFAULT_WOPI_ACCESS_TOKEN_TTL_SECS as i64 * 1000)
+            + jitter_ms,
+        "access_token_ttl should stay within the default WOPI TTL window"
     );
 
     let token_hash = aster_drive::utils::hash::sha256_hex(wopi_access_token.as_bytes());

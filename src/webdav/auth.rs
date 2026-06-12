@@ -122,7 +122,7 @@ async fn authenticate_basic(
 
     let cache_key = webdav_auth_cache_key(username, password);
     if let Some(cached) = state.cache().get::<CachedWebdavAuth>(&cache_key).await {
-        validate_cached_account(state, username, &cached).await?;
+        validate_cached_account(state, username, password, &cached).await?;
         tracing::debug!(username_hash = %username_cache_component(username), "webdav auth cache hit");
         return Ok(WebdavAuthResult {
             scope: cached.scope(),
@@ -196,6 +196,7 @@ async fn authenticate_basic(
 async fn validate_cached_account(
     state: &impl SharedRuntimeState,
     username: &str,
+    password: &str,
     cached: &CachedWebdavAuth,
 ) -> Result<(), AsterError> {
     let account = webdav_account_repo::find_by_id(state.writer_db(), cached.account_id).await?;
@@ -214,6 +215,12 @@ async fn validate_cached_account(
         return Err(auth_forbidden_with_code(
             ApiErrorCode::AuthAccountDisabled,
             "WebDAV account is disabled",
+        ));
+    }
+    if !hash::verify_password(password, &account.password_hash)? {
+        invalidate_webdav_auth_for_username(state, username).await;
+        return Err(AsterError::auth_invalid_credentials(
+            "cached WebDAV password changed",
         ));
     }
     validate_cached_scope(state, cached.scope()).await
@@ -441,6 +448,37 @@ mod tests {
             .expect_err("cached auth should reject a disabled account immediately");
 
         assert!(matches!(err, AsterError::AuthForbidden(_)));
+    }
+
+    #[actix_web::test]
+    async fn cached_basic_auth_rechecks_current_password_hash() {
+        let state = build_auth_test_state_with_cache(true).await;
+        let (username, password, _, _) = seed_webdav_account(&state).await;
+
+        authenticate_webdav(&basic_headers(&username, &password), &state)
+            .await
+            .expect("first auth should populate cache");
+
+        let account = crate::db::repository::webdav_account_repo::find_by_username(
+            state.writer_db(),
+            &username,
+        )
+        .await
+        .expect("account lookup should work")
+        .expect("account should exist");
+        let mut active = account.into_active_model();
+        active.password_hash = Set(hash::hash_password("new-webdav-password")
+            .expect("webdav auth test password hash should work"));
+        active
+            .update(state.writer_db())
+            .await
+            .expect("password update should work");
+
+        let err = authenticate_webdav(&basic_headers(&username, &password), &state)
+            .await
+            .expect_err("cached auth should reject the old password immediately");
+
+        assert!(matches!(err, AsterError::AuthInvalidCredentials(_)));
     }
 
     #[actix_web::test]
