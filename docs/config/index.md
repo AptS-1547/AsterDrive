@@ -56,7 +56,7 @@ flowchart TD
 
 ## `config.toml` 在哪、怎么写
 
-首次启动时，如果当前工作目录里没有 `data/config.toml`，AsterDrive 会自动生成一份默认配置（含随机的 `jwt_secret` 和 `mfa_secret_key`）。
+首次启动时，如果当前工作目录里没有 `data/config.toml`，AsterDrive 会自动生成一份默认配置（含随机的 `jwt_secret`、`share_cookie_secret`、`direct_link_secret` 和 `mfa_secret_key`）。
 
 ::: tip 只写要覆盖的项
 不需要把整份默认配置全抄出来，`config.toml` 里只写你要改的项即可，其他保留默认。

@@ -222,7 +222,12 @@ pub async fn check_share_password_cookie(
         let value = cookie_value
             .ok_or_else(|| AsterError::share_password_required("password verification required"))?;
 
-        if !verify_share_cookie(token, value, binding, &state.config().auth.jwt_secret) {
+        if !verify_share_cookie(
+            token,
+            value,
+            binding,
+            &state.config().auth.share_cookie_secret,
+        ) {
             return Err(AsterError::share_password_required(
                 "invalid verification cookie",
             ));
@@ -243,7 +248,12 @@ pub(crate) async fn check_share_password_cookie_ignoring_download_limit(
         let value = cookie_value
             .ok_or_else(|| AsterError::share_password_required("password verification required"))?;
 
-        if !verify_share_cookie(token, value, binding, &state.config().auth.jwt_secret) {
+        if !verify_share_cookie(
+            token,
+            value,
+            binding,
+            &state.config().auth.share_cookie_secret,
+        ) {
             return Err(AsterError::share_password_required(
                 "invalid verification cookie",
             ));
@@ -264,7 +274,11 @@ pub async fn verify_password_and_sign(
 ) -> Result<PasswordVerified> {
     verify_password(state, token, password).await?;
     Ok(PasswordVerified {
-        cookie_signature: sign_share_cookie(token, binding, &state.config().auth.jwt_secret),
+        cookie_signature: sign_share_cookie(
+            token,
+            binding,
+            &state.config().auth.share_cookie_secret,
+        ),
     })
 }
 
@@ -307,6 +321,15 @@ mod tests {
             &binding,
             "wrong_secret"
         ));
+    }
+
+    #[test]
+    fn verify_share_cookie_rejects_jwt_secret_when_share_secret_differs() {
+        let token = "token";
+        let binding = binding();
+        let cookie = sign_share_cookie(token, &binding, "dedicated-share-cookie-secret");
+
+        assert!(!verify_share_cookie(token, &cookie, &binding, "jwt-secret"));
     }
 
     #[test]

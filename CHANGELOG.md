@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **认证与公开链接密钥隔离（Breaking）**
+  - 新增 `auth.share_cookie_secret`、`auth.direct_link_secret`，并将公开分享密码验证 Cookie、公共直链、预览链接和分享流式播放会话从 `auth.jwt_secret` 拆分到专用 HMAC 密钥
+  - 已有 `data/config.toml` 在启动时会自动补齐缺失的 `auth.jwt_secret`、`auth.share_cookie_secret`、`auth.direct_link_secret` 和 `auth.mfa_secret_key`，不会覆盖已有值
+  - 由于 direct link / preview / stream token 不再接受 `auth.jwt_secret` 验签，升级前生成的公共直链、预览链接和分享流式播放会话 token 会失效，需要重新生成
+  - 分享密码验证 Cookie 会因 `auth.share_cookie_secret` 切换而失效，用户需要重新输入分享密码
+
 ## [v0.3.0-alpha.4] - 2026-06-11
 
 ### Release Highlights

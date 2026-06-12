@@ -144,12 +144,17 @@ fn ensure_stable_default_config_keys(
     let Some(auth_table) = auth_item.as_table_mut() else {
         return Err(AsterError::config_error("auth must be a table"));
     };
-    if !auth_table.contains_key("mfa_secret_key") {
-        auth_table.insert(
-            "mfa_secret_key",
-            value(crate::config::AuthConfig::default().mfa_secret_key),
-        );
-        changed = true;
+    let auth_defaults = crate::config::AuthConfig::default();
+    for (key, secret) in [
+        ("jwt_secret", auth_defaults.jwt_secret),
+        ("share_cookie_secret", auth_defaults.share_cookie_secret),
+        ("direct_link_secret", auth_defaults.direct_link_secret),
+        ("mfa_secret_key", auth_defaults.mfa_secret_key),
+    ] {
+        if !auth_table.contains_key(key) {
+            auth_table.insert(key, value(secret));
+            changed = true;
+        }
     }
 
     if !changed {
@@ -242,6 +247,67 @@ mod tests {
         assert!(generated.contains(r#"managed_ingress_local_root = "managed-ingress""#));
         assert!(generated.contains("[network_trust]"));
         assert!(generated.contains(r#"trusted_proxies = []"#));
+        assert!(generated.contains("jwt_secret"));
+        assert!(generated.contains("share_cookie_secret"));
+        assert!(generated.contains("direct_link_secret"));
+        assert!(generated.contains("mfa_secret_key"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_backfills_missing_auth_secrets_without_reusing_existing_jwt_secret() {
+        let dir = make_temp_dir("backfill-auth-secrets");
+        let legacy_jwt_secret = "legacy-jwt-secret";
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            format!(
+                r#"[auth]
+jwt_secret = "{legacy_jwt_secret}"
+"#
+            )
+            .as_bytes(),
+        );
+
+        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
+
+        assert_eq!(cfg.auth.jwt_secret, legacy_jwt_secret);
+        assert!(!cfg.auth.share_cookie_secret.is_empty());
+        assert!(!cfg.auth.direct_link_secret.is_empty());
+        assert!(!cfg.auth.mfa_secret_key.is_empty());
+        assert_ne!(cfg.auth.share_cookie_secret, legacy_jwt_secret);
+        assert_ne!(cfg.auth.direct_link_secret, legacy_jwt_secret);
+        assert_ne!(cfg.auth.mfa_secret_key, legacy_jwt_secret);
+        assert!(updated.contains("share_cookie_secret"));
+        assert!(updated.contains("direct_link_secret"));
+        assert!(updated.contains("mfa_secret_key"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_backfills_jwt_secret_when_auth_table_is_missing() {
+        let dir = make_temp_dir("backfill-missing-auth-table");
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            br#"[database]
+url = "sqlite://asterdrive.db?mode=rwc"
+"#,
+        );
+
+        let cfg = load_from_dir(&dir, None, false).unwrap();
+        let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
+
+        assert!(!cfg.auth.jwt_secret.is_empty());
+        assert!(!cfg.auth.share_cookie_secret.is_empty());
+        assert!(!cfg.auth.direct_link_secret.is_empty());
+        assert!(!cfg.auth.mfa_secret_key.is_empty());
+        assert!(updated.contains("[auth]"));
+        assert!(updated.contains("jwt_secret"));
+        assert!(updated.contains("share_cookie_secret"));
+        assert!(updated.contains("direct_link_secret"));
+        assert!(updated.contains("mfa_secret_key"));
 
         let _ = std::fs::remove_dir_all(dir);
     }

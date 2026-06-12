@@ -56,7 +56,7 @@ Anything the service must know before startup usually belongs in `config.toml`. 
 
 ## Where Is `config.toml`, and How Should I Write It?
 
-On first startup, if the current working directory does not contain `data/config.toml`, AsterDrive automatically generates a default configuration file, including random `jwt_secret` and `mfa_secret_key` values.
+On first startup, if the current working directory does not contain `data/config.toml`, AsterDrive automatically generates a default configuration file, including random `jwt_secret`, `share_cookie_secret`, `direct_link_secret`, and `mfa_secret_key` values.
 
 ::: tip Write only the items you want to override
 You do not need to copy the full default configuration. Put only the items you want to change in `config.toml`; the rest keep their defaults.

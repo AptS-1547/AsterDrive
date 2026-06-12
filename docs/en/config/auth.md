@@ -12,6 +12,8 @@ In normal operation, almost everything you actually change is in the admin conso
 ```toml
 [auth]
 jwt_secret = "<random secret generated on first startup>"
+share_cookie_secret = "<random secret generated on first startup>"
+direct_link_secret = "<random secret generated on first startup>"
 mfa_secret_key = "<random secret generated on first startup>"
 bootstrap_insecure_cookies = false
 ```
@@ -23,9 +25,16 @@ When the configuration is generated for the first time, the service writes a ran
 ::: warning Keep it stable in production
 Once changed:
 - All current login sessions become invalid
-- Password verification cookies for public shares become invalid
 - Everyone must log in again
 :::
+
+### `share_cookie_secret`
+
+This is the HMAC secret for public-share password verification cookies. Changing it invalidates already verified share-password cookies, so users must enter the share password again.
+
+### `direct_link_secret`
+
+This is the HMAC secret for public direct links, preview links, and share streaming sessions. Changing it invalidates existing direct links and short-lived preview / streaming session tokens, so links must be regenerated.
 
 ### `mfa_secret_key`
 
@@ -249,6 +258,8 @@ bootstrap_insecure_cookies = true
 ```toml
 [auth]
 jwt_secret = "replace-with-your-own-secret"
+share_cookie_secret = "replace-with-share-cookie-secret"
+direct_link_secret = "replace-with-direct-link-secret"
 mfa_secret_key = "replace-with-another-stable-secret"
 bootstrap_insecure_cookies = false
 ```
@@ -257,6 +268,8 @@ Environment variable overrides:
 
 ```bash
 ASTER__AUTH__JWT_SECRET="replace-with-your-own-secret"
+ASTER__AUTH__SHARE_COOKIE_SECRET="replace-with-share-cookie-secret"
+ASTER__AUTH__DIRECT_LINK_SECRET="replace-with-direct-link-secret"
 ASTER__AUTH__MFA_SECRET_KEY="replace-with-another-stable-secret"
 ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=false
 ```
