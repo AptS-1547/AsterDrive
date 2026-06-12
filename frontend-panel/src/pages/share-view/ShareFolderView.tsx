@@ -1,4 +1,11 @@
-import { Fragment, type ReactNode, type RefObject, useEffect } from "react";
+import {
+	Fragment,
+	type ReactNode,
+	type RefObject,
+	useCallback,
+	useEffect,
+	useMemo,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { UserAvatarImage } from "@/components/common/UserAvatarImage";
@@ -37,6 +44,10 @@ import {
 	getExpirySummary,
 } from "./shareViewSummaries";
 import type { ShareBreadcrumbItem } from "./types";
+
+const noopShare = () => {};
+const denyToggleLock = () => false;
+const noopDelete = async () => {};
 
 interface ShareFolderViewProps {
 	breadcrumb: ShareBreadcrumbItem[];
@@ -172,8 +183,11 @@ export function ShareFolderView({
 }: ShareFolderViewProps) {
 	const { t } = useTranslation(["core", "share", "files", "errors"]);
 	const clearSelection = useFileStore((state) => state.clearSelection);
-	const handleArchiveDownload = (fileIds: number[], folderIds: number[]) =>
-		shareService.streamArchiveDownload(token, fileIds, folderIds);
+	const handleArchiveDownload = useCallback(
+		(fileIds: number[], folderIds: number[]) =>
+			shareService.streamArchiveDownload(token, fileIds, folderIds),
+		[token],
+	);
 	const { dialogs: batchActionDialogs, selectionToolbar } =
 		useFileBrowserBatchActions({
 			allowCopyMove: false,
@@ -187,6 +201,19 @@ export function ShareFolderView({
 				if (file) onFileDownload(file);
 			},
 		});
+	const breadcrumbIdsKey = useMemo(
+		() => breadcrumb.map((item) => item.id ?? "root").join("/"),
+		[breadcrumb],
+	);
+	const selectionScopeKey = `${token}:${breadcrumbIdsKey}`;
+	const breadcrumbPathIds = useMemo(
+		() =>
+			breadcrumbIdsKey
+				.split("/")
+				.filter((id) => id !== "" && id !== "root")
+				.map((id) => Number(id)),
+		[breadcrumbIdsKey],
+	);
 	const breadcrumbElement = (
 		<ShareFolderBreadcrumb
 			breadcrumb={breadcrumb}
@@ -194,17 +221,18 @@ export function ShareFolderView({
 		/>
 	);
 	useEffect(() => {
+		if (selectionScopeKey.length === 0) return;
 		clearSelection();
-	}, [clearSelection, token]);
-	useEffect(() => {
-		clearSelection();
-	}, [clearSelection, breadcrumb]);
+	}, [clearSelection, selectionScopeKey]);
 	const isFolderEmpty =
 		folderContents != null &&
 		folderContents.folders.length === 0 &&
 		folderContents.files.length === 0;
-	const fileBrowserContextValue: FileBrowserContextValue | null = folderContents
-		? {
+	const fileBrowserContextValue =
+		useMemo<FileBrowserContextValue | null>(() => {
+			if (!folderContents) return null;
+
+			return {
 				folders: folderContents.folders,
 				files: folderContents.files,
 				browserOpenMode: "single_click",
@@ -217,9 +245,7 @@ export function ShareFolderView({
 							onDelete: selectionToolbar.onDelete,
 						}
 					: null,
-				breadcrumbPathIds: breadcrumb
-					.map((item) => item.id)
-					.filter((id): id is number => id != null),
+				breadcrumbPathIds,
 				getThumbnailPath: (file) => `/s/${token}/files/${file.id}/thumbnail`,
 				onFolderOpen: (id, name) => onNavigateToFolder(id, name),
 				onFileClick: onFilePreview,
@@ -227,11 +253,19 @@ export function ShareFolderView({
 					const file = folderContents.files.find((item) => item.id === fileId);
 					if (file) onFileDownload(file);
 				},
-				onShare: () => {},
-				onToggleLock: () => false,
-				onDelete: async () => {},
-			}
-		: null;
+				onShare: noopShare,
+				onToggleLock: denyToggleLock,
+				onDelete: noopDelete,
+			};
+		}, [
+			breadcrumbPathIds,
+			folderContents,
+			onFileDownload,
+			onFilePreview,
+			onNavigateToFolder,
+			selectionToolbar,
+			token,
+		]);
 
 	return (
 		<SharePageShell>

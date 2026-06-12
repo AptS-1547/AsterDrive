@@ -82,7 +82,7 @@ vi.mock("@/components/files/FileCard", () => ({
 		item: { name: string };
 		isFolder: boolean;
 		selected: boolean;
-		onSelect: () => void;
+		onSelect?: () => void;
 		onClick: () => void;
 		onDoubleClick?: () => void;
 		dragData?: { fileIds: number[]; folderIds: number[] };
@@ -115,9 +115,11 @@ vi.mock("@/components/files/FileCard", () => ({
 				<button type="button" onClick={onDoubleClick}>
 					open-double:{item.name}
 				</button>
-				<button type="button" onClick={onSelect}>
-					select:{item.name}
-				</button>
+				{onSelect ? (
+					<button type="button" onClick={onSelect}>
+						select:{item.name}
+					</button>
+				) : null}
 				{actionMenu}
 			</div>
 		);
@@ -259,6 +261,33 @@ describe("FileGrid", () => {
 		expect(
 			screen.getByRole("button", { name: "actions:report.pdf" }),
 		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "open:Docs" }));
+		fireEvent.click(screen.getByRole("button", { name: "open:report.pdf" }));
+
+		expect(mockState.store.selectOnlyFolder).not.toHaveBeenCalled();
+		expect(mockState.store.selectOnlyFile).not.toHaveBeenCalled();
+		expect(mockState.browserContext.onFolderOpen).toHaveBeenCalledWith(
+			1,
+			"Docs",
+		);
+		expect(mockState.browserContext.onFileClick).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 2 }),
+		);
+	});
+
+	it("does not run selection handlers when selection is disabled", () => {
+		mockState.browserContext.browserOpenMode = "double_click";
+		mockState.browserContext.selectionEnabled = false;
+		mockState.browserContext.files = [{ id: 2, name: "report.pdf" }];
+		mockState.browserContext.folders = [{ id: 1, name: "Docs" }];
+
+		render(<FileGrid />);
+
+		expect(screen.queryByRole("button", { name: "select:Docs" })).toBeNull();
+		expect(
+			screen.queryByRole("button", { name: "select:report.pdf" }),
+		).toBeNull();
 
 		fireEvent.click(screen.getByRole("button", { name: "open:Docs" }));
 		fireEvent.click(screen.getByRole("button", { name: "open:report.pdf" }));

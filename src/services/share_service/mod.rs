@@ -48,6 +48,7 @@ pub(crate) use cache::{
 pub(crate) use content::{
     load_preview_shared_file, load_preview_shared_folder_file,
     load_shared_file_ignoring_download_limit, load_shared_folder_file_ignoring_download_limit,
+    reserve_share_download_count, rollback_share_download_count,
 };
 pub(crate) use management::{
     batch_delete_shares_in_scope, create_share_in_scope, delete_share_in_scope,

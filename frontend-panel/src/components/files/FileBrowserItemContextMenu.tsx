@@ -60,6 +60,7 @@ function useFileBrowserItemMenuProps(
 		onToggleLock,
 		onVersions,
 		readOnly,
+		selectionEnabled = !readOnly,
 	} = useFileBrowserContext();
 	const selectedFileIds = useFileStore((s) => s.selectedFileIds);
 	const selectedFolderIds = useFileStore((s) => s.selectedFolderIds);
@@ -68,7 +69,10 @@ function useFileBrowserItemMenuProps(
 		: selectedFileIds.has(props.item.id);
 	const selectionCount = selectedFileIds.size + selectedFolderIds.size;
 	const useBatchMenu =
-		selected && selectionCount > 1 && batchSelectionActions != null;
+		selectionEnabled &&
+		selected &&
+		selectionCount > 1 &&
+		batchSelectionActions != null;
 
 	if (useBatchMenu) {
 		return {

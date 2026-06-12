@@ -160,6 +160,7 @@ pub async fn batch_copy(
         (status = 200, description = "Archive download ticket", body = inline(ApiResponse<stream_ticket_service::StreamTicketInfo>)),
         (status = 400, description = "Invalid request"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "ArchiveDownloadUserDisabled"),
     ),
     security(("bearer" = [])),
 )]
@@ -224,6 +225,7 @@ pub async fn archive_compress(
         (status = 200, description = "Archive stream download"),
         (status = 400, description = "Invalid ticket"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "ArchiveDownloadUserDisabled"),
     ),
     security(("bearer" = [])),
 )]
@@ -356,7 +358,7 @@ pub(crate) async fn team_batch_copy(
         (status = 200, description = "Team archive download ticket", body = inline(ApiResponse<stream_ticket_service::StreamTicketInfo>)),
         (status = 400, description = "Invalid request"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
-        (status = 403, description = "Forbidden"),
+        (status = 403, description = "Forbidden or ArchiveDownloadUserDisabled"),
     ),
     security(("bearer" = [])),
 )]
@@ -426,7 +428,7 @@ pub(crate) async fn team_archive_compress(
         (status = 200, description = "Team archive stream download"),
         (status = 400, description = "Invalid ticket"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
-        (status = 403, description = "Forbidden"),
+        (status = 403, description = "Forbidden or ArchiveDownloadUserDisabled"),
     ),
     security(("bearer" = [])),
 )]

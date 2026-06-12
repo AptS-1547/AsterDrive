@@ -23,7 +23,7 @@ interface FileCardProps {
 	item: FileListItem | FolderListItem;
 	isFolder: boolean;
 	selected: boolean;
-	onSelect: () => void;
+	onSelect?: () => void;
 	onClick: () => void;
 	onDoubleClick?: () => void;
 	/** IDs to drag when this item is part of a selection */

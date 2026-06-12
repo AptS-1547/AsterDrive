@@ -100,9 +100,15 @@ const FolderGridCard = memo(function FolderGridCard({
 			isFolder
 			selected={selectionEnabled ? selected : false}
 			selectionActive={selectionEnabled ? selectionActive : false}
-			onSelect={() => toggleFolderSelection(folder.id)}
+			onSelect={
+				selectionEnabled ? () => toggleFolderSelection(folder.id) : undefined
+			}
 			onClick={() => {
-				if (!readOnly && browserOpenMode === "double_click") {
+				if (
+					!readOnly &&
+					browserOpenMode === "double_click" &&
+					selectionEnabled
+				) {
 					selectOnlyFolder(folder.id);
 					return;
 				}
@@ -165,9 +171,15 @@ const FileGridCard = memo(function FileGridCard({
 			isFolder={false}
 			selected={selectionEnabled ? selected : false}
 			selectionActive={selectionEnabled ? selectionActive : false}
-			onSelect={() => toggleFileSelection(file.id)}
+			onSelect={
+				selectionEnabled ? () => toggleFileSelection(file.id) : undefined
+			}
 			onClick={() => {
-				if (!readOnly && browserOpenMode === "double_click") {
+				if (
+					!readOnly &&
+					browserOpenMode === "double_click" &&
+					selectionEnabled
+				) {
 					selectOnlyFile(file.id);
 					return;
 				}

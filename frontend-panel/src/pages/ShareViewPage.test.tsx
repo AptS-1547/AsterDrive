@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FOLDER_LIMIT } from "@/lib/constants";
 import ShareViewPage, { SharePreviewElement } from "@/pages/ShareViewPage";
 import { ApiError } from "@/services/http";
+import { useFileStore } from "@/stores/fileStore";
 import { ApiErrorCode } from "@/types/api-helpers";
 
 const TEST_SHARE_PASSWORD = "TEST_PASSWORD";
@@ -22,6 +23,18 @@ interface CapturedPreviewFactories {
 
 const mockState = vi.hoisted(() => ({
 	capturedFileBrowserContext: null as {
+		batchSelectionActions: {
+			count: number;
+			downloadAction?: {
+				kind: "file" | "archive";
+				onClick: () => void;
+			};
+			onArchiveCompress?: () => void;
+			onCopy?: () => void;
+			onDelete?: () => void;
+			onManageTags?: () => void;
+			onMove?: () => void;
+		} | null;
 		folders: Array<{ id: number; name: string }>;
 		files: Array<{ id: number; name: string; mime_type: string; size: number }>;
 		onFolderOpen: (id: number, name: string) => void;
@@ -32,6 +45,8 @@ const mockState = vi.hoisted(() => ({
 			size: number;
 		}) => void;
 		onDownload: (fileId: number, fileName: string) => void;
+		readOnly?: boolean;
+		selectionEnabled?: boolean;
 	} | null,
 	downloadFolderFileUrl: vi.fn(
 		(token: string, fileId: number) =>
@@ -696,6 +711,7 @@ vi.mock("@/services/shareService", () => ({
 describe("ShareViewPage", () => {
 	beforeEach(() => {
 		mockState.capturedFileBrowserContext = null;
+		useFileStore.getState().clearSelection();
 		mockState.downloadFolderFileUrl.mockClear();
 		mockState.previewFactories = null;
 		mockState.createFolderFilePreviewLink.mockClear();
@@ -1277,6 +1293,35 @@ describe("ShareViewPage", () => {
 				"avatar:Alice Example:https://www.gravatar.com/avatar/hash?s=512",
 			),
 		).toBeInTheDocument();
+		expect(mockState.capturedFileBrowserContext).toMatchObject({
+			readOnly: true,
+			selectionEnabled: true,
+		});
+		useFileStore.getState().selectItems([2], []);
+		await waitFor(() => {
+			expect(
+				mockState.capturedFileBrowserContext?.batchSelectionActions,
+			).toEqual(
+				expect.objectContaining({
+					count: 1,
+					downloadAction: expect.objectContaining({ kind: "file" }),
+				}),
+			);
+		});
+		expect(
+			mockState.capturedFileBrowserContext?.batchSelectionActions
+				?.onArchiveCompress,
+		).toBeUndefined();
+		expect(
+			mockState.capturedFileBrowserContext?.batchSelectionActions?.onCopy,
+		).toBeUndefined();
+		expect(
+			mockState.capturedFileBrowserContext?.batchSelectionActions?.onDelete,
+		).toBeUndefined();
+		expect(
+			mockState.capturedFileBrowserContext?.batchSelectionActions?.onMove,
+		).toBeUndefined();
+		useFileStore.getState().clearSelection();
 		fireEvent.click(await screen.findByRole("button", { name: "folder:Docs" }));
 
 		await waitFor(() => {

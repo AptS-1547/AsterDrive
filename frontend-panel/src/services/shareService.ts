@@ -37,18 +37,12 @@ function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");
 }
 
-function buildSharedArchiveDownloadUrl(
-	token: string,
-	ticket: StreamTicketInfo,
-) {
+function buildSharedArchiveDownloadUrl(ticket: StreamTicketInfo) {
 	if (/^https?:\/\//.test(ticket.download_path)) {
 		return ticket.download_path;
 	}
 
-	return joinApiUrl(
-		config.apiBaseUrl,
-		`/s/${token}/archive-download/${ticket.token}`,
-	);
+	return joinApiUrl(config.apiBaseUrl, ticket.download_path);
 }
 
 export function createShareService(workspace: Workspace) {
@@ -116,7 +110,7 @@ export function createShareService(workspace: Workspace) {
 					buildArchiveDownloadPayload(fileIds, folderIds, archiveName),
 				)
 				.then((ticket) => {
-					triggerStreamingDownload(buildSharedArchiveDownloadUrl(token, ticket));
+					triggerStreamingDownload(buildSharedArchiveDownloadUrl(ticket));
 				}),
 
 		thumbnailPath: (token: string) => `/s/${token}/thumbnail`,

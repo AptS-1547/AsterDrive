@@ -351,6 +351,19 @@ describe("useFileBrowserBatchActions", () => {
 		expect(screen.queryByText("delete-selected")).not.toBeInTheDocument();
 	});
 
+	it("updates tag management actions when the permission flag changes", () => {
+		mockState.selectedFileIds = new Set([1]);
+		mockStore.selectedFileIds = mockState.selectedFileIds;
+
+		const { rerender } = render(<Harness allowTagManagement={false} />);
+
+		expect(screen.queryByText("manage-tags")).not.toBeInTheDocument();
+
+		rerender(<Harness allowTagManagement />);
+
+		expect(screen.getByText("manage-tags")).toBeInTheDocument();
+	});
+
 	it("keeps archive download for multiple selected items", async () => {
 		const onArchiveDownload = vi.fn().mockResolvedValue(undefined);
 		const onDownload = vi.fn();

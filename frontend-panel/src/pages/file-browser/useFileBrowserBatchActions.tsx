@@ -300,7 +300,7 @@ export function useFileBrowserBatchActions({
 						onChanged: refreshVisibleItems,
 					}
 				: null,
-		[count, fileIds, folderIds, refreshVisibleItems],
+		[allowTagManagement, count, fileIds, folderIds, refreshVisibleItems],
 	);
 
 	return {

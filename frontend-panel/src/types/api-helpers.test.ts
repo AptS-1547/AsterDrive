@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ApiErrorCode as GeneratedApiErrorCode } from "@/types/api";
 import { ApiErrorCode, isApiErrorCode } from "@/types/api-helpers";
 
-type RuntimeApiErrorCode =
-	(typeof ApiErrorCode)[keyof typeof ApiErrorCode];
+type RuntimeApiErrorCode = (typeof ApiErrorCode)[keyof typeof ApiErrorCode];
 type MissingGeneratedApiErrorCodes = Exclude<
 	GeneratedApiErrorCode,
 	RuntimeApiErrorCode
