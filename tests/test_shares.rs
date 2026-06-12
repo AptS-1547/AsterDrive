@@ -8,6 +8,8 @@ use actix_web::{
     cookie::SameSite,
     http::{StatusCode, header},
 };
+use aster_drive::api::api_error_code::ApiErrorCode;
+use aster_drive::config::operations::ARCHIVE_DOWNLOAD_SHARE_ENABLED_KEY;
 use aster_drive::config::operations::SHARE_STREAM_SESSION_TTL_SECS_KEY;
 use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::types::BackgroundTaskStatus;
@@ -902,6 +904,199 @@ async fn test_share_stream_session_uses_configured_ttl() {
 
     assert!(expires_at >= before + 3600);
     assert!(expires_at <= after + 3600);
+}
+
+#[actix_web::test]
+async fn test_folder_share_archive_download_ticket_and_boundaries() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Shared Root" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let root_id = body["data"]["id"].as_i64().unwrap();
+    let shared_file_id = upload_test_file_to_folder!(app, token, root_id);
+    let outside_file_id = upload_test_file_named!(app, token, "outside-share.txt");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "target": folder_target(root_id) }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/archive-download"))
+        .set_json(serde_json::json!({
+            "file_ids": [shared_file_id],
+            "folder_ids": [],
+            "archive_name": "shared.zip"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let ticket = body["data"]["token"].as_str().unwrap();
+    assert!(ticket.starts_with("st_"));
+    assert_eq!(
+        body["data"]["download_path"],
+        format!("/api/v1/s/{share_token}/archive-download/{ticket}")
+    );
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/archive-download"))
+        .set_json(serde_json::json!({
+            "file_ids": [outside_file_id],
+            "folder_ids": [],
+            "archive_name": "outside.zip"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    state.runtime_config.apply(common::system_config_model(
+        ARCHIVE_DOWNLOAD_SHARE_ENABLED_KEY,
+        "false",
+    ));
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/archive-download"))
+        .set_json(serde_json::json!({
+            "file_ids": [shared_file_id],
+            "folder_ids": [],
+            "archive_name": "disabled.zip"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::ArchiveDownloadShareDisabled.as_ref()
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/archive-download/{ticket}"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["code"],
+        ApiErrorCode::ArchiveDownloadShareDisabled.as_ref()
+    );
+}
+
+#[actix_web::test]
+async fn test_folder_share_archive_download_rejects_passwordless_and_cross_share_tickets() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Secret Root" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let secret_root_id = body["data"]["id"].as_i64().unwrap();
+    let secret_file_id = upload_test_file_to_folder!(app, token, secret_root_id);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Public Root" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let public_root_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target": folder_target(secret_root_id),
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let secret_share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "target": folder_target(public_root_id) }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let public_share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{secret_share_token}/archive-download"))
+        .set_json(serde_json::json!({
+            "file_ids": [secret_file_id],
+            "folder_ids": [],
+            "archive_name": "secret.zip"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{secret_share_token}/verify"))
+        .set_json(serde_json::json!({ "password": "secret123" }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let signed_cookie = common::extract_cookie(&resp, &format!("aster_share_{secret_share_token}"))
+        .expect("share password cookie should be set");
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{secret_share_token}/archive-download"))
+        .insert_header((
+            "Cookie",
+            format!("aster_share_{secret_share_token}={signed_cookie}"),
+        ))
+        .set_json(serde_json::json!({
+            "file_ids": [secret_file_id],
+            "folder_ids": [],
+            "archive_name": "secret.zip"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let secret_ticket = body["data"]["token"].as_str().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{public_share_token}/archive-download/{secret_ticket}"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
 }
 
 #[actix_web::test]

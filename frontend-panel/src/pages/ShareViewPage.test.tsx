@@ -21,6 +21,18 @@ interface CapturedPreviewFactories {
 }
 
 const mockState = vi.hoisted(() => ({
+	capturedFileBrowserContext: null as {
+		folders: Array<{ id: number; name: string }>;
+		files: Array<{ id: number; name: string; mime_type: string; size: number }>;
+		onFolderOpen: (id: number, name: string) => void;
+		onFileClick: (file: {
+			id: number;
+			name: string;
+			mime_type: string;
+			size: number;
+		}) => void;
+		onDownload: (fileId: number, fileName: string) => void;
+	} | null,
 	downloadFolderFileUrl: vi.fn(
 		(token: string, fileId: number) =>
 			`https://download/${token}/files/${fileId}`,
@@ -449,55 +461,83 @@ vi.mock("@/components/files/FileThumbnail", () => ({
 	),
 }));
 
-vi.mock("@/components/files/ReadOnlyFileCollection", () => ({
-	ReadOnlyFileCollection: ({
-		folders,
-		files,
-		onFileClick,
-		onFileDownload,
-		onFolderClick,
-		emptyTitle,
-		emptyDescription,
+vi.mock("@/components/files/FileBrowserContext", () => ({
+	FileBrowserProvider: ({
+		children,
+		value,
 	}: {
-		folders: Array<{ id: number; name: string }>;
-		files: Array<{ id: number; name: string; mime_type: string; size: number }>;
-		onFileClick: (file: {
-			id: number;
-			name: string;
-			mime_type: string;
-			size: number;
-		}) => void;
-		onFileDownload: (file: { id: number; name: string }) => void;
-		onFolderClick: (folder: { id: number; name: string }) => void;
-		emptyTitle: string;
-		emptyDescription: string;
-	}) => (
-		<div>
-			{folders.length === 0 && files.length === 0 ? (
-				<div>{`${emptyTitle}:${emptyDescription}`}</div>
-			) : null}
-			{folders.map((folder) => (
-				<button
-					key={folder.id}
-					type="button"
-					onClick={() => onFolderClick(folder)}
-				>
-					{`folder:${folder.name}`}
-				</button>
-			))}
-			{files.map((file) => (
-				<div key={file.id}>
-					<span>{file.name}</span>
-					<button type="button" onClick={() => onFileClick(file)}>
-						{`preview:${file.name}`}
+		children: React.ReactNode;
+		value: typeof mockState.capturedFileBrowserContext;
+	}) => {
+		mockState.capturedFileBrowserContext = value;
+		return <div>{children}</div>;
+	},
+}));
+
+vi.mock("@/components/files/FileGrid", () => ({
+	FileGrid: () => {
+		const context = mockState.capturedFileBrowserContext;
+		return (
+			<div data-testid="file-grid">
+				{context?.folders.map((folder) => (
+					<button
+						key={folder.id}
+						type="button"
+						onClick={() => context.onFolderOpen(folder.id, folder.name)}
+					>
+						{`folder:${folder.name}`}
 					</button>
-					<button type="button" onClick={() => onFileDownload(file)}>
-						{`download:${file.name}`}
+				))}
+				{context?.files.map((file) => (
+					<div key={file.id}>
+						<span>{file.name}</span>
+						<button type="button" onClick={() => context.onFileClick(file)}>
+							{`preview:${file.name}`}
+						</button>
+						<button
+							type="button"
+							onClick={() => context.onDownload(file.id, file.name)}
+						>
+							{`download:${file.name}`}
+						</button>
+					</div>
+				))}
+			</div>
+		);
+	},
+}));
+
+vi.mock("@/components/files/FileTable", () => ({
+	FileTable: () => {
+		const context = mockState.capturedFileBrowserContext;
+		return (
+			<div data-testid="file-table">
+				{context?.folders.map((folder) => (
+					<button
+						key={folder.id}
+						type="button"
+						onClick={() => context.onFolderOpen(folder.id, folder.name)}
+					>
+						{`folder:${folder.name}`}
 					</button>
-				</div>
-			))}
-		</div>
-	),
+				))}
+				{context?.files.map((file) => (
+					<div key={file.id}>
+						<span>{file.name}</span>
+						<button type="button" onClick={() => context.onFileClick(file)}>
+							{`preview:${file.name}`}
+						</button>
+						<button
+							type="button"
+							onClick={() => context.onDownload(file.id, file.name)}
+						>
+							{`download:${file.name}`}
+						</button>
+					</div>
+				))}
+			</div>
+		);
+	},
 }));
 
 vi.mock("@/components/layout/ShareTopBar", () => ({
@@ -655,6 +695,7 @@ vi.mock("@/services/shareService", () => ({
 
 describe("ShareViewPage", () => {
 	beforeEach(() => {
+		mockState.capturedFileBrowserContext = null;
 		mockState.downloadFolderFileUrl.mockClear();
 		mockState.previewFactories = null;
 		mockState.createFolderFilePreviewLink.mockClear();
