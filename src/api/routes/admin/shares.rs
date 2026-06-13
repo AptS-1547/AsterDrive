@@ -6,7 +6,7 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, SharedRuntimeState};
 use crate::services::{audit_service, auth_service::Claims, share_service};
 use actix_web::{HttpRequest, HttpResponse, web};
 
@@ -59,16 +59,28 @@ pub async fn admin_delete_share(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
+    let share = crate::db::repository::share_repo::find_by_id(state.writer_db(), *path).await?;
+    let target = share_service::share_target_for_share(&share)?;
     share_service::admin_delete_share(state.get_ref(), *path).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    audit_service::log_with_details(
         state.get_ref(),
         &ctx,
         audit_service::AuditAction::AdminDeleteShare,
         crate::services::audit_service::AuditEntityType::Share,
         Some(*path),
-        None,
-        None,
+        Some(&share.token),
+        || {
+            audit_service::details(audit_service::ShareDeleteAuditDetails {
+                token: &share.token,
+                target_type: target.r#type,
+                target_id: target.id,
+                team_id: share.team_id,
+                has_password: share.password.is_some(),
+                expires_at: share.expires_at,
+                max_downloads: share.max_downloads,
+            })
+        },
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))

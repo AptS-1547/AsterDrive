@@ -228,7 +228,7 @@ pub(crate) async fn audit_location_details_for_model(
     }
 }
 
-async fn audit_transfer_details_for_models(
+pub(crate) async fn audit_transfer_details_for_models(
     state: &impl SharedRuntimeState,
     scope: WorkspaceStorageScope,
     source_folder: &folder::Model,

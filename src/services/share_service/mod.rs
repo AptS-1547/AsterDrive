@@ -55,6 +55,8 @@ pub(crate) use management::{
     batch_delete_shares_in_scope, create_share_in_scope, delete_share_in_scope,
     list_shares_paginated_in_scope, update_share_in_scope,
 };
+pub(crate) use models::share_target_for_share;
+use shared::load_share_in_scope;
 pub(crate) use shared::load_valid_folder_share_root;
 
 // audit 包装放在入口层，而不是塞进 management 核心逻辑里。
@@ -120,15 +122,27 @@ pub(crate) async fn delete_share_in_scope_with_audit(
     share_id: i64,
     audit_ctx: &AuditContext,
 ) -> Result<()> {
+    let share = load_share_in_scope(state, scope, share_id).await?;
+    let target = models::share_target_for_share(&share)?;
     delete_share_in_scope(state, scope, share_id).await?;
-    audit_service::log(
+    audit_service::log_with_details(
         state,
         audit_ctx,
         audit_service::AuditAction::ShareDelete,
         audit_service::AuditEntityType::Share,
         Some(share_id),
-        None,
-        None,
+        Some(&share.token),
+        || {
+            audit_service::details(audit_service::ShareDeleteAuditDetails {
+                token: &share.token,
+                target_type: target.r#type,
+                target_id: target.id,
+                team_id: share.team_id,
+                has_password: share.password.is_some(),
+                expires_at: share.expires_at,
+                max_downloads: share.max_downloads,
+            })
+        },
     )
     .await;
     Ok(())

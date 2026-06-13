@@ -327,6 +327,17 @@ fn detail_message(
             );
             Some(message("mfa_challenge_failed", params))
         }
+        AuditAction::UserMfaEnable
+        | AuditAction::UserMfaDisable
+        | AuditAction::UserMfaRecoveryCodesRegenerate
+        | AuditAction::AdminResetUserMfa => {
+            copy_params(
+                details,
+                &mut params,
+                &["method", "factor_id", "factor_name", "recovery_code_count"],
+            );
+            Some(message("mfa_management_changed", params))
+        }
         AuditAction::UserPasskeyRegister | AuditAction::UserPasskeyDelete => {
             copy_params(
                 details,
@@ -450,6 +461,10 @@ fn detail_message(
                 ],
             );
             Some(message("external_auth_login_completed", params))
+        }
+        AuditAction::UserExternalAuthUnlink => {
+            copy_params(details, &mut params, &["provider_key", "issuer", "subject"]);
+            Some(message("external_auth_unlinked", params))
         }
         AuditAction::WebdavAccountToggle => {
             copy_param(details, &mut params, "is_active");
@@ -579,6 +594,22 @@ fn detail_message(
             copy_param(details, &mut params, "failed");
             Some(message("share_batch_delete_finished", params))
         }
+        AuditAction::ShareDelete | AuditAction::AdminDeleteShare => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "token",
+                    "target_type",
+                    "target_id",
+                    "team_id",
+                    "has_password",
+                    "expires_at",
+                    "max_downloads",
+                ],
+            );
+            Some(message("share_deleted", params))
+        }
         AuditAction::ShareUpdate => {
             copy_param(details, &mut params, "has_password");
             copy_param(details, &mut params, "expires_at");
@@ -656,7 +687,75 @@ fn detail_message(
             copy_param(details, &mut params, "target_folder_id");
             Some(message("offline_download_created", params))
         }
-        _ => None,
+        AuditAction::FollowerBindingSync => {
+            copy_params(details, &mut params, &["binding_id", "name", "is_enabled"]);
+            Some(message("follower_binding_synced", params))
+        }
+        AuditAction::FollowerObjectRead
+        | AuditAction::FollowerObjectWrite
+        | AuditAction::FollowerObjectDelete
+        | AuditAction::FollowerObjectCompose => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "binding_id",
+                    "object_key",
+                    "storage_path",
+                    "size",
+                    "bytes_written",
+                    "partial",
+                    "parts",
+                ],
+            );
+            Some(message("follower_object_changed", params))
+        }
+        AuditAction::FollowerIngressProfileCreate
+        | AuditAction::FollowerIngressProfileUpdate
+        | AuditAction::FollowerIngressProfileDelete => {
+            copy_params(
+                details,
+                &mut params,
+                &["binding_id", "profile_key", "driver_type", "is_default"],
+            );
+            Some(message("follower_ingress_profile_changed", params))
+        }
+        AuditAction::AdminRevokeUserSessions
+        | AuditAction::AdminResetUserPassword
+        | AuditAction::AdminDeleteConfig
+        | AuditAction::FileCreate
+        | AuditAction::FileEdit
+        | AuditAction::FileUpload
+        | AuditAction::FileWopiOpen
+        | AuditAction::FileLock
+        | AuditAction::FileUnlock
+        | AuditAction::FolderCreate
+        | AuditAction::FolderLock
+        | AuditAction::FolderUnlock
+        | AuditAction::ShareCreate
+        | AuditAction::SystemSetup
+        | AuditAction::ServerStart
+        | AuditAction::ServerShutdown
+        | AuditAction::RemoteEnrollmentRedeem
+        | AuditAction::RemoteEnrollmentAck
+        | AuditAction::UserUpdatePreferences
+        | AuditAction::UserUploadAvatar
+        | AuditAction::UserUpdateWopiInfo
+        | AuditAction::UserChangePassword
+        | AuditAction::UserConfirmPasswordReset
+        | AuditAction::UserConfirmEmailChange
+        | AuditAction::UserConfirmRegistration
+        | AuditAction::UserLogout
+        | AuditAction::UserMfaEmailCodeSend
+        | AuditAction::UserExternalAuthLink
+        | AuditAction::UserRefreshTokenReuseDetected
+        | AuditAction::UserRequestEmailChange
+        | AuditAction::UserRequestPasswordReset
+        | AuditAction::UserRegister
+        | AuditAction::UserResendEmailChange
+        | AuditAction::UserResendRegistration
+        | AuditAction::AdminCreateInvitation
+        | AuditAction::AdminRevokeInvitation => None,
     }
 }
 
@@ -994,6 +1093,95 @@ mod tests {
         assert_eq!(
             detail.params.get("failure_reason"),
             Some(&Value::String("auth.mfa_code_invalid".to_string()))
+        );
+    }
+
+    #[test]
+    fn presentation_includes_mfa_management_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::UserMfaEnable,
+            AuditEntityType::MfaFactor,
+            Some(9),
+            Some("Authenticator app"),
+            Some(
+                r#"{"method":"totp","factor_id":9,"factor_name":"Authenticator app","recovery_code_count":10}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "mfa_management_changed");
+        assert_eq!(
+            detail.params.get("method"),
+            Some(&Value::String("totp".to_string()))
+        );
+        assert_eq!(detail.params.get("recovery_code_count"), Some(&10.into()));
+    }
+
+    #[test]
+    fn presentation_includes_external_auth_unlink_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::UserExternalAuthUnlink,
+            AuditEntityType::ExternalAuthIdentity,
+            Some(9),
+            Some("oidc"),
+            Some(r#"{"provider_key":"oidc","issuer":"https://idp.example.com","subject":"sub-1"}"#),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "external_auth_unlinked");
+        assert_eq!(
+            detail.params.get("provider_key"),
+            Some(&Value::String("oidc".to_string()))
+        );
+        assert_eq!(
+            detail.params.get("subject"),
+            Some(&Value::String("sub-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn presentation_includes_share_delete_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::ShareDelete,
+            AuditEntityType::Share,
+            Some(12),
+            Some("shr_test"),
+            Some(
+                r#"{"token":"shr_test","target_type":"file","target_id":44,"team_id":3,"has_password":true,"max_downloads":5}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "share_deleted");
+        assert_eq!(
+            detail.params.get("target_type"),
+            Some(&Value::String("file".to_string()))
+        );
+        assert_eq!(detail.params.get("target_id"), Some(&44.into()));
+    }
+
+    #[test]
+    fn presentation_includes_follower_object_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::FollowerObjectWrite,
+            AuditEntityType::File,
+            None,
+            Some("ab/cd/object"),
+            Some(
+                r#"{"binding_id":2,"object_key":"ab/cd/object","storage_path":"ab/cd/object","size":128,"bytes_written":128,"partial":false}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "follower_object_changed");
+        assert_eq!(detail.params.get("binding_id"), Some(&2.into()));
+        assert_eq!(
+            detail.params.get("object_key"),
+            Some(&Value::String("ab/cd/object".to_string()))
         );
     }
 

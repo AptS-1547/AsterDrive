@@ -110,14 +110,17 @@ pub async fn get_file_contents(
     )
     .await?;
     let audit_ctx = request_info.to_context(resolved.payload.actor_user_id);
-    audit_service::log(
+    let scope = scope_from_payload(&resolved.payload);
+    let details =
+        file_service::audit_location_details_for_model(state, scope, &resolved.file).await;
+    audit_service::log_with_details(
         state,
         &audit_ctx,
         audit_service::AuditAction::FileDownload,
         crate::services::audit_service::AuditEntityType::File,
         Some(resolved.file.id),
         Some(&resolved.file.name),
-        None,
+        || details.clone(),
     )
     .await;
     Ok(WopiGetFileResult {
@@ -158,14 +161,16 @@ pub async fn put_file_contents(
     )
     .await?;
     let audit_ctx = audit_info.to_context(resolved.payload.actor_user_id);
-    audit_service::log(
+    let scope = scope_from_payload(&resolved.payload);
+    let details = file_service::audit_location_details_for_model(state, scope, &updated).await;
+    audit_service::log_with_details(
         state,
         &audit_ctx,
         audit_service::AuditAction::FileEdit,
         crate::services::audit_service::AuditEntityType::File,
         Some(updated.id),
         Some(&updated.name),
-        None,
+        || details.clone(),
     )
     .await;
 
@@ -317,14 +322,15 @@ pub async fn put_relative_file(
     };
 
     let audit_ctx = audit_info.to_context(resolved.payload.actor_user_id);
-    audit_service::log(
+    let details = file_service::audit_location_details_for_model(state, scope, &target_file).await;
+    audit_service::log_with_details(
         state,
         &audit_ctx,
         audit_action,
         crate::services::audit_service::AuditEntityType::File,
         Some(target_file.id),
         Some(&target_file.name),
-        None,
+        || details.clone(),
     )
     .await;
     let response = build_put_relative_response(
@@ -369,6 +375,7 @@ pub async fn rename_file(
     )
     .await?;
 
+    let previous_file = resolved.file.clone();
     let updated = match file_service::update_in_scope(
         state,
         scope,
@@ -402,14 +409,17 @@ pub async fn rename_file(
     };
 
     let audit_ctx = request_info.to_context(resolved.payload.actor_user_id);
-    audit_service::log(
+    let details =
+        file_service::audit_transfer_details_for_models(state, scope, &previous_file, &updated)
+            .await;
+    audit_service::log_with_details(
         state,
         &audit_ctx,
         audit_service::AuditAction::FileRename,
         crate::services::audit_service::AuditEntityType::File,
         Some(updated.id),
         Some(&updated.name),
-        None,
+        || details.clone(),
     )
     .await;
     Ok(WopiRenameFileResult::Success(WopiRenameFileResponse {

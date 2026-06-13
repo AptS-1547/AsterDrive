@@ -128,14 +128,16 @@ impl AsterDavFs {
                 .await
                 .map_err(|_| FsError::NotFound)?,
         };
-        audit_service::log(
+        let details =
+            file_service::audit_location_details_for_model(&self.state, self.scope, &file).await;
+        audit_service::log_with_details(
             &self.state,
             &self.audit_ctx,
             audit_service::AuditAction::FileDownload,
             crate::services::audit_service::AuditEntityType::File,
             Some(file.id),
             Some(&file.name),
-            Some(serde_json::json!({ "source": "webdav" })),
+            || details.clone(),
         )
         .await;
         Ok(stream)
@@ -193,18 +195,34 @@ impl AsterDavFs {
             created.id,
         )
         .await?;
-        audit_service::log(
+        let details = folder_service::audit_transfer_details_for_models(
+            &state,
+            self.scope(),
+            &src_folder,
+            &crate::entities::folder::Model {
+                id: created.id,
+                name: created.name.clone(),
+                parent_id: created.parent_id,
+                team_id: created.team_id,
+                owner_user_id: created.owner_user_id,
+                created_by_user_id: created.created_by_user_id,
+                created_by_username: created.created_by_username.clone(),
+                policy_id: created.policy_id,
+                created_at: created.created_at,
+                updated_at: created.updated_at,
+                deleted_at: created.deleted_at,
+                is_locked: created.is_locked,
+            },
+        )
+        .await;
+        audit_service::log_with_details(
             &state,
             &self.audit_ctx,
             audit_service::AuditAction::FolderCopy,
             crate::services::audit_service::AuditEntityType::Folder,
             Some(created.id),
             Some(&created.name),
-            Some(serde_json::json!({
-                "source": "webdav",
-                "depth": "0",
-                "source_folder_id": src_folder.id,
-            })),
+            || details.clone(),
         )
         .await;
 
@@ -387,17 +405,19 @@ impl DavFileSystem for AsterDavFs {
             };
 
             let state = self.app_state();
+            let details =
+                folder_service::audit_location_details_for_model(&state, self.scope, &folder).await;
             webdav_service::recursive_soft_delete_in_scope(&state, self.scope, folder.id)
                 .await
                 .map_err(to_fs_error)?;
-            audit_service::log(
+            audit_service::log_with_details(
                 &state,
                 &self.audit_ctx,
                 audit_service::AuditAction::FolderDelete,
                 crate::services::audit_service::AuditEntityType::Folder,
                 Some(folder.id),
                 Some(&folder.name),
-                Some(serde_json::json!({ "source": "webdav" })),
+                || details.clone(),
             )
             .await;
 
@@ -551,14 +571,21 @@ impl DavFileSystem for AsterDavFs {
                         )
                         .with_storage_delta(copied.size),
                     );
-                    audit_service::log(
+                    let details = file_service::audit_transfer_details_for_models(
+                        &state,
+                        self.scope(),
+                        &f,
+                        &copied,
+                    )
+                    .await;
+                    audit_service::log_with_details(
                         &state,
                         &self.audit_ctx,
                         audit_service::AuditAction::FileCopy,
                         crate::services::audit_service::AuditEntityType::File,
                         Some(copied.id),
                         Some(&copied.name),
-                        Some(serde_json::json!({ "source": "webdav" })),
+                        || details.clone(),
                     )
                     .await;
                 }
@@ -574,14 +601,21 @@ impl DavFileSystem for AsterDavFs {
                     .map_err(to_fs_error)?;
                     copy_visible_properties_for_copied_tree(&state, self.scope(), f.id, copied.id)
                         .await?;
-                    audit_service::log(
+                    let details = folder_service::audit_transfer_details_for_models(
+                        &state,
+                        self.scope(),
+                        &f,
+                        &copied,
+                    )
+                    .await;
+                    audit_service::log_with_details(
                         &state,
                         &self.audit_ctx,
                         audit_service::AuditAction::FolderCopy,
                         crate::services::audit_service::AuditEntityType::Folder,
                         Some(copied.id),
                         Some(&copied.name),
-                        Some(serde_json::json!({ "source": "webdav" })),
+                        || details.clone(),
                     )
                     .await;
                 }
@@ -989,6 +1023,7 @@ async fn delete_existing_destination_for_overwrite(
     audit_ctx: &AuditContext,
 ) -> Result<(), FsError> {
     if let Some(existing) = find_file_by_name_in_scope(state, scope, parent_id, name).await? {
+        let details = file_service::audit_location_details_for_model(state, scope, &existing).await;
         file_repo::soft_delete(state.writer_db(), existing.id)
             .await
             .map_err(to_fs_error)?;
@@ -1002,30 +1037,32 @@ async fn delete_existing_destination_for_overwrite(
                 vec![existing.folder_id],
             ),
         );
-        audit_service::log(
+        audit_service::log_with_details(
             state,
             audit_ctx,
             audit_service::AuditAction::FileDelete,
             crate::services::audit_service::AuditEntityType::File,
             Some(existing.id),
             Some(&existing.name),
-            Some(serde_json::json!({ "source": "webdav", "overwrite": true })),
+            || details.clone(),
         )
         .await;
     }
 
     if let Some(existing) = find_folder_by_name_in_scope(state, scope, parent_id, name).await? {
+        let details =
+            folder_service::audit_location_details_for_model(state, scope, &existing).await;
         webdav_service::recursive_soft_delete_in_scope(state, scope, existing.id)
             .await
             .map_err(to_fs_error)?;
-        audit_service::log(
+        audit_service::log_with_details(
             state,
             audit_ctx,
             audit_service::AuditAction::FolderDelete,
             crate::services::audit_service::AuditEntityType::Folder,
             Some(existing.id),
             Some(&existing.name),
-            Some(serde_json::json!({ "source": "webdav", "overwrite": true })),
+            || details.clone(),
         )
         .await;
     }

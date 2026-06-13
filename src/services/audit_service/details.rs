@@ -2,8 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::types::{
-    BackgroundTaskKind, BackgroundTaskStatus, EntityType, MfaMethod, SystemConfigVisibility,
-    TeamMemberRole, UserRole, UserStatus,
+    BackgroundTaskKind, BackgroundTaskStatus, EntityType, MfaMethod, MfaPersistentFactorMethod,
+    SystemConfigVisibility, TeamMemberRole, UserRole, UserStatus,
 };
 
 #[derive(Serialize)]
@@ -269,6 +269,19 @@ pub struct ShareUpdateDetails {
 }
 
 #[derive(Serialize)]
+pub struct ShareDeleteAuditDetails<'a> {
+    pub token: &'a str,
+    pub target_type: EntityType,
+    pub target_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<i64>,
+    pub has_password: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
+    pub max_downloads: i64,
+}
+
+#[derive(Serialize)]
 pub struct AuthSessionAuditDetails<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<&'a str>,
@@ -286,6 +299,17 @@ pub struct UserProfileAuditDetails<'a> {
 #[derive(Serialize)]
 pub struct UserAvatarSourceAuditDetails<'a> {
     pub source: &'a str,
+}
+
+#[derive(Serialize)]
+pub struct UserMfaManageAuditDetails<'a> {
+    pub method: MfaPersistentFactorMethod,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub factor_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub factor_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_code_count: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -352,6 +376,13 @@ pub struct FollowerIngressProfileAuditDetails<'a> {
     pub profile_key: &'a str,
     pub driver_type: &'a str,
     pub is_default: bool,
+}
+
+#[derive(Serialize)]
+pub struct ExternalAuthUnlinkAuditDetails<'a> {
+    pub provider_key: &'a str,
+    pub issuer: &'a str,
+    pub subject: &'a str,
 }
 
 #[derive(Serialize)]

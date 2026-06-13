@@ -476,20 +476,32 @@ pub async fn delete_link(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let id = path.into_inner();
+    let link = external_auth_service::list_links(state.get_ref(), claims.user_id)
+        .await?
+        .into_iter()
+        .find(|link| link.id == id);
     if !external_auth_service::delete_link(state.get_ref(), claims.user_id, id).await? {
         return Err(AsterError::record_not_found(format!(
             "external auth identity link #{id}"
         )));
     }
     let ctx = AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    audit_service::log_with_details(
         state.get_ref(),
         &ctx,
         audit_service::AuditAction::UserExternalAuthUnlink,
         crate::services::audit_service::AuditEntityType::ExternalAuthIdentity,
         Some(id),
-        None,
-        None,
+        link.as_ref().map(|link| link.provider_key.as_str()),
+        || {
+            link.as_ref().and_then(|link| {
+                audit_service::details(audit_service::ExternalAuthUnlinkAuditDetails {
+                    provider_key: &link.provider_key,
+                    issuer: &link.issuer,
+                    subject: &link.subject,
+                })
+            })
+        },
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
