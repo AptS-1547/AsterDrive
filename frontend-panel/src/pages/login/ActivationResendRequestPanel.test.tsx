@@ -1,4 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ActivationResendRequestPanel } from "@/pages/login/ActivationResendRequestPanel";
 
@@ -51,36 +53,47 @@ const emailSchema = {
 };
 
 describe("ActivationResendRequestPanel", () => {
-	it("validates email edits and submits/back-navigates", () => {
+	it("validates email edits and submits/back-navigates", async () => {
 		const onBack = vi.fn();
 		const onEmailChange = vi.fn();
 		const onSubmit = vi.fn();
+		const user = userEvent.setup();
 
-		render(
-			<ActivationResendRequestPanel
-				email="old@example.com"
-				emailError=""
-				emailSchema={emailSchema}
-				requesting={false}
-				t={(key) => key}
-				onBack={onBack}
-				onEmailChange={onEmailChange}
-				onSubmit={onSubmit}
-			/>,
-		);
+		function TestPanel() {
+			const [email, setEmail] = useState("old@example.com");
+			const [emailError, setEmailError] = useState("");
+
+			return (
+				<ActivationResendRequestPanel
+					email={email}
+					emailError={emailError}
+					emailSchema={emailSchema}
+					requesting={false}
+					t={(key) => key}
+					onBack={onBack}
+					onEmailChange={(value, error) => {
+						onEmailChange(value, error);
+						setEmail(value);
+						setEmailError(error);
+					}}
+					onSubmit={onSubmit}
+				/>
+			);
+		}
+
+		render(<TestPanel />);
 
 		const emailInput = screen.getByLabelText("core:email");
-		fireEvent.change(emailInput, { target: { value: "invalid" } });
-		fireEvent.change(emailInput, { target: { value: "user@example.com" } });
-		fireEvent.click(screen.getByRole("button", { name: /resend_activation/ }));
-		fireEvent.click(screen.getByRole("button", { name: /back_to_sign_in/ }));
+		await user.clear(emailInput);
+		await user.type(emailInput, "invalid");
+		expect(onEmailChange).toHaveBeenLastCalledWith("invalid", "invalid-email");
 
-		expect(onEmailChange).toHaveBeenNthCalledWith(
-			1,
-			"invalid",
-			"invalid-email",
-		);
-		expect(onEmailChange).toHaveBeenNthCalledWith(2, "user@example.com", "");
+		await user.clear(emailInput);
+		await user.type(emailInput, "user@example.com");
+		await user.click(screen.getByRole("button", { name: /resend_activation/ }));
+		await user.click(screen.getByRole("button", { name: /back_to_sign_in/ }));
+
+		expect(onEmailChange).toHaveBeenLastCalledWith("user@example.com", "");
 		expect(onSubmit).toHaveBeenCalledTimes(1);
 		expect(onBack).toHaveBeenCalledTimes(1);
 	});

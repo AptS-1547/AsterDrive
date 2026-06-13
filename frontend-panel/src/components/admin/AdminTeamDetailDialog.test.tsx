@@ -301,16 +301,20 @@ describe("AdminTeamDetailDialog", () => {
 
 		fireEvent.change(quotaInput, { target: { value: "010" } });
 		await waitFor(() => {
+			expect(quotaInput).toHaveValue(10);
 			expect(
 				screen.getByRole("button", { name: "save_changes" }),
 			).toBeDisabled();
 		});
 
 		fireEvent.change(quotaInput, { target: { value: "4" } });
-		const saveButton = screen.getByRole("button", { name: "save_changes" });
 		await waitFor(() => {
-			expect(saveButton).not.toBeDisabled();
+			expect(quotaInput).toHaveValue(4);
+			expect(
+				screen.getByRole("button", { name: "save_changes" }),
+			).not.toBeDisabled();
 		});
+		const saveButton = screen.getByRole("button", { name: "save_changes" });
 		fireEvent.click(saveButton);
 
 		await waitFor(() => {

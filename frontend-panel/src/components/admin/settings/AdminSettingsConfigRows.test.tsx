@@ -369,6 +369,10 @@ describe("AdminSettingsConfigRows", () => {
 		expect(updater({})).toEqual({
 			auth_password_reset_cooldown_secs: "seconds",
 		});
+		expect(updater({ other_config: "hours" })).toEqual({
+			auth_password_reset_cooldown_secs: "seconds",
+			other_config: "hours",
+		});
 	});
 
 	it("edits and clears string array rows without keeping a blank-only draft", () => {
