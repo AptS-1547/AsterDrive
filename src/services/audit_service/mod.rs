@@ -28,8 +28,9 @@ pub use details::{
     StoragePolicyAuditDetails, TagAssignmentAuditDetails, TagAuditDetails, TaskRetryAuditDetails,
     TeamAuditDetails, TeamCleanupAuditDetails, TeamMemberAddAuditDetails,
     TeamMemberRemoveAuditDetails, TeamMemberUpdateAuditDetails, TrashPurgeAllAuditDetails,
-    UploadCancelAuditDetails, UserAvatarSourceAuditDetails, UserLoginAuditDetails,
-    UserMfaManageAuditDetails, UserProfileAuditDetails, UserWopiInfoAuditDetails, details,
+    UploadCancelAuditDetails, UserAvatarSourceAuditDetails, UserAvatarUploadAuditDetails,
+    UserLoginAuditDetails, UserMfaManageAuditDetails, UserPreferencesAuditDetails,
+    UserProfileAuditDetails, UserWopiInfoAuditDetails, details,
 };
 pub use filters::{AuditLogFilterQuery, AuditLogFilters};
 pub use manager::{

@@ -289,6 +289,22 @@ fn detail_message(
             copy_param(details, &mut params, "display_name");
             Some(message("user_profile_updated", params))
         }
+        AuditAction::UserUpdatePreferences => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "changed_fields",
+                    "custom_upsert_count",
+                    "custom_remove_count",
+                ],
+            );
+            Some(message("user_preferences_updated", params))
+        }
+        AuditAction::UserUploadAvatar => {
+            copy_params(details, &mut params, &["source", "version"]);
+            Some(message("user_avatar_uploaded", params))
+        }
         AuditAction::UserSetAvatarSource => {
             copy_param(details, &mut params, "source");
             Some(message("user_avatar_source_changed", params))
@@ -456,7 +472,7 @@ fn detail_message(
             );
             Some(message("external_auth_provider_tested", params))
         }
-        AuditAction::UserExternalAuthLogin => {
+        AuditAction::UserExternalAuthLogin | AuditAction::UserExternalAuthLink => {
             copy_params(
                 details,
                 &mut params,
@@ -468,7 +484,11 @@ fn detail_message(
                     "auto_provisioned",
                 ],
             );
-            Some(message("external_auth_login_completed", params))
+            let code = match action {
+                AuditAction::UserExternalAuthLink => "external_auth_linked",
+                _ => "external_auth_login_completed",
+            };
+            Some(message(code, params))
         }
         AuditAction::UserExternalAuthUnlink => {
             copy_params(details, &mut params, &["provider_key", "issuer", "subject"]);
@@ -780,14 +800,11 @@ fn detail_message(
         | AuditAction::SystemSetup
         | AuditAction::ServerStart
         | AuditAction::ServerShutdown
-        | AuditAction::UserUpdatePreferences
-        | AuditAction::UserUploadAvatar
         | AuditAction::UserChangePassword
         | AuditAction::UserConfirmPasswordReset
         | AuditAction::UserConfirmEmailChange
         | AuditAction::UserConfirmRegistration
         | AuditAction::UserLogout
-        | AuditAction::UserExternalAuthLink
         | AuditAction::UserRefreshTokenReuseDetected
         | AuditAction::UserRequestEmailChange
         | AuditAction::UserRequestPasswordReset
@@ -1028,6 +1045,66 @@ mod tests {
             Some(&Value::String("oidc".to_string()))
         );
         assert_eq!(detail.params.get("linked"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn presentation_includes_external_auth_link_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::UserExternalAuthLink,
+            AuditEntityType::ExternalAuthIdentity,
+            None,
+            Some("oidc"),
+            Some(
+                r#"{"provider_key":"oidc","issuer":"https://idp.example.com","subject":"sub-1","linked":true,"auto_provisioned":false}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "external_auth_linked");
+        assert_eq!(
+            detail.params.get("subject"),
+            Some(&Value::String("sub-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn presentation_includes_preferences_update_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::UserUpdatePreferences,
+            AuditEntityType::User,
+            Some(9),
+            Some("alice"),
+            Some(
+                r#"{"changed_fields":["theme_mode","language"],"custom_upsert_count":2,"custom_remove_count":1}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "user_preferences_updated");
+        assert_eq!(detail.params.get("custom_upsert_count"), Some(&2.into()));
+        assert_eq!(detail.params.get("custom_remove_count"), Some(&1.into()));
+    }
+
+    #[test]
+    fn presentation_includes_avatar_upload_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::UserUploadAvatar,
+            AuditEntityType::User,
+            Some(9),
+            Some("alice"),
+            Some(r#"{"source":"upload","version":3}"#),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "user_avatar_uploaded");
+        assert_eq!(
+            detail.params.get("source"),
+            Some(&Value::String("upload".to_string()))
+        );
+        assert_eq!(detail.params.get("version"), Some(&3.into()));
     }
 
     #[test]

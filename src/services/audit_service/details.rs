@@ -310,6 +310,19 @@ pub struct UserProfileAuditDetails<'a> {
 }
 
 #[derive(Serialize)]
+pub struct UserPreferencesAuditDetails<'a> {
+    pub changed_fields: Vec<&'a str>,
+    pub custom_upsert_count: usize,
+    pub custom_remove_count: usize,
+}
+
+#[derive(Serialize)]
+pub struct UserAvatarUploadAuditDetails {
+    pub source: crate::types::AvatarSource,
+    pub version: i32,
+}
+
+#[derive(Serialize)]
 pub struct UserAvatarSourceAuditDetails<'a> {
     pub source: &'a str,
 }

@@ -295,6 +295,7 @@ async fn external_auth_login_json_response(
         },
     )
     .await;
+    log_external_auth_link_if_needed(state, &audit_ctx, &result).await;
 
     let completion = complete_external_primary_login(state, audit_info, &result).await?;
     super::session::login_completion_response(state, completion)
@@ -325,10 +326,40 @@ async fn external_auth_login_redirect_response(
         },
     )
     .await;
+    log_external_auth_link_if_needed(state, &audit_ctx, &result).await;
 
     let return_path = result.primary_login.return_path.clone();
     let completion = complete_external_primary_login(state, audit_info, &result).await?;
     external_auth_redirect_completion_response(state, completion, &return_path)
+}
+
+async fn log_external_auth_link_if_needed(
+    state: &PrimaryAppState,
+    audit_ctx: &AuditContext,
+    result: &ExternalAuthLoginRedirectResult,
+) {
+    if !result.primary_login.linked {
+        return;
+    }
+
+    audit_service::log_with_details(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::UserExternalAuthLink,
+        crate::services::audit_service::AuditEntityType::ExternalAuthIdentity,
+        None,
+        Some(&result.primary_login.provider_key),
+        || {
+            audit_service::details(ExternalAuthLoginAuditDetails {
+                provider_key: &result.primary_login.provider_key,
+                issuer: &result.primary_login.issuer,
+                subject: &result.primary_login.subject,
+                linked: result.primary_login.linked,
+                auto_provisioned: result.primary_login.auto_provisioned,
+            })
+        },
+    )
+    .await;
 }
 
 struct ExternalAuthLoginRedirectResult {
