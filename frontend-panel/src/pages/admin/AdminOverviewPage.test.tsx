@@ -64,6 +64,8 @@ vi.mock("react-i18next", () => ({
 			const translations: Record<string, string> = {
 				"admin:audit_action_share_create": "Created share",
 				"admin:audit_entity_type_file": "File",
+				"admin:audit_presentation_share_updated":
+					"Password {{has_password}}, max downloads {{max_downloads}}",
 				"admin:overview_system_health_component_cache": "Cache",
 				"admin:overview_system_health_component_remote_nodes": "Remote nodes",
 				"admin:overview_system_health_issue_component": `${options?.component}: ${options?.status}`,
@@ -73,7 +75,10 @@ vi.mock("react-i18next", () => ({
 			};
 			const translated = translations[`${namespace}:${key}`];
 			if (translated) {
-				return translated;
+				return translated.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, param) => {
+					const value = options?.[param];
+					return value === undefined || value === null ? match : String(value);
+				});
 			}
 			if (typeof options?.defaultValue === "string") {
 				return options.defaultValue;
@@ -349,6 +354,17 @@ function createOverview() {
 				entity_type: "file",
 				id: 1,
 				ip_address: "127.0.0.1",
+				presentation: {
+					detail: {
+						code: "share_updated",
+						params: { has_password: true, max_downloads: 5 },
+					},
+					summary: { code: "share_create" },
+					target: {
+						code: "file",
+						params: { name: "report.pdf" },
+					},
+				},
 				user_agent: "Vitest",
 				user: createUserSummary(),
 			},
@@ -455,7 +471,10 @@ describe("AdminOverviewPage", () => {
 		expect(screen.getByText("bytes:4096")).toBeInTheDocument();
 		expect(screen.getByText("bytes:2048")).toBeInTheDocument();
 		expect(screen.getByText("Created share")).toBeInTheDocument();
-		expect(screen.getByText("report.pdf")).toBeInTheDocument();
+		expect(screen.getByText("report.pdf · File")).toBeInTheDocument();
+		expect(
+			screen.getByText("Password true, max downloads 5"),
+		).toBeInTheDocument();
 		expect(screen.getAllByText("File").length).toBeGreaterThan(0);
 		expect(screen.getByText("Trash cleanup")).toBeInTheDocument();
 		expect(

@@ -1,10 +1,17 @@
 import { useReducer } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { AdminStorageQuotaInput } from "@/components/admin/AdminStorageQuotaInput";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
+import {
+	formatStorageQuotaDraft,
+	parseStorageQuotaValueToBytes,
+	type StorageQuotaUnit,
+	storageQuotaDraftIsValid,
+} from "@/lib/storageQuota";
 import { passwordSchema } from "@/lib/validation";
 import { adminUserService } from "@/services/adminService";
 import type {
@@ -29,6 +36,7 @@ interface UserDetailDraftState {
 	draftStatus: UserStatus;
 	passwordErrors: UserPasswordErrors;
 	passwordValue: string;
+	quotaUnit: StorageQuotaUnit;
 	quotaValue: string;
 	resettingMfa: boolean;
 	revokingSessions: boolean;
@@ -54,6 +62,7 @@ type UserDetailDraftAction =
 	| { type: "set_draft_status"; value: UserStatus }
 	| { type: "set_password_errors"; errors: UserPasswordErrors }
 	| { type: "set_password_value"; value: string }
+	| { type: "set_quota_unit"; value: StorageQuotaUnit }
 	| { type: "set_quota_value"; value: string };
 
 interface UserDetailDialogBodyProps {
@@ -65,13 +74,9 @@ interface UserDetailDialogBodyProps {
 	user: UserInfo;
 }
 
-function quotaMbValue(user: UserInfo) {
-	return user.storage_quota > 0
-		? String(Math.round(user.storage_quota / 1024 / 1024))
-		: "";
-}
-
 function createUserDraftState(user: UserInfo): UserDetailDraftState {
+	const quotaDraft = formatStorageQuotaDraft(user.storage_quota ?? 0);
+
 	return {
 		confirmPasswordValue: "",
 		draftEmailVerified: user.email_verified,
@@ -81,7 +86,8 @@ function createUserDraftState(user: UserInfo): UserDetailDraftState {
 		draftStatus: user.status,
 		passwordErrors: {},
 		passwordValue: "",
-		quotaValue: quotaMbValue(user),
+		quotaUnit: quotaDraft.unit,
+		quotaValue: quotaDraft.value,
 		resettingMfa: false,
 		revokingSessions: false,
 		savingPassword: false,
@@ -154,6 +160,11 @@ function userDetailDraftReducer(
 				...state,
 				passwordValue: action.value,
 			};
+		case "set_quota_unit":
+			return {
+				...state,
+				quotaUnit: action.value,
+			};
 		case "set_quota_value":
 			return {
 				...state,
@@ -185,6 +196,7 @@ export function UserDetailDialogBody({
 		draftStatus,
 		passwordErrors,
 		passwordValue,
+		quotaUnit,
 		quotaValue,
 		resettingMfa,
 		revokingSessions,
@@ -196,18 +208,20 @@ export function UserDetailDialogBody({
 	const used = user.storage_used ?? 0;
 	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
 	const isInitialAdmin = user.id === 1;
-	const currentQuotaMb = quotaMbValue(user);
+	const nextQuota = parseStorageQuotaValueToBytes(quotaValue, quotaUnit);
+	const quotaHasError = !storageQuotaDraftIsValid(quotaValue, quotaUnit);
 	// Admin PATCH supports assigning a group, but not clearing an existing one.
 	const hasPolicyGroupChange =
 		draftPolicyGroupId != null &&
 		draftPolicyGroupId !== (user.policy_group_id ?? null);
 	const hasProfileChanges =
-		draftEmailVerified !== user.email_verified ||
-		draftMustChangePassword !== user.must_change_password ||
-		draftRole !== user.role ||
-		draftStatus !== user.status ||
-		quotaValue !== currentQuotaMb ||
-		hasPolicyGroupChange;
+		!quotaHasError &&
+		(draftEmailVerified !== user.email_verified ||
+			draftMustChangePassword !== user.must_change_password ||
+			draftRole !== user.role ||
+			draftStatus !== user.status ||
+			(nextQuota !== null && nextQuota !== (user.storage_quota ?? 0)) ||
+			hasPolicyGroupChange);
 	const currentAssignedPolicyGroup =
 		user.policy_group_id == null
 			? null
@@ -256,8 +270,12 @@ export function UserDetailDialogBody({
 	};
 
 	const handleProfileSave = async () => {
-		const mb = Number.parseInt(quotaValue, 10);
-		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
+		const newQuota = parseStorageQuotaValueToBytes(quotaValue, quotaUnit);
+		if (newQuota === null) {
+			toast.error(t("quota_invalid"));
+			return;
+		}
+
 		const data: UpdateUserRequest = {};
 
 		if (draftEmailVerified !== user.email_verified) {
@@ -359,10 +377,23 @@ export function UserDetailDialogBody({
 								onDraftStatusChange={(value) =>
 									dispatch({ type: "set_draft_status", value })
 								}
-								onQuotaValueChange={(value) =>
-									dispatch({ type: "set_quota_value", value })
+								quotaInput={
+									<AdminStorageQuotaInput
+										id="user-storage-quota"
+										label={t("quota")}
+										value={quotaValue}
+										unit={quotaUnit}
+										disabled={savingProfile}
+										errorMessage={quotaHasError ? t("quota_invalid") : null}
+										placeholder={t("quota_unlimited_short")}
+										onValueChange={(value) =>
+											dispatch({ type: "set_quota_value", value })
+										}
+										onUnitChange={(value) =>
+											dispatch({ type: "set_quota_unit", value })
+										}
+									/>
 								}
-								quotaValue={quotaValue}
 								roleOptions={roleOptions}
 								savingProfile={savingProfile}
 								statusOptions={statusOptions}

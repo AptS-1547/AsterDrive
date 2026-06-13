@@ -209,4 +209,27 @@ describe("audit i18n formatting", () => {
 
 		expect(formatAuditDetail(t, entry)).toBe("Value {{0}}");
 	});
+
+	it("formats offline download presentation details from structured params", () => {
+		const t = createT({
+			"admin:audit_presentation_offline_download_created":
+				"Import from {{source}} to folder {{target_folder_id}}",
+		});
+		const entry = {
+			action: "offline_download",
+			presentation: {
+				detail: {
+					code: "offline_download_created",
+					params: {
+						source: "https://example.test/archive.zip",
+						target_folder_id: 42,
+					},
+				},
+			},
+		} as AuditLogEntry;
+
+		expect(formatAuditDetail(t, entry)).toBe(
+			"Import from https://example.test/archive.zip to folder 42",
+		);
+	});
 });

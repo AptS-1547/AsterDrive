@@ -37,10 +37,16 @@ vi.mock("react-i18next", () => ({
 				"admin:audit_action_file_upload": "Uploaded file",
 				"admin:audit_entity_type_file": "File",
 				"admin:audit_entity_type_folder": "Folder",
+				"admin:audit_presentation_config_value_updated":
+					"Value changed to {{value}}",
+				"admin:audit_presentation_file_upload": "Uploaded via presentation",
 			};
 			const translated = translations[`${namespace}:${key}`];
 			if (translated) {
-				return translated;
+				return translated.replace(/\{\{\s*(\w+)\s*\}\}/g, (match, param) => {
+					const value = options?.[param];
+					return value === undefined || value === null ? match : String(value);
+				});
 			}
 			if (typeof options?.defaultValue === "string") {
 				return options.defaultValue;
@@ -446,6 +452,37 @@ describe("AdminAuditPage", () => {
 		await waitFor(() => {
 			expect(screen.getAllByText("Folder").length).toBeGreaterThan(0);
 		});
+	});
+
+	it("renders structured audit presentation detail when the backend provides it", async () => {
+		mockState.list.mockResolvedValueOnce({
+			items: [
+				createEntry({
+					entity_name: "legacy.txt",
+					entity_type: "folder",
+					presentation: {
+						detail: {
+							code: "config_value_updated",
+							params: { value: "enabled" },
+						},
+						summary: { code: "file_upload" },
+						target: {
+							code: "file",
+							params: { name: "report.pdf" },
+						},
+					},
+				}),
+			],
+			total: 1,
+		});
+
+		renderPage();
+
+		expect(await screen.findByText("Uploaded file")).toBeInTheDocument();
+		expect(screen.getByText("report.pdf · File")).toBeInTheDocument();
+		expect(screen.getAllByText("File").length).toBeGreaterThan(0);
+		expect(screen.getByText("Value changed to enabled")).toBeInTheDocument();
+		expect(screen.queryByText("legacy.txt")).not.toBeInTheDocument();
 	});
 
 	it("renders filtered empty state and can clear filters", async () => {
