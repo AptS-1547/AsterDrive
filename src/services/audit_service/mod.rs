@@ -19,12 +19,14 @@ pub use details::{
     ConfigUpdateDetails, FileAccessTokenAuditDetails, FileVersionAuditDetails,
     FolderPolicyAuditDetails, FollowerBindingAuditDetails, FollowerIngressProfileAuditDetails,
     FollowerObjectAuditDetails, LockAuditDetails, LockCleanupAuditDetails, MailAuditDetails,
-    PolicyGroupAuditDetails, PolicyGroupMigrationDetails, PropertyAuditDetails,
-    RemoteIngressProfileAuditDetails, RemoteNodeAuditDetails, ShareBatchDeleteDetails,
-    ShareUpdateDetails, StoragePolicyAuditDetails, TaskRetryAuditDetails, TeamAuditDetails,
+    MfaChallengeAuditDetails, PolicyGroupAuditDetails, PolicyGroupMigrationDetails,
+    PropertyAuditDetails, RemoteIngressProfileAuditDetails, RemoteIngressProfileDeleteAuditDetails,
+    RemoteNodeAuditDetails, RemoteNodeEnrollmentTokenAuditDetails, RemoteNodeParamTestAuditDetails,
+    ShareBatchDeleteDetails, ShareUpdateDetails, StoragePolicyAuditDetails,
+    TagAssignmentAuditDetails, TagAuditDetails, TaskRetryAuditDetails, TeamAuditDetails,
     TeamCleanupAuditDetails, TeamMemberAddAuditDetails, TeamMemberRemoveAuditDetails,
     TeamMemberUpdateAuditDetails, TrashPurgeAllAuditDetails, UploadCancelAuditDetails,
-    UserAvatarSourceAuditDetails, UserProfileAuditDetails, details,
+    UserAvatarSourceAuditDetails, UserLoginAuditDetails, UserProfileAuditDetails, details,
 };
 pub use filters::{AuditLogFilterQuery, AuditLogFilters};
 pub use manager::{

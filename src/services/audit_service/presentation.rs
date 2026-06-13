@@ -151,15 +151,22 @@ fn detail_message(
                 details,
                 &mut params,
                 &[
+                    "changed_fields",
                     "email_verified",
                     "role",
                     "status",
                     "must_change_password",
                     "storage_quota",
                     "policy_group_id",
+                    "previous_email_verified",
+                    "previous_role",
+                    "previous_status",
+                    "previous_must_change_password",
+                    "previous_storage_quota",
+                    "previous_policy_group_id",
                 ],
             );
-            Some(message("admin_user_updated_snapshot", params))
+            Some(message("admin_user_updated_diff", params))
         }
         AuditAction::AdminForceDeleteUser => {
             copy_params(
@@ -286,16 +293,110 @@ fn detail_message(
             copy_param(details, &mut params, "source");
             Some(message("user_avatar_source_changed", params))
         }
+        AuditAction::UserLogin => {
+            copy_param(details, &mut params, "mfa_required");
+            if details
+                .get("mfa_required")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                Some(message("user_login_mfa_required", params))
+            } else {
+                copy_param(details, &mut params, "password_change_required");
+                Some(message("user_login_completed", params))
+            }
+        }
+        AuditAction::UserMfaChallengeSuccess => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "method",
+                    "flow_id",
+                    "attempt_count",
+                    "password_change_required",
+                ],
+            );
+            Some(message("mfa_challenge_completed", params))
+        }
+        AuditAction::UserMfaChallengeFailed => {
+            copy_params(
+                details,
+                &mut params,
+                &["method", "flow_id", "attempt_count", "failure_reason"],
+            );
+            Some(message("mfa_challenge_failed", params))
+        }
+        AuditAction::UserPasskeyRegister | AuditAction::UserPasskeyDelete => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "passkey_id",
+                    "name",
+                    "backup_eligible",
+                    "backed_up",
+                    "sign_count",
+                    "last_used_at",
+                ],
+            );
+            Some(message("passkey_snapshot", params))
+        }
+        AuditAction::UserPasskeyRename => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "passkey_id",
+                    "previous_name",
+                    "next_name",
+                    "backup_eligible",
+                    "backed_up",
+                ],
+            );
+            Some(message("passkey_renamed", params))
+        }
+        AuditAction::UserPasskeyLogin => {
+            copy_params(
+                details,
+                &mut params,
+                &["passkey_id", "name", "password_change_required"],
+            );
+            Some(message("passkey_login_completed", params))
+        }
         AuditAction::AdminCreateRemoteNode
         | AuditAction::AdminUpdateRemoteNode
-        | AuditAction::AdminDeleteRemoteNode
-        | AuditAction::AdminTestRemoteNode => {
+        | AuditAction::AdminDeleteRemoteNode => {
             copy_params(
                 details,
                 &mut params,
                 &["base_url", "is_enabled", "enrollment_status"],
             );
             Some(message("remote_node_snapshot", params))
+        }
+        AuditAction::AdminTestRemoteNode => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "base_url",
+                    "is_enabled",
+                    "enrollment_status",
+                    "success",
+                    "protocol_version",
+                    "server_version",
+                    "supports_list",
+                    "supports_range_read",
+                    "supports_stream_upload",
+                    "supports_capacity",
+                ],
+            );
+            let code = if details.get("success").is_some() {
+                "remote_node_connection_tested"
+            } else {
+                "remote_node_snapshot"
+            };
+            Some(message(code, params))
         }
         AuditAction::AdminCreateRemoteNodeEnrollmentToken => {
             copy_param(details, &mut params, "expires_at");
@@ -354,12 +455,24 @@ fn detail_message(
             copy_param(details, &mut params, "is_active");
             Some(message("webdav_account_status_changed", params))
         }
+        AuditAction::WebdavAccountCreate | AuditAction::WebdavAccountDelete => {
+            copy_params(
+                details,
+                &mut params,
+                &["username", "root_folder_id", "is_active"],
+            );
+            Some(message("webdav_account_changed", params))
+        }
         AuditAction::TeamWebdavAccountToggle => {
             copy_params(details, &mut params, &["team_id", "is_active"]);
             Some(message("team_webdav_account_status_changed", params))
         }
         AuditAction::TeamWebdavAccountCreate | AuditAction::TeamWebdavAccountDelete => {
-            copy_param(details, &mut params, "team_id");
+            copy_params(
+                details,
+                &mut params,
+                &["username", "team_id", "root_folder_id", "is_active"],
+            );
             Some(message("team_webdav_account_changed", params))
         }
         AuditAction::AdminForceUnlock => {
@@ -393,6 +506,29 @@ fn detail_message(
             copy_param(details, &mut params, "upload_id");
             Some(message("upload_cancelled", params))
         }
+        AuditAction::FileDelete
+        | AuditAction::FileDownload
+        | AuditAction::FileRestore
+        | AuditAction::FilePurge => {
+            copy_params(details, &mut params, &["folder_id", "path", "team_id"]);
+            Some(message("file_location", params))
+        }
+        AuditAction::FileMove | AuditAction::FileRename | AuditAction::FileCopy => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "source_folder_id",
+                    "source_path",
+                    "target_folder_id",
+                    "target_path",
+                    "previous_name",
+                    "next_name",
+                    "team_id",
+                ],
+            );
+            Some(message("file_transfer", params))
+        }
         AuditAction::FileDirectLinkCreate | AuditAction::FilePreviewLinkCreate => {
             copy_param(details, &mut params, "source");
             copy_param(details, &mut params, "app_key");
@@ -406,6 +542,26 @@ fn detail_message(
             copy_param(details, &mut params, "previous_policy_id");
             copy_param(details, &mut params, "policy_id");
             Some(message("folder_policy_changed", params))
+        }
+        AuditAction::FolderDelete | AuditAction::FolderRestore | AuditAction::FolderPurge => {
+            copy_params(details, &mut params, &["parent_id", "path", "team_id"]);
+            Some(message("folder_location", params))
+        }
+        AuditAction::FolderMove | AuditAction::FolderRename | AuditAction::FolderCopy => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "source_parent_id",
+                    "source_path",
+                    "target_parent_id",
+                    "target_path",
+                    "previous_name",
+                    "next_name",
+                    "team_id",
+                ],
+            );
+            Some(message("folder_transfer", params))
         }
         AuditAction::BatchDelete => {
             copy_param(details, &mut params, "succeeded");
@@ -435,9 +591,58 @@ fn detail_message(
             copy_param(details, &mut params, "name");
             Some(message("property_changed", params))
         }
+        AuditAction::TagCreate | AuditAction::TagDelete => {
+            copy_params(details, &mut params, &["name", "color", "team_id"]);
+            Some(message("tag_snapshot", params))
+        }
+        AuditAction::TagUpdate => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "name",
+                    "color",
+                    "previous_name",
+                    "next_name",
+                    "previous_color",
+                    "next_color",
+                    "team_id",
+                ],
+            );
+            Some(message("tag_updated", params))
+        }
+        AuditAction::TagAttach | AuditAction::TagDetach => {
+            copy_params(
+                details,
+                &mut params,
+                &[
+                    "operation",
+                    "tag_id",
+                    "tag_name",
+                    "tag_color",
+                    "entity_type",
+                    "entity_id",
+                    "file_count",
+                    "folder_count",
+                    "tag_count",
+                    "team_id",
+                ],
+            );
+            let code = match details.get("operation").and_then(Value::as_str) {
+                Some("attach") | Some("detach") => "tag_assignment_changed",
+                Some("replace") => "tag_assignment_replaced",
+                Some("batch_attach") | Some("batch_detach") => "tag_assignment_batch_changed",
+                _ => "tag_assignment_changed",
+            };
+            Some(message(code, params))
+        }
         AuditAction::TrashPurgeAll => {
-            copy_param(details, &mut params, "purged");
-            Some(message("trash_purge_finished", params))
+            copy_params(details, &mut params, &["phase", "purged", "team_id"]);
+            let code = match details.get("phase").and_then(Value::as_str) {
+                Some("requested") => "trash_purge_requested",
+                _ => "trash_purge_finished",
+            };
+            Some(message(code, params))
         }
         AuditAction::ArchiveCompress
         | AuditAction::ArchiveExtract
@@ -553,6 +758,51 @@ mod tests {
     }
 
     #[test]
+    fn presentation_includes_file_location_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::FileDelete,
+            AuditEntityType::File,
+            Some(7),
+            Some("report.txt"),
+            Some(r#"{"folder_id":3,"path":"/Projects/report.txt"}"#),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "file_location");
+        assert_eq!(
+            detail.params.get("path"),
+            Some(&Value::String("/Projects/report.txt".to_string()))
+        );
+        assert_eq!(detail.params.get("folder_id"), Some(&3.into()));
+    }
+
+    #[test]
+    fn presentation_includes_file_transfer_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::FileMove,
+            AuditEntityType::File,
+            Some(7),
+            Some("report.txt"),
+            Some(
+                r#"{"source_folder_id":2,"source_path":"/Inbox/report.txt","target_folder_id":3,"target_path":"/Projects/report.txt","previous_name":"report.txt","next_name":"report.txt"}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "file_transfer");
+        assert_eq!(
+            detail.params.get("source_path"),
+            Some(&Value::String("/Inbox/report.txt".to_string()))
+        );
+        assert_eq!(
+            detail.params.get("target_path"),
+            Some(&Value::String("/Projects/report.txt".to_string()))
+        );
+    }
+
+    #[test]
     fn presentation_includes_admin_user_snapshot_detail() {
         let presentation = build_audit_presentation(
             AuditAction::AdminCreateUser,
@@ -572,6 +822,31 @@ mod tests {
             Some(&Value::String("alice@example.com".to_string()))
         );
         assert_eq!(detail.params.get("policy_group_id"), Some(&3.into()));
+    }
+
+    #[test]
+    fn presentation_includes_admin_user_update_diff_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::AdminUpdateUser,
+            AuditEntityType::User,
+            Some(7),
+            Some("alice"),
+            Some(
+                r#"{"changed_fields":["role","storage_quota"],"previous_role":"user","role":"admin","previous_status":"active","status":"active","previous_email_verified":false,"email_verified":false,"previous_must_change_password":false,"must_change_password":false,"previous_storage_quota":1024,"storage_quota":2048}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "admin_user_updated_diff");
+        assert_eq!(
+            detail.params.get("previous_role"),
+            Some(&Value::String("user".to_string()))
+        );
+        assert_eq!(
+            detail.params.get("role"),
+            Some(&Value::String("admin".to_string()))
+        );
     }
 
     #[test]
@@ -616,6 +891,174 @@ mod tests {
             Some(&Value::String("oidc".to_string()))
         );
         assert_eq!(detail.params.get("linked"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn presentation_includes_remote_node_param_test_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::AdminTestRemoteNode,
+            AuditEntityType::RemoteNode,
+            None,
+            Some("https://follower.example.com"),
+            Some(
+                r#"{"base_url":"https://follower.example.com","success":true,"protocol_version":"1.0","supports_list":true,"supports_range_read":true,"supports_stream_upload":true,"supports_capacity":false}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "remote_node_connection_tested");
+        assert_eq!(
+            detail.params.get("protocol_version"),
+            Some(&Value::String("1.0".to_string()))
+        );
+    }
+
+    #[test]
+    fn presentation_includes_webdav_account_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::TeamWebdavAccountCreate,
+            AuditEntityType::WebdavAccount,
+            Some(9),
+            Some("dav-ci"),
+            Some(r#"{"username":"dav-ci","team_id":4,"root_folder_id":8,"is_active":true}"#),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "team_webdav_account_changed");
+        assert_eq!(
+            detail.params.get("username"),
+            Some(&Value::String("dav-ci".to_string()))
+        );
+        assert_eq!(detail.params.get("team_id"), Some(&4.into()));
+        assert_eq!(detail.params.get("root_folder_id"), Some(&8.into()));
+    }
+
+    #[test]
+    fn presentation_includes_passkey_login_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::UserPasskeyLogin,
+            AuditEntityType::Passkey,
+            Some(9),
+            Some("MacBook Touch ID"),
+            Some(r#"{"passkey_id":9,"name":"MacBook Touch ID","password_change_required":false}"#),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "passkey_login_completed");
+        assert_eq!(detail.params.get("passkey_id"), Some(&9.into()));
+        assert_eq!(
+            detail.params.get("name"),
+            Some(&Value::String("MacBook Touch ID".to_string()))
+        );
+    }
+
+    #[test]
+    fn presentation_distinguishes_mfa_pending_login_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::UserLogin,
+            AuditEntityType::AuthSession,
+            None,
+            Some("alice"),
+            Some(r#"{"mfa_required":true,"available_methods":["totp","recovery_code"]}"#),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "user_login_mfa_required");
+        assert_eq!(detail.params.get("mfa_required"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn presentation_includes_mfa_failure_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::UserMfaChallengeFailed,
+            AuditEntityType::MfaFactor,
+            Some(9),
+            Some("totp"),
+            Some(
+                r#"{"method":"totp","flow_id":9,"attempt_count":2,"failure_reason":"auth.mfa_code_invalid"}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "mfa_challenge_failed");
+        assert_eq!(
+            detail.params.get("method"),
+            Some(&Value::String("totp".to_string()))
+        );
+        assert_eq!(detail.params.get("attempt_count"), Some(&2.into()));
+        assert_eq!(
+            detail.params.get("failure_reason"),
+            Some(&Value::String("auth.mfa_code_invalid".to_string()))
+        );
+    }
+
+    #[test]
+    fn presentation_includes_tag_update_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::TagUpdate,
+            AuditEntityType::Tag,
+            Some(5),
+            Some("backend"),
+            Some(
+                r##"{"name":"backend","color":"#3b82f6","previous_name":"api","next_name":"backend","previous_color":"#ef4444","next_color":"#3b82f6"}"##,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "tag_updated");
+        assert_eq!(
+            detail.params.get("previous_name"),
+            Some(&Value::String("api".to_string()))
+        );
+        assert_eq!(
+            detail.params.get("next_color"),
+            Some(&Value::String("#3b82f6".to_string()))
+        );
+    }
+
+    #[test]
+    fn presentation_includes_batch_tag_assignment_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::TagAttach,
+            AuditEntityType::Tag,
+            Some(5),
+            Some("backend"),
+            Some(
+                r#"{"operation":"batch_attach","tag_id":5,"tag_name":"backend","file_count":3,"folder_count":1}"#,
+            ),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "tag_assignment_batch_changed");
+        assert_eq!(detail.params.get("file_count"), Some(&3.into()));
+        assert_eq!(detail.params.get("folder_count"), Some(&1.into()));
+    }
+
+    #[test]
+    fn presentation_distinguishes_requested_trash_purge_detail() {
+        let presentation = build_audit_presentation(
+            AuditAction::TrashPurgeAll,
+            AuditEntityType::Trash,
+            Some(12),
+            Some("Empty trash"),
+            Some(r#"{"phase":"requested","team_id":4}"#),
+        )
+        .expect("presentation should be built");
+
+        let detail = presentation.detail.as_ref().unwrap();
+        assert_eq!(detail.code, "trash_purge_requested");
+        assert_eq!(
+            detail.params.get("phase"),
+            Some(&Value::String("requested".to_string()))
+        );
+        assert_eq!(detail.params.get("team_id"), Some(&4.into()));
     }
 
     #[test]
