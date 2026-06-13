@@ -119,7 +119,9 @@ vi.mock("@/services/http", () => ({
 
 vi.mock("@/types/api-helpers", () => ({
 	ApiErrorCode: {
+		AuthAccountDisabled: "auth.account_disabled",
 		AuthPasswordChangeRequired: "auth.password_change_required",
+		CredentialsFailed: "auth.credentials_failed",
 		PendingActivation: "auth.pending_activation",
 	},
 }));
@@ -2122,7 +2124,7 @@ describe("LoginPage", () => {
 		expect(screen.getByLabelText("email")).toHaveValue("direct@example.com");
 	});
 
-	it("switches pending-activation login failures into the activation state", async () => {
+	it("keeps pending-activation login failures on the generic login flow", async () => {
 		mockState.login.mockRejectedValueOnce(
 			new MockApiError("auth.pending_activation", "pending"),
 		);
@@ -2139,9 +2141,32 @@ describe("LoginPage", () => {
 		await screen.findByRole("button", { name: "sign_in" });
 		fireEvent.click(screen.getByRole("button", { name: "sign_in" }));
 
+		await waitFor(() => {
+			expect(mockState.toastError).toHaveBeenCalledWith(
+				"login_failed_unavailable",
+			);
+		});
 		expect(
-			await screen.findByText("activation_pending_notice"),
+			screen.queryByText("activation_pending_notice"),
+		).not.toBeInTheDocument();
+		expect(mockState.resendRegisterActivation).not.toHaveBeenCalled();
+	});
+
+	it("resends activation from an independent non-enumerating login entry", async () => {
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "user@example.com" },
+		});
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: "resend_activation" }),
+		);
+
+		expect(
+			await screen.findByText("activation_resend_hint"),
 		).toBeInTheDocument();
+		expect(screen.getByLabelText("email")).toHaveValue("user@example.com");
 
 		fireEvent.click(
 			await screen.findByRole("button", { name: /resend_activation/ }),
@@ -2151,6 +2176,14 @@ describe("LoginPage", () => {
 			expect(mockState.resendRegisterActivation).toHaveBeenCalledWith(
 				"user@example.com",
 			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"activation_resend_request_sent",
+		);
+		await waitFor(() => {
+			expect(
+				screen.queryByText("activation_resend_hint"),
+			).not.toBeInTheDocument();
 		});
 	});
 
