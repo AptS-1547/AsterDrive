@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0-alpha.5] - 2026-06-13
+
+### Release Highlights
+
+**AsterDrive `0.3.0-alpha.5` 是 0.3.0 系列的第五个预发布版本，聚焦安全加固、文件夹级存储策略绑定、激活流程防枚举以及只读浏览/分享归档下载体验。** 本版本将公开分享密码 Cookie、公共直链、预览链接和分享流式播放会话从 `auth.jwt_secret` 拆分到专用 HMAC 密钥，并在 WebDAV 路径、XML 解析、上传大小校验、分享下载并发等多处加固边界检查；新增文件夹级存储策略绑定（管理员独占）与策略继承解析；激活邮件重发改为防账号枚举的统一响应；文件浏览器引入只读模式并支持分享归档下载；上传重试、缩略图懒加载与 i18n 分包拆分进一步优化前端性能。
+
+- **认证与公开链接密钥隔离（Breaking）** — 新增 `share_cookie_secret`、`direct_link_secret`，拆分直链/预览/流式播放 token 验签
+- **文件夹级存储策略绑定** — 管理员可绑定/清除文件夹策略，上传走最近祖先策略，完整继承解析
+- **激活重发防枚举流程** — 登录与激活重发统一响应、强制时延、按结果细分指标
+- **分享归档下载与只读浏览** — `FileBrowserProvider` 只读模式、`/s/{token}/archive-download` 端点、下载限额与中断回滚
+- **多模块安全加固** — XXE 防护、WebDAV 路径规范化、锁数量限额、分享 Cookie 绑定客户端、上传实际大小校验
+- **schema drift 检测** — SeaORM 实体与迁移产物的列定义跨 SQLite/Postgres/MySQL 一致性校验
+- **前端性能优化** — i18n 按需分包、登录后 PWA 预热路径、缩略图视窗内拉取、上传重试去抖
+
+### Added
+
+- **文件夹级存储策略绑定**
+  - 新增 `PUT /api/v1/admin/folders/{id}/policy` 端点（管理员独占），设置或清除文件夹策略绑定
+  - 策略继承解析：文件夹继承最近祖先的显式策略，回落至用户/团队策略组
+  - 上传服务沿文件夹层级解析有效策略
+  - 审计日志新增 `folder_policy_change` 动作（记录原策略 ID 和新策略 ID）
+  - 访问控制：仅管理员可设置/清除文件夹策略；普通 PATCH 请求拒绝 `policy_id` 字段
+  - 校验：拒绝不可用策略、锁定/已删除文件夹和断裂的层级链
+  - 前端 `FolderPolicyDialog` 组件（策略选择、继承可视化、有效策略提示）
+  - 仅管理员可见的右键菜单入口与对话框预加载
+
+- **激活重发防枚举流程**
+  - 新增 `ActivationResendRequestPanel` 组件（登录表单内入口、不暴露账号是否存在）
+  - 邮箱字段自动从登录标识符填充
+  - 后端引入 `RegisterActivationResendOutcome` 枚举（Sent / EmailNotFound / AlreadyActive / AccountDisabled / Cooldown / EmailPolicyRejected）
+  - 通过 `record_auth_event` 按 outcome 发出结构化指标，外部仅看到通用 200 响应
+  - 邮件策略拒绝时返回通用 200 而非 400，避免泄漏账号状态
+  - `apply_auth_mail_response_floor` 在 `setup`/`register`/`login` 强制最小响应时延，缓解时序枚举攻击
+  - 登录失败统一收敛为 `auth.credentials_failed`（凭据错误、待激活、账号禁用同响应）
+  - 引入 `LoginFailureReason` 枚举保留内部上下文用于指标，不写入 API 响应
+
+- **分享归档下载（共享 ZIP）**
+  - 新增 `POST /s/{token}/archive-download` 与 `GET /s/{token}/archive-download/{ticket}` 端点
+  - `stream_ticket_service` 新增 `SharedArchiveDownload` 票据类型
+  - `task_service::archive::selection` 新增 `prepare_shared_archive_download`、`stream_shared_archive_download`
+  - 新增 `archive_download_user_enabled`、`archive_download_share_enabled` 运行时配置开关
+  - 新增 API 错误码 `ArchiveDownloadUserDisabled`、`ArchiveDownloadShareDisabled`
+  - 分享下载额度与归档下载共用：创建/消费票据时预留与回滚下载计数，客户端中断流式传输时自动回滚
+
+- **文件浏览器只读模式**
+  - `FileBrowserContextValue` 新增 `readOnly`、`selectionEnabled` 标志
+  - `FileBrowserContextValue` 新增 `getThumbnailPath` 回调（只读场景注入缩略图）
+  - 只读模式下抑制选择、拖拽、排序和右键菜单，可独立通过 `selectionEnabled` 解锁
+  - 删除/标签/移动按钮在没有对应 handler 时自动隐藏
+  - `useFileBrowserBatchActions` 新增 `allowDelete`、`allowTagManagement` 选项
+  - 移除 `ReadOnlyFileCollection`/`ReadOnlyFileGrid`/`ReadOnlyFileTable`，用 `FileBrowserProvider` + `readOnly` 模式替代
+  - `ShareFolderView` 改用 `FileBrowserProvider` + 只读模式，归档下载走 `shareService.streamArchiveDownload`
+
+- **schema drift 检测**
+  - 新增 `tests/test_schema_drift.rs::test_entity_columns_match_migrated_database_schema`
+  - 跨 SQLite（PRAGMA）、PostgreSQL/MySQL（information_schema.columns）做架构内省
+  - 通过宏化注册表收集 42 个实体的列定义并与迁移结果比对
+  - 使用 `BTreeSet` 保证比对顺序确定性
+
+- **管理员系统信息端点**
+  - 新增 `GET /api/v1/admin/system-info`（认证后才暴露构建版本与构建时间）
+  - 前端管理"关于"页展示后端构建时间，缺失/无效时回落到本地化的"未知"
+  - 新增 `formatBuildTime` 校验时间戳并复用 `formatDateTime`
+
+- **WebDAV 单用户锁数量上限**
+  - 新增 `webdav.max_active_locks_per_user` 配置（默认 1024）
+  - 新增 `count_active_by_owner` 仓库函数（统计未过期与无超时锁）
+  - 引入 `DavLockPreflightError`、`DavLockSystem::prepare_lock` 钩子，事务内复核避免 TOCTOU
+  - 超限返回 HTTP 507 Insufficient Storage（`webdav.lock_limit_exceeded`）
+  - 增加用户行级锁（`lock_by_id`）确保并发场景下额度判断准确
+
 ### Changed
 
 - **认证与公开链接密钥隔离（Breaking）**
@@ -14,6 +85,187 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 已有 `data/config.toml` 在启动时会自动补齐缺失的 `auth.jwt_secret`、`auth.share_cookie_secret`、`auth.direct_link_secret` 和 `auth.mfa_secret_key`，不会覆盖已有值
   - 由于 direct link / preview / stream token 不再接受 `auth.jwt_secret` 验签，升级前生成的公共直链、预览链接和分享流式播放会话 token 会失效，需要重新生成
   - 分享密码验证 Cookie 会因 `auth.share_cookie_secret` 切换而失效，用户需要重新输入分享密码
+
+- **下载文件名编码（Content-Disposition）**
+  - `DownloadDisposition` 抽离到独立 `download_headers` 模块
+  - 改为 RFC 5987 `filename*=UTF-8''<percent-encoded>` 格式，使用 actix-web 的 `ContentDisposition` 构造器
+  - 净化 `\r`、`\n`、`\0` 等控制字符防止头部注入
+  - 覆盖所有下载端点（直链、预览链接、归档流）
+
+- **分享密码 Cookie 客户端绑定**
+  - 引入 `ShareCookieBinding`：将 Cookie MAC 绑定到 user agent SHA256 哈希 + IP 子网（IPv4 /24、IPv6 /64）
+  - HMAC 结构：`share_verified:{token}:ua:{hash}:ip:{subnet}`
+  - 合并重复的 cookie 校验为 `check_share_cookie` / `check_share_cookie_ignoring_download_limit`
+  - 同子网与同 user agent 内 Cookie 仍有效，阻断跨客户端/跨网络重放
+
+- **公共健康检查信息收敛**
+  - `/health` 与 `/ready` 不再裸返回 `version`、`build_time`，避免未认证客户端获取构建元数据
+  - 存储就绪失败响应移除 `error` 字段防止驱动细节泄漏
+  - 健康检查接口直接返回 `HealthResponse`，不再包裹 `ApiResponse`
+  - 构建元数据移至上文新增的认证后 `/admin/system-info` 端点
+
+- **多部分/直传上传实际大小校验**
+  - `UploadedMultipartPart` 携带 part number + size 元数据
+  - `list_uploaded_parts` 重命名为 `list_uploaded_part_details`，返回带大小信息
+  - S3 完成流程：拉取每个分片的实际大小、校验序号连续、对比声明总大小，不一致直接 `AbortMultipartUpload`
+  - 直传流式上传完成后回读 blob 元数据，比对声明大小并对照策略上限，复核配额
+  - 校验失败清理 preuploaded blob，防止客户端绕过配额
+
+- **WebDAV 路径规范化与 XXE 防护**
+  - 引入 `PathEscape` 错误，先做百分号解码、再做 `.` / `..` 段折叠
+  - 拒绝带前置 `..` 段（含 `%2e%2e` 等编码变体）逃逸挂载根的路径
+  - 集合资源保留尾部斜杠
+  - 在 PROPFIND / PROPPATCH / LOCK / REPORT 解析前调用 `reject_xml_dtd_or_entity`，检测 `<!DOCTYPE`、`<!ENTITY`
+  - 触发时返回 403 + `<no-external-entities/>` 错误体（带 `xmlns:D` 命名空间）
+
+- **WebDAV 锁错误模型**
+  - 引入 `DavLockError`（`Conflict`/`LimitExceeded`/`Backend`）取代 `Result<DavLock, DavLock>`，使锁冲突与额度耗尽返回不同响应
+  - `Backend` 用于数据库失败，映射 HTTP 500
+  - 增加结构化 tracing：包含路径、实体类型/ID 与错误细节
+  - 锁额度校验从 `prepare_lock` no-op 修正为实际生效，刷新 timeout 前先校验 scope
+  - 默认无 Timeout 头时使用 `MAX_LOCK_DURATION_SECS`（7 天）替代"无限"语义，并拒绝可能溢出 chrono 的超大值
+
+- **WebDAV 缓存认证复核**
+  - `CachedWebdavAuth` 新增 `account_id`，命中缓存时通过 DB 直接复核
+  - `validate_cached_scope` 替换为 `validate_cached_account`：复核账号 username、user/team/folder ID 与启用状态
+  - 账号被禁用或字段变化时立即让缓存失效并返回 `AuthForbidden`
+  - 校验 cached 密码哈希，防止旧凭据继续命中
+
+- **WOPI 安全增强**
+  - 新增 `X-WOPI-Token` 头作为首选认证途径，query 参数 fallback 兼容旧客户端
+  - 所有 WOPI 响应附加 `Cache-Control: no-store`，避免 token 通过浏览器缓存泄漏
+  - `access_token` query 参数由必填改为可选
+  - 默认 WOPI access token TTL 从 60 分钟降为 15 分钟
+
+- **分享下载计数原子性**
+  - `increment_download_count` 成功后立即重读 share 记录，避免使用 stale 内存值做 limit 检查
+  - 用直接 `>=` 重读后的计数器替代 `saturating_add(1)` 比较
+  - 重载失败时记录 warning 并回落缓存失效
+  - 调试日志补充 `share_id`、`download_count`、`max_downloads`
+
+- **管理后台量纲单位输入控件**
+  - 新增 `AdminNumberUnitInput` 通用数值 + 单位下拉控件
+  - 配额输入由硬编码 MB 替换为 `AdminStorageQuotaInput`（字节 → TB）
+  - 系统设置中的缩放数值字段统一使用共享的单位组件
+  - 系统设置说明文案移到 help trigger tooltip 后面，降低视觉噪音
+  - 缩放数值控件加入实时校验：拒绝超 `Number.MAX_SAFE_INTEGER` 的换算结果、保留无效草稿与显示单位
+  - `AdminTeamDetailDialog` 配额状态合并为单一 `quotaDraftOveride`，修正 save/delete/restore 时的 stale draft 行为
+  - 配额校验接受 0 与正整数；非正乘数与负向换算被 schema 拒绝
+
+- **前端缩略图与认证缓存隔离**
+  - 持久化用户缓存仅保留 profile、preferences、token 过期时间，剥离 `id`/`email`/`role`/`storage`
+  - 读取既有缓存时迁移并清除敏感字段
+  - 缩略图缓存命名空间从用户 ID 派生改为 sessionStorage 中的 session UUID
+  - 会话过期时清理命名空间
+
+- **前端 i18n 与 PWA 预热重排**
+  - 拆分 i18n 加载为 authenticated shell 与完整 bundle，shell 仅含 core/files/tasks/share/search/errors/offline
+  - 登录成功路径直接预热 shell i18n 与文件浏览器路由
+  - 用户路由预热在登录后路径触发后跳过，避免重复
+  - 预览引擎按需在进入文件浏览器时预热
+  - `App` 鉴权检查与 shell i18n 全部 ready 后再渲染认证路由，避免未翻译闪烁
+  - Service Worker 静态资源缓存策略由 StaleWhileRevalidate 改为 CacheFirst，离线场景更稳
+
+- **前端文件浏览器 / 上传 / 缩略图体验**
+  - `useEnteredViewport` 增加 `trackVisibility`/`isInViewport`；`FileThumbnail` 仅在视窗内拉取
+  - 持久化缩略图按 ETag 做后台 revalidation；离开视窗时清理 blob URL 释放内存
+  - `useUploadAreaUploads` 增加 `retryingTaskIdsRef` 集合，去抖并发重试触发
+  - `summarizeUploadTasks` 进度分母改用 `progressCount`，按尺寸加权
+  - `UploadPanel` 引入 `taskRowKey`、向 virtualizer 传 `getItemKey`，状态变化时不复用旧行
+  - `FolderPolicyDialog` 与 `FileBrowserPage` 多个 UI 状态迁移到 `useReducer`，加入 `targetKey` 哨兵丢弃过期异步结果
+  - 升级到 `@testing-library/user-event` 模拟真实交互
+
+- **路由与延迟加载**
+  - 引入 `localizedLazyPage` helper，在渲染 lazy 页面前预加载所需 i18n 命名空间
+  - `AdminRoute` 渲染前预加载 `admin`、`core` 命名空间，失败降级并 warn
+  - 调整 `/external-auth/links` 路由顺序，避免被 `/{kind}/{provider}` 通配吞掉
+
+- **token 生成方案**
+  - `new_share_token()` 由 8 字符 base62 改为 32 字符 UUID v4 hex
+  - 移除自定义字符集与未使用的 `rand::RngExt` 引用
+
+- **窗口跳转安全属性**
+  - 分享视图下载与文件夹下载的 `window.open` 全部传入 `noopener,noreferrer` 三参数
+
+- **依赖更新**
+  - `nom-exif` 3.6.0 → 3.6.1，`aws-smithy-types` 1.4.9 → 1.5.0，`aws-smithy-eventstream` 0.60.20 → 0.60.21
+  - `block-buffer`、`cc`、`memchr`、`regex`、`regex-syntax`、`rust_decimal`、`smallvec`、`time`/`time-core`/`time-macros`、`uuid`、`zerocopy`/`zerocopy-derive` 等小幅更新
+  - 移除未使用的 `powerfmt` 依赖
+  - `Cargo.toml` 新增 `AptS-1543` 作为作者
+
+### Fixed
+
+- **分享归档下载并发与回滚**
+  - 创建/消费归档票据时预留并回滚分享下载计数
+  - 客户端中断或下游流失败时将下载计数回滚到 0，错误日志补充 `share_id`
+  - 缓存校验后的文件夹 ID，避免重复鉴权
+  - `FileCard` checkbox 的 `onChange` fallback 防止未定义 handler 报错
+
+- **管理员配额草稿**
+  - `quotaValueToBytes` 比较实际字节值而非显示字符串，避免误判变化
+  - `AdminNumberUnitInput` 在 `invalidState` 时为数字输入和单位选择器都加 destructive 边框
+  - 单位变化 handler 改为基于 units 数组匹配，避免空值类型不安全比较
+  - 草稿无效时保留显示而非静默丢弃
+  - `UserDetailDialogBody` 拆分为 Content / Footer / Profile / Security 子组件，提高可读性
+
+- **路由防护与并发刷新**
+  - `test_concurrent_refresh_same_token_has_single_winner` 中为获胜 token 种入 CSRF token
+  - `routeGuards.test.tsx` 补充 `ensureI18nNamespaces` 与 logger mock，新增管理员 locale 加载失败用例
+
+- **杂项修复**
+  - 远端驱动 `list_uploaded_part_details` 过滤无效 part number（≤0）
+  - S3 `list_parts` 翻页缺 `next_part_number_marker` 时正确处理
+  - MFA 测试断言更新为 `401 UNAUTHORIZED` + `auth.credentials_failed`，与未验证邮箱登录现行行为一致
+  - 分享下载并发测试隔离到独立的 SQLite 文件，并使用 pool-size-1 的连接避免共享态干扰
+
+### Security
+
+- 公开分享密码 Cookie / 公共直链 / 预览链接 / 分享流式播放会话切换到独立 HMAC 密钥
+- 分享密码 Cookie 绑定 user agent 哈希与 IP 子网，阻断跨客户端重放
+- 多部分与直传上传校验实际上传大小、对照策略上限、按真实大小判额
+- WebDAV 路径规范化阻断目录穿越（含百分号编码 `..` 变体）
+- WebDAV XML 端点拒绝 DTD/ENTITY，缓解 XXE
+- WebDAV 单用户活跃锁数量限额，避免资源滥用
+- 登录与激活重发统一错误码 + 响应时延下限，缓解账号枚举
+- 健康检查不再泄漏版本与构建时间，存储就绪不再泄漏驱动错误细节
+- WOPI 优先头部认证、响应 `Cache-Control: no-store`、默认 TTL 缩短到 15 分钟
+- 持久化的用户缓存剥离 ID/email/role/storage 等敏感字段
+- 缩略图缓存命名空间从用户 ID 切换为 session UUID
+- 共享 RFC 5987 编码净化 `\r`/`\n`/`\0`，防 Content-Disposition 头注入
+- `window.open` 调用统一附加 `noopener,noreferrer`，防 tabnabbing 与 referrer 泄漏
+- WebDAV 缓存认证命中时复核账号状态与密码哈希
+
+### Testing
+
+- 新增 schema drift 集成测试，覆盖 SQLite/PostgreSQL/MySQL
+- 新增激活重发的活动账号、禁用账号、邮件策略黑名单场景集成测试，验证跳过场景不发邮件
+- 新增 WebDAV 锁额度、路径穿越（多种 `..` 编码）、Timeout 边界、XXE 与 cached auth 复核测试
+- 新增分享下载计数原子性测试：32 并发对 `max_downloads=1` 仅一例预留
+- 新增分享归档下载中断回滚集成测试：下载计数回 0、后续下载可正常进行
+- 新增直传上传策略边界、metadata 大小溢出 `i64::MAX` 测试
+- 新增 password 生成保证四类字符的回归测试
+- 新增 `FolderPolicyDialog` 关闭、stale 结果丢弃、保存失败保留对话框、空策略列表等覆盖
+- 新增 i18n 命名空间预加载、admin 命名空间加载失败的路由测试
+- 新增 `AdminSettingsConfigRows` 部分更新时配置保留的测试
+- 修复 `AdminTeamDetailDialog` 测试在 `waitFor` 中加入值断言以避免竞态
+
+### Database Migrations
+
+无新增迁移。
+
+### Configuration Changes
+
+- 新增 `auth.share_cookie_secret`、`auth.direct_link_secret`（缺失时启动自动补齐）
+- 新增 `archive_download_user_enabled`、`archive_download_share_enabled` 运行时开关
+- 新增 `webdav.max_active_locks_per_user`（默认 1024）
+- WOPI 默认 access token TTL 由 60 分钟降为 15 分钟
+
+### Statistics
+
+- 249 files changed, 11957 insertions(+), 2361 deletions(-)
+- 10 commits
+
+---
 
 ## [v0.3.0-alpha.4] - 2026-06-11
 
@@ -4677,7 +4929,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.4...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.5...HEAD
+[v0.3.0-alpha.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.4...v0.3.0-alpha.5
 [v0.3.0-alpha.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.3...v0.3.0-alpha.4
 [v0.3.0-alpha.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.2...v0.3.0-alpha.3
 [v0.3.0-alpha.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.1...v0.3.0-alpha.2
