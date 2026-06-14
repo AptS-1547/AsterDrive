@@ -73,13 +73,13 @@ describe("pwaWarmup", () => {
 		expect(mockState.adminRouteLoad).not.toHaveBeenCalled();
 	});
 
-	it("skips the user route queue when no user route warmup is configured", async () => {
+	it("warms the user route queue", async () => {
 		const { warmupRouteChunks } = await loadModule();
 
 		warmupRouteChunks("user");
 		await vi.advanceTimersByTimeAsync(5_000);
 
-		expect(mockState.userRouteLoad).not.toHaveBeenCalled();
+		expect(mockState.userRouteLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.userFeatureLoad).not.toHaveBeenCalled();
 		expect(mockState.previewLoad).not.toHaveBeenCalled();
 		expect(mockState.adminRouteLoad).not.toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe("pwaWarmup", () => {
 		warmupRouteChunks("user");
 		await vi.advanceTimersByTimeAsync(5_000);
 
-		expect(mockState.userRouteLoad).not.toHaveBeenCalled();
+		expect(mockState.userRouteLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.userFeatureLoad).not.toHaveBeenCalled();
 		expect(mockState.previewLoad).not.toHaveBeenCalled();
 	});
@@ -103,7 +103,7 @@ describe("pwaWarmup", () => {
 		warmupRouteChunks("admin");
 		await vi.advanceTimersByTimeAsync(6_000);
 
-		expect(mockState.userRouteLoad).not.toHaveBeenCalled();
+		expect(mockState.userRouteLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.adminRouteLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.userFeatureLoad).not.toHaveBeenCalled();
 		expect(mockState.previewLoad).not.toHaveBeenCalled();
@@ -117,7 +117,7 @@ describe("pwaWarmup", () => {
 		warmupRouteChunks("user");
 		await vi.advanceTimersByTimeAsync(6_000);
 
-		expect(mockState.userRouteLoad).not.toHaveBeenCalled();
+		expect(mockState.userRouteLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.adminRouteLoad).toHaveBeenCalledTimes(1);
 		expect(mockState.userFeatureLoad).not.toHaveBeenCalled();
 		expect(mockState.previewLoad).not.toHaveBeenCalled();

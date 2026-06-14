@@ -5,6 +5,7 @@ import {
 	filePreviewWarmupLoaders,
 	loginSuccessPathWarmupLoaders,
 	userFeatureWarmupLoaders,
+	userRouteWarmupLoaders,
 	type WarmupLoaderEntry,
 } from "@/lib/pwaWarmupLoaders";
 
@@ -172,7 +173,10 @@ export function warmupRouteChunks(role: "user" | "admin") {
 
 	warmedRole = role;
 
-	const routeLoaders = role === "admin" ? adminRouteWarmupLoaders : [];
+	const routeLoaders =
+		role === "admin"
+			? [...userRouteWarmupLoaders, ...adminRouteWarmupLoaders]
+			: userRouteWarmupLoaders;
 
 	logWarmup(
 		`start ${role} warmup`,

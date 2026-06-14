@@ -12,23 +12,7 @@ const BUDGETS = {
 	entryGzipBytes: 8 * 1024,
 	loginRawBytes: 65 * 1024,
 	loginGzipBytes: 20 * 1024,
-	precacheEntries: 12,
-	precacheBytes: 700 * 1024,
 };
-
-const PRECACHE_FORBIDDEN = [
-	/Admin/,
-	/FileBrowser/,
-	/MusicPlayer/,
-	/PdfPreview/,
-	/WorkspaceOutlet/,
-	/pwaWarmup/,
-	/vendor-react-icons-/,
-	/pdf\.worker/,
-	/^pdfjs\//,
-	/^static\/preview-apps\//,
-	/^static\/external-auth\//,
-];
 
 const STARTUP_FORBIDDEN = [
 	/Admin/,
@@ -88,12 +72,6 @@ function formatBytes(bytes) {
 function assertBudget(label, actual, max) {
 	if (actual > max) {
 		fail(`${label} is ${formatBytes(actual)}, over budget ${formatBytes(max)}`);
-	}
-}
-
-function assertCountBudget(label, actual, max) {
-	if (actual > max) {
-		fail(`${label} is ${actual}, over budget ${max}`);
 	}
 }
 
@@ -195,6 +173,20 @@ function extractPrecacheEntries() {
 	return entries;
 }
 
+function collectPrecacheRequiredAssets() {
+	const entries = ["index.html"];
+	const assetDir = path.join(DIST_DIR, ASSET_PREFIX);
+	const cacheableExtensions = new Set([".js", ".css", ".mjs", ".woff2"]);
+
+	for (const name of readdirSyncCompat(assetDir)) {
+		if (cacheableExtensions.has(path.extname(name))) {
+			entries.push(`${ASSET_PREFIX}${name}`);
+		}
+	}
+
+	return entries;
+}
+
 function assertNoForbidden(label, entries, patterns) {
 	const violations = [...entries].filter((entry) =>
 		patterns.some((pattern) => pattern.test(entry)),
@@ -205,22 +197,17 @@ function assertNoForbidden(label, entries, patterns) {
 }
 
 function auditPrecache() {
-	const entries = extractPrecacheEntries();
-	const totalBytes = entries.reduce((sum, entry) => sum + fileSize(entry), 0);
+	const entries = new Set(extractPrecacheEntries());
+	const requiredEntries = collectPrecacheRequiredAssets();
+	const missing = requiredEntries.filter((entry) => !entries.has(entry));
+	if (missing.length > 0) {
+		fail(`service worker precache is missing assets: ${missing.join(", ")}`);
+	}
 
-	assertCountBudget(
-		"service worker precache entry count",
-		entries.length,
-		BUDGETS.precacheEntries,
-	);
-	assertBudget(
-		"service worker precache size",
-		totalBytes,
-		BUDGETS.precacheBytes,
-	);
-	assertNoForbidden("service worker precache", entries, PRECACHE_FORBIDDEN);
+	const entryList = [...entries];
+	const totalBytes = entryList.reduce((sum, entry) => sum + fileSize(entry), 0);
 
-	return { entries, totalBytes };
+	return { entries: entryList, totalBytes };
 }
 
 function auditStartupGraphs() {
