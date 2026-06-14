@@ -266,9 +266,13 @@ export function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
 	}
 
 	const normalized = normalizeS3ConnectionFields(form.endpoint, form.bucket);
+	const normalizedAccessKey = form.access_key.trim();
+	const normalizedSecretKey = form.secret_key.trim();
 	if (
 		normalized.endpoint === form.endpoint &&
-		normalized.bucket === form.bucket
+		normalized.bucket === form.bucket &&
+		normalizedAccessKey === form.access_key &&
+		normalizedSecretKey === form.secret_key
 	) {
 		return form;
 	}
@@ -277,6 +281,8 @@ export function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
 		...form,
 		endpoint: normalized.endpoint,
 		bucket: normalized.bucket,
+		access_key: normalizedAccessKey,
+		secret_key: normalizedSecretKey,
 	};
 }
 

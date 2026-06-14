@@ -7,6 +7,7 @@ import {
 	connectionRequirementsMissing,
 	createPayload,
 	defaultScopesForKind,
+	ExternalAuthProviderIcon,
 	emptyForm,
 	formatTestResultSummary,
 	formClaimSummary,
@@ -38,6 +39,7 @@ import {
 import type {
 	AdminExternalAuthProviderInfo,
 	AdminExternalAuthProviderKindInfo,
+	ExternalAuthProviderKind,
 	ExternalAuthProviderTestResult,
 } from "@/types/api";
 
@@ -407,6 +409,12 @@ describe("admin external auth shared helpers", () => {
 				authorization_url: null,
 				issuer_url: null,
 				provider_kind: providerKind,
+				token_url: null,
+				userinfo_url: null,
+			});
+			expect(updatePayload(form)).toMatchObject({
+				authorization_url: null,
+				issuer_url: null,
 				token_url: null,
 				userinfo_url: null,
 			});
@@ -1044,5 +1052,39 @@ describe("admin external auth shared helpers", () => {
 		);
 
 		expect(onCopy).toHaveBeenCalledWith("https://callback");
+	});
+
+	it("falls back external auth icons from configured URL to kind icon, then hides failed images", () => {
+		const { rerender } = render(
+			<ExternalAuthProviderIcon
+				className="size-5"
+				iconUrl="/custom-idp.svg"
+				kind="github"
+			/>,
+		);
+		const configuredImage = screen.getByRole("presentation", { hidden: true });
+		expect(configuredImage).toHaveAttribute("src", "/custom-idp.svg");
+		expect(configuredImage).toHaveClass("object-contain", "size-5");
+
+		fireEvent.error(configuredImage);
+
+		expect(configuredImage).toHaveAttribute(
+			"src",
+			"/static/external-auth/github-logo.svg",
+		);
+		expect(configuredImage.dataset.fallbackTried).toBe("1");
+
+		fireEvent.error(configuredImage);
+
+		expect(configuredImage).not.toBeVisible();
+
+		rerender(
+			<ExternalAuthProviderIcon
+				className="size-4"
+				iconUrl=""
+				kind={"future_kind" as ExternalAuthProviderKind}
+			/>,
+		);
+		expect(screen.getByText("SignIn")).toBeInTheDocument();
 	});
 });

@@ -19,6 +19,7 @@ const mockState = vi.hoisted(() => ({
 	deletePolicy: vi.fn(),
 	handleApiError: vi.fn(),
 	items: [] as Array<Record<string, unknown>>,
+	listAllPolicies: vi.fn(),
 	listPolicies: vi.fn(),
 	listRemoteNodes: vi.fn(),
 	loading: false,
@@ -537,7 +538,7 @@ vi.mock("@/services/adminService", () => ({
 			policy_id: 1,
 		})),
 		list: (...args: unknown[]) => mockState.listPolicies(...args),
-		listAll: async () => mockState.items,
+		listAll: (...args: unknown[]) => mockState.listAllPolicies(...args),
 		promoteS3CompatibleDriver: (...args: unknown[]) =>
 			mockState.promoteS3CompatibleDriver(...args),
 		testConnection: (...args: unknown[]) => mockState.testConnection(...args),
@@ -612,6 +613,7 @@ describe("AdminPoliciesPage", () => {
 		mockState.handleApiError.mockReset();
 		invalidateAdminRemoteNodeLookup();
 		mockState.items = [];
+		mockState.listAllPolicies.mockReset();
 		mockState.listPolicies.mockReset();
 		mockState.listRemoteNodes.mockReset();
 		mockState.loading = false;
@@ -675,6 +677,7 @@ describe("AdminPoliciesPage", () => {
 			items: mockState.items,
 			total: mockState.total || mockState.items.length,
 		}));
+		mockState.listAllPolicies.mockImplementation(async () => mockState.items);
 		mockState.testConnection.mockResolvedValue(undefined);
 		mockState.testParams.mockResolvedValue(undefined);
 		mockState.promoteS3CompatibleDriver.mockImplementation(
@@ -926,6 +929,31 @@ describe("AdminPoliciesPage", () => {
 			"/admin/tasks?kind=storage_policy_migration",
 			{ viewTransition: false },
 		);
+	});
+
+	it("reports errors when opening the storage policy migration dialog fails", async () => {
+		const error = new Error("list all failed");
+		mockState.listAllPolicies.mockRejectedValueOnce(error);
+		mockState.items = [
+			createPolicy({ id: 1, name: "Hot Local" }),
+			createPolicy({ id: 2, name: "Archive Local" }),
+		];
+		mockState.total = 2;
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /policy_migration_action/,
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
+		expect(
+			screen.queryByText("policy_migration_title"),
+		).not.toBeInTheDocument();
 	});
 
 	it("invalidates a checked migration plan when the target changes", async () => {
@@ -1244,6 +1272,12 @@ describe("AdminPoliciesPage", () => {
 		if (!form) {
 			throw new Error("Expected create dialog form to render");
 		}
+		const submitEvent = new Event("submit", {
+			bubbles: true,
+			cancelable: true,
+		});
+		form.dispatchEvent(submitEvent);
+		expect(submitEvent.defaultPrevented).toBe(true);
 		expect(form).toHaveClass(
 			"flex",
 			"min-h-0",
@@ -2532,6 +2566,39 @@ describe("AdminPoliciesPage", () => {
 		await waitFor(() => {
 			expect(screen.queryByText("Remove Me")).not.toBeInTheDocument();
 		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_deleted");
+	});
+
+	it("moves back one page after deleting the only policy on a later page", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 18,
+				name: "Last Page Policy",
+			}),
+		];
+		mockState.searchParams = "offset=20&pageSize=20";
+		mockState.total = 21;
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "delete_policy" }));
+		fireEvent.click(
+			within(
+				screen.getByText('delete_policy "Last Page Policy"?')
+					.parentElement as HTMLElement,
+			).getByRole("button", { name: "core:delete" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.deletePolicy).toHaveBeenCalledWith(18);
+		});
+		await waitFor(() => {
+			expect(mockState.setSearchParams).toHaveBeenLastCalledWith(
+				new URLSearchParams(""),
+				{ replace: true },
+			);
+		});
+		expect(mockState.reload).not.toHaveBeenCalled();
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_deleted");
 	});
 

@@ -453,8 +453,8 @@ describe("storagePolicyDialogShared", () => {
 			driver_type: "azure_blob",
 			endpoint: "https://acct.blob.core.windows.net/",
 			bucket: "container-a",
-			access_key: " account-name ",
-			secret_key: " account-key ",
+			access_key: "account-name",
+			secret_key: "account-key",
 			base_path: "archives",
 			remote_node_id: undefined,
 			max_file_size: undefined,
@@ -469,14 +469,16 @@ describe("storagePolicyDialogShared", () => {
 			...azureForm,
 			endpoint: "https://acct.blob.core.windows.net/",
 			bucket: "container-a",
+			access_key: "account-name",
+			secret_key: "account-key",
 		});
 		expect(getPolicyConnectionTestKey(azureForm)).toBe(
 			JSON.stringify({
 				driver_type: "azure_blob",
 				endpoint: "https://acct.blob.core.windows.net/",
 				bucket: "container-a",
-				access_key: " account-name ",
-				secret_key: " account-key ",
+				access_key: "account-name",
+				secret_key: "account-key",
 				base_path: "archives",
 				remote_node_id: undefined,
 				options: {

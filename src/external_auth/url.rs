@@ -3,6 +3,7 @@
 use url::Url;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::utils::net::is_loopback_host;
 
 pub(crate) fn parse_url(
     value: &str,
@@ -19,8 +20,4 @@ pub(crate) fn has_http_scheme(url: &Url) -> bool {
 pub(crate) fn is_https_or_loopback_http(url: &Url) -> bool {
     url.scheme() == "https"
         || (url.scheme() == "http" && url.host_str().is_some_and(is_loopback_host))
-}
-
-fn is_loopback_host(host: &str) -> bool {
-    host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
