@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { RouterProvider } from "react-router-dom";
 import { Toaster, toast } from "sonner";
@@ -35,6 +36,18 @@ const MusicPlayerHost = lazy(() =>
 		default: module.MusicPlayerHost,
 	})),
 );
+
+const toasterStyle = {
+	zIndex: "var(--z-toast)",
+	"--normal-bg": "color-mix(in oklch, var(--card) 96%, var(--background))",
+	"--normal-border":
+		"color-mix(in oklch, var(--border) 86%, var(--foreground))",
+	"--normal-text": "var(--foreground)",
+	"--toast-success": "oklch(0.7 0.16 158)",
+	"--toast-info": "var(--primary)",
+	"--toast-warning": "var(--chart-3)",
+	"--toast-error": "var(--destructive)",
+} satisfies CSSProperties & Record<`--${string}`, string>;
 
 function shouldSkipInitialAuthCheck(pathname: string) {
 	return pathname === "/login" || pathname.startsWith("/s/");
@@ -193,9 +206,15 @@ function App() {
 			) : null}
 			<Toaster
 				position="bottom-right"
-				richColors
+				closeButton
+				dir="ltr"
+				offset={18}
+				mobileOffset={12}
 				swipeDirections={["right"]}
-				style={{ zIndex: "var(--z-toast)" }}
+				style={toasterStyle}
+				toastOptions={{
+					duration: 4200,
+				}}
 			/>
 			{shouldMountMusicPlayer ? (
 				<Suspense fallback={null}>
