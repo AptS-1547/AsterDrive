@@ -147,7 +147,7 @@ pub(crate) async fn build_download_outcome_with_disposition_and_range(
     let options = parse_storage_policy_options(policy.options.as_ref());
     let should_presign = disposition == DownloadDisposition::Attachment
         && match policy.driver_type {
-            DriverType::S3 | DriverType::TencentCos => {
+            DriverType::S3 | DriverType::TencentCos | DriverType::AzureBlob => {
                 options.effective_s3_download_strategy() == S3DownloadStrategy::Presigned
             }
             DriverType::Remote => {

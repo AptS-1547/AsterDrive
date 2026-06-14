@@ -21,8 +21,9 @@ import {
 	type Translate,
 } from "@/components/admin/StoragePolicyDialogFields";
 import {
-	isS3CompatibleDriver,
+	isObjectStorageDriver,
 	type PolicyFormData,
+	supportsStorageNativeProcessing,
 } from "@/components/admin/storagePolicyDialogShared";
 import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
 import { Button } from "@/components/ui/button";
@@ -110,9 +111,9 @@ export function StoragePolicyCreateWizard({
 						{createStep === 0 ? (
 							<DriverSelectionStep
 								form={form}
+								onCreateStepChange={onCreateStepChange}
 								onDriverTypeChange={onDriverTypeChange}
 								storageOptions={storageOptions}
-								t={t}
 							/>
 						) : createStep === 1 ? (
 							<ConnectionStep
@@ -231,58 +232,48 @@ function WizardProgress({
 
 interface DriverSelectionStepProps {
 	form: PolicyFormData;
+	onCreateStepChange: (step: number) => void;
 	onDriverTypeChange: (driverType: DriverType) => void;
 	storageOptions: StoragePolicyDriverOption[];
-	t: Translate;
 }
 
 function DriverSelectionStep({
 	form,
+	onCreateStepChange,
 	onDriverTypeChange,
 	storageOptions,
-	t,
 }: DriverSelectionStepProps) {
 	return (
-		<div className="space-y-4">
-			<div className="max-w-2xl">
-				<h3 className="text-base font-semibold">
-					{t("policy_wizard_choose_driver_title")}
-				</h3>
-				<p className="mt-1 text-sm text-muted-foreground">
-					{t("policy_wizard_choose_driver_desc")}
-				</p>
-			</div>
-			<div className="grid gap-4 md:grid-cols-2">
+		<div>
+			<div className="grid gap-3 md:grid-cols-2">
 				{storageOptions.map((option) => (
 					<button
 						type="button"
 						key={option.type}
 						aria-pressed={form.driver_type === option.type}
-						onClick={() => onDriverTypeChange(option.type)}
+						onClick={() => {
+							onDriverTypeChange(option.type);
+							onCreateStepChange(1);
+						}}
 						className={cn(
-							"rounded-3xl border p-5 text-left transition",
+							"rounded-2xl border border-border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
 							form.driver_type === option.type
-								? "border-primary bg-primary/5 shadow-sm"
-								: "border-border bg-background hover:border-primary/40 hover:bg-muted/20",
+								? "bg-muted/15"
+								: "bg-background",
 						)}
 					>
 						<div className="flex items-start gap-4">
-							<div className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+							<div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
 								<StorageDriverVisual
 									option={option}
-									className={option.type === "local" ? "max-h-8" : "max-h-10"}
+									className={option.type === "local" ? "max-h-7" : "max-h-9"}
 								/>
 							</div>
 							<div className="min-w-0 flex-1">
 								<div className="flex flex-wrap items-center gap-2">
 									<p className="text-base font-semibold">{option.title}</p>
-									{form.driver_type === option.type ? (
-										<span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-											{t("policy_wizard_selected")}
-										</span>
-									) : null}
 								</div>
-								<p className="mt-2 text-sm leading-6 text-muted-foreground">
+								<p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
 									{option.description}
 								</p>
 							</div>
@@ -334,7 +325,7 @@ function ConnectionStep({
 					onFieldChange={onFieldChange}
 				/>
 				<PolicyBasePathField form={form} t={t} onFieldChange={onFieldChange} />
-				{isS3CompatibleDriver(form.driver_type) ? (
+				{isObjectStorageDriver(form.driver_type) ? (
 					<S3ConnectionFields
 						form={form}
 						bucketError={createBucketError}
@@ -416,10 +407,12 @@ function DriverHelperPanel({
 				{currentStorageOption.description}
 			</p>
 			<p className="mt-4 text-xs leading-5 text-muted-foreground">
-				{isS3CompatibleDriver(driverType)
+				{isObjectStorageDriver(driverType)
 					? driverType === "tencent_cos"
 						? t("policy_wizard_tencent_cos_helper")
-						: t("policy_wizard_s3_helper")
+						: driverType === "azure_blob"
+							? t("policy_wizard_azure_blob_helper")
+							: t("policy_wizard_s3_helper")
 					: driverType === "remote"
 						? t("policy_wizard_remote_helper")
 						: t("policy_wizard_local_helper")}
@@ -489,7 +482,7 @@ function BehaviorStep({
 				/>
 				<LimitsFields form={form} t={t} onFieldChange={onFieldChange} />
 				<DefaultPolicyToggle form={form} t={t} onFieldChange={onFieldChange} />
-				{form.driver_type === "tencent_cos" ? (
+				{supportsStorageNativeProcessing(form.driver_type) ? (
 					<div className="space-y-3 border-t border-border/70 pt-4">
 						<PolicySectionIntro
 							title={t("policy_storage_native_section_title")}
@@ -531,7 +524,7 @@ function DriverBehaviorFields({
 	remoteNodes,
 	t,
 }: DriverBehaviorFieldsProps) {
-	if (isS3CompatibleDriver(form.driver_type)) {
+	if (isObjectStorageDriver(form.driver_type)) {
 		return (
 			<div className="space-y-4">
 				<S3UploadStrategyField

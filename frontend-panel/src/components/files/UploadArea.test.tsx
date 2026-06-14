@@ -773,9 +773,44 @@ describe("UploadArea", () => {
 			expect.any(File),
 			expect.any(Function),
 			expect.any(Function),
+			{ requireEtag: false, headers: undefined },
 		);
 		expect(completeUpload).toHaveBeenCalledWith("upload-presigned", undefined);
 		expect(saveSession).not.toHaveBeenCalled();
+	});
+
+	it("passes provider-required headers for single-request presigned uploads", async () => {
+		initUpload.mockResolvedValue({
+			mode: "presigned",
+			upload_id: "upload-azure-presigned",
+			presigned_url: "https://account.blob.core.windows.net/container/blob",
+			presigned_headers: {
+				"x-ms-blob-type": "BlockBlob",
+			},
+		});
+		presignedUpload.mockResolvedValue("");
+		completeUpload.mockResolvedValue({ id: 9013 });
+
+		await uploadOneFile();
+
+		await screen.findByText("hello.txt:Presigned:files:upload_success");
+
+		expect(presignedUpload).toHaveBeenCalledWith(
+			"https://account.blob.core.windows.net/container/blob",
+			expect.any(File),
+			expect.any(Function),
+			expect.any(Function),
+			{
+				requireEtag: false,
+				headers: {
+					"x-ms-blob-type": "BlockBlob",
+				},
+			},
+		);
+		expect(completeUpload).toHaveBeenCalledWith(
+			"upload-azure-presigned",
+			undefined,
+		);
 	});
 
 	it("reports presigned upload speed from PUT progress", async () => {
@@ -800,6 +835,7 @@ describe("UploadArea", () => {
 				expect.any(File),
 				expect.any(Function),
 				expect.any(Function),
+				{ requireEtag: false, headers: undefined },
 			);
 		});
 

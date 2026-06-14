@@ -339,6 +339,7 @@ pub(super) fn direct_upload_response() -> InitUploadResponse {
         chunk_size: None,
         total_chunks: None,
         presigned_url: None,
+        presigned_headers: Default::default(),
     }
 }
 
@@ -354,5 +355,6 @@ pub(super) fn chunked_upload_response(
         chunk_size: Some(chunk_size),
         total_chunks: Some(total_chunks),
         presigned_url: None,
+        presigned_headers: Default::default(),
     }
 }

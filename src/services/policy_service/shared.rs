@@ -9,6 +9,7 @@ use crate::db::repository::{managed_follower_repo, policy_group_repo, policy_rep
 use crate::entities::{storage_policy_group, storage_policy_group_item};
 use crate::errors::{AsterError, Result, validation_error_with_code};
 use crate::runtime::SharedRuntimeState;
+use crate::storage::drivers::azure_blob::AzureBlobDriver;
 use crate::storage::drivers::s3_config::{S3ConfigError, normalize_s3_endpoint_and_bucket};
 use crate::types::{
     DriverType, RemoteNodeTransportMode, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
@@ -78,6 +79,13 @@ pub(super) fn normalize_connection_fields(
     match driver_type {
         DriverType::Local => Ok((endpoint.trim().to_string(), bucket.trim().to_string())),
         DriverType::Remote => Ok((String::new(), String::new())),
+        DriverType::AzureBlob => {
+            let normalized = AzureBlobDriver::normalize_endpoint_and_container(endpoint, bucket)
+                .map_err(|error| {
+                    error.with_api_error_code(ApiErrorCode::PolicyStorageEndpointInvalid)
+                })?;
+            Ok((normalized.endpoint, normalized.container))
+        }
         DriverType::S3 | DriverType::TencentCos => {
             let normalized = normalize_s3_endpoint_and_bucket(endpoint, bucket).map_err(
                 |error| match error {
@@ -124,7 +132,7 @@ pub(super) async fn validate_remote_binding<C: sea_orm::ConnectionTrait>(
             }
             Ok(Some(remote_node_id))
         }
-        DriverType::Local | DriverType::S3 | DriverType::TencentCos => {
+        DriverType::Local | DriverType::S3 | DriverType::AzureBlob | DriverType::TencentCos => {
             if remote_node_id.is_some() {
                 return Err(validation_error_with_code(
                     ApiErrorCode::PolicyRemoteNodeUnexpected,

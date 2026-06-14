@@ -18,8 +18,9 @@ import {
 	type StoragePolicyDriverOption,
 } from "@/components/admin/StoragePolicyDialogFields";
 import {
-	isS3CompatibleDriver,
+	isObjectStorageDriver,
 	type PolicyFormData,
+	supportsStorageNativeProcessing,
 } from "@/components/admin/storagePolicyDialogShared";
 import { AnimatedCollapsible } from "@/components/common/AnimatedCollapsible";
 import { InlineConfirm } from "@/components/common/ManagerDialogShell";
@@ -119,7 +120,7 @@ export function StoragePolicyEditForm({
 					</div>
 				</section>
 
-				{isS3CompatibleDriver(form.driver_type) ? (
+				{isObjectStorageDriver(form.driver_type) ? (
 					<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
 						<PolicySectionIntro
 							title={t("policy_editor_connection_title")}
@@ -176,7 +177,7 @@ export function StoragePolicyEditForm({
 						description={t("policy_editor_rules_desc")}
 					/>
 					<div className="space-y-4">
-						{isS3CompatibleDriver(form.driver_type) ? (
+						{isObjectStorageDriver(form.driver_type) ? (
 							<>
 								<S3UploadStrategyField
 									form={form}
@@ -218,7 +219,7 @@ export function StoragePolicyEditForm({
 					</div>
 				</section>
 
-				{form.driver_type === "tencent_cos" ? (
+				{supportsStorageNativeProcessing(form.driver_type) ? (
 					<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
 						<PolicySectionIntro
 							title={t("policy_storage_native_section_title")}
@@ -324,8 +325,10 @@ function PolicyEditContextBar({
 						{t("base_path")}: {displayBasePath}
 					</p>
 					<p className="mt-1 text-sm leading-6 text-muted-foreground">
-						{isS3CompatibleDriver(form.driver_type)
-							? t("policy_edit_context_s3_desc")
+						{isObjectStorageDriver(form.driver_type)
+							? form.driver_type === "azure_blob"
+								? t("policy_edit_context_azure_blob_desc")
+								: t("policy_edit_context_s3_desc")
 							: form.driver_type === "remote"
 								? t("policy_edit_context_remote_desc")
 								: t("policy_edit_context_local_desc")}

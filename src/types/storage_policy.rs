@@ -20,6 +20,8 @@ pub enum DriverType {
     Local,
     #[sea_orm(string_value = "s3")]
     S3,
+    #[sea_orm(string_value = "azure_blob")]
+    AzureBlob,
     #[sea_orm(string_value = "tencent_cos")]
     TencentCos,
     #[sea_orm(string_value = "remote")]
@@ -31,6 +33,7 @@ impl DriverType {
         match self {
             Self::Local => "local",
             Self::S3 => "s3",
+            Self::AzureBlob => "azure_blob",
             Self::TencentCos => "tencent_cos",
             Self::Remote => "remote",
         }
@@ -573,13 +576,21 @@ mod tests {
         let json = serde_json::to_string(&DriverType::TencentCos).unwrap();
         assert_eq!(json, r#""tencent_cos""#);
         assert_eq!(DriverType::TencentCos.as_str(), "tencent_cos");
+        assert_eq!(
+            serde_json::to_string(&DriverType::AzureBlob).unwrap(),
+            r#""azure_blob""#
+        );
+        assert_eq!(DriverType::AzureBlob.as_str(), "azure_blob");
 
         let parsed: DriverType = serde_json::from_str(r#""tencent_cos""#).unwrap();
         assert_eq!(parsed, DriverType::TencentCos);
+        let parsed: DriverType = serde_json::from_str(r#""azure_blob""#).unwrap();
+        assert_eq!(parsed, DriverType::AzureBlob);
 
         assert!(serde_json::from_str::<DriverType>(r#""tencentcos""#).is_err());
         assert!(serde_json::from_str::<DriverType>(r#""tencentCos""#).is_err());
         assert!(serde_json::from_str::<DriverType>(r#""tencent-cos""#).is_err());
+        assert!(serde_json::from_str::<DriverType>(r#""azureBlob""#).is_err());
     }
 
     #[test]

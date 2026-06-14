@@ -353,6 +353,18 @@ function providerKind(
 	};
 }
 
+function escapeRegExp(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function clickProviderKindCard(name = "OpenID Connect") {
+	fireEvent.click(
+		screen.getByRole("button", {
+			name: new RegExp(`^${escapeRegExp(name)}\\b`),
+		}),
+	);
+}
+
 describe("AdminExternalAuthPage", () => {
 	beforeEach(() => {
 		mockState.create.mockReset();
@@ -442,7 +454,7 @@ describe("AdminExternalAuthPage", () => {
 		fireEvent.click(createButtons[createButtons.length - 1]);
 
 		expect(screen.getByText("OpenID Connect")).toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+		clickProviderKindCard();
 
 		fireEvent.change(
 			screen.getByLabelText("external_auth_provider_display_name"),
@@ -546,8 +558,7 @@ describe("AdminExternalAuthPage", () => {
 			name: /external_auth_provider_create/,
 		});
 		fireEvent.click(createButtons[createButtons.length - 1]);
-		fireEvent.click(screen.getByRole("button", { name: /Google/ }));
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+		clickProviderKindCard("Google");
 
 		expect(screen.getByDisplayValue("Google")).toHaveAttribute(
 			"id",
@@ -639,8 +650,7 @@ describe("AdminExternalAuthPage", () => {
 			name: /external_auth_provider_create/,
 		});
 		fireEvent.click(createButtons[createButtons.length - 1]);
-		fireEvent.click(screen.getByRole("button", { name: /Microsoft/ }));
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+		clickProviderKindCard("Microsoft");
 
 		expect(screen.getByDisplayValue("Microsoft")).toHaveAttribute(
 			"id",
@@ -752,8 +762,7 @@ describe("AdminExternalAuthPage", () => {
 			name: /external_auth_provider_create/,
 		});
 		fireEvent.click(createButtons[createButtons.length - 1]);
-		fireEvent.click(screen.getByRole("button", { name: /QQ/ }));
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+		clickProviderKindCard("QQ");
 
 		expect(screen.getByDisplayValue("QQ")).toHaveAttribute(
 			"id",
@@ -849,11 +858,14 @@ describe("AdminExternalAuthPage", () => {
 		await waitFor(() => {
 			expect(mockState.handleApiError).toHaveBeenCalledWith(loadKindsError);
 		});
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
 
 		expect(
-			screen.getByText("external_auth_provider_wizard_choose_type_title"),
-		).toBeInTheDocument();
+			screen.getAllByText("external_auth_provider_wizard_step_type_title")
+				.length,
+		).toBeGreaterThan(0);
+		expect(
+			screen.queryByRole("button", { name: "policy_wizard_next" }),
+		).not.toBeInTheDocument();
 		expect(
 			screen.queryByLabelText("external_auth_provider_display_name"),
 		).not.toBeInTheDocument();
@@ -886,7 +898,7 @@ describe("AdminExternalAuthPage", () => {
 		fireEvent.click(createButtons[createButtons.length - 1]);
 
 		await screen.findByText("QQ");
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+		clickProviderKindCard("QQ");
 
 		expect(
 			screen.queryByLabelText("external_auth_provider_issuer_url"),
@@ -942,7 +954,7 @@ describe("AdminExternalAuthPage", () => {
 
 		fireEvent.click(createButtons[createButtons.length - 1]);
 		await screen.findByText("Generic OAuth2");
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+		clickProviderKindCard("Generic OAuth2");
 
 		expect(
 			screen.getByLabelText("external_auth_provider_authorization_url"),
@@ -964,7 +976,7 @@ describe("AdminExternalAuthPage", () => {
 			name: /external_auth_provider_create/,
 		});
 		fireEvent.click(createButtons[createButtons.length - 1]);
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+		clickProviderKindCard();
 		fireEvent.change(
 			screen.getByLabelText("external_auth_provider_issuer_url"),
 			{
@@ -1148,7 +1160,7 @@ describe("AdminExternalAuthPage", () => {
 			name: /external_auth_provider_create/,
 		});
 		fireEvent.click(createButtons[createButtons.length - 1]);
-		fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+		clickProviderKindCard();
 		fireEvent.change(
 			screen.getByLabelText("external_auth_provider_issuer_url"),
 			{

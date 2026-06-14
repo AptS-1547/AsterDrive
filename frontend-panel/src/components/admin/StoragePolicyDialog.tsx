@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { getPolicyDriverBadgeClass } from "@/components/admin/admin-policies-page/policyPresentation";
 import type { StoragePolicyDriverOption } from "@/components/admin/StoragePolicyDialogFields";
 import {
-	isS3CompatibleDriver,
+	isObjectStorageDriver,
 	type PolicyFormData,
 } from "@/components/admin/storagePolicyDialogShared";
 import { InlineConfirm } from "@/components/common/ManagerDialogShell";
@@ -143,6 +144,12 @@ function useStoragePolicyDialogContent({
 			description: t("policy_wizard_tencent_cos_storage_desc"),
 			iconSrc: "/static/storage/tencent-cloud-cos.webp",
 		},
+		{
+			type: "azure_blob",
+			title: t("driver_type_azure_blob"),
+			description: t("policy_wizard_azure_blob_storage_desc"),
+			iconSrc: "/static/storage/azure-blob.svg",
+		},
 	];
 	const createSteps: StoragePolicyDialogStep[] = [
 		{
@@ -150,15 +157,17 @@ function useStoragePolicyDialogContent({
 			description: t("policy_wizard_step_storage_desc"),
 		},
 		{
-			title: isS3CompatibleDriver(form.driver_type)
+			title: isObjectStorageDriver(form.driver_type)
 				? t("policy_wizard_step_connection_title")
 				: form.driver_type === "remote"
 					? t("policy_wizard_step_remote_title")
 					: t("policy_wizard_step_local_title"),
-			description: isS3CompatibleDriver(form.driver_type)
+			description: isObjectStorageDriver(form.driver_type)
 				? form.driver_type === "tencent_cos"
 					? t("policy_wizard_step_tencent_cos_connection_desc")
-					: t("policy_wizard_step_connection_desc")
+					: form.driver_type === "azure_blob"
+						? t("policy_wizard_step_azure_blob_connection_desc")
+						: t("policy_wizard_step_connection_desc")
 				: form.driver_type === "remote"
 					? t("policy_wizard_step_remote_desc")
 					: t("policy_wizard_step_local_desc"),
@@ -189,14 +198,7 @@ function useStoragePolicyDialogContent({
 	const currentStorageOption =
 		storageOptions.find((option) => option.type === form.driver_type) ??
 		storageOptions[0];
-	const currentDriverBadgeClass =
-		form.driver_type === "s3"
-			? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
-			: form.driver_type === "tencent_cos"
-				? "border-cyan-500/60 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
-				: form.driver_type === "remote"
-					? "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300"
-					: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
+	const currentDriverBadgeClass = getPolicyDriverBadgeClass(form.driver_type);
 	const createNameError =
 		isCreateMode && createStep === 1 && createStepTouched && !form.name.trim()
 			? t("policy_wizard_name_required")
@@ -205,12 +207,12 @@ function useStoragePolicyDialogContent({
 		isCreateMode &&
 		createStep === 1 &&
 		createStepTouched &&
-		isS3CompatibleDriver(form.driver_type) &&
+		isObjectStorageDriver(form.driver_type) &&
 		!form.bucket.trim()
 			? t("policy_wizard_bucket_required")
 			: null;
 	const createEndpointError =
-		isS3CompatibleDriver(form.driver_type) && !form.endpoint.trim()
+		isObjectStorageDriver(form.driver_type) && !form.endpoint.trim()
 			? isCreateMode
 				? createStep === 1 && createStepTouched
 					? t("policy_wizard_endpoint_required")
@@ -312,7 +314,7 @@ function useStoragePolicyDialogContent({
 					},
 				]
 			: []),
-		...(isS3CompatibleDriver(form.driver_type)
+		...(isObjectStorageDriver(form.driver_type)
 			? [
 					{
 						label: t("endpoint"),
@@ -481,7 +483,7 @@ function useStoragePolicyDialogContent({
 
 						<div className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-2">
 							{isCreateMode ? (
-								createStep === createLastStep ? (
+								createStep === 0 ? null : createStep === createLastStep ? (
 									<>
 										<StoragePolicyTestConnectionButton
 											onTest={onRunConnectionTest}
@@ -499,7 +501,7 @@ function useStoragePolicyDialogContent({
 								) : (
 									<>
 										{createStep === 1 &&
-										(isS3CompatibleDriver(form.driver_type) ||
+										(isObjectStorageDriver(form.driver_type) ||
 											form.driver_type === "remote") ? (
 											<StoragePolicyTestConnectionButton
 												onTest={onRunConnectionTest}

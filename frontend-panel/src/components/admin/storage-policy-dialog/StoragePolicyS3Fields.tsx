@@ -23,11 +23,21 @@ export function S3ConnectionFields({
 	const endpointHintKey =
 		form.driver_type === "tencent_cos"
 			? "cos_endpoint_hint"
-			: "s3_endpoint_hint";
+			: form.driver_type === "azure_blob"
+				? "azure_blob_endpoint_hint"
+				: "s3_endpoint_hint";
 	const endpointPlaceholder =
 		form.driver_type === "tencent_cos"
 			? "https://<bucket-appid>.cos.<region>.myqcloud.com"
-			: "https://s3.amazonaws.com";
+			: form.driver_type === "azure_blob"
+				? "https://<account>.blob.core.windows.net"
+				: "https://s3.amazonaws.com";
+	const accessKeyLabel =
+		form.driver_type === "azure_blob"
+			? "azure_blob_account_name"
+			: "access_key";
+	const secretKeyLabel =
+		form.driver_type === "azure_blob" ? "azure_blob_account_key" : "secret_key";
 
 	return (
 		<>
@@ -68,7 +78,7 @@ export function S3ConnectionFields({
 			) : null}
 			<div className="grid grid-cols-2 gap-4">
 				<div className="space-y-2">
-					<Label htmlFor="access_key">{t("access_key")}</Label>
+					<Label htmlFor="access_key">{t(accessKeyLabel)}</Label>
 					<Input
 						id="access_key"
 						name="storage-policy-access-key"
@@ -84,7 +94,7 @@ export function S3ConnectionFields({
 					/>
 				</div>
 				<div className="space-y-2">
-					<Label htmlFor="secret_key">{t("secret_key")}</Label>
+					<Label htmlFor="secret_key">{t(secretKeyLabel)}</Label>
 					<Input
 						id="secret_key"
 						name="storage-policy-secret-key"

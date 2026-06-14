@@ -133,6 +133,10 @@ export function createSimpleUploadRunners({
 						});
 					},
 					onCreateXhr,
+					{
+						requireEtag: false,
+						headers: init.presigned_headers ?? undefined,
+					},
 				),
 			);
 

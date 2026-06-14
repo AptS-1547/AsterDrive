@@ -24,6 +24,7 @@ import type { AdminPolicySortBy } from "@/types/adminSort";
 import type { StoragePolicy } from "@/types/api";
 import {
 	getPolicyDriverBadgeClass,
+	getPolicyDriverLabelKey,
 	PROTECTED_POLICY_ID,
 } from "./policyPresentation";
 
@@ -164,13 +165,7 @@ export function PoliciesTable({
 									variant="outline"
 									className={getPolicyDriverBadgeClass(policy.driver_type)}
 								>
-									{policy.driver_type === "local"
-										? t("driver_type_local")
-										: policy.driver_type === "remote"
-											? t("driver_type_remote")
-											: policy.driver_type === "tencent_cos"
-												? t("driver_type_tencent_cos")
-												: t("driver_type_s3")}
+									{t(getPolicyDriverLabelKey(policy.driver_type))}
 								</Badge>
 							</div>
 						</TableCell>

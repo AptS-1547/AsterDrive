@@ -5,7 +5,10 @@ import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { PoliciesTable } from "@/components/admin/admin-policies-page/PoliciesTable";
 import { PolicyDialogs } from "@/components/admin/admin-policies-page/PolicyDialogs";
-import { PROTECTED_POLICY_ID } from "@/components/admin/admin-policies-page/policyPresentation";
+import {
+	getPolicyDriverLabelKey,
+	PROTECTED_POLICY_ID,
+} from "@/components/admin/admin-policies-page/policyPresentation";
 import { StoragePolicyMigrationDialog } from "@/components/admin/admin-policies-page/StoragePolicyMigrationDialog";
 import {
 	buildCreatePolicyPayload,
@@ -18,7 +21,7 @@ import {
 	getPolicyForm,
 	getS3CompatibleDriverPromotionTarget,
 	hasConnectionFieldChanges,
-	isS3CompatibleDriver,
+	isObjectStorageDriver,
 	normalizePolicyForm,
 	type PolicyFormData,
 } from "@/components/admin/storagePolicyDialogShared";
@@ -220,7 +223,7 @@ function useAdminPoliciesPageContent() {
 	} = usePendingAction();
 	const endpointValidationMessage = getEndpointValidationMessage(form, t);
 	const getS3CompatiblePromotionDriverLabel = (driverType: "tencent_cos") =>
-		driverType === "tencent_cos" ? t("driver_type_tencent_cos") : driverType;
+		t(getPolicyDriverLabelKey(driverType));
 	const savedS3DriverPromotionTarget = getS3CompatibleDriverPromotionTarget(
 		editingPolicy,
 		getS3CompatiblePromotionDriverLabel,
@@ -503,7 +506,7 @@ function useAdminPoliciesPageContent() {
 		setForm((prev) => {
 			const { s3_path_style: previousS3PathStyle, ...prevWithoutS3PathStyle } =
 				prev;
-			if (isS3CompatibleDriver(driverType)) {
+			if (isObjectStorageDriver(driverType)) {
 				return {
 					...prevWithoutS3PathStyle,
 					driver_type: driverType,
@@ -612,7 +615,7 @@ function useAdminPoliciesPageContent() {
 			}
 
 			if (
-				isS3CompatibleDriver(currentForm.driver_type) ||
+				isObjectStorageDriver(currentForm.driver_type) ||
 				currentForm.driver_type === "remote"
 			) {
 				setValidatedConnectionKey(getPolicyConnectionTestKey(currentForm));
@@ -670,7 +673,7 @@ function useAdminPoliciesPageContent() {
 
 	const shouldRunConnectionSaveTest = () => {
 		if (
-			!isS3CompatibleDriver(form.driver_type) &&
+			!isObjectStorageDriver(form.driver_type) &&
 			form.driver_type !== "remote"
 		) {
 			return false;
@@ -803,11 +806,11 @@ function useAdminPoliciesPageContent() {
 			return;
 		}
 
-		if (isS3CompatibleDriver(form.driver_type) && !form.bucket.trim()) {
+		if (isObjectStorageDriver(form.driver_type) && !form.bucket.trim()) {
 			return;
 		}
 
-		if (isS3CompatibleDriver(form.driver_type) && !form.endpoint.trim()) {
+		if (isObjectStorageDriver(form.driver_type) && !form.endpoint.trim()) {
 			return;
 		}
 

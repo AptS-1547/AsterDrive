@@ -411,6 +411,77 @@ describe("uploadService", () => {
 		expect(xhr.method).toBe("PUT");
 		expect(xhr.url).toBe("https://s3.example/upload");
 		expect(xhr.headers["Content-Type"]).toBe("application/octet-stream");
+		expect(xhr.headers["x-ms-blob-type"]).toBeUndefined();
+	});
+
+	it("applies provider-required presigned PUT headers", async () => {
+		const { uploadService } = await import("@/services/uploadService");
+
+		const promise = uploadService.presignedUpload(
+			"https://account.blob.core.windows.net/container/blob",
+			new Blob(["hello"]),
+			undefined,
+			undefined,
+			{
+				requireEtag: false,
+				headers: { "x-ms-blob-type": "BlockBlob" },
+			},
+		);
+		const xhr = MockXMLHttpRequest.instances[0];
+		xhr.status = 201;
+		xhr.onload?.();
+
+		await expect(promise).resolves.toBe("");
+		expect(xhr.headers["Content-Type"]).toBe("application/octet-stream");
+		expect(xhr.headers["x-ms-blob-type"]).toBe("BlockBlob");
+	});
+
+	it("allows presigned uploads without ETag when explicitly requested", async () => {
+		const { uploadService } = await import("@/services/uploadService");
+
+		const promise = uploadService.presignedUpload(
+			"https://blob.example/upload",
+			new Blob(["hello"]),
+			undefined,
+			undefined,
+			{ requireEtag: false },
+		);
+		const xhr = MockXMLHttpRequest.instances[0];
+		xhr.status = 201;
+		xhr.onload?.();
+
+		await expect(promise).resolves.toBe("");
+	});
+
+	it("still rejects failed presigned uploads when ETag is optional", async () => {
+		const { uploadService } = await import("@/services/uploadService");
+
+		const promise = uploadService.presignedUpload(
+			"https://blob.example/upload",
+			new Blob(["hello"]),
+			undefined,
+			undefined,
+			{ requireEtag: false },
+		);
+		const xhr = MockXMLHttpRequest.instances[0];
+		xhr.status = 409;
+		xhr.onload?.();
+
+		await expect(promise).rejects.toThrow("Presigned upload failed: 409");
+	});
+
+	it("uses Azure block IDs as presigned multipart completion markers", async () => {
+		const { uploadService } = await import("@/services/uploadService");
+
+		const promise = uploadService.presignedUpload(
+			"https://account.blob.core.windows.net/container/blob?comp=block&blockid=abc%2B%2F%3D",
+			new Blob(["hello"]),
+		);
+		const xhr = MockXMLHttpRequest.instances[0];
+		xhr.status = 201;
+		xhr.onload?.();
+
+		await expect(promise).resolves.toBe("abc+/=");
 	});
 
 	it("rejects presigned uploads on missing etags or network failures", async () => {

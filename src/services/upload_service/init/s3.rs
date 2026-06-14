@@ -106,18 +106,19 @@ async fn init_presigned_s3_single_upload(
             return Ok(UniqueUuidAttempt::Collision);
         }
 
-        let presigned_url = match presigned_put_url(driver, &temp_key).await {
-            Ok(url) => url,
-            Err(error) => {
-                delete_upload_session_record_after_init_error(
-                    state.writer_db(),
-                    &upload_id,
-                    "presigned URL initialization error",
-                )
-                .await;
-                return Err(error);
-            }
-        };
+        let (presigned_url, presigned_headers) =
+            match presigned_put_request(driver, &temp_key).await {
+                Ok(request) => request,
+                Err(error) => {
+                    delete_upload_session_record_after_init_error(
+                        state.writer_db(),
+                        &upload_id,
+                        "presigned URL initialization error",
+                    )
+                    .await;
+                    return Err(error);
+                }
+            };
 
         tracing::debug!(
             scope = ?ctx.scope,
@@ -134,6 +135,7 @@ async fn init_presigned_s3_single_upload(
             chunk_size: None,
             total_chunks: None,
             presigned_url: Some(presigned_url),
+            presigned_headers,
         }))
     })
     .await
@@ -183,15 +185,16 @@ async fn init_relay_stream_s3_upload(
     .await
 }
 
-async fn presigned_put_url(
+async fn presigned_put_request(
     driver: &dyn crate::storage::StorageDriver,
     temp_key: &str,
-) -> Result<String> {
+) -> Result<(String, std::collections::BTreeMap<String, String>)> {
     let presigned_driver = driver
         .as_presigned()
         .ok_or_else(|| AsterError::storage_driver_error("presigned PUT not supported by driver"))?;
-    presigned_driver
+    let url = presigned_driver
         .presigned_put_url(temp_key, std::time::Duration::from_secs(HOUR_SECS))
         .await?
-        .ok_or_else(|| AsterError::storage_driver_error("presigned PUT not supported by driver"))
+        .ok_or_else(|| AsterError::storage_driver_error("presigned PUT not supported by driver"))?;
+    Ok((url, presigned_driver.presigned_put_headers()))
 }

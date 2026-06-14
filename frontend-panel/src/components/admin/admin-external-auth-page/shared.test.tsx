@@ -27,6 +27,7 @@ import {
 	requiredFieldsMissing,
 	securityModeLabel,
 	shouldShowIssuerUrl,
+	sortExternalAuthProviderKinds,
 	testParamsPayload,
 	updatePayload,
 } from "@/components/admin/admin-external-auth-page/shared";
@@ -819,6 +820,26 @@ describe("admin external auth shared helpers", () => {
 		expect(providerIconSummary({ ...form, iconUrl: " /idp.svg " })).toBe(
 			"/idp.svg",
 		);
+	});
+
+	it("sorts provider kinds with OIDC and OAuth2 first", () => {
+		expect(
+			sortExternalAuthProviderKinds([
+				githubKind(),
+				kind({ display_name: "QQ", kind: "qq" }),
+				kind({ display_name: "Microsoft", kind: "microsoft" }),
+				oauth2Kind(),
+				googleKind(),
+				kind(),
+			]).map((item) => item.kind),
+		).toEqual([
+			"oidc",
+			"generic_oauth2",
+			"github",
+			"google",
+			"microsoft",
+			"qq",
+		]);
 	});
 
 	it("formats labels, statuses, callback URLs, endpoints, and pagination params", () => {
