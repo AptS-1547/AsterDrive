@@ -25,6 +25,7 @@ pub fn driver_type_supports_native_thumbnail(driver_type: DriverType) -> bool {
         DriverType::AzureBlob => false,
         DriverType::TencentCos => true,
         DriverType::Remote => false,
+        DriverType::OneDrive => false,
     }
 }
 
@@ -35,6 +36,7 @@ pub fn driver_type_supports_native_media_metadata(driver_type: DriverType) -> bo
         DriverType::AzureBlob => false,
         DriverType::TencentCos => true,
         DriverType::Remote => false,
+        DriverType::OneDrive => false,
     }
 }
 

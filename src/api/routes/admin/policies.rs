@@ -4,7 +4,7 @@ use crate::api::dto::admin::{
     AdminPolicyGroupListQuery, AdminPolicyListQuery, CreatePolicyGroupReq, CreatePolicyReq,
     DeletePolicyQuery, ExecuteDraftStoragePolicyActionReq, ExecuteSavedStoragePolicyActionReq,
     MigratePolicyGroupAssignmentsReq, PatchPolicyGroupReq, PatchPolicyReq, PolicyGroupItemReq,
-    PromoteS3CompatiblePolicyDriverReq, TestPolicyParamsReq,
+    PromoteS3CompatiblePolicyDriverReq, StartStorageAuthorizationReq, TestPolicyParamsReq,
 };
 use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
@@ -13,6 +13,7 @@ use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
+use crate::services::storage_credential_service;
 use crate::services::{audit_service, auth_service::Claims, policy_service};
 use crate::types::DriverType;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -144,6 +145,17 @@ impl From<PromoteS3CompatiblePolicyDriverReq>
             target_driver_type: value.target_driver_type,
             endpoint: value.endpoint,
             bucket: value.bucket,
+        }
+    }
+}
+
+impl From<StartStorageAuthorizationReq>
+    for storage_credential_service::StorageAuthorizationStartInput
+{
+    fn from(value: StartStorageAuthorizationReq) -> Self {
+        Self {
+            provider: value.provider,
+            microsoft_graph: value.microsoft_graph,
         }
     }
 }
@@ -486,6 +498,82 @@ pub async fn execute_draft_storage_policy_action(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/admin/policies/storage-credential-providers",
+    tag = "admin",
+    operation_id = "list_storage_credential_providers",
+    responses(
+        (status = 200, description = "Supported storage credential providers", body = inline(ApiResponse<Vec<storage_credential_service::StorageCredentialProviderInfo>>)),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_storage_credential_providers() -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(
+        storage_credential_service::list_supported_providers(),
+    )))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/admin/policies/{id}/storage-authorization/start",
+    tag = "admin",
+    operation_id = "start_storage_authorization",
+    params(("id" = i64, Path, description = "Policy ID")),
+    request_body = StartStorageAuthorizationReq,
+    responses(
+        (status = 200, description = "Storage credential authorization URL", body = inline(ApiResponse<storage_credential_service::StorageAuthorizationStartResponse>)),
+        (status = 400, description = "Invalid authorization configuration"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn start_storage_authorization(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
+    path: web::Path<i64>,
+    body: web::Json<StartStorageAuthorizationReq>,
+) -> Result<HttpResponse> {
+    validate_request(&*body)?;
+    let response = storage_credential_service::start_authorization(
+        state.get_ref(),
+        &req,
+        *path,
+        claims.user_id,
+        body.into_inner().into(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(response)))
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/admin/policies/storage-authorization/callback",
+    tag = "admin",
+    operation_id = "finish_storage_authorization",
+    params(storage_credential_service::StorageAuthorizationCallbackQuery),
+    responses(
+        (status = 200, description = "Storage credential authorization completed", body = inline(ApiResponse<storage_credential_service::StorageAuthorizationCallbackOutcome>)),
+        (status = 400, description = "Authorization callback rejected"),
+        (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn finish_storage_authorization(
+    state: web::Data<PrimaryAppState>,
+    query: web::Query<storage_credential_service::StorageAuthorizationCallbackQuery>,
+) -> Result<HttpResponse> {
+    let response =
+        storage_credential_service::finish_authorization_callback(state.get_ref(), &query).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(response)))
 }
 
 #[api_docs_macros::path(

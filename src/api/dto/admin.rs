@@ -201,6 +201,15 @@ pub struct ExecuteSavedStoragePolicyActionReq {
     pub action: crate::services::policy_service::StoragePolicyActionType,
 }
 
+/// Start an OAuth authorization flow for an administrator-managed storage policy credential.
+#[derive(Deserialize, Validate)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct StartStorageAuthorizationReq {
+    pub provider: crate::types::StorageCredentialProvider,
+    pub microsoft_graph:
+        Option<crate::services::storage_credential_service::MicrosoftGraphAuthorizationInput>,
+}
+
 /// Promote an S3-compatible storage policy to a specialized S3-compatible driver.
 #[derive(Deserialize, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]

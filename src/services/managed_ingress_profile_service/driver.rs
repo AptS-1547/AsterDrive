@@ -29,9 +29,10 @@ pub(in crate::services::managed_ingress_profile_service) fn validate_driver_from
             )
         }
         DriverType::S3 => S3Driver::validate_policy(&policy),
-        DriverType::AzureBlob | DriverType::TencentCos | DriverType::Remote => {
-            Err(managed_ingress_unsupported_driver_error(policy.driver_type))
-        }
+        DriverType::AzureBlob
+        | DriverType::TencentCos
+        | DriverType::Remote
+        | DriverType::OneDrive => Err(managed_ingress_unsupported_driver_error(policy.driver_type)),
     }
 }
 
@@ -55,9 +56,10 @@ pub(in crate::services::managed_ingress_profile_service) fn build_driver_from_pr
             Ok(Arc::new(LocalDriver::new(&policy)?))
         }
         DriverType::S3 => Ok(Arc::new(S3Driver::new(&policy)?)),
-        DriverType::AzureBlob | DriverType::TencentCos | DriverType::Remote => {
-            Err(managed_ingress_unsupported_driver_error(policy.driver_type))
-        }
+        DriverType::AzureBlob
+        | DriverType::TencentCos
+        | DriverType::Remote
+        | DriverType::OneDrive => Err(managed_ingress_unsupported_driver_error(policy.driver_type)),
     }
 }
 
@@ -68,6 +70,7 @@ fn managed_ingress_unsupported_driver_error(driver_type: DriverType) -> AsterErr
             DriverType::TencentCos => "tencent_cos",
             DriverType::AzureBlob => "azure_blob",
             DriverType::Remote => "remote",
+            DriverType::OneDrive => "onedrive",
             other => other.as_str(),
         }
     ))
@@ -85,7 +88,10 @@ fn build_policy_model<S: FollowerRuntimeState>(
         .to_string_lossy()
         .into_owned(),
         DriverType::S3 => profile.base_path.clone(),
-        DriverType::AzureBlob | DriverType::TencentCos | DriverType::Remote => String::new(),
+        DriverType::AzureBlob
+        | DriverType::TencentCos
+        | DriverType::Remote
+        | DriverType::OneDrive => String::new(),
     };
 
     Ok(storage_policy::Model {

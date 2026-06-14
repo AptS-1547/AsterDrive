@@ -40,6 +40,7 @@ pub mod search_service;
 pub mod share_service;
 pub mod share_stream_service;
 pub mod storage_change_service;
+pub mod storage_credential_service;
 pub mod stream_ticket_service;
 pub mod tag_service;
 pub mod task_service;

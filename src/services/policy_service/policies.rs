@@ -37,6 +37,7 @@ fn driver_type_name(driver_type: DriverType) -> &'static str {
         DriverType::AzureBlob => "azure_blob",
         DriverType::TencentCos => "tencent_cos",
         DriverType::Remote => "remote",
+        DriverType::OneDrive => "onedrive",
     }
 }
 
@@ -102,8 +103,40 @@ fn validate_connection_credentials(
             validate_connection_secret(access_key, "access_key", driver)?;
             validate_connection_secret(secret_key, "secret_key", driver)?;
         }
-        DriverType::Local | DriverType::Remote => {}
+        DriverType::Local | DriverType::Remote | DriverType::OneDrive => {}
     }
+    Ok(())
+}
+
+fn ensure_onedrive_options_supported(
+    driver_type: DriverType,
+    options: &StoragePolicyOptions,
+) -> Result<()> {
+    let has_onedrive_options = options.onedrive_cloud.is_some()
+        || options.onedrive_account_mode.is_some()
+        || options.onedrive_tenant.is_some()
+        || options.onedrive_drive_id.is_some()
+        || options.onedrive_root_item_id.is_some()
+        || options.onedrive_site_id.is_some()
+        || options.onedrive_group_id.is_some();
+    if driver_type != DriverType::OneDrive {
+        if has_onedrive_options {
+            return Err(AsterError::validation_error(
+                "OneDrive options are only valid for OneDrive storage policies",
+            ));
+        }
+        return Ok(());
+    }
+
+    if options.onedrive_account_mode.is_none()
+        || options.onedrive_drive_id.is_none()
+        || options.onedrive_root_item_id.is_none()
+    {
+        return Err(AsterError::validation_error(
+            "OneDrive storage policies require onedrive_account_mode, onedrive_drive_id, and onedrive_root_item_id",
+        ));
+    }
+
     Ok(())
 }
 
@@ -206,6 +239,7 @@ pub async fn create(
     let serialized_options = serialize_options(&options)?;
     let chunk_size = chunk_size.unwrap_or(5_242_880);
     ensure_storage_native_thumbnail_supported(driver_type, &options)?;
+    ensure_onedrive_options_supported(driver_type, &options)?;
     ensure_remote_transport_supports_policy_options(
         state.writer_db(),
         driver_type,
@@ -399,6 +433,7 @@ pub async fn update(
     let final_options = options.unwrap_or(existing_options).normalized();
     let serialized_final_options = serialize_options(&final_options)?;
     ensure_storage_native_thumbnail_supported(existing.driver_type, &final_options)?;
+    ensure_onedrive_options_supported(existing.driver_type, &final_options)?;
     ensure_remote_transport_supports_policy_options(
         &txn,
         existing.driver_type,
@@ -660,6 +695,8 @@ pub async fn test_connection_params<S: RemoteProtocolRuntimeState>(
     validate_connection_credentials(driver_type, &access_key, &secret_key)?;
     let remote_node_id =
         validate_remote_binding(state.writer_db(), driver_type, remote_node_id).await?;
+    let options = options.normalized();
+    ensure_onedrive_options_supported(driver_type, &options)?;
 
     let fake_policy = storage_policy::Model {
         id: 0,
@@ -696,6 +733,12 @@ pub async fn test_connection_params<S: RemoteProtocolRuntimeState>(
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
         DriverType::AzureBlob => Box::new(AzureBlobDriver::new(&fake_policy)?),
         DriverType::TencentCos => Box::new(TencentCosDriver::new(&fake_policy)?),
+        DriverType::OneDrive => {
+            return Err(crate::storage::error::storage_driver_error(
+                crate::storage::StorageErrorKind::Unsupported,
+                "OneDrive storage driver is not implemented yet",
+            ));
+        }
     };
 
     probe_storage_driver(driver.as_ref(), "connection test failed").await
@@ -852,6 +895,8 @@ async fn build_connection_test_policy<S: RemoteProtocolRuntimeState>(
     validate_connection_credentials(driver_type, &access_key, &secret_key)?;
     let remote_node_id =
         validate_remote_binding(state.writer_db(), driver_type, remote_node_id).await?;
+    let options = options.normalized();
+    ensure_onedrive_options_supported(driver_type, &options)?;
 
     Ok(storage_policy::Model {
         id: 0,
@@ -896,6 +941,46 @@ impl From<crate::storage::drivers::tencent_cos::cors::TencentCosCorsApplyResult>
             replaced_existing_rule: value.replaced_existing_rule,
             response_vary: value.response_vary,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_onedrive_options_supported;
+    use crate::types::{DriverType, OneDriveAccountMode, StoragePolicyOptions};
+
+    #[test]
+    fn onedrive_options_are_rejected_for_non_onedrive_policy() {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+            onedrive_drive_id: Some("drive".to_string()),
+            onedrive_root_item_id: Some("root".to_string()),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::S3, &options).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("OneDrive options are only valid for OneDrive")
+        );
+    }
+
+    #[test]
+    fn onedrive_policy_requires_location_options() {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::OneDrive, &options).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("OneDrive storage policies require")
+        );
     }
 }
 

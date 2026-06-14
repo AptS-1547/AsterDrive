@@ -29,6 +29,7 @@ mod m20260606_000001_add_external_auth_provider_options;
 mod m20260607_000001_add_user_invitations;
 mod m20260608_000001_add_tags;
 mod m20260610_000001_add_user_must_change_password;
+mod m20260612_000001_add_storage_policy_credentials;
 mod search_acceleration;
 mod time;
 
@@ -130,6 +131,7 @@ impl MigratorTrait for CurrentMigrator {
             Box::new(m20260607_000001_add_user_invitations::Migration),
             Box::new(m20260608_000001_add_tags::Migration),
             Box::new(m20260610_000001_add_user_must_change_password::Migration),
+            Box::new(m20260612_000001_add_storage_policy_credentials::Migration),
         ]
     }
 }

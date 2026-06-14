@@ -9,13 +9,14 @@ pub(crate) enum PolicyUploadTransport {
     Local,
     S3(S3UploadStrategy),
     Remote(RemoteUploadStrategy),
+    OneDrive,
 }
 
 impl PolicyUploadTransport {
     pub(crate) fn effective_chunk_size(self, policy: &storage_policy::Model) -> i64 {
         match self {
             Self::S3(_) => effective_s3_multipart_chunk_size(policy.chunk_size),
-            Self::Local | Self::Remote(_) => policy.chunk_size,
+            Self::Local | Self::Remote(_) | Self::OneDrive => policy.chunk_size,
         }
     }
 
@@ -57,6 +58,7 @@ impl PolicyUploadTransport {
             // 则由 `resolve_init_mode` 单独决定。
             Self::Remote(RemoteUploadStrategy::RelayStream)
             | Self::Remote(RemoteUploadStrategy::Presigned) => true,
+            Self::OneDrive => true,
         }
     }
 
@@ -86,6 +88,7 @@ pub(crate) fn resolve_policy_upload_transport(
         DriverType::Remote => {
             PolicyUploadTransport::Remote(options.effective_remote_upload_strategy())
         }
+        DriverType::OneDrive => PolicyUploadTransport::OneDrive,
     }
 }
 
@@ -330,6 +333,24 @@ mod tests {
             UploadMode::PresignedMultipart
         );
         assert!(transport.supports_streaming_direct_upload(&policy, 100));
+        assert!(!transport.uses_relay_multipart_tracking());
+    }
+
+    #[test]
+    fn onedrive_uses_server_relay_without_presigned_or_multipart_tracking() {
+        let policy = mock_policy(DriverType::OneDrive, 1024, "{}");
+        let transport = resolve_policy_upload_transport(&policy);
+
+        assert_eq!(transport, PolicyUploadTransport::OneDrive);
+        assert_eq!(
+            transport.resolve_init_mode(&policy, 1024),
+            UploadMode::Direct
+        );
+        assert_eq!(
+            transport.resolve_init_mode(&policy, 1025),
+            UploadMode::Chunked
+        );
+        assert!(transport.supports_streaming_direct_upload(&policy, 1024));
         assert!(!transport.uses_relay_multipart_tracking());
     }
 }

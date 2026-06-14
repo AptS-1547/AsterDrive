@@ -306,6 +306,10 @@ async fn driver_from_payload(
         DriverType::S3 => Ok(Box::new(S3Driver::new(&policy)?)),
         DriverType::AzureBlob => Ok(Box::new(AzureBlobDriver::new(&policy)?)),
         DriverType::TencentCos => Ok(Box::new(TencentCosDriver::new(&policy)?)),
+        DriverType::OneDrive => Err(crate::storage::error::storage_driver_error(
+            crate::storage::StorageErrorKind::Unsupported,
+            "OneDrive storage driver is not implemented yet",
+        )),
         DriverType::Remote => {
             let remote = payload.remote_node.as_ref().ok_or_else(|| {
                 AsterError::validation_error(

@@ -291,6 +291,10 @@ impl DriverRegistry {
                 let multipart: Arc<dyn MultipartStorageDriver> = driver;
                 Ok(self.build_entry(policy.driver_type, storage, Some(multipart)))
             }
+            DriverType::OneDrive => Err(storage_driver_error(
+                StorageErrorKind::Unsupported,
+                "OneDrive storage driver is not implemented yet",
+            )),
         }
     }
 

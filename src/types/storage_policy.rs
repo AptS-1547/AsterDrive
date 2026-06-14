@@ -26,6 +26,8 @@ pub enum DriverType {
     TencentCos,
     #[sea_orm(string_value = "remote")]
     Remote,
+    #[sea_orm(string_value = "onedrive")]
+    OneDrive,
 }
 
 impl DriverType {
@@ -36,6 +38,7 @@ impl DriverType {
             Self::AzureBlob => "azure_blob",
             Self::TencentCos => "tencent_cos",
             Self::Remote => "remote",
+            Self::OneDrive => "onedrive",
         }
     }
 }
@@ -122,6 +125,28 @@ pub enum RemoteUploadStrategy {
     RelayStream,
     /// 浏览器通过 presigned URL 直接把对象写到从节点
     Presigned,
+}
+
+/// Microsoft Graph Drive location mode for OneDrive storage policies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum OneDriveAccountMode {
+    Personal,
+    WorkOrSchool,
+    SharepointSite,
+    GroupDrive,
+}
+
+impl OneDriveAccountMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Personal => "personal",
+            Self::WorkOrSchool => "work_or_school",
+            Self::SharepointSite => "sharepoint_site",
+            Self::GroupDrive => "group_drive",
+        }
+    }
 }
 
 /// Remote node transport mode.
@@ -288,6 +313,20 @@ pub struct StoragePolicyOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1, message = "s3_operation_timeout_secs must be greater than 0"))]
     pub s3_operation_timeout_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onedrive_cloud: Option<crate::types::MicrosoftGraphCloud>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onedrive_account_mode: Option<OneDriveAccountMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onedrive_tenant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onedrive_drive_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onedrive_root_item_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onedrive_site_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onedrive_group_id: Option<String>,
 }
 
 impl StoragePolicyOptions {
@@ -345,6 +384,11 @@ impl StoragePolicyOptions {
             normalize_storage_policy_thumbnail_extensions(&self.thumbnail_extensions);
         self.media_metadata_extensions =
             normalize_storage_policy_media_metadata_extensions(&self.media_metadata_extensions);
+        trim_empty_option_string(&mut self.onedrive_tenant);
+        trim_empty_option_string(&mut self.onedrive_drive_id);
+        trim_empty_option_string(&mut self.onedrive_root_item_id);
+        trim_empty_option_string(&mut self.onedrive_site_id);
+        trim_empty_option_string(&mut self.onedrive_group_id);
     }
 
     pub fn normalized(mut self) -> Self {
@@ -403,6 +447,18 @@ impl StoragePolicyOptions {
                 .unwrap_or(DEFAULT_S3_OPERATION_TIMEOUT_SECS),
         )
     }
+
+    pub fn effective_onedrive_cloud(&self) -> crate::types::MicrosoftGraphCloud {
+        self.onedrive_cloud.unwrap_or_default()
+    }
+
+    pub fn effective_onedrive_tenant(&self) -> &str {
+        self.onedrive_tenant
+            .as_deref()
+            .map(str::trim)
+            .filter(|tenant| !tenant.is_empty())
+            .unwrap_or("common")
+    }
 }
 
 fn validate_storage_policy_thumbnail_processor(
@@ -437,6 +493,16 @@ fn normalize_storage_policy_media_metadata_extensions(values: &[String]) -> Vec<
 fn normalize_thumbnail_extension(value: &str) -> Option<String> {
     let normalized = value.trim().trim_start_matches('.').to_ascii_lowercase();
     (!normalized.is_empty()).then_some(normalized)
+}
+
+fn trim_empty_option_string(value: &mut Option<String>) {
+    if let Some(trimmed) = value.as_deref().map(str::trim) {
+        if trimmed.is_empty() {
+            *value = None;
+        } else if value.as_deref() != Some(trimmed) {
+            *value = Some(trimmed.to_string());
+        }
+    }
 }
 
 #[inline]
@@ -507,7 +573,70 @@ fn validate_storage_policy_options(
         return Err(error);
     }
 
+    validate_onedrive_options(value)?;
+
     Ok(())
+}
+
+fn validate_onedrive_options(
+    value: &StoragePolicyOptions,
+) -> std::result::Result<(), ValidationError> {
+    let has_any_onedrive_option = value.onedrive_cloud.is_some()
+        || value.onedrive_account_mode.is_some()
+        || value.onedrive_tenant.is_some()
+        || value.onedrive_drive_id.is_some()
+        || value.onedrive_root_item_id.is_some()
+        || value.onedrive_site_id.is_some()
+        || value.onedrive_group_id.is_some();
+    if !has_any_onedrive_option {
+        return Ok(());
+    }
+
+    if value.onedrive_account_mode.is_none() {
+        let mut error = ValidationError::new("invalid");
+        error.message =
+            Some("onedrive_account_mode is required when OneDrive options are set".into());
+        return Err(error);
+    }
+
+    if value.onedrive_drive_id.is_none() {
+        let mut error = ValidationError::new("invalid");
+        error.message = Some("onedrive_drive_id is required when OneDrive options are set".into());
+        return Err(error);
+    }
+
+    if value.onedrive_root_item_id.is_none() {
+        let mut error = ValidationError::new("invalid");
+        error.message =
+            Some("onedrive_root_item_id is required when OneDrive options are set".into());
+        return Err(error);
+    }
+
+    match value.onedrive_account_mode {
+        Some(OneDriveAccountMode::SharepointSite) if value.onedrive_site_id.is_none() => {
+            let mut error = ValidationError::new("invalid");
+            error.message =
+                Some("onedrive_site_id is required for OneDrive sharepoint_site policies".into());
+            Err(error)
+        }
+        Some(OneDriveAccountMode::GroupDrive) if value.onedrive_group_id.is_none() => {
+            let mut error = ValidationError::new("invalid");
+            error.message =
+                Some("onedrive_group_id is required for OneDrive group_drive policies".into());
+            Err(error)
+        }
+        Some(OneDriveAccountMode::Personal | OneDriveAccountMode::WorkOrSchool)
+            if value.onedrive_site_id.is_some() || value.onedrive_group_id.is_some() =>
+        {
+            let mut error = ValidationError::new("invalid");
+            error.message = Some(
+                "onedrive_site_id and onedrive_group_id are only valid for SharePoint or group Drive modes"
+                    .into(),
+            );
+            Err(error)
+        }
+        _ => Ok(()),
+    }
 }
 
 pub fn parse_storage_policy_options(options: &str) -> StoragePolicyOptions {
@@ -553,12 +682,12 @@ pub fn effective_s3_multipart_chunk_size(configured: i64) -> i64 {
 }
 #[cfg(test)]
 mod tests {
-    use crate::types::{RemoteDownloadStrategy, RemoteUploadStrategy};
+    use crate::types::{MicrosoftGraphCloud, RemoteDownloadStrategy, RemoteUploadStrategy};
     use validator::Validate;
 
     use super::{
-        DriverType, MediaProcessorKind, S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions,
-        parse_storage_policy_options, serialize_storage_policy_options,
+        DriverType, MediaProcessorKind, OneDriveAccountMode, S3DownloadStrategy, S3UploadStrategy,
+        StoragePolicyOptions, parse_storage_policy_options, serialize_storage_policy_options,
     };
     use std::time::Duration;
 
@@ -951,5 +1080,55 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"remote_upload_strategy":"presigned"}"#);
+    }
+
+    #[test]
+    fn onedrive_options_normalize_blank_tenant_and_resolve_defaults() {
+        let options = parse_storage_policy_options(
+            r#"{"onedrive_account_mode":"work_or_school","onedrive_tenant":"  ","onedrive_drive_id":" drive ","onedrive_root_item_id":" root "}"#,
+        );
+
+        assert_eq!(
+            options.effective_onedrive_cloud(),
+            MicrosoftGraphCloud::Global
+        );
+        assert_eq!(options.effective_onedrive_tenant(), "common");
+        assert_eq!(options.onedrive_drive_id.as_deref(), Some("drive"));
+        assert_eq!(options.onedrive_root_item_id.as_deref(), Some("root"));
+    }
+
+    #[test]
+    fn onedrive_options_require_drive_and_root() {
+        let error = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+            onedrive_drive_id: Some("drive".to_string()),
+            ..Default::default()
+        }
+        .validate()
+        .expect_err("missing root item should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("onedrive_root_item_id is required"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn onedrive_group_mode_requires_group_id() {
+        let error = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::GroupDrive),
+            onedrive_drive_id: Some("drive".to_string()),
+            onedrive_root_item_id: Some("root".to_string()),
+            ..Default::default()
+        }
+        .validate()
+        .expect_err("group drive without group id should fail");
+
+        assert!(
+            error.to_string().contains("onedrive_group_id is required"),
+            "{error}"
+        );
     }
 }

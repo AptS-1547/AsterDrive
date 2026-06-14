@@ -17,6 +17,7 @@ pub mod media_metadata;
 pub mod passkey;
 pub mod patch;
 pub mod preferences;
+pub mod storage_credential;
 pub mod storage_policy;
 pub mod tag;
 pub mod task;
