@@ -5,7 +5,7 @@ use sea_orm::{ActiveModelTrait, Set};
 
 use crate::api::api_error_code::ApiErrorCode;
 use crate::api::pagination::{AdminPolicySortBy, OffsetPage, SortOrder, load_offset_page};
-use crate::config::{cors, site_url};
+use crate::config::site_url;
 use crate::db::repository::{
     file_repo, managed_follower_repo, policy_group_repo, policy_repo, upload_session_repo,
 };
@@ -704,8 +704,6 @@ pub async fn test_connection_params<S: RemoteProtocolRuntimeState>(
 pub async fn configure_tencent_cos_cors_for_policy<S: SharedRuntimeState>(
     state: &S,
     id: i64,
-    allowed_origin: Option<String>,
-    request_origin: Option<&str>,
 ) -> Result<TencentCosCorsConfigResult> {
     let policy = policy_repo::find_by_id(state.writer_db(), id).await?;
     if policy.driver_type != DriverType::TencentCos {
@@ -714,10 +712,10 @@ pub async fn configure_tencent_cos_cors_for_policy<S: SharedRuntimeState>(
             "storage policy action 'configure_tencent_cos_cors' only supports Tencent COS storage policies",
         ));
     }
-    let origin = resolve_cos_cors_allowed_origin(state, allowed_origin, request_origin)?;
+    let origins = resolve_cos_cors_allowed_origins(state)?;
     let driver = TencentCosDriver::new(&policy)?;
     driver
-        .configure_asterdrive_cors(&origin)
+        .configure_asterdrive_cors(&origins)
         .await
         .map(Into::into)
 }
@@ -725,12 +723,8 @@ pub async fn configure_tencent_cos_cors_for_policy<S: SharedRuntimeState>(
 pub async fn configure_tencent_cos_cors<S: RemoteProtocolRuntimeState>(
     state: &S,
     input: ConfigureTencentCosCorsInput,
-    request_origin: Option<&str>,
 ) -> Result<TencentCosCorsConfigResult> {
-    let ConfigureTencentCosCorsInput {
-        connection,
-        allowed_origin,
-    } = input;
+    let ConfigureTencentCosCorsInput { connection } = input;
     let fake_policy = build_connection_test_policy(state, connection).await?;
     if fake_policy.driver_type != DriverType::TencentCos {
         return Err(validation_error_with_code(
@@ -738,10 +732,10 @@ pub async fn configure_tencent_cos_cors<S: RemoteProtocolRuntimeState>(
             "storage policy action 'configure_tencent_cos_cors' only supports Tencent COS storage policies",
         ));
     }
-    let origin = resolve_cos_cors_allowed_origin(state, allowed_origin, request_origin)?;
+    let origins = resolve_cos_cors_allowed_origins(state)?;
     let driver = TencentCosDriver::new(&fake_policy)?;
     driver
-        .configure_asterdrive_cors(&origin)
+        .configure_asterdrive_cors(&origins)
         .await
         .map(Into::into)
 }
@@ -750,17 +744,10 @@ pub async fn execute_saved_action<S: SharedRuntimeState>(
     state: &S,
     id: i64,
     input: ExecuteSavedStoragePolicyActionInput,
-    request_origin: Option<&str>,
 ) -> Result<StoragePolicyActionResult> {
     match input.action {
         StoragePolicyActionType::ConfigureTencentCosCors => {
-            let result = configure_tencent_cos_cors_for_policy(
-                state,
-                id,
-                input.allowed_origin,
-                request_origin,
-            )
-            .await?;
+            let result = configure_tencent_cos_cors_for_policy(state, id).await?;
             Ok(StoragePolicyActionResult {
                 action: input.action,
                 tencent_cos_cors: Some(result),
@@ -772,7 +759,6 @@ pub async fn execute_saved_action<S: SharedRuntimeState>(
 pub async fn execute_draft_action<S: RemoteProtocolRuntimeState>(
     state: &S,
     input: ExecuteDraftStoragePolicyActionInput,
-    request_origin: Option<&str>,
 ) -> Result<StoragePolicyActionResult> {
     match input.action {
         StoragePolicyActionType::ConfigureTencentCosCors => {
@@ -780,9 +766,7 @@ pub async fn execute_draft_action<S: RemoteProtocolRuntimeState>(
                 state,
                 ConfigureTencentCosCorsInput {
                     connection: input.connection,
-                    allowed_origin: input.allowed_origin,
                 },
-                request_origin,
             )
             .await?;
             Ok(StoragePolicyActionResult {
@@ -861,37 +845,15 @@ async fn build_connection_test_policy<S: RemoteProtocolRuntimeState>(
     })
 }
 
-fn resolve_cos_cors_allowed_origin(
-    state: &impl SharedRuntimeState,
-    allowed_origin: Option<String>,
-    request_origin: Option<&str>,
-) -> Result<String> {
-    if let Some(origin) = allowed_origin {
-        return cors::normalize_origin(&origin, false).map_err(|error| {
-            validation_error_with_code(
-                ApiErrorCode::PolicyActionParameterInvalid,
-                format!("invalid COS CORS allowed_origin: {}", error.message()),
-            )
-        });
+fn resolve_cos_cors_allowed_origins(state: &impl SharedRuntimeState) -> Result<Vec<String>> {
+    let origins = site_url::public_site_urls(state.runtime_config());
+    if origins.is_empty() {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyActionParameterRequired,
+            "public_site_url must be configured before configuring COS CORS",
+        ));
     }
-
-    if let Some(origin) = site_url::public_site_url(state.runtime_config()) {
-        return Ok(origin);
-    }
-
-    if let Some(origin) = request_origin {
-        return cors::normalize_origin(origin, false).map_err(|error| {
-            validation_error_with_code(
-                ApiErrorCode::PolicyActionParameterInvalid,
-                format!("invalid request Origin for COS CORS: {}", error.message()),
-            )
-        });
-    }
-
-    Err(validation_error_with_code(
-        ApiErrorCode::PolicyActionParameterRequired,
-        "public_site_url is not configured and the request Origin header is unavailable",
-    ))
+    Ok(origins)
 }
 
 impl From<crate::storage::drivers::tencent_cos::cors::TencentCosCorsApplyResult>
@@ -900,7 +862,7 @@ impl From<crate::storage::drivers::tencent_cos::cors::TencentCosCorsApplyResult>
     fn from(value: crate::storage::drivers::tencent_cos::cors::TencentCosCorsApplyResult) -> Self {
         Self {
             rule_id: value.rule_id,
-            allowed_origin: value.allowed_origin,
+            allowed_origins: value.allowed_origins,
             request_id: value.request_id,
             preserved_rule_count: value.preserved_rule_count,
             replaced_existing_rule: value.replaced_existing_rule,

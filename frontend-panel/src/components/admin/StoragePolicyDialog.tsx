@@ -46,7 +46,6 @@ interface StoragePolicyDialogProps {
 	endpointValidationMessage: string | null;
 	cosCorsConfirmOpen: boolean;
 	cosCorsSubmitting: boolean;
-	cosCorsTargetOrigin: string;
 	cosCorsUsesDraftValues: boolean;
 	saveAnywayConfirmOpen: boolean;
 	onApplyS3CompatibleDriverSuggestion: () => void;
@@ -109,7 +108,6 @@ function useStoragePolicyDialogContent({
 	endpointValidationMessage,
 	cosCorsConfirmOpen,
 	cosCorsSubmitting,
-	cosCorsTargetOrigin,
 	cosCorsUsesDraftValues,
 	saveAnywayConfirmOpen,
 	onApplyS3CompatibleDriverSuggestion,
@@ -451,7 +449,6 @@ function useStoragePolicyDialogContent({
 								onSyncNormalizedS3Form={onSyncNormalizedS3Form}
 								cosCorsConfirmOpen={cosCorsConfirmOpen}
 								cosCorsSubmitting={cosCorsSubmitting}
-								cosCorsTargetOrigin={cosCorsTargetOrigin}
 								cosCorsUsesDraftValues={cosCorsUsesDraftValues}
 								remoteNodes={remoteNodes}
 							/>
@@ -466,9 +463,7 @@ function useStoragePolicyDialogContent({
 											{t("policy_cos_cors_confirm_title")}
 										</p>
 										<p className="mt-1 text-xs leading-5 text-muted-foreground">
-											{t("policy_cos_cors_confirm_desc", {
-												origin: cosCorsTargetOrigin,
-											})}
+											{t("policy_cos_cors_confirm_desc")}
 										</p>
 									</div>
 									<div className="flex shrink-0 items-center gap-2">

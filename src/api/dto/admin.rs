@@ -190,7 +190,6 @@ pub struct ExecuteDraftStoragePolicyActionReq {
     pub remote_node_id: Option<i64>,
     #[validate(nested)]
     pub options: Option<crate::types::StoragePolicyOptions>,
-    pub allowed_origin: Option<String>,
 }
 
 /// Execute a storage policy action for a saved policy.
@@ -198,7 +197,6 @@ pub struct ExecuteDraftStoragePolicyActionReq {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ExecuteSavedStoragePolicyActionReq {
     pub action: crate::services::policy_service::StoragePolicyActionType,
-    pub allowed_origin: Option<String>,
 }
 
 /// Promote an S3-compatible storage policy to a specialized S3-compatible driver.

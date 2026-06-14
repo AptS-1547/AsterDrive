@@ -148,12 +148,11 @@ pub async fn execute_saved_action_with_audit(
     state: &impl SharedRuntimeState,
     id: i64,
     input: ExecuteSavedStoragePolicyActionInput,
-    request_origin: Option<&str>,
     audit_ctx: &AuditContext,
 ) -> Result<StoragePolicyActionResult> {
     let policy = get(state, id).await?;
     let action = input.action;
-    let result = execute_saved_action(state, id, input, request_origin).await?;
+    let result = execute_saved_action(state, id, input).await?;
     audit_service::log_with_details(
         state,
         audit_ctx,
@@ -170,12 +169,11 @@ pub async fn execute_saved_action_with_audit(
 pub async fn execute_draft_action_with_audit(
     state: &impl RemoteProtocolRuntimeState,
     input: ExecuteDraftStoragePolicyActionInput,
-    request_origin: Option<&str>,
     audit_ctx: &AuditContext,
 ) -> Result<StoragePolicyActionResult> {
     let action = input.action;
     let driver_type = input.connection.driver_type;
-    let result = execute_draft_action(state, input, request_origin).await?;
+    let result = execute_draft_action(state, input).await?;
     audit_service::log_with_details(
         state,
         audit_ctx,

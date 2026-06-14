@@ -2815,8 +2815,7 @@ async fn test_tencent_cos_cors_config_rejects_invalid_inputs_with_stable_codes()
         .set_json(serde_json::json!({
             "action": "configure_tencent_cos_cors",
             "driver_type": "local",
-            "base_path": format!("/tmp/test-policy-cos-cors-local-{}", uuid::Uuid::new_v4()),
-            "allowed_origin": "https://drive.example.com"
+            "base_path": format!("/tmp/test-policy-cos-cors-local-{}", uuid::Uuid::new_v4())
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2830,8 +2829,7 @@ async fn test_tencent_cos_cors_config_rejects_invalid_inputs_with_stable_codes()
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "action": "configure_tencent_cos_cors",
-            "allowed_origin": "https://drive.example.com"
+            "action": "configure_tencent_cos_cors"
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2847,8 +2845,7 @@ async fn test_tencent_cos_cors_config_rejects_invalid_inputs_with_stable_codes()
             "action": "configure_tencent_cos_cors",
             "driver_type": "tencent_cos",
             "endpoint": "https://cos.ap-guangzhou.myqcloud.com",
-            "bucket": "media-1250000000",
-            "allowed_origin": "https://drive.example.com"
+            "bucket": "media-1250000000"
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -2857,28 +2854,6 @@ async fn test_tencent_cos_cors_config_rejects_invalid_inputs_with_stable_codes()
     assert_eq!(
         body["code"],
         ApiErrorCode::PolicyStorageAccessKeyRequired.as_str()
-    );
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/admin/policies/action")
-        .insert_header(("Cookie", common::access_cookie_header(&token)))
-        .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({
-            "action": "configure_tencent_cos_cors",
-            "driver_type": "tencent_cos",
-            "endpoint": "https://cos.ap-guangzhou.myqcloud.com",
-            "bucket": "media-1250000000",
-            "access_key": "AKIDEXAMPLE",
-            "secret_key": "SECRETEXAMPLE",
-            "allowed_origin": "not a url"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 400);
-    let body: Value = test::read_body_json(resp).await;
-    assert_eq!(
-        body["code"],
-        ApiErrorCode::PolicyActionParameterInvalid.as_str()
     );
 
     let req = test::TestRequest::post()
@@ -2936,7 +2911,7 @@ async fn test_tencent_cos_cors_dedicated_routes_are_not_exposed() {
             .insert_header(("Cookie", common::access_cookie_header(&token)))
             .insert_header(common::csrf_header_for(&token))
             .set_json(serde_json::json!({
-                "allowed_origin": "https://drive.example.com"
+                "action": "configure_tencent_cos_cors"
             }))
             .to_request();
         let resp = test::call_service(&app, req).await;

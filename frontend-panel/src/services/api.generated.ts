@@ -5091,7 +5091,6 @@ export interface components {
         ExecuteDraftStoragePolicyActionReq: {
             access_key?: string | null;
             action: components["schemas"]["StoragePolicyActionType"];
-            allowed_origin?: string | null;
             base_path?: string | null;
             bucket?: string | null;
             driver_type: components["schemas"]["DriverType"];
@@ -5104,7 +5103,6 @@ export interface components {
         /** @description Execute a storage policy action for a saved policy. */
         ExecuteSavedStoragePolicyActionReq: {
             action: components["schemas"]["StoragePolicyActionType"];
-            allowed_origin?: string | null;
         };
         ExternalAuthCallbackQuery: {
             code?: string | null;
@@ -7421,7 +7419,7 @@ export interface components {
             token: string;
         };
         TencentCosCorsConfigResult: {
-            allowed_origin: string;
+            allowed_origins: string[];
             preserved_rule_count: number;
             replaced_existing_rule: boolean;
             request_id?: string | null;

@@ -385,6 +385,9 @@ impl AsterError {
     }
 
     fn client_message(&self) -> &str {
+        if matches!(self, Self::StorageDriverError(_)) {
+            return self.message();
+        }
         match self.response_log_level() {
             ResponseLogLevel::Error => self.error_type(),
             ResponseLogLevel::Warn | ResponseLogLevel::Skip => self.message(),
@@ -932,7 +935,7 @@ mod tests {
             serde_json::from_slice(&body).expect("response body should be valid json");
 
         assert_eq!(payload["code"], "storage.transient");
-        assert_eq!(payload["msg"], "Storage Driver Error");
+        assert_eq!(payload["msg"], "remote timeout");
         assert_eq!(payload["error"]["retryable"], true);
         assert!(payload["error"].get("code").is_none());
         assert!(payload["error"].get("internal_code").is_none());
@@ -952,6 +955,7 @@ mod tests {
             serde_json::from_slice(&body).expect("response body should be valid json");
 
         assert_eq!(payload["code"], "storage.permission");
+        assert_eq!(payload["msg"], "access denied");
         assert_eq!(payload["error"]["retryable"], false);
         assert!(payload["error"].get("code").is_none());
         assert!(payload["error"].get("internal_code").is_none());

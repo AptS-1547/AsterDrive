@@ -45,7 +45,6 @@ interface StoragePolicyEditFormProps {
 	policyCapacityLoading: boolean;
 	cosCorsConfirmOpen: boolean;
 	cosCorsSubmitting: boolean;
-	cosCorsTargetOrigin: string;
 	cosCorsUsesDraftValues: boolean;
 	s3DriverPromotionBlocked: boolean;
 	s3DriverPromotionConfirmOpen: boolean;
@@ -73,7 +72,6 @@ export function StoragePolicyEditForm({
 	policyCapacityLoading,
 	cosCorsConfirmOpen,
 	cosCorsSubmitting,
-	cosCorsTargetOrigin,
 	cosCorsUsesDraftValues,
 	s3DriverPromotionBlocked,
 	s3DriverPromotionConfirmOpen,
@@ -166,7 +164,6 @@ export function StoragePolicyEditForm({
 								<TencentCosCorsPanel
 									confirmOpen={cosCorsConfirmOpen}
 									submitting={cosCorsSubmitting}
-									targetOrigin={cosCorsTargetOrigin}
 									usesDraftValues={cosCorsUsesDraftValues}
 									form={form}
 									t={t}
@@ -265,7 +262,6 @@ function TencentCosCorsPanel({
 	confirmOpen,
 	form,
 	submitting,
-	targetOrigin,
 	usesDraftValues,
 	t,
 	onCancel,
@@ -274,7 +270,6 @@ function TencentCosCorsPanel({
 	confirmOpen: boolean;
 	form: PolicyFormData;
 	submitting: boolean;
-	targetOrigin: string;
 	usesDraftValues: boolean;
 	t: (key: string, values?: Record<string, number | string>) => string;
 	onCancel: () => void;
@@ -301,7 +296,7 @@ function TencentCosCorsPanel({
 							: t("policy_cos_cors_relay_desc")}
 					</p>
 					<p className="text-xs text-muted-foreground">
-						{t("policy_cos_cors_origin", { origin: targetOrigin })}
+						{t("policy_cos_cors_origins")}
 					</p>
 					{usesDraftValues ? (
 						<p className="text-xs text-sky-800 dark:text-sky-200">
@@ -331,7 +326,7 @@ function TencentCosCorsPanel({
 								{t("policy_cos_cors_confirm_title")}
 							</p>
 							<p className="mt-1 text-xs leading-5 text-muted-foreground">
-								{t("policy_cos_cors_confirm_desc", { origin: targetOrigin })}
+								{t("policy_cos_cors_confirm_desc")}
 							</p>
 						</div>
 						<div className="flex shrink-0 items-center gap-2">

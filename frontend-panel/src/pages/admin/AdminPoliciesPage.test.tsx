@@ -695,7 +695,7 @@ describe("AdminPoliciesPage", () => {
 		mockState.executeDraftPolicyAction.mockResolvedValue({
 			action: "configure_tencent_cos_cors",
 			tencent_cos_cors: {
-				allowed_origin: "https://drive.example.com",
+				allowed_origins: ["https://drive.example.com"],
 				preserved_rule_count: 1,
 				replaced_existing_rule: false,
 				request_id: "cos-request-draft",
@@ -706,7 +706,7 @@ describe("AdminPoliciesPage", () => {
 		mockState.executeSavedPolicyAction.mockResolvedValue({
 			action: "configure_tencent_cos_cors",
 			tencent_cos_cors: {
-				allowed_origin: "https://drive.example.com",
+				allowed_origins: ["https://drive.example.com"],
 				preserved_rule_count: 2,
 				replaced_existing_rule: true,
 				request_id: "cos-request-saved",
@@ -1578,7 +1578,6 @@ describe("AdminPoliciesPage", () => {
 			expect(mockState.executeDraftPolicyAction).toHaveBeenCalledWith({
 				access_key: "AKIDEXAMPLE",
 				action: "configure_tencent_cos_cors",
-				allowed_origin: "https://drive.example.com",
 				base_path: undefined,
 				bucket: "media-1250000000",
 				driver_type: "tencent_cos",
@@ -2183,7 +2182,6 @@ describe("AdminPoliciesPage", () => {
 		await waitFor(() => {
 			expect(mockState.executeSavedPolicyAction).toHaveBeenCalledWith(31, {
 				action: "configure_tencent_cos_cors",
-				allowed_origin: "https://drive.example.com",
 			});
 		});
 		expect(mockState.executeDraftPolicyAction).not.toHaveBeenCalled();
@@ -2259,7 +2257,6 @@ describe("AdminPoliciesPage", () => {
 			expect(mockState.executeDraftPolicyAction).toHaveBeenCalledWith({
 				access_key: "AKIDDIRTY",
 				action: "configure_tencent_cos_cors",
-				allowed_origin: "https://drive.example.com",
 				base_path: "tenant-cos",
 				bucket: "media-draft-1250000000",
 				driver_type: "tencent_cos",

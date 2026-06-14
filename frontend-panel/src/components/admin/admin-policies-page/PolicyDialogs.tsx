@@ -30,7 +30,6 @@ interface PolicyDialogsProps {
 	policyCapacityLoading: boolean;
 	cosCorsConfirmOpen: boolean;
 	cosCorsSubmitting: boolean;
-	cosCorsTargetOrigin: string;
 	cosCorsUsesDraftValues: boolean;
 	s3CompatibleDriverSuggestionTargetLabel: string | null;
 	s3DriverPromotionBlocked: boolean;
@@ -77,7 +76,6 @@ export function PolicyDialogs({
 	policyCapacityLoading,
 	cosCorsConfirmOpen,
 	cosCorsSubmitting,
-	cosCorsTargetOrigin,
 	cosCorsUsesDraftValues,
 	s3CompatibleDriverSuggestionTargetLabel,
 	s3DriverPromotionBlocked,
@@ -131,7 +129,6 @@ export function PolicyDialogs({
 				policyCapacityLoading={policyCapacityLoading}
 				cosCorsConfirmOpen={cosCorsConfirmOpen}
 				cosCorsSubmitting={cosCorsSubmitting}
-				cosCorsTargetOrigin={cosCorsTargetOrigin}
 				cosCorsUsesDraftValues={cosCorsUsesDraftValues}
 				s3CompatibleDriverSuggestionTargetLabel={
 					s3CompatibleDriverSuggestionTargetLabel

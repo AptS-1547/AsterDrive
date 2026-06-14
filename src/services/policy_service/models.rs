@@ -88,7 +88,7 @@ pub struct StoragePolicyCapacityInfo {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TencentCosCorsConfigResult {
     pub rule_id: String,
-    pub allowed_origin: String,
+    pub allowed_origins: Vec<String>,
     pub request_id: Option<String>,
     pub preserved_rule_count: usize,
     pub replaced_existing_rule: bool,
@@ -119,14 +119,12 @@ impl StoragePolicyActionType {
 #[derive(Debug, Clone)]
 pub struct ExecuteSavedStoragePolicyActionInput {
     pub action: StoragePolicyActionType,
-    pub allowed_origin: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExecuteDraftStoragePolicyActionInput {
     pub action: StoragePolicyActionType,
     pub connection: StoragePolicyConnectionInput,
-    pub allowed_origin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -183,7 +181,6 @@ pub struct StoragePolicyConnectionInput {
 #[derive(Debug, Clone)]
 pub struct ConfigureTencentCosCorsInput {
     pub connection: StoragePolicyConnectionInput,
-    pub allowed_origin: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -278,7 +275,10 @@ mod tests {
             action: StoragePolicyActionType::ConfigureTencentCosCors,
             tencent_cos_cors: Some(TencentCosCorsConfigResult {
                 rule_id: "asterdrive-presigned-access".to_string(),
-                allowed_origin: "https://drive.example.com".to_string(),
+                allowed_origins: vec![
+                    "https://drive.example.com".to_string(),
+                    "https://admin.example.com".to_string(),
+                ],
                 request_id: Some("req-1".to_string()),
                 preserved_rule_count: 2,
                 replaced_existing_rule: true,
@@ -294,8 +294,8 @@ mod tests {
             "asterdrive-presigned-access"
         );
         assert_eq!(
-            value["tencent_cos_cors"]["allowed_origin"],
-            "https://drive.example.com"
+            value["tencent_cos_cors"]["allowed_origins"],
+            serde_json::json!(["https://drive.example.com", "https://admin.example.com"])
         );
         assert_eq!(value["tencent_cos_cors"]["request_id"], "req-1");
         assert_eq!(value["tencent_cos_cors"]["preserved_rule_count"], 2);

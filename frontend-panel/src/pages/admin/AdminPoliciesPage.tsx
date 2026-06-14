@@ -52,7 +52,6 @@ import {
 	parseSortSearchParam,
 	type SortOrder,
 } from "@/lib/pagination";
-import { getPublicSiteUrl } from "@/lib/publicSiteUrl";
 import { adminPolicyService } from "@/services/adminService";
 import { ApiError } from "@/services/http";
 import type { AdminPolicySortBy } from "@/types/adminSort";
@@ -229,9 +228,6 @@ function useAdminPoliciesPageContent() {
 		runWithPending: runWithCosCorsConfigure,
 	} = usePendingAction();
 	const endpointValidationMessage = getEndpointValidationMessage(form, t);
-	const cosCorsTargetOrigin =
-		getPublicSiteUrl() ??
-		(typeof window === "undefined" ? "" : window.location.origin);
 	const getS3CompatiblePromotionDriverLabel = (driverType: "tencent_cos") =>
 		t(getPolicyDriverLabelKey(driverType));
 	const savedS3DriverPromotionTarget = getS3CompatibleDriverPromotionTarget(
@@ -774,7 +770,6 @@ function useAdminPoliciesPageContent() {
 					return;
 				}
 
-				const allowedOrigin = cosCorsTargetOrigin || undefined;
 				const shouldUseDraft =
 					editingId === null ||
 					hasConnectionFieldChanges(currentForm, editingPolicy);
@@ -782,10 +777,9 @@ function useAdminPoliciesPageContent() {
 					editingId !== null && !shouldUseDraft
 						? await adminPolicyService.executeSavedPolicyAction(editingId, {
 								action: "configure_tencent_cos_cors",
-								allowed_origin: allowedOrigin,
 							})
 						: await adminPolicyService.executeDraftPolicyAction(
-								buildTencentCosCorsPayload(currentForm, allowedOrigin),
+								buildTencentCosCorsPayload(currentForm),
 							);
 				const requestId = result.tencent_cos_cors?.request_id;
 				setCosCorsConfirmOpen(false);
@@ -1093,7 +1087,6 @@ function useAdminPoliciesPageContent() {
 					policyCapacityLoading={policyCapacityLoading}
 					cosCorsConfirmOpen={cosCorsConfirmOpen}
 					cosCorsSubmitting={cosCorsSubmitting}
-					cosCorsTargetOrigin={cosCorsTargetOrigin || t("core:unknown")}
 					cosCorsUsesDraftValues={cosCorsUsesDraftValues}
 					s3CompatibleDriverSuggestionTargetLabel={
 						s3CompatibleDriverSuggestionTarget?.driverLabel ?? null

@@ -121,7 +121,6 @@ impl From<ExecuteDraftStoragePolicyActionReq>
                 options: value.options.unwrap_or_default(),
             }
             .into(),
-            allowed_origin: value.allowed_origin,
         }
     }
 }
@@ -132,7 +131,6 @@ impl From<ExecuteSavedStoragePolicyActionReq>
     fn from(value: ExecuteSavedStoragePolicyActionReq) -> Self {
         Self {
             action: value.action,
-            allowed_origin: value.allowed_origin,
         }
     }
 }
@@ -452,9 +450,6 @@ pub async fn execute_saved_storage_policy_action(
         state.get_ref(),
         *path,
         body.into_inner().into(),
-        req.headers()
-            .get(actix_web::http::header::ORIGIN)
-            .and_then(|value| value.to_str().ok()),
         &ctx,
     )
     .await?;
@@ -486,9 +481,6 @@ pub async fn execute_draft_storage_policy_action(
     let result = policy_service::execute_draft_action_with_audit(
         state.get_ref(),
         body.into_inner().into(),
-        req.headers()
-            .get(actix_web::http::header::ORIGIN)
-            .and_then(|value| value.to_str().ok()),
         &ctx,
     )
     .await?;

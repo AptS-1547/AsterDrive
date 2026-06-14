@@ -1,6 +1,8 @@
 use std::io::Cursor;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use md5::{Digest as Md5Digest, Md5};
 use reqwest::StatusCode;
 use reqwest::header::CONTENT_TYPE;
 use xmltree::{Element, EmitterConfig, XMLNode};
@@ -15,6 +17,7 @@ use super::TencentCosDriver;
 
 pub(crate) const ASTERDRIVE_COS_CORS_RULE_ID: &str = "asterdrive-presigned-access";
 const CORS_XML_CONTENT_TYPE: &str = "application/xml";
+const CONTENT_MD5_HEADER: &str = "Content-MD5";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CosCorsRule {
@@ -35,7 +38,7 @@ pub(crate) struct CosCorsConfiguration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TencentCosCorsApplyResult {
     pub rule_id: String,
-    pub allowed_origin: String,
+    pub allowed_origins: Vec<String>,
     pub request_id: Option<String>,
     pub preserved_rule_count: usize,
     pub replaced_existing_rule: bool,
@@ -45,7 +48,7 @@ pub(crate) struct TencentCosCorsApplyResult {
 impl TencentCosDriver {
     pub(crate) async fn configure_asterdrive_cors(
         &self,
-        allowed_origin: &str,
+        allowed_origins: &[String],
     ) -> Result<TencentCosCorsApplyResult> {
         let mut existing = self.get_bucket_cors().await?;
         let preserved_rule_count = existing
@@ -57,13 +60,13 @@ impl TencentCosDriver {
         existing
             .rules
             .retain(|rule| rule.id.as_deref() != Some(ASTERDRIVE_COS_CORS_RULE_ID));
-        existing.rules.push(asterdrive_cors_rule(allowed_origin));
+        existing.rules.push(asterdrive_cors_rule(allowed_origins));
         existing.response_vary = Some(true);
 
         let request_id = self.put_bucket_cors(&existing).await?;
         Ok(TencentCosCorsApplyResult {
             rule_id: ASTERDRIVE_COS_CORS_RULE_ID.to_string(),
-            allowed_origin: allowed_origin.to_string(),
+            allowed_origins: allowed_origins.to_vec(),
             request_id,
             preserved_rule_count,
             replaced_existing_rule,
@@ -103,11 +106,15 @@ impl TencentCosDriver {
     async fn put_bucket_cors(&self, config: &CosCorsConfiguration) -> Result<Option<String>> {
         let url = self.bucket_cors_url()?;
         let body = build_cors_configuration_xml(config)?;
+        let content_md5 = content_md5_base64(body.as_bytes());
         let key_time = cos_key_time()?;
         let headers = self.signed_cos_request_headers(
             "PUT",
             &url,
-            &[(CONTENT_TYPE.as_str(), CORS_XML_CONTENT_TYPE)],
+            &[
+                (CONTENT_TYPE.as_str(), CORS_XML_CONTENT_TYPE),
+                (CONTENT_MD5_HEADER, content_md5.as_str()),
+            ],
             &key_time,
         )?;
         let response = self
@@ -136,10 +143,10 @@ impl TencentCosDriver {
     }
 }
 
-pub(crate) fn asterdrive_cors_rule(allowed_origin: &str) -> CosCorsRule {
+pub(crate) fn asterdrive_cors_rule(allowed_origins: &[String]) -> CosCorsRule {
     CosCorsRule {
         id: Some(ASTERDRIVE_COS_CORS_RULE_ID.to_string()),
-        allowed_origins: vec![allowed_origin.to_string()],
+        allowed_origins: allowed_origins.to_vec(),
         allowed_methods: vec!["PUT".to_string(), "GET".to_string(), "HEAD".to_string()],
         allowed_headers: vec![
             "*".to_string(),
@@ -292,6 +299,10 @@ fn cos_key_time() -> Result<String> {
     Ok(format!("{now};{}", now + 300))
 }
 
+fn content_md5_base64(body: &[u8]) -> String {
+    BASE64_STANDARD.encode(Md5::digest(body))
+}
+
 fn cos_cors_response_error(status: StatusCode, body: &str, action: &str) -> AsterError {
     let code = extract_xml_tag(body, "Code");
     let message = extract_xml_tag(body, "Message").unwrap_or_else(|| {
@@ -313,6 +324,7 @@ fn cos_cors_response_error(status: StatusCode, body: &str, action: &str) -> Aste
     };
 
     let kind = match status {
+        StatusCode::BAD_REQUEST => StorageErrorKind::Misconfigured,
         StatusCode::UNAUTHORIZED => StorageErrorKind::Auth,
         StatusCode::FORBIDDEN => StorageErrorKind::Permission,
         StatusCode::PRECONDITION_FAILED | StatusCode::CONFLICT => StorageErrorKind::Precondition,
@@ -355,13 +367,17 @@ mod tests {
 
     use super::{
         ASTERDRIVE_COS_CORS_RULE_ID, CosCorsConfiguration, asterdrive_cors_rule,
-        build_cors_configuration_xml, cos_cors_response_error, parse_cors_configuration,
+        build_cors_configuration_xml, content_md5_base64, cos_cors_response_error,
+        parse_cors_configuration,
     };
 
     #[test]
     fn asterdrive_cors_xml_contains_browser_direct_access_headers() {
         let config = CosCorsConfiguration {
-            rules: vec![asterdrive_cors_rule("https://drive.example.com")],
+            rules: vec![asterdrive_cors_rule(&[
+                "https://drive.example.com".to_string(),
+                "https://admin.example.com".to_string(),
+            ])],
             response_vary: Some(true),
         };
 
@@ -369,6 +385,7 @@ mod tests {
 
         assert!(xml.contains("<ID>asterdrive-presigned-access</ID>"));
         assert!(xml.contains("<AllowedOrigin>https://drive.example.com</AllowedOrigin>"));
+        assert!(xml.contains("<AllowedOrigin>https://admin.example.com</AllowedOrigin>"));
         assert!(xml.contains("<AllowedMethod>PUT</AllowedMethod>"));
         assert!(xml.contains("<AllowedMethod>GET</AllowedMethod>"));
         assert!(xml.contains("<AllowedMethod>HEAD</AllowedMethod>"));
@@ -461,5 +478,24 @@ mod tests {
         );
         assert!(error.message().contains("name/cos:PutBucketCORS"));
         assert!(error.message().contains("request_id=req-1"));
+    }
+
+    #[test]
+    fn maps_cos_cors_bad_request_to_storage_misconfigured_code() {
+        let error = cos_cors_response_error(
+            StatusCode::BAD_REQUEST,
+            r#"<Error><Code>InvalidRequest</Code><Message>Missing required header for this request: Content-MD5</Message><RequestId>req-2</RequestId></Error>"#,
+            "PUT Bucket cors",
+        );
+
+        assert_eq!(error.api_error_code(), ApiErrorCode::StorageMisconfigured);
+        assert!(error.message().contains("Missing required header"));
+        assert!(error.message().contains("code=InvalidRequest"));
+        assert!(error.message().contains("request_id=req-2"));
+    }
+
+    #[test]
+    fn content_md5_base64_matches_cos_required_header_format() {
+        assert_eq!(content_md5_base64(b"hello"), "XUFAKrxLKna5cZ2REBfFkg==");
     }
 }

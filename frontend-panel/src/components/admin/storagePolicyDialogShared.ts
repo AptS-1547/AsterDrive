@@ -304,7 +304,6 @@ export function buildPolicyTestPayload(form: PolicyFormData) {
 
 export function buildTencentCosCorsPayload(
 	form: PolicyFormData,
-	allowedOrigin?: string,
 ): ExecuteDraftStoragePolicyActionRequest {
 	const normalizedForm = normalizePolicyForm(form);
 
@@ -318,7 +317,6 @@ export function buildTencentCosCorsPayload(
 		base_path: normalizedForm.base_path || undefined,
 		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
 		options: buildPolicyOptions(normalizedForm),
-		allowed_origin: allowedOrigin || undefined,
 	};
 }
 
