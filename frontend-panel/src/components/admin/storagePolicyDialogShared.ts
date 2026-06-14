@@ -22,6 +22,18 @@ export function isS3CompatibleDriver(driverType: DriverType) {
 	return driverType === "s3" || driverType === "tencent_cos";
 }
 
+export function isObjectStorageDriver(driverType: DriverType) {
+	return (
+		driverType === "s3" ||
+		driverType === "tencent_cos" ||
+		driverType === "azure_blob"
+	);
+}
+
+export function supportsStorageNativeProcessing(driverType: DriverType) {
+	return driverType === "tencent_cos";
+}
+
 export type S3CompatiblePromotionDriverType = Extract<
 	DriverType,
 	"tencent_cos"
@@ -167,7 +179,7 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 			remote_download_strategy: form.remote_download_strategy,
 			remote_upload_strategy: form.remote_upload_strategy,
 		});
-	} else {
+	} else if (isObjectStorageDriver(form.driver_type)) {
 		Object.assign(options, {
 			s3_upload_strategy: form.s3_upload_strategy,
 			s3_download_strategy: form.s3_download_strategy,
@@ -249,14 +261,18 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 }
 
 export function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
-	if (!isS3CompatibleDriver(form.driver_type)) {
+	if (!isObjectStorageDriver(form.driver_type)) {
 		return form;
 	}
 
 	const normalized = normalizeS3ConnectionFields(form.endpoint, form.bucket);
+	const normalizedAccessKey = form.access_key.trim();
+	const normalizedSecretKey = form.secret_key.trim();
 	if (
 		normalized.endpoint === form.endpoint &&
-		normalized.bucket === form.bucket
+		normalized.bucket === form.bucket &&
+		normalizedAccessKey === form.access_key &&
+		normalizedSecretKey === form.secret_key
 	) {
 		return form;
 	}
@@ -265,6 +281,8 @@ export function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
 		...form,
 		endpoint: normalized.endpoint,
 		bucket: normalized.bucket,
+		access_key: normalizedAccessKey,
+		secret_key: normalizedSecretKey,
 	};
 }
 
@@ -348,7 +366,7 @@ export function hasConnectionFieldChanges(
 		return true;
 	}
 
-	if (isS3CompatibleDriver(normalizedForm.driver_type)) {
+	if (isObjectStorageDriver(normalizedForm.driver_type)) {
 		return (
 			normalizedForm.endpoint !== editingPolicy.endpoint ||
 			normalizedForm.bucket !== editingPolicy.bucket ||
@@ -388,7 +406,7 @@ export function getEndpointValidationMessage(
 	form: PolicyFormData,
 	t: (key: string) => string,
 ) {
-	if (!isS3CompatibleDriver(form.driver_type)) {
+	if (!isObjectStorageDriver(form.driver_type)) {
 		return null;
 	}
 
@@ -401,11 +419,15 @@ export function getEndpointValidationMessage(
 	try {
 		endpointUrl = new URL(trimmedEndpoint);
 	} catch {
-		return t("s3_endpoint_protocol_required_error");
+		return form.driver_type === "azure_blob"
+			? t("azure_blob_endpoint_protocol_required_error")
+			: t("s3_endpoint_protocol_required_error");
 	}
 
 	if (endpointUrl.protocol !== "http:" && endpointUrl.protocol !== "https:") {
-		return t("s3_endpoint_protocol_required_error");
+		return form.driver_type === "azure_blob"
+			? t("azure_blob_endpoint_protocol_required_error")
+			: t("s3_endpoint_protocol_required_error");
 	}
 
 	return null;

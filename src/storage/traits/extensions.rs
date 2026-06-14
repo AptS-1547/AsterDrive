@@ -8,6 +8,7 @@ use crate::types::{MediaMetadataKind, MediaMetadataPayload};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::io::AsyncRead;
@@ -72,6 +73,24 @@ pub trait PresignedStorageDriver: Send + Sync {
 
     /// 生成 presigned PUT URL 供客户端直传
     async fn presigned_put_url(&self, path: &str, expires: Duration) -> Result<Option<String>>;
+
+    /// Extra request headers required by a presigned PUT URL.
+    ///
+    /// S3-compatible providers usually require none. Azure Blob single PUT
+    /// requires `x-ms-blob-type: BlockBlob`; the upload init response forwards
+    /// these headers to browser clients.
+    fn presigned_put_headers(&self) -> BTreeMap<String, String> {
+        BTreeMap::new()
+    }
+
+    /// Whether browser clients must receive an ETag from a single presigned PUT.
+    ///
+    /// S3-compatible providers expose ETag by default when CORS is configured
+    /// correctly. Azure Blob does not reliably provide a usable ETag to the
+    /// browser in this flow, so Azure overrides this to false.
+    fn presigned_put_requires_etag(&self) -> bool {
+        true
+    }
 }
 
 /// 路径列举支持（用于后台维护任务）

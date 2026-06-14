@@ -80,7 +80,7 @@ pub(crate) fn resolve_policy_upload_transport(
     let options = parse_storage_policy_options(policy.options.as_ref());
     match policy.driver_type {
         DriverType::Local => PolicyUploadTransport::Local,
-        DriverType::S3 | DriverType::TencentCos => {
+        DriverType::S3 | DriverType::TencentCos | DriverType::AzureBlob => {
             PolicyUploadTransport::S3(options.effective_s3_upload_strategy())
         }
         DriverType::Remote => {
@@ -180,6 +180,58 @@ mod tests {
     fn s3_presigned_uses_presigned_modes() {
         let policy = mock_policy(
             DriverType::S3,
+            1024,
+            r#"{"s3_upload_strategy":"presigned"}"#,
+        );
+        let transport = resolve_policy_upload_transport(&policy);
+
+        assert_eq!(
+            transport,
+            PolicyUploadTransport::S3(S3UploadStrategy::Presigned)
+        );
+        assert_eq!(
+            transport.resolve_init_mode(&policy, 5_242_880),
+            UploadMode::Presigned
+        );
+        assert_eq!(
+            transport.resolve_init_mode(&policy, 5_242_881),
+            UploadMode::PresignedMultipart
+        );
+        assert!(!transport.supports_streaming_direct_upload(&policy, 1024));
+        assert!(!transport.uses_relay_multipart_tracking());
+    }
+
+    #[test]
+    fn azure_blob_relay_stream_uses_s3_transport_modes() {
+        let policy = mock_policy(
+            DriverType::AzureBlob,
+            1_048_576,
+            r#"{"s3_upload_strategy":"relay_stream"}"#,
+        );
+        let transport = resolve_policy_upload_transport(&policy);
+
+        assert_eq!(
+            transport,
+            PolicyUploadTransport::S3(S3UploadStrategy::RelayStream)
+        );
+        assert_eq!(transport.effective_chunk_size(&policy), 5_242_880);
+        assert_eq!(
+            transport.resolve_init_mode(&policy, 5_242_880),
+            UploadMode::Direct
+        );
+        assert_eq!(
+            transport.resolve_init_mode(&policy, 5_242_881),
+            UploadMode::Chunked
+        );
+        assert!(transport.supports_streaming_direct_upload(&policy, 1024));
+        assert!(!transport.supports_streaming_direct_upload(&policy, 5_242_881));
+        assert!(transport.uses_relay_multipart_tracking());
+    }
+
+    #[test]
+    fn azure_blob_presigned_uses_s3_presigned_modes() {
+        let policy = mock_policy(
+            DriverType::AzureBlob,
             1024,
             r#"{"s3_upload_strategy":"presigned"}"#,
         );

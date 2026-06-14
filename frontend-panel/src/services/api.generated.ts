@@ -5007,7 +5007,7 @@ export interface components {
          * @description 存储驱动类型
          * @enum {string}
          */
-        DriverType: "local" | "s3" | "tencent_cos" | "remote";
+        DriverType: "local" | "s3" | "azure_blob" | "tencent_cos" | "remote";
         /** @description Check a storage policy migration plan without creating a task. */
         DryRunStoragePolicyMigrationReq: {
             delete_source_after_success?: boolean;
@@ -5461,7 +5461,13 @@ export interface components {
             /** Format: int64 */
             chunk_size?: number | null;
             mode: components["schemas"]["UploadMode"];
-            /** @description S3 presigned PUT URL（仅 presigned 模式） */
+            /** @description 存储驱动可能要求的 Presigned PUT 请求头。 */
+            presigned_headers?: {
+                [key: string]: string;
+            };
+            /** @description 浏览器直传完成后是否必须从响应读取 ETag。 */
+            presigned_require_etag?: boolean | null;
+            /** @description Presigned PUT URL（仅 presigned 模式） */
             presigned_url?: string | null;
             /** Format: int32 */
             total_chunks?: number | null;
@@ -15362,7 +15368,13 @@ export interface operations {
                             /** Format: int64 */
                             chunk_size?: number | null;
                             mode: components["schemas"]["UploadMode"];
-                            /** @description S3 presigned PUT URL（仅 presigned 模式） */
+                            /** @description 存储驱动可能要求的 Presigned PUT 请求头。 */
+                            presigned_headers?: {
+                                [key: string]: string;
+                            };
+                            /** @description 浏览器直传完成后是否必须从响应读取 ETag。 */
+                            presigned_require_etag?: boolean | null;
+                            /** @description Presigned PUT URL（仅 presigned 模式） */
                             presigned_url?: string | null;
                             /** Format: int32 */
                             total_chunks?: number | null;
@@ -21005,7 +21017,13 @@ export interface operations {
                             /** Format: int64 */
                             chunk_size?: number | null;
                             mode: components["schemas"]["UploadMode"];
-                            /** @description S3 presigned PUT URL（仅 presigned 模式） */
+                            /** @description 存储驱动可能要求的 Presigned PUT 请求头。 */
+                            presigned_headers?: {
+                                [key: string]: string;
+                            };
+                            /** @description 浏览器直传完成后是否必须从响应读取 ETag。 */
+                            presigned_require_etag?: boolean | null;
+                            /** @description Presigned PUT URL（仅 presigned 模式） */
                             presigned_url?: string | null;
                             /** Format: int32 */
                             total_chunks?: number | null;

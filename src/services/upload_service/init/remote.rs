@@ -175,6 +175,8 @@ async fn init_remote_presigned_single_upload(
             chunk_size: None,
             total_chunks: None,
             presigned_url: Some(presigned_url),
+            presigned_headers: Default::default(),
+            presigned_require_etag: Some(true),
         }))
     })
     .await

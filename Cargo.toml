@@ -83,6 +83,8 @@ bytes = "1"
 aws-credential-types = { version = "1.2.14", features = ["hardcoded-credentials"] }
 aws-sdk-s3 = { version = "1.135.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
 aws-smithy-http = "0.63"
+azure_core = { version = "1.0.0", default-features = false, features = ["hmac_rust", "reqwest_rustls", "tokio"] }
+azure_storage_blob = { version = "1.0.0", default-features = false, features = ["tokio"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 chrono-tz = "0.10"
 clap = { version = "4", features = ["derive", "env"], optional = true }

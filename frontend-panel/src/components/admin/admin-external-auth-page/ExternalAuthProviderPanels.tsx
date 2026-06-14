@@ -11,6 +11,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import type {
 	AdminExternalAuthProviderInfo,
 	AdminExternalAuthProviderKindInfo,
@@ -293,45 +294,41 @@ export function ExternalAuthSummaryPanel({
 
 interface ExternalAuthProviderKindPanelProps {
 	form: ExternalAuthProviderFormData;
+	onCreateStepChange: (step: number) => void;
 	onProviderKindChange: (kind: ExternalAuthProviderKind) => void;
 	providerKinds: AdminExternalAuthProviderKindInfo[];
 }
 
 export function ExternalAuthProviderKindPanel({
 	form,
+	onCreateStepChange,
 	onProviderKindChange,
 	providerKinds,
 }: ExternalAuthProviderKindPanelProps) {
 	const { t } = useTranslation("admin");
 
 	return (
-		<div className="space-y-4">
-			<div className="max-w-2xl">
-				<h3 className="text-base font-semibold">
-					{t("external_auth_provider_wizard_choose_type_title")}
-				</h3>
-				<p className="mt-1 text-sm text-muted-foreground">
-					{t("external_auth_provider_wizard_choose_type_desc")}
-				</p>
-			</div>
-			<div className="grid gap-4 md:grid-cols-2">
+		<div>
+			<div className="grid gap-3 md:grid-cols-2">
 				{providerKinds.map((kind) => (
 					<button
 						type="button"
 						key={kind.kind}
 						aria-pressed={form.providerKind === kind.kind}
-						onClick={() => onProviderKindChange(kind.kind)}
-						className={
-							form.providerKind === kind.kind
-								? "rounded-3xl border border-primary bg-primary/5 p-5 text-left shadow-sm transition"
-								: "rounded-3xl border border-border bg-background p-5 text-left transition hover:border-primary/40 hover:bg-muted/20"
-						}
+						onClick={() => {
+							onProviderKindChange(kind.kind);
+							onCreateStepChange(1);
+						}}
+						className={cn(
+							"rounded-2xl border border-border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
+							form.providerKind === kind.kind ? "bg-muted/15" : "bg-background",
+						)}
 					>
 						<div className="flex items-start gap-4">
-							<div className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+							<div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
 								<ExternalAuthProviderIcon
 									kind={kind.kind}
-									className="max-h-10 max-w-10"
+									className="max-h-9 max-w-9"
 								/>
 							</div>
 							<div className="min-w-0 flex-1">
@@ -340,7 +337,7 @@ export function ExternalAuthProviderKindPanel({
 										{kindDisplayName(t, kind.kind, providerKinds)}
 									</p>
 								</div>
-								<p className="mt-2 text-sm leading-6 text-muted-foreground">
+								<p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
 									{kindDescription(t, kind)}
 								</p>
 							</div>

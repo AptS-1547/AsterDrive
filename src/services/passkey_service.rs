@@ -24,6 +24,7 @@ use crate::services::auth_service::{self, LoginResult, is_email_verified};
 use crate::types::StoredPasskeyCredential;
 use crate::utils::{
     char_count, id,
+    net::is_loopback_host,
     numbers::{u32_to_i64, u64_to_i64},
 };
 
@@ -259,8 +260,8 @@ fn primary_public_origin(state: &impl SharedRuntimeState) -> Result<String> {
             "passkey authentication requires a valid public_site_url",
         )
     })?;
-    let is_local_http = parsed.scheme() == "http"
-        && matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "::1"));
+    let is_local_http =
+        parsed.scheme() == "http" && parsed.host_str().is_some_and(is_loopback_host);
 
     if parsed.scheme() == "https" || is_local_http {
         Ok(origin)

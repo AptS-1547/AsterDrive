@@ -1,6 +1,7 @@
 //! 存储子模块：`registry`。
 
 use super::StorageErrorKind;
+use super::drivers::azure_blob::AzureBlobDriver;
 use super::drivers::local::LocalDriver;
 use super::drivers::remote::RemoteDriver;
 use super::drivers::s3::S3Driver;
@@ -274,6 +275,12 @@ impl DriverRegistry {
             }
             DriverType::S3 => {
                 let driver = Arc::new(S3Driver::new(policy)?);
+                let storage: Arc<dyn StorageDriver> = driver.clone();
+                let multipart: Arc<dyn MultipartStorageDriver> = driver;
+                Ok(self.build_entry(policy.driver_type, storage, Some(multipart)))
+            }
+            DriverType::AzureBlob => {
+                let driver = Arc::new(AzureBlobDriver::new(policy)?);
                 let storage: Arc<dyn StorageDriver> = driver.clone();
                 let multipart: Arc<dyn MultipartStorageDriver> = driver;
                 Ok(self.build_entry(policy.driver_type, storage, Some(multipart)))

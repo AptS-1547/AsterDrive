@@ -32,6 +32,7 @@ import {
 	mergeManagedExternalAuthSearchParams,
 	normalizeOffset,
 	requiredFieldsMissing,
+	sortExternalAuthProviderKinds,
 	testParamsPayload,
 	updatePayload,
 } from "@/components/admin/admin-external-auth-page/shared";
@@ -228,12 +229,13 @@ function adminExternalAuthUiReducer(
 		case "providers_loaded":
 			return {
 				...state,
-				providerKinds: action.providerKinds,
+				providerKinds: sortExternalAuthProviderKinds(action.providerKinds),
 				providers: action.providers,
 				total: action.total,
 			};
 		case "create_provider_kinds_loaded": {
-			const nextKind = action.providerKinds[0];
+			const providerKinds = sortExternalAuthProviderKinds(action.providerKinds);
+			const nextKind = providerKinds[0];
 			return {
 				...state,
 				form: nextKind
@@ -244,7 +246,7 @@ function adminExternalAuthUiReducer(
 							scopes: defaultScopesForKind(nextKind),
 						}
 					: state.form,
-				providerKinds: action.providerKinds,
+				providerKinds,
 			};
 		}
 		case "open_create":

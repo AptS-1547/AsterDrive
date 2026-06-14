@@ -55,6 +55,12 @@ export class UploadRequestError extends Error {
 	}
 }
 
+type PresignedUploadOptions = {
+	headers?: Record<string, string>;
+	onCreateXhr?: (xhr: XMLHttpRequest) => void;
+	requireEtag?: boolean;
+};
+
 function isRetryableHttpStatus(status: number): boolean {
 	return status === 408 || status === 429 || status >= 500;
 }
@@ -273,13 +279,18 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 			presignedUrl: string,
 			file: File | Blob,
 			onProgress?: (loaded: number, total: number) => void,
-			onCreateXhr?: (xhr: XMLHttpRequest) => void,
+			options: PresignedUploadOptions = {},
 		): Promise<string> => {
 			return new Promise((resolve, reject) => {
 				const xhr = new XMLHttpRequest();
-				onCreateXhr?.(xhr);
+				const blockId = new URL(presignedUrl).searchParams.get("blockid");
+				const requireEtag = options.requireEtag ?? true;
+				options.onCreateXhr?.(xhr);
 				xhr.open("PUT", presignedUrl);
 				xhr.setRequestHeader("Content-Type", "application/octet-stream");
+				for (const [name, value] of Object.entries(options.headers ?? {})) {
+					xhr.setRequestHeader(name, value);
+				}
 
 				if (onProgress) {
 					xhr.upload.onprogress = (e) => {
@@ -290,7 +301,15 @@ export function createUploadService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				xhr.onload = () => {
 					if (xhr.status >= 200 && xhr.status < 300) {
 						const etag = xhr.getResponseHeader("ETag") ?? "";
+						if (!etag && blockId) {
+							resolve(blockId);
+							return;
+						}
 						if (!etag) {
+							if (!requireEtag) {
+								resolve("");
+								return;
+							}
 							reject(
 								new UploadRequestError(
 									"Presigned upload did not return ETag header. Check CORS ExposeHeaders configuration.",

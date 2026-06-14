@@ -25,6 +25,14 @@ import type {
 } from "@/types/api";
 
 export const DEFAULT_SCOPES = "openid email profile";
+const PROVIDER_KIND_ORDER: Partial<Record<ExternalAuthProviderKind, number>> = {
+	oidc: 0,
+	generic_oauth2: 1,
+	github: 2,
+	google: 3,
+	microsoft: 4,
+	qq: 5,
+};
 const REDACTED_SECRET = "***REDACTED***";
 export const STANDARD_CLAIMS = {
 	avatarUrlClaim: "picture",
@@ -361,6 +369,21 @@ export function kindDescription(
 		`external_auth_provider_kind_${kind.kind}_description`,
 		kind.description,
 	);
+}
+
+export function sortExternalAuthProviderKinds(
+	providerKinds: AdminExternalAuthProviderKindInfo[],
+) {
+	return [...providerKinds].sort((left, right) => {
+		const leftRank = PROVIDER_KIND_ORDER[left.kind] ?? Number.MAX_SAFE_INTEGER;
+		const rightRank =
+			PROVIDER_KIND_ORDER[right.kind] ?? Number.MAX_SAFE_INTEGER;
+		return (
+			leftRank - rightRank ||
+			left.display_name.localeCompare(right.display_name) ||
+			left.kind.localeCompare(right.kind)
+		);
+	});
 }
 
 export function parseAllowedDomains(value: string) {

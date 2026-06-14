@@ -1,5 +1,7 @@
 //! 上传服务子模块：`responses`。
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -15,8 +17,14 @@ pub struct InitUploadResponse {
     pub upload_id: Option<String>,
     pub chunk_size: Option<i64>,
     pub total_chunks: Option<i32>,
-    /// S3 presigned PUT URL（仅 presigned 模式）
+    /// Presigned PUT URL（仅 presigned 模式）
     pub presigned_url: Option<String>,
+    /// 存储驱动可能要求的 Presigned PUT 请求头。
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub presigned_headers: BTreeMap<String, String>,
+    /// 浏览器直传完成后是否必须从响应读取 ETag。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presigned_require_etag: Option<bool>,
 }
 
 #[derive(Serialize)]

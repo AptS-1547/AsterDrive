@@ -181,11 +181,7 @@ fn build_connectivity_hint(server_host: &str, server_port: u16) -> String {
 }
 
 fn host_is_loopback(server_host: &str) -> bool {
-    let trimmed = server_host.trim();
-    trimmed.eq_ignore_ascii_case("localhost")
-        || trimmed
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback())
+    crate::utils::net::is_loopback_host(server_host)
 }
 
 #[cfg(test)]

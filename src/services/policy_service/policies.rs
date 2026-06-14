@@ -11,6 +11,7 @@ use crate::db::repository::{
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result, validation_error_with_code};
 use crate::runtime::{RemoteProtocolRuntimeState, SharedRuntimeState, TaskRuntimeState};
+use crate::storage::drivers::azure_blob::AzureBlobDriver;
 use crate::storage::drivers::tencent_cos::TencentCosDriver;
 use crate::types::{
     DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, parse_storage_policy_options,
@@ -30,6 +31,7 @@ fn driver_type_name(driver_type: DriverType) -> &'static str {
     match driver_type {
         DriverType::Local => "local",
         DriverType::S3 => "s3",
+        DriverType::AzureBlob => "azure_blob",
         DriverType::TencentCos => "tencent_cos",
         DriverType::Remote => "remote",
     }
@@ -38,6 +40,7 @@ fn driver_type_name(driver_type: DriverType) -> &'static str {
 fn storage_policy_credential_label(driver_type: DriverType) -> &'static str {
     match driver_type {
         DriverType::S3 => "S3-compatible",
+        DriverType::AzureBlob => "Azure Blob",
         _ => driver_type_name(driver_type),
     }
 }
@@ -91,7 +94,7 @@ fn validate_connection_credentials(
     secret_key: &str,
 ) -> Result<()> {
     match driver_type {
-        DriverType::S3 | DriverType::TencentCos => {
+        DriverType::S3 | DriverType::TencentCos | DriverType::AzureBlob => {
             let driver = storage_policy_credential_label(driver_type);
             validate_connection_secret(access_key, "access_key", driver)?;
             validate_connection_secret(secret_key, "secret_key", driver)?;
@@ -688,6 +691,7 @@ pub async fn test_connection_params<S: RemoteProtocolRuntimeState>(
             )
         }
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
+        DriverType::AzureBlob => Box::new(AzureBlobDriver::new(&fake_policy)?),
         DriverType::TencentCos => Box::new(TencentCosDriver::new(&fake_policy)?),
     };
 

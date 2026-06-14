@@ -107,6 +107,8 @@ export function ExternalAuthProviderDialog({
 	const testDisabled = submitting || connectionMissing;
 	const submitDisabled =
 		submitting || requiredFieldsMissing(form, selectedKind);
+	const showCreateNextButton =
+		isCreate && createStep > 0 && createStep < createLastStep;
 	const stepPanelClass = cn(
 		createStepDirection === "idle"
 			? undefined
@@ -198,6 +200,7 @@ export function ExternalAuthProviderDialog({
 											{createStep === 0 ? (
 												<ExternalAuthProviderKindPanel
 													form={form}
+													onCreateStepChange={onCreateStepChange}
 													onProviderKindChange={onProviderKindChange}
 													providerKinds={providerKinds}
 												/>
@@ -263,7 +266,7 @@ export function ExternalAuthProviderDialog({
 							)}
 						</div>
 						<div className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-2">
-							{isCreate && createStep < createLastStep ? (
+							{isCreate && createStep === 0 ? null : showCreateNextButton ? (
 								<Button
 									type="button"
 									className={ADMIN_CONTROL_HEIGHT_CLASS}

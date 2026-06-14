@@ -13,6 +13,7 @@ use crate::external_auth::driver::{
     ExternalAuthProviderTestCheck, ExternalAuthProviderTestResult,
 };
 use crate::types::{ExternalAuthProtocol, ExternalAuthProviderKind};
+use crate::utils::net::is_loopback_host;
 
 use super::oidc::{
     OidcClient, oidc_http_client, profile_from_id_token, start_authorization_with_oidc_client,
@@ -531,10 +532,6 @@ fn is_microsoft_tenant_id(value: &str) -> bool {
                 ch.is_ascii_hexdigit()
             }
         })
-}
-
-fn is_loopback_host(host: &str) -> bool {
-    matches!(host, "localhost" | "127.0.0.1" | "::1")
 }
 
 fn starts_with_http_url(value: &str) -> bool {
