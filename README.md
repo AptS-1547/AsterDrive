@@ -16,8 +16,8 @@
   <a href="README.zh.md"><img alt="中文 README" src="https://img.shields.io/badge/README-中文-E11D48?style=for-the-badge"></a>
   <a href="docs/guide/getting-started.md"><img alt="Quick Start" src="https://img.shields.io/badge/quick%20start-guide-2563EB?style=for-the-badge"></a>
   <a href="docs/deployment/ops-cli.md"><img alt="Ops CLI" src="https://img.shields.io/badge/ops-CLI-0EA5E9?style=for-the-badge"></a>
-  <a href="developer-docs/architecture.md"><img alt="Architecture" src="https://img.shields.io/badge/architecture-overview-0F172A?style=for-the-badge"></a>
-  <a href="developer-docs/api/index.md"><img alt="API Docs" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
+  <a href="developer-docs/en/architecture.md"><img alt="Architecture" src="https://img.shields.io/badge/architecture-overview-0F172A?style=for-the-badge"></a>
+  <a href="developer-docs/en/api/index.md"><img alt="API Docs" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
   <a href="docs/deployment/docker.md"><img alt="Docker" src="https://img.shields.io/badge/docker-deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
 </p>
 
@@ -31,7 +31,7 @@ AsterDrive is an MIT-licensed self-hosted file service for people who want contr
 
 It is not trying to become a full private-cloud suite. AsterDrive focuses on file infrastructure: storage policies, large-file upload paths, team and personal workspaces, sharing, version history, WebDAV, WOPI, auditability, and deployment/operations tooling.
 
-The current `v0.2.x` line is an early stable release. It is usable for personal and small-team deployments, but still evolving quickly.
+The current `v0.3.x` line is an active development line focused on organization and extensibility. In the `0.x` series, minor versions carry major compatibility or product-scope changes, while patch versions carry smaller feature and maintenance updates.
 
 ## Where it fits
 
@@ -180,22 +180,9 @@ On first startup, AsterDrive will automatically:
 
 ## Roadmap
 
-### v0.2.x: operational maturity
+### v0.3.x: organization and extensibility
 
-The `v0.2.x` line focuses on making AsterDrive easier to operate in real deployments: storage migration, scoped access, background workflows, safer error semantics, and remote-node deployment flexibility.
-
-- storage-policy blob migration tasks
-- team-scoped WebDAV accounts
-- offline HTTP/HTTPS import tasks with SSRF protection
-- broader archive preview and extraction support
-- email verification login
-- error-code taxonomy cleanup
-- deployment and operations documentation
-- reverse-connection support for follower nodes behind NAT
-
-### v0.3: organization and extensibility
-
-The `v0.3` line focuses on richer workspace organization and the foundation for controlled integrations.
+The `v0.3.x` line focuses on richer workspace organization and the foundation for controlled integrations.
 
 - tags for files and folders
 - tag-based filtering in file lists and search
@@ -218,8 +205,8 @@ The `v0.3` line focuses on richer workspace organization and the foundation for 
 - [Backup and restore](docs/deployment/backup.md)
 - [Operations CLI](docs/deployment/ops-cli.md)
 - [Developer docs](developer-docs/README.md)
-- [Architecture](developer-docs/architecture.md)
-- [API overview](developer-docs/api/index.md)
+- [Architecture](developer-docs/en/architecture.md)
+- [API overview](developer-docs/en/api/index.md)
 
 ## Development
 
