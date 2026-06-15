@@ -1,6 +1,6 @@
 use chrono::Utc;
 use futures::TryStreamExt;
-use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, RANGE};
+use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, RANGE};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncRead;
 use tokio_util::io::StreamReader;
@@ -292,19 +292,7 @@ impl MicrosoftGraphClient {
         offset: Option<u64>,
         length: Option<u64>,
     ) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
-        let url = self.url(content_path)?;
-        let mut request = self
-            .http
-            .get(url)
-            .header(AUTHORIZATION, self.authorization_header());
-        if let Some(range_header) = range_header(offset, length)? {
-            request = request.header(RANGE, range_header);
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|err| map_reqwest_error("get OneDrive content stream", err))?;
-        self.ensure_success(response, "get OneDrive content stream")
+        self.get_content_response(content_path, offset, length)
             .await
             .map(|response| {
                 let stream = response.bytes_stream().map_err(std::io::Error::other);
@@ -313,17 +301,7 @@ impl MicrosoftGraphClient {
     }
 
     pub async fn get_bytes(&self, content_path: &str) -> Result<Vec<u8>> {
-        let url = self.url(content_path)?;
-        let response = self
-            .http
-            .get(url)
-            .header(AUTHORIZATION, self.authorization_header())
-            .send()
-            .await
-            .map_err(|err| map_reqwest_error("get OneDrive content", err))?;
-        let response = self
-            .ensure_success(response, "get OneDrive content")
-            .await?;
+        let response = self.get_content_response(content_path, None, None).await?;
         response
             .bytes()
             .await
@@ -409,6 +387,51 @@ impl MicrosoftGraphClient {
         Err(map_graph_response_error(ctx, response).await)
     }
 
+    async fn get_content_response(
+        &self,
+        content_path: &str,
+        offset: Option<u64>,
+        length: Option<u64>,
+    ) -> Result<reqwest::Response> {
+        let url = self.url(content_path)?;
+        let response = self
+            .http
+            .get(url)
+            .header(AUTHORIZATION, self.authorization_header())
+            .send()
+            .await
+            .map_err(|err| map_reqwest_error("get OneDrive content stream", err))?;
+        if response.status().is_redirection() {
+            let download_url = response.headers().get(LOCATION).ok_or_else(|| {
+                storage_driver_error(
+                    StorageErrorKind::Unknown,
+                    "Microsoft Graph content response missing redirect location",
+                )
+            })?;
+            let download_url = download_url.to_str().map_err(|_| {
+                storage_driver_error(
+                    StorageErrorKind::Unknown,
+                    "Microsoft Graph content redirect location is invalid UTF-8",
+                )
+            })?;
+            let download_url = reqwest::Url::parse(download_url).map_err(invalid_graph_url)?;
+            let mut request = self.http.get(download_url);
+            if let Some(range_header) = range_header(offset, length)? {
+                request = request.header(RANGE, range_header);
+            }
+            let response = request
+                .send()
+                .await
+                .map_err(|err| map_reqwest_error("follow OneDrive content redirect", err))?;
+            return self
+                .ensure_success(response, "get OneDrive content stream")
+                .await;
+        }
+
+        self.ensure_success(response, "get OneDrive content stream")
+            .await
+    }
+
     fn authorization_header(&self) -> String {
         format!("Bearer {}", self.config.access_token)
     }
@@ -456,6 +479,111 @@ fn range_header(offset: Option<u64>, length: Option<u64>) -> Result<Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+
+    struct TestHttpServer {
+        base_url: String,
+        ranges: Arc<Mutex<Vec<Option<String>>>>,
+        handle: actix_web::dev::ServerHandle,
+        task: tokio::task::JoinHandle<std::io::Result<()>>,
+    }
+
+    impl TestHttpServer {
+        async fn stop(self) {
+            self.handle.stop(true).await;
+            let _ = self.task.await;
+        }
+    }
+
+    async fn spawn_content_redirect_server() -> TestHttpServer {
+        async fn content(_: HttpRequest) -> HttpResponse {
+            HttpResponse::Found()
+                .append_header(("Location", "/download"))
+                .finish()
+        }
+
+        async fn download(
+            req: HttpRequest,
+            body: web::Data<Arc<Mutex<Vec<Option<String>>>>>,
+        ) -> HttpResponse {
+            let range = req
+                .headers()
+                .get("range")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            body.lock().expect("range log lock").push(range);
+            HttpResponse::Ok().body("hello-world")
+        }
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("listener should bind");
+        let base_url = format!(
+            "http://{}",
+            listener.local_addr().expect("listener addr should exist")
+        );
+        let ranges = Arc::new(Mutex::new(Vec::new()));
+        let ranges_data = web::Data::new(ranges.clone());
+        let server = HttpServer::new(move || {
+            App::new()
+                .app_data(ranges_data.clone())
+                .route("/v1.0/content", web::get().to(content))
+                .route("/download", web::get().to(download))
+        })
+        .listen(listener)
+        .expect("server should listen")
+        .run();
+        let handle = server.handle();
+        let task = tokio::spawn(server);
+        TestHttpServer {
+            base_url,
+            ranges,
+            handle,
+            task,
+        }
+    }
+
+    #[tokio::test]
+    async fn content_redirect_is_followed_before_reading_bytes() {
+        let server = spawn_content_redirect_server().await;
+        let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::new(
+            &server.base_url,
+            "access-token",
+        ))
+        .expect("client should build");
+
+        let bytes = client
+            .get_bytes("/content")
+            .await
+            .expect("content should be read");
+
+        assert_eq!(bytes, b"hello-world");
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn content_redirect_preserves_range_on_download_url() {
+        let server = spawn_content_redirect_server().await;
+        let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::new(
+            &server.base_url,
+            "access-token",
+        ))
+        .expect("client should build");
+
+        let mut stream = client
+            .get_stream("/content", Some(10), Some(5))
+            .await
+            .expect("stream should be readable");
+        let mut bytes = Vec::new();
+        tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut bytes)
+            .await
+            .expect("stream should read");
+
+        assert_eq!(bytes, b"hello-world");
+        let ranges = server.ranges.lock().expect("range log lock").clone();
+        assert_eq!(ranges, vec![Some("bytes=10-14".to_string())]);
+        server.stop().await;
+    }
 
     #[test]
     fn range_header_formats_bounded_and_open_ranges() {
