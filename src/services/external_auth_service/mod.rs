@@ -218,6 +218,7 @@ pub struct CreateExternalAuthProviderInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
 pub struct UpdateExternalAuthProviderInput {
     pub display_name: Option<String>,

@@ -165,6 +165,13 @@ function normalizePolicyComparableForm(form: PolicyFormData) {
 		return comparable;
 	}
 
+	if (
+		normalized.onedrive_client_id.trim() ||
+		normalized.onedrive_client_secret.trim()
+	) {
+		return normalized;
+	}
+
 	const {
 		onedrive_client_id: _clientId,
 		onedrive_client_secret: _clientSecret,
@@ -801,12 +808,7 @@ function useAdminPoliciesPageContent() {
 				if (currentForm.driver_type === "one_drive") {
 					setEditingId(created.id);
 					setEditingPolicy(created);
-					setForm({
-						...getPolicyForm(created),
-						onedrive_client_id: currentForm.onedrive_client_id,
-						onedrive_client_secret: currentForm.onedrive_client_secret,
-						onedrive_tenant: currentForm.onedrive_tenant,
-					});
+					setForm(getPolicyForm(created));
 					setValidatedConnectionKey(null);
 					setCreateStep(0);
 					setCreateStepTouched(false);
@@ -1020,13 +1022,6 @@ function useAdminPoliciesPageContent() {
 			return;
 		}
 		const currentForm = normalizePolicyForm(form);
-		const hasSavedMicrosoftGraphCredential = storageCredentials.some(
-			(credential) => credential.provider === "microsoft_graph",
-		);
-		if (!currentForm.onedrive_client_id && !hasSavedMicrosoftGraphCredential) {
-			toast.error(t("onedrive_client_id_required"));
-			return;
-		}
 
 		void runWithStorageAuthorization(async () => {
 			try {

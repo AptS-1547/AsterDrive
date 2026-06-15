@@ -11,7 +11,10 @@ use crate::types::{
     parse_storage_policy_options,
 };
 
-use super::{StoragePolicyCredentialInfo, crypto, resolve_onedrive_location};
+use super::{
+    StoragePolicyCredentialInfo, build_microsoft_graph_credential_token_provider,
+    resolve_onedrive_location,
+};
 
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
@@ -55,25 +58,17 @@ pub async fn validate_policy_credential(
     )
     .await?
     .ok_or_else(|| AsterError::record_not_found("storage policy credential"))?;
-    let access_token_ciphertext =
-        credential
-            .access_token_ciphertext
-            .as_deref()
-            .ok_or_else(|| {
-                AsterError::auth_invalid_credentials(
-                    "storage policy credential is missing access token",
-                )
-            })?;
-    let access_aad = crypto::token_aad(policy_id, provider.as_str(), "access");
-    let access_token = crypto::decrypt_token(
-        &state.config().auth.storage_credential_secret_key,
-        access_aad.as_bytes(),
-        access_token_ciphertext,
-    )?;
     let options = parse_storage_policy_options(policy.options.as_ref());
-    let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::new(
+    let token_provider = build_microsoft_graph_credential_token_provider(
+        state.writer_db().clone(),
+        state.config().auth.storage_credential_secret_key.clone(),
+        &policy,
+        &credential,
+        options.effective_onedrive_cloud(),
+    )?;
+    let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::with_token_provider(
         options.effective_onedrive_cloud().graph_base_url(),
-        access_token,
+        token_provider,
     ))?;
     let location = match resolve_onedrive_location(&client, &options).await {
         Ok(location) => location,

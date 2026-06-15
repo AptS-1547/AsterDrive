@@ -3,7 +3,10 @@
 use super::StorageErrorKind;
 use super::drivers::azure_blob::AzureBlobDriver;
 use super::drivers::local::LocalDriver;
-use super::drivers::onedrive::{MicrosoftGraphClient, MicrosoftGraphClientConfig, OneDriveDriver};
+use super::drivers::onedrive::{
+    MicrosoftGraphAccessTokenProvider, MicrosoftGraphClient, MicrosoftGraphClientConfig,
+    OneDriveDriver,
+};
 use super::drivers::remote::RemoteDriver;
 use super::drivers::s3::S3Driver;
 use super::drivers::tencent_cos::TencentCosDriver;
@@ -14,12 +17,12 @@ use super::traits::multipart::MultipartStorageDriver;
 use crate::api::api_error_code::ApiErrorCode;
 use crate::config::Config;
 use crate::db::repository::{
-    managed_follower_repo, master_binding_repo, storage_policy_credential_repo,
+    managed_follower_repo, master_binding_repo, policy_repo, storage_policy_credential_repo,
 };
 use crate::entities::storage_policy;
 use crate::errors::{Result, precondition_failed_with_code};
 use crate::metrics_core::SharedMetricsRecorder;
-use crate::services::storage_credential_service::crypto;
+use crate::services::storage_credential_service::build_microsoft_graph_credential_token_provider;
 use crate::storage::remote_protocol::RemoteProtocolRuntime;
 use crate::types::{
     DriverType, StorageCredentialKind, StorageCredentialProvider, StorageCredentialStatus,
@@ -55,7 +58,7 @@ impl DriverEntry {
 
 #[derive(Clone)]
 struct OneDriveCredentialRuntime {
-    access_token: String,
+    token_provider: Arc<dyn MicrosoftGraphAccessTokenProvider>,
     drive_id: Option<String>,
     root_item_id: Option<String>,
 }
@@ -200,25 +203,23 @@ impl DriverRegistry {
             {
                 continue;
             }
-            let Some(access_token_ciphertext) = credential.access_token_ciphertext.as_deref()
-            else {
-                continue;
-            };
-            let aad =
-                crypto::token_aad(credential.policy_id, credential.provider.as_str(), "access");
-            let access_token = crypto::decrypt_token(
-                &config.auth.storage_credential_secret_key,
-                aad.as_bytes(),
-                access_token_ciphertext,
-            )?;
+            let policy = policy_repo::find_by_id(db, credential.policy_id).await?;
             let metadata = parse_onedrive_credential_metadata(&credential.metadata);
             let (drive_id, root_item_id) = metadata
                 .map(|value| (value.drive_id, value.root_item_id))
                 .unwrap_or((None, None));
+            let options = parse_storage_policy_options(policy.options.as_ref());
+            let token_provider = build_microsoft_graph_credential_token_provider(
+                db.clone(),
+                config.auth.storage_credential_secret_key.clone(),
+                &policy,
+                &credential,
+                options.effective_onedrive_cloud(),
+            )?;
             by_policy_id.insert(
                 credential.policy_id,
                 OneDriveCredentialRuntime {
-                    access_token,
+                    token_provider,
                     drive_id,
                     root_item_id,
                 },
@@ -417,10 +418,11 @@ impl DriverRegistry {
                         "OneDrive storage policy missing resolved drive_id; reauthorize Microsoft Graph",
                     ));
                 }
-                let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::new(
-                    options.effective_onedrive_cloud().graph_base_url(),
-                    credential.access_token,
-                ))?;
+                let client =
+                    MicrosoftGraphClient::new(MicrosoftGraphClientConfig::with_token_provider(
+                        options.effective_onedrive_cloud().graph_base_url(),
+                        credential.token_provider,
+                    ))?;
                 let driver = Arc::new(OneDriveDriver::new(
                     client,
                     drive_id,

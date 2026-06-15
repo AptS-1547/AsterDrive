@@ -6,10 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { writeTextToClipboard } from "@/lib/clipboard";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
+import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { StoragePolicyCredentialInfo } from "@/types/api";
 import { OneDriveApplicationFields } from "./OneDriveApplicationFields";
-import { formatDateTime, MICROSOFT_GRAPH_PROVIDER } from "./onedriveFieldUtils";
+import { MICROSOFT_GRAPH_PROVIDER } from "./onedriveFieldUtils";
 import type { SharedFieldProps, Translate } from "./StoragePolicyFieldTypes";
 
 export function OneDriveCredentialPanel({
@@ -45,8 +46,9 @@ export function OneDriveCredentialPanel({
 			: status === "reauth_required"
 				? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
 				: "border-destructive/30 bg-destructive/10 text-destructive";
-	const authorizedAt = formatDateTime(credential?.authorized_at);
-	const validatedAt = formatDateTime(credential?.last_validated_at);
+	const authorizedAt = formatOptionalDateTime(credential?.authorized_at);
+	const refreshedAt = formatOptionalDateTime(credential?.last_refreshed_at);
+	const validatedAt = formatOptionalDateTime(credential?.last_validated_at);
 	const copyRedirectUri = async () => {
 		try {
 			await writeTextToClipboard(redirectUri);
@@ -92,12 +94,17 @@ export function OneDriveCredentialPanel({
 							{credential.status_reason}
 						</p>
 					) : null}
-					{authorizedAt || validatedAt ? (
+					{authorizedAt || refreshedAt || validatedAt ? (
 						<p className="text-xs text-muted-foreground">
 							{[
 								authorizedAt
 									? t("onedrive_credential_authorized_at", {
 											time: authorizedAt,
+										})
+									: null,
+								refreshedAt
+									? t("onedrive_credential_refreshed_at", {
+											time: refreshedAt,
 										})
 									: null,
 								validatedAt
@@ -178,4 +185,8 @@ export function OneDriveCredentialPanel({
 			/>
 		</div>
 	);
+}
+
+function formatOptionalDateTime(value: string | null | undefined) {
+	return value ? formatDateTime(value) : null;
 }

@@ -290,6 +290,7 @@
 	"onedrive_credential_desc_authorized": "A saved credential is attached to this policy. Validate it after changing drive settings or Microsoft permissions.",
 	"onedrive_credential_desc_missing": "Authorize Microsoft Graph before using this policy for uploads.",
 	"onedrive_credential_authorized_at": "Authorized {{time}}",
+	"onedrive_credential_refreshed_at": "Refreshed {{time}}",
 	"onedrive_credential_validated_at": "Validated {{time}}",
 	"onedrive_authorize_action": "Authorize",
 	"onedrive_reauthorize_action": "Reauthorize",

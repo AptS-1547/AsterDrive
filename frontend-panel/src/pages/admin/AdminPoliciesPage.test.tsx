@@ -1347,7 +1347,7 @@ describe("AdminPoliciesPage", () => {
 
 			await waitFor(() => {
 				expect(mockState.create).toHaveBeenCalledWith({
-					access_key: "",
+					access_key: "client-id",
 					base_path: "",
 					bucket: "",
 					chunk_size: 5 * 1024 * 1024,
@@ -1363,14 +1363,12 @@ describe("AdminPoliciesPage", () => {
 						onedrive_tenant: "common",
 					},
 					remote_node_id: undefined,
-					secret_key: "",
+					secret_key: "client-secret",
 				});
 			});
 			expect(mockState.toastSuccess).toHaveBeenCalledWith(
 				"policy_onedrive_created_authorize_next",
 			);
-			expect(screen.getByDisplayValue("client-id")).toBeInTheDocument();
-			expect(screen.getByDisplayValue("client-secret")).toBeInTheDocument();
 
 			fireEvent.click(
 				screen.getByRole("button", { name: /onedrive_authorize_action/ }),
@@ -1382,8 +1380,8 @@ describe("AdminPoliciesPage", () => {
 					microsoft_graph: {
 						cloud: "global",
 						tenant: "common",
-						client_id: "client-id",
-						client_secret: "client-secret",
+						client_id: undefined,
+						client_secret: undefined,
 					},
 				});
 			});
@@ -2168,7 +2166,7 @@ describe("AdminPoliciesPage", () => {
 				credential_kind: "oauth_delegated",
 				expires_at: null,
 				id: 7,
-				last_refreshed_at: null,
+				last_refreshed_at: "2026-06-15T10:40:00Z",
 				last_validated_at: "2026-06-15T10:20:00Z",
 				policy_id: 12,
 				provider: "microsoft_graph",
@@ -2194,6 +2192,9 @@ describe("AdminPoliciesPage", () => {
 				"placeholder",
 				"onedrive_client_secret_keep_placeholder",
 			);
+			expect(
+				screen.getByText(/onedrive_credential_refreshed_at/),
+			).toBeInTheDocument();
 
 			fireEvent.click(
 				screen.getByRole("button", { name: /onedrive_reauthorize_action/ }),
@@ -2217,6 +2218,45 @@ describe("AdminPoliciesPage", () => {
 		} finally {
 			openSpy.mockRestore();
 		}
+	});
+
+	it("saves updated OneDrive application settings as policy connection credentials", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 12,
+				name: "Saved OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Saved OneDrive");
+		await screen.findByLabelText("onedrive_client_id");
+
+		fireEvent.change(screen.getByLabelText("onedrive_client_id"), {
+			target: { value: "new-client-id" },
+		});
+		fireEvent.change(screen.getByLabelText("onedrive_client_secret"), {
+			target: { value: "new-client-secret" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledWith(
+				12,
+				expect.objectContaining({
+					access_key: "new-client-id",
+					secret_key: "new-client-secret",
+				}),
+			);
+		});
 	});
 
 	it("tests changed s3 params and updates with provided credentials", async () => {

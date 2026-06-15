@@ -1,7 +1,10 @@
+use async_trait::async_trait;
 use chrono::Utc;
 use futures::TryStreamExt;
+use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, RANGE};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tokio::io::AsyncRead;
 use tokio_util::io::StreamReader;
 
@@ -22,7 +25,22 @@ pub struct MicrosoftGraphClient {
 #[derive(Clone, Debug)]
 pub struct MicrosoftGraphClientConfig {
     pub graph_base_url: String,
-    pub access_token: String,
+    pub token_provider: Arc<dyn MicrosoftGraphAccessTokenProvider>,
+}
+
+#[async_trait]
+pub trait MicrosoftGraphAccessTokenProvider: Send + Sync + std::fmt::Debug {
+    fn is_configured(&self) -> bool {
+        true
+    }
+
+    async fn access_token(&self) -> Result<String>;
+    async fn refresh_access_token(&self) -> Result<String>;
+}
+
+#[derive(Clone, Debug)]
+struct StaticMicrosoftGraphAccessTokenProvider {
+    access_token: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -94,8 +112,38 @@ impl MicrosoftGraphClientConfig {
     pub fn new(graph_base_url: impl Into<String>, access_token: impl Into<String>) -> Self {
         Self {
             graph_base_url: graph_base_url.into(),
-            access_token: access_token.into(),
+            token_provider: Arc::new(StaticMicrosoftGraphAccessTokenProvider {
+                access_token: access_token.into(),
+            }),
         }
+    }
+
+    pub fn with_token_provider(
+        graph_base_url: impl Into<String>,
+        token_provider: Arc<dyn MicrosoftGraphAccessTokenProvider>,
+    ) -> Self {
+        Self {
+            graph_base_url: graph_base_url.into(),
+            token_provider,
+        }
+    }
+}
+
+#[async_trait]
+impl MicrosoftGraphAccessTokenProvider for StaticMicrosoftGraphAccessTokenProvider {
+    fn is_configured(&self) -> bool {
+        !self.access_token.trim().is_empty()
+    }
+
+    async fn access_token(&self) -> Result<String> {
+        Ok(self.access_token.clone())
+    }
+
+    async fn refresh_access_token(&self) -> Result<String> {
+        Err(storage_driver_error(
+            StorageErrorKind::Auth,
+            "Microsoft Graph access token cannot be refreshed",
+        ))
     }
 }
 
@@ -107,7 +155,7 @@ impl MicrosoftGraphClient {
                 "Microsoft Graph base URL cannot be empty",
             ));
         }
-        if config.access_token.trim().is_empty() {
+        if !config.token_provider.is_configured() {
             return Err(storage_driver_error(
                 StorageErrorKind::Auth,
                 "Microsoft Graph access token cannot be empty",
@@ -193,16 +241,17 @@ impl MicrosoftGraphClient {
 
     pub async fn put_small_content(&self, content_path: &str, data: &[u8]) -> Result<()> {
         let url = self.url(content_path)?;
+        let body = data.to_vec();
         let response = self
-            .http
-            .put(url)
-            .header(AUTHORIZATION, self.authorization_header())
-            .header(CONTENT_LENGTH, data.len().to_string())
-            .header(CONTENT_TYPE, "application/octet-stream")
-            .body(data.to_vec())
-            .send()
-            .await
-            .map_err(|err| map_reqwest_error("put OneDrive small content", err))?;
+            .send_with_auth("put OneDrive small content", |access_token| {
+                self.http
+                    .put(url.clone())
+                    .header(AUTHORIZATION, authorization_header(&access_token))
+                    .header(CONTENT_LENGTH, body.len().to_string())
+                    .header(CONTENT_TYPE, "application/octet-stream")
+                    .body(body.clone())
+            })
+            .await?;
         self.ensure_success(response, "put OneDrive small content")
             .await?;
         Ok(())
@@ -211,17 +260,17 @@ impl MicrosoftGraphClient {
     pub async fn create_upload_session(&self, upload_session_path: &str) -> Result<String> {
         let url = self.url(upload_session_path)?;
         let response = self
-            .http
-            .post(url)
-            .header(AUTHORIZATION, self.authorization_header())
-            .json(&MicrosoftGraphUploadSessionRequest {
-                item: MicrosoftGraphUploadSessionItem {
-                    conflict_behavior: "replace",
-                },
+            .send_with_auth("create OneDrive upload session", |access_token| {
+                self.http
+                    .post(url.clone())
+                    .header(AUTHORIZATION, authorization_header(&access_token))
+                    .json(&MicrosoftGraphUploadSessionRequest {
+                        item: MicrosoftGraphUploadSessionItem {
+                            conflict_behavior: "replace",
+                        },
+                    })
             })
-            .send()
-            .await
-            .map_err(|err| map_reqwest_error("create OneDrive upload session", err))?;
+            .await?;
         let response = self
             .ensure_success(response, "create OneDrive upload session")
             .await?;
@@ -312,12 +361,12 @@ impl MicrosoftGraphClient {
     pub async fn delete(&self, path: &str) -> Result<()> {
         let url = self.url(path)?;
         let response = self
-            .http
-            .delete(url)
-            .header(AUTHORIZATION, self.authorization_header())
-            .send()
-            .await
-            .map_err(|err| map_reqwest_error("delete OneDrive item", err))?;
+            .send_with_auth("delete OneDrive item", |access_token| {
+                self.http
+                    .delete(url.clone())
+                    .header(AUTHORIZATION, authorization_header(&access_token))
+            })
+            .await?;
         self.ensure_success(response, "delete OneDrive item")
             .await?;
         Ok(())
@@ -363,12 +412,12 @@ impl MicrosoftGraphClient {
     async fn get_json<T: serde::de::DeserializeOwned>(&self, path: &str, ctx: &str) -> Result<T> {
         let url = self.url(path)?;
         let response = self
-            .http
-            .get(url)
-            .header(AUTHORIZATION, self.authorization_header())
-            .send()
-            .await
-            .map_err(|err| map_reqwest_error(ctx, err))?;
+            .send_with_auth(ctx, |access_token| {
+                self.http
+                    .get(url.clone())
+                    .header(AUTHORIZATION, authorization_header(&access_token))
+            })
+            .await?;
         let response = self.ensure_success(response, ctx).await?;
         response.json::<T>().await.map_aster_err_ctx(
             &format!("{ctx}: invalid Microsoft Graph JSON"),
@@ -395,13 +444,14 @@ impl MicrosoftGraphClient {
     ) -> Result<reqwest::Response> {
         let url = self.url(content_path)?;
         let response = self
-            .http
-            .get(url)
-            .header(AUTHORIZATION, self.authorization_header())
-            .send()
-            .await
-            .map_err(|err| map_reqwest_error("get OneDrive content stream", err))?;
+            .send_with_auth("get OneDrive content stream", |access_token| {
+                self.http
+                    .get(url.clone())
+                    .header(AUTHORIZATION, authorization_header(&access_token))
+            })
+            .await?;
         if response.status().is_redirection() {
+            let base_url = response.url().clone();
             let download_url = response.headers().get(LOCATION).ok_or_else(|| {
                 storage_driver_error(
                     StorageErrorKind::Unknown,
@@ -414,7 +464,7 @@ impl MicrosoftGraphClient {
                     "Microsoft Graph content redirect location is invalid UTF-8",
                 )
             })?;
-            let download_url = reqwest::Url::parse(download_url).map_err(invalid_graph_url)?;
+            let download_url = base_url.join(download_url).map_err(invalid_graph_url)?;
             let mut request = self.http.get(download_url);
             if let Some(range_header) = range_header(offset, length)? {
                 request = request.header(RANGE, range_header);
@@ -432,8 +482,36 @@ impl MicrosoftGraphClient {
             .await
     }
 
-    fn authorization_header(&self) -> String {
-        format!("Bearer {}", self.config.access_token)
+    async fn send_with_auth<F>(&self, ctx: &str, build_request: F) -> Result<reqwest::Response>
+    where
+        F: Fn(String) -> reqwest::RequestBuilder,
+    {
+        let access_token = self.config.token_provider.access_token().await?;
+        if access_token.trim().is_empty() {
+            return Err(storage_driver_error(
+                StorageErrorKind::Auth,
+                "Microsoft Graph access token cannot be empty",
+            ));
+        }
+        let response = build_request(access_token)
+            .send()
+            .await
+            .map_err(|err| map_reqwest_error(ctx, err))?;
+        if response.status() != StatusCode::UNAUTHORIZED {
+            return Ok(response);
+        }
+
+        let access_token = self.config.token_provider.refresh_access_token().await?;
+        if access_token.trim().is_empty() {
+            return Err(storage_driver_error(
+                StorageErrorKind::Auth,
+                "Microsoft Graph refreshed access token cannot be empty",
+            ));
+        }
+        build_request(access_token)
+            .send()
+            .await
+            .map_err(|err| map_reqwest_error(ctx, err))
     }
 
     fn url(&self, path: &str) -> Result<reqwest::Url> {
@@ -446,6 +524,10 @@ impl MicrosoftGraphClient {
         };
         reqwest::Url::parse(&format!("{base}/v1.0{path}")).map_err(invalid_graph_url)
     }
+}
+
+fn authorization_header(access_token: &str) -> String {
+    format!("Bearer {access_token}")
 }
 
 fn encode_path_segment(value: &str) -> String {
@@ -486,6 +568,7 @@ mod tests {
     struct TestHttpServer {
         base_url: String,
         ranges: Arc<Mutex<Vec<Option<String>>>>,
+        auth_headers: Arc<Mutex<Vec<Option<String>>>>,
         handle: actix_web::dev::ServerHandle,
         task: tokio::task::JoinHandle<std::io::Result<()>>,
     }
@@ -494,6 +577,67 @@ mod tests {
         async fn stop(self) {
             self.handle.stop(true).await;
             let _ = self.task.await;
+        }
+    }
+
+    #[derive(Debug)]
+    struct RefreshingTestTokenProvider {
+        access_token_calls: Arc<Mutex<usize>>,
+        refresh_calls: Arc<Mutex<usize>>,
+        refreshed_token: String,
+        fail_refresh: bool,
+    }
+
+    impl RefreshingTestTokenProvider {
+        fn new(refreshed_token: impl Into<String>) -> Self {
+            Self {
+                access_token_calls: Arc::new(Mutex::new(0)),
+                refresh_calls: Arc::new(Mutex::new(0)),
+                refreshed_token: refreshed_token.into(),
+                fail_refresh: false,
+            }
+        }
+
+        fn failing() -> Self {
+            Self {
+                access_token_calls: Arc::new(Mutex::new(0)),
+                refresh_calls: Arc::new(Mutex::new(0)),
+                refreshed_token: String::new(),
+                fail_refresh: true,
+            }
+        }
+
+        fn access_token_calls(&self) -> usize {
+            *self
+                .access_token_calls
+                .lock()
+                .expect("access token call lock")
+        }
+
+        fn refresh_calls(&self) -> usize {
+            *self.refresh_calls.lock().expect("refresh call lock")
+        }
+    }
+
+    #[async_trait]
+    impl MicrosoftGraphAccessTokenProvider for RefreshingTestTokenProvider {
+        async fn access_token(&self) -> Result<String> {
+            *self
+                .access_token_calls
+                .lock()
+                .expect("access token call lock") += 1;
+            Ok("expired-token".to_string())
+        }
+
+        async fn refresh_access_token(&self) -> Result<String> {
+            *self.refresh_calls.lock().expect("refresh call lock") += 1;
+            if self.fail_refresh {
+                return Err(storage_driver_error(
+                    StorageErrorKind::Auth,
+                    "refresh failed",
+                ));
+            }
+            Ok(self.refreshed_token.clone())
         }
     }
 
@@ -523,6 +667,7 @@ mod tests {
             listener.local_addr().expect("listener addr should exist")
         );
         let ranges = Arc::new(Mutex::new(Vec::new()));
+        let auth_headers = Arc::new(Mutex::new(Vec::new()));
         let ranges_data = web::Data::new(ranges.clone());
         let server = HttpServer::new(move || {
             App::new()
@@ -538,6 +683,109 @@ mod tests {
         TestHttpServer {
             base_url,
             ranges,
+            auth_headers,
+            handle,
+            task,
+        }
+    }
+
+    async fn spawn_authorized_get_server() -> TestHttpServer {
+        async fn drive(
+            req: HttpRequest,
+            auth_headers: web::Data<Arc<Mutex<Vec<Option<String>>>>>,
+        ) -> HttpResponse {
+            let authorization = req
+                .headers()
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            auth_headers
+                .lock()
+                .expect("auth header log lock")
+                .push(authorization.clone());
+            match authorization.as_deref() {
+                Some("Bearer refreshed-token") => HttpResponse::Ok().json(serde_json::json!({
+                    "id": "drive-id",
+                    "name": "Drive"
+                })),
+                _ => HttpResponse::Unauthorized().json(serde_json::json!({
+                    "error": {
+                        "code": "InvalidAuthenticationToken",
+                        "message": "expired"
+                    }
+                })),
+            }
+        }
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("listener should bind");
+        let base_url = format!(
+            "http://{}",
+            listener.local_addr().expect("listener addr should exist")
+        );
+        let auth_headers = Arc::new(Mutex::new(Vec::new()));
+        let auth_headers_data = web::Data::new(auth_headers.clone());
+        let server = HttpServer::new(move || {
+            App::new()
+                .app_data(auth_headers_data.clone())
+                .route("/v1.0/me/drive", web::get().to(drive))
+        })
+        .listen(listener)
+        .expect("server should listen")
+        .run();
+        let handle = server.handle();
+        let task = tokio::spawn(server);
+        TestHttpServer {
+            base_url,
+            ranges: Arc::new(Mutex::new(Vec::new())),
+            auth_headers,
+            handle,
+            task,
+        }
+    }
+
+    async fn spawn_forbidden_get_server() -> TestHttpServer {
+        async fn drive(
+            req: HttpRequest,
+            auth_headers: web::Data<Arc<Mutex<Vec<Option<String>>>>>,
+        ) -> HttpResponse {
+            let authorization = req
+                .headers()
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            auth_headers
+                .lock()
+                .expect("auth header log lock")
+                .push(authorization);
+            HttpResponse::Forbidden().json(serde_json::json!({
+                "error": {
+                    "code": "accessDenied",
+                    "message": "denied"
+                }
+            }))
+        }
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("listener should bind");
+        let base_url = format!(
+            "http://{}",
+            listener.local_addr().expect("listener addr should exist")
+        );
+        let auth_headers = Arc::new(Mutex::new(Vec::new()));
+        let auth_headers_data = web::Data::new(auth_headers.clone());
+        let server = HttpServer::new(move || {
+            App::new()
+                .app_data(auth_headers_data.clone())
+                .route("/v1.0/me/drive", web::get().to(drive))
+        })
+        .listen(listener)
+        .expect("server should listen")
+        .run();
+        let handle = server.handle();
+        let task = tokio::spawn(server);
+        TestHttpServer {
+            base_url,
+            ranges: Arc::new(Mutex::new(Vec::new())),
+            auth_headers,
             handle,
             task,
         }
@@ -582,6 +830,111 @@ mod tests {
         assert_eq!(bytes, b"hello-world");
         let ranges = server.ranges.lock().expect("range log lock").clone();
         assert_eq!(ranges, vec![Some("bytes=10-14".to_string())]);
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn graph_unauthorized_refreshes_token_and_retries_once() {
+        let server = spawn_authorized_get_server().await;
+        let provider = Arc::new(RefreshingTestTokenProvider::new("refreshed-token"));
+        let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::with_token_provider(
+            &server.base_url,
+            provider.clone(),
+        ))
+        .expect("client should build");
+
+        let drive = client.get_me_drive().await.expect("retry should succeed");
+
+        assert_eq!(drive.id, "drive-id");
+        assert_eq!(provider.access_token_calls(), 1);
+        assert_eq!(provider.refresh_calls(), 1);
+        let auth_headers = server
+            .auth_headers
+            .lock()
+            .expect("auth header log lock")
+            .clone();
+        assert_eq!(
+            auth_headers,
+            vec![
+                Some("Bearer expired-token".to_string()),
+                Some("Bearer refreshed-token".to_string()),
+            ]
+        );
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn graph_unauthorized_returns_auth_error_when_refresh_fails() {
+        let server = spawn_authorized_get_server().await;
+        let provider = Arc::new(RefreshingTestTokenProvider::failing());
+        let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::with_token_provider(
+            &server.base_url,
+            provider.clone(),
+        ))
+        .expect("client should build");
+
+        let error = client.get_me_drive().await.unwrap_err();
+
+        assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Auth));
+        assert_eq!(provider.access_token_calls(), 1);
+        assert_eq!(provider.refresh_calls(), 1);
+        let auth_headers = server
+            .auth_headers
+            .lock()
+            .expect("auth header log lock")
+            .clone();
+        assert_eq!(auth_headers, vec![Some("Bearer expired-token".to_string())]);
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn graph_unauthorized_rejects_empty_refreshed_token() {
+        let server = spawn_authorized_get_server().await;
+        let provider = Arc::new(RefreshingTestTokenProvider::new(" "));
+        let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::with_token_provider(
+            &server.base_url,
+            provider.clone(),
+        ))
+        .expect("client should build");
+
+        let error = client.get_me_drive().await.unwrap_err();
+
+        assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Auth));
+        assert_eq!(provider.access_token_calls(), 1);
+        assert_eq!(provider.refresh_calls(), 1);
+        let auth_headers = server
+            .auth_headers
+            .lock()
+            .expect("auth header log lock")
+            .clone();
+        assert_eq!(auth_headers, vec![Some("Bearer expired-token".to_string())]);
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn graph_non_unauthorized_error_does_not_refresh_token() {
+        let server = spawn_forbidden_get_server().await;
+        let provider = Arc::new(RefreshingTestTokenProvider::new("refreshed-token"));
+        let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::with_token_provider(
+            &server.base_url,
+            provider.clone(),
+        ))
+        .expect("client should build");
+
+        let error = client.get_me_drive().await.unwrap_err();
+
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Permission)
+        );
+        assert_eq!(provider.access_token_calls(), 1);
+        assert_eq!(provider.refresh_calls(), 0);
+        let auth_headers = server
+            .auth_headers
+            .lock()
+            .expect("auth header log lock")
+            .clone();
+        assert_eq!(auth_headers, vec![Some("Bearer expired-token".to_string())]);
         server.stop().await;
     }
 

@@ -290,6 +290,7 @@
 	"onedrive_credential_desc_authorized": "这个策略已绑定保存的凭据。修改 drive 配置或 Microsoft 权限后请重新验证。",
 	"onedrive_credential_desc_missing": "使用这个策略上传前，需要先授权 Microsoft Graph。",
 	"onedrive_credential_authorized_at": "授权于 {{time}}",
+	"onedrive_credential_refreshed_at": "刷新于 {{time}}",
 	"onedrive_credential_validated_at": "验证于 {{time}}",
 	"onedrive_authorize_action": "授权",
 	"onedrive_reauthorize_action": "重新授权",

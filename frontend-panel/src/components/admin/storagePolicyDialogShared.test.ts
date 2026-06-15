@@ -200,7 +200,7 @@ describe("storagePolicyDialogShared", () => {
 		});
 	});
 
-	it("round-trips OneDrive policy options without storing OAuth inputs", () => {
+	it("stores OneDrive Microsoft app settings as policy connection credentials", () => {
 		const form = getPolicyForm({
 			id: 12,
 			name: "Graph Drive",
@@ -246,14 +246,29 @@ describe("storagePolicyDialogShared", () => {
 				onedrive_client_id: "client-id",
 				onedrive_client_secret: "secret",
 				onedrive_scopes: "Files.ReadWrite.All offline_access",
-			}).options,
-		).toEqual({
-			onedrive_cloud: "china",
-			onedrive_account_mode: "sharepoint_site",
-			onedrive_tenant: "contoso.partner.onmschina.cn",
-			onedrive_drive_id: "drive-1",
-			onedrive_root_item_id: "root-item-1",
-			onedrive_site_id: "site-1",
+			}),
+		).toMatchObject({
+			access_key: "client-id",
+			secret_key: "secret",
+			options: {
+				onedrive_cloud: "china",
+				onedrive_account_mode: "sharepoint_site",
+				onedrive_tenant: "contoso.partner.onmschina.cn",
+				onedrive_drive_id: "drive-1",
+				onedrive_root_item_id: "root-item-1",
+				onedrive_site_id: "site-1",
+			},
+		});
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_client_id: "new-client-id",
+				onedrive_client_secret: "new-secret",
+			}),
+		).toMatchObject({
+			access_key: "new-client-id",
+			secret_key: "new-secret",
 		});
 
 		expect(
@@ -271,6 +286,12 @@ describe("storagePolicyDialogShared", () => {
 			onedrive_tenant: "organizations",
 			onedrive_root_item_id: "root",
 		});
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+			}),
+		).not.toHaveProperty("secret_key");
 	});
 
 	it("validates S3-compatible endpoint protocols without blocking remote policies", () => {

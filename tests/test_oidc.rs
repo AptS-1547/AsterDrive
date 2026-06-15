@@ -234,6 +234,61 @@ async fn admin_provider_kind_api_drives_create_contract() {
 }
 
 #[actix_web::test]
+async fn admin_update_external_auth_provider_rejects_identity_fields() {
+    let (mock_provider, server) = start_mock_external_auth_provider().await;
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let created =
+        create_external_auth_provider(&app, &admin_token, &mock_provider.issuer, true, false).await;
+    let provider_id = created["data"]["id"]
+        .as_i64()
+        .expect("provider id should be returned");
+
+    for payload in [
+        serde_json::json!({
+            "display_name": "Changed Provider Kind",
+            "provider_kind": "github",
+        }),
+        serde_json::json!({
+            "display_name": "Changed Key",
+            "key": "github",
+        }),
+    ] {
+        let req = test::TestRequest::patch()
+            .uri(&format!(
+                "/api/v1/admin/external-auth/providers/{provider_id}"
+            ))
+            .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+            .insert_header(common::csrf_header_for(&admin_token))
+            .set_json(payload)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 400);
+    }
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/admin/external-auth/providers/{provider_id}"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let provider: Value = test::read_body_json(resp).await;
+    assert_eq!(provider["data"]["provider_kind"], "oidc");
+    assert_eq!(provider["data"]["key"], created["data"]["key"]);
+    assert_eq!(
+        provider["data"]["display_name"],
+        created["data"]["display_name"]
+    );
+
+    server.stop(true).await;
+}
+
+#[actix_web::test]
 async fn admin_create_and_test_google_provider_uses_oidc_defaults() {
     let (mock_provider, server) = start_mock_external_auth_provider().await;
     let state = common::setup().await;

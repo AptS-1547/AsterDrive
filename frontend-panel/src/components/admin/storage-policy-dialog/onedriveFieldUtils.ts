@@ -39,18 +39,3 @@ export function getTenantMode(
 	}
 	return ONE_DRIVE_CUSTOM_TENANT_MODE;
 }
-
-export function formatDateTime(value: string | null | undefined) {
-	if (!value) {
-		return null;
-	}
-
-	try {
-		return new Intl.DateTimeFormat(undefined, {
-			dateStyle: "medium",
-			timeStyle: "short",
-		}).format(new Date(value));
-	} catch {
-		return value;
-	}
-}

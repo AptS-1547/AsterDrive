@@ -24,6 +24,8 @@ pub use oauth::{
     finish_authorization_callback, start_authorization,
 };
 
+pub(crate) use oauth::build_microsoft_graph_credential_token_provider;
+
 const FLOW_TTL_SECS: u64 = 300;
 const DEFAULT_MICROSOFT_GRAPH_SCOPES: &str =
     "offline_access Files.ReadWrite.All Sites.ReadWrite.All";

@@ -400,14 +400,22 @@ export function buildCreatePolicyPayload(
 	form: PolicyFormData,
 ): CreatePolicyRequest {
 	const normalizedForm = normalizePolicyForm(form);
+	const accessKey =
+		normalizedForm.driver_type === "one_drive"
+			? normalizedForm.onedrive_client_id
+			: normalizedForm.access_key;
+	const secretKey =
+		normalizedForm.driver_type === "one_drive"
+			? normalizedForm.onedrive_client_secret
+			: normalizedForm.secret_key;
 
 	return {
 		name: normalizedForm.name,
 		driver_type: normalizedForm.driver_type,
 		endpoint: normalizedForm.endpoint,
 		bucket: normalizedForm.bucket,
-		access_key: normalizedForm.access_key,
-		secret_key: normalizedForm.secret_key,
+		access_key: accessKey,
+		secret_key: secretKey,
 		base_path: normalizedForm.base_path,
 		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
 		max_file_size: normalizedForm.max_file_size
@@ -425,6 +433,14 @@ export function buildUpdatePolicyPayload(
 	form: PolicyFormData,
 ): UpdatePolicyRequest {
 	const normalizedForm = normalizePolicyForm(form);
+	const accessKey =
+		normalizedForm.driver_type === "one_drive"
+			? normalizedForm.onedrive_client_id
+			: normalizedForm.access_key;
+	const secretKey =
+		normalizedForm.driver_type === "one_drive"
+			? normalizedForm.onedrive_client_secret
+			: normalizedForm.secret_key;
 	const payload: UpdatePolicyRequest = {
 		name: normalizedForm.name,
 		endpoint: normalizedForm.endpoint,
@@ -441,11 +457,11 @@ export function buildUpdatePolicyPayload(
 		options: buildPolicyOptions(normalizedForm),
 	};
 
-	if (normalizedForm.access_key) {
-		payload.access_key = normalizedForm.access_key;
+	if (accessKey) {
+		payload.access_key = accessKey;
 	}
-	if (normalizedForm.secret_key) {
-		payload.secret_key = normalizedForm.secret_key;
+	if (secretKey) {
+		payload.secret_key = secretKey;
 	}
 
 	return payload;

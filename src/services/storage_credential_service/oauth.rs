@@ -1,17 +1,24 @@
 use base64::Engine as _;
 use chrono::{Duration, Utc};
 use rand::RngExt;
-use sea_orm::{ActiveValue::Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::db::repository::{
     policy_repo, storage_policy_authorization_flow_repo, storage_policy_credential_repo,
 };
-use crate::entities::{storage_policy_authorization_flow, storage_policy_credential};
+use crate::entities::{
+    storage_policy, storage_policy_authorization_flow, storage_policy_credential,
+};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::SharedRuntimeState;
-use crate::storage::drivers::onedrive::{MicrosoftGraphClient, MicrosoftGraphClientConfig};
+use crate::storage::drivers::onedrive::{
+    MicrosoftGraphAccessTokenProvider, MicrosoftGraphClient, MicrosoftGraphClientConfig,
+};
+use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::types::{
     DriverType, MicrosoftGraphCloud, StorageAuthorizationFlowStatus, StorageCredentialKind,
     StorageCredentialProvider, StorageCredentialStatus, parse_storage_policy_options,
@@ -90,6 +97,231 @@ struct MicrosoftTokenError {
     error_description: Option<String>,
 }
 
+#[derive(Debug)]
+pub(crate) struct MicrosoftGraphCredentialTokenProvider {
+    db: sea_orm::DatabaseConnection,
+    encryption_key: String,
+    policy_id: i64,
+    cloud: MicrosoftGraphCloud,
+    tenant: String,
+    client_id: String,
+    client_secret: Option<String>,
+    cache: Mutex<MicrosoftGraphCredentialTokenCache>,
+}
+
+#[derive(Debug)]
+struct MicrosoftGraphCredentialTokenCache {
+    access_token: String,
+    expires_at: Option<chrono::DateTime<Utc>>,
+    refresh_token_ciphertext: Option<String>,
+}
+
+pub(crate) fn build_microsoft_graph_credential_token_provider(
+    db: sea_orm::DatabaseConnection,
+    encryption_key: String,
+    policy: &storage_policy::Model,
+    credential: &storage_policy_credential::Model,
+    cloud: MicrosoftGraphCloud,
+) -> Result<Arc<dyn MicrosoftGraphAccessTokenProvider>> {
+    let metadata = parse_metadata(&credential.metadata);
+    let access_token_ciphertext =
+        credential
+            .access_token_ciphertext
+            .as_deref()
+            .ok_or_else(|| {
+                storage_driver_error(
+                    StorageErrorKind::Auth,
+                    "storage credential is missing access token",
+                )
+            })?;
+    let access_token = crypto::decrypt_token(
+        &encryption_key,
+        crypto::token_aad(
+            credential.policy_id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            "access",
+        )
+        .as_bytes(),
+        access_token_ciphertext,
+    )?;
+    let client_id = normalize_optional_string(Some(policy.access_key.clone()))
+        .or_else(|| {
+            metadata
+                .as_ref()
+                .and_then(|metadata| metadata_string(metadata, "client_id"))
+        })
+        .ok_or_else(|| {
+            storage_driver_error(
+                StorageErrorKind::Auth,
+                "storage credential is missing Microsoft Graph client_id; save the OneDrive policy application settings and reauthorize",
+            )
+        })?;
+    let client_secret = match normalize_optional_string(Some(policy.secret_key.clone())) {
+        Some(client_secret) => Some(client_secret),
+        None => metadata
+            .as_ref()
+            .and_then(|metadata| metadata_string(metadata, "client_secret_ciphertext"))
+            .map(|ciphertext| {
+                decrypt_stored_client_secret(&encryption_key, credential.policy_id, &ciphertext)
+            })
+            .transpose()?,
+    };
+    Ok(Arc::new(MicrosoftGraphCredentialTokenProvider {
+        db,
+        encryption_key,
+        policy_id: credential.policy_id,
+        cloud,
+        tenant: credential
+            .tenant_id
+            .clone()
+            .filter(|tenant| !tenant.trim().is_empty())
+            .unwrap_or_else(|| "common".to_string()),
+        client_id,
+        client_secret,
+        cache: Mutex::new(MicrosoftGraphCredentialTokenCache {
+            access_token,
+            expires_at: credential.expires_at,
+            refresh_token_ciphertext: credential.refresh_token_ciphertext.clone(),
+        }),
+    }))
+}
+
+#[async_trait::async_trait]
+impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCredentialTokenProvider {
+    async fn access_token(&self) -> Result<String> {
+        {
+            let cache = self.cache.lock().await;
+            if cache
+                .expires_at
+                .is_none_or(|expires_at| expires_at > Utc::now() + Duration::seconds(60))
+            {
+                return Ok(cache.access_token.clone());
+            }
+        }
+        self.refresh_access_token().await
+    }
+
+    async fn refresh_access_token(&self) -> Result<String> {
+        let mut cache = self.cache.lock().await;
+        let Some(refresh_token_ciphertext) = cache.refresh_token_ciphertext.as_deref() else {
+            self.mark_reauth_required("storage credential is missing refresh token")
+                .await?;
+            return Err(storage_driver_error(
+                StorageErrorKind::Auth,
+                "storage credential is missing refresh token; reauthorize Microsoft Graph",
+            ));
+        };
+        let refresh_token = crypto::decrypt_token(
+            &self.encryption_key,
+            crypto::token_aad(
+                self.policy_id,
+                StorageCredentialProvider::MicrosoftGraph.as_str(),
+                "refresh",
+            )
+            .as_bytes(),
+            refresh_token_ciphertext,
+        )?;
+        let token = match refresh_microsoft_graph_token(
+            self.cloud,
+            &self.tenant,
+            &self.client_id,
+            self.client_secret.as_deref(),
+            &refresh_token,
+        )
+        .await
+        {
+            Ok(token) => token,
+            Err(error) => {
+                let _ = self.mark_reauth_required(error.message()).await;
+                return Err(storage_driver_error(
+                    StorageErrorKind::Auth,
+                    format!("refresh Microsoft Graph access token: {error}"),
+                ));
+            }
+        };
+        let now = Utc::now();
+        let expires_at = token
+            .expires_in
+            .and_then(|seconds| (seconds > 0).then(|| now + Duration::seconds(seconds)));
+        let access_aad = crypto::token_aad(
+            self.policy_id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            "access",
+        );
+        let refresh_aad = crypto::token_aad(
+            self.policy_id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            "refresh",
+        );
+        let access_token_ciphertext = crypto::encrypt_token(
+            &self.encryption_key,
+            access_aad.as_bytes(),
+            &token.access_token,
+        )?;
+        let refresh_token_ciphertext = match token.refresh_token.as_deref() {
+            Some(refresh_token) if !refresh_token.trim().is_empty() => Some(crypto::encrypt_token(
+                &self.encryption_key,
+                refresh_aad.as_bytes(),
+                refresh_token,
+            )?),
+            _ => cache.refresh_token_ciphertext.clone(),
+        };
+        let mut credential = storage_policy_credential_repo::find_by_policy_provider_kind(
+            &self.db,
+            self.policy_id,
+            StorageCredentialProvider::MicrosoftGraph,
+            StorageCredentialKind::OauthDelegated,
+        )
+        .await?
+        .ok_or_else(|| AsterError::record_not_found("storage policy credential"))?
+        .into_active_model();
+        credential.access_token_ciphertext = Set(Some(access_token_ciphertext));
+        credential.refresh_token_ciphertext = Set(refresh_token_ciphertext.clone());
+        credential.expires_at = Set(expires_at);
+        credential.last_refreshed_at = Set(Some(now));
+        credential.status = Set(StorageCredentialStatus::Authorized);
+        credential.status_reason = Set(None);
+        credential.updated_at = Set(now);
+        if let Some(scope) = token.scope.as_deref() {
+            let scopes = normalize_scopes(Some(
+                scope.split_whitespace().map(ToOwned::to_owned).collect(),
+            ));
+            credential.scopes = Set(scopes_to_json(&scopes)?);
+        }
+        credential
+            .update(&self.db)
+            .await
+            .map_err(AsterError::from)?;
+
+        cache.access_token = token.access_token;
+        cache.expires_at = expires_at;
+        cache.refresh_token_ciphertext = refresh_token_ciphertext;
+        Ok(cache.access_token.clone())
+    }
+}
+
+impl MicrosoftGraphCredentialTokenProvider {
+    async fn mark_reauth_required(&self, reason: &str) -> Result<()> {
+        let Some(credential) = storage_policy_credential_repo::find_by_policy_provider_kind(
+            &self.db,
+            self.policy_id,
+            StorageCredentialProvider::MicrosoftGraph,
+            StorageCredentialKind::OauthDelegated,
+        )
+        .await?
+        else {
+            return Ok(());
+        };
+        let now = Utc::now();
+        let mut active = credential.into_active_model();
+        active.status = Set(StorageCredentialStatus::ReauthRequired);
+        active.status_reason = Set(Some(reason.to_string()));
+        active.updated_at = Set(now);
+        active.update(&self.db).await.map_err(AsterError::from)?;
+        Ok(())
+    }
+}
+
 pub async fn start_authorization(
     state: &impl SharedRuntimeState,
     req: &actix_web::HttpRequest,
@@ -110,6 +342,8 @@ pub async fn start_authorization(
                 req,
                 policy_id,
                 created_by_user_id,
+                policy.access_key,
+                policy.secret_key,
                 input.microsoft_graph,
             )
             .await
@@ -125,6 +359,8 @@ async fn start_microsoft_graph_authorization(
     req: &actix_web::HttpRequest,
     policy_id: i64,
     created_by_user_id: i64,
+    saved_client_id: String,
+    saved_client_secret: String,
     input: Option<MicrosoftGraphAuthorizationInput>,
 ) -> Result<StorageAuthorizationStartResponse> {
     let input = input.ok_or_else(|| {
@@ -152,26 +388,31 @@ async fn start_microsoft_graph_authorization(
         })
         .unwrap_or_else(|| "common".to_string());
     let client_id = match normalize_optional_string(input.client_id).or_else(|| {
-        existing_metadata
-            .as_ref()
-            .and_then(|metadata| metadata_string(metadata, "client_id"))
+        normalize_optional_string(Some(saved_client_id)).or_else(|| {
+            existing_metadata
+                .as_ref()
+                .and_then(|metadata| metadata_string(metadata, "client_id"))
+        })
     }) {
         Some(client_id) => normalize_required_string(&client_id, "client_id", 512)?,
         None => return Err(AsterError::validation_error("client_id is required")),
     };
     let client_secret = match normalize_optional_string(input.client_secret) {
         Some(client_secret) => Some(client_secret),
-        None => existing_metadata
-            .as_ref()
-            .and_then(|metadata| metadata_string(metadata, "client_secret_ciphertext"))
-            .map(|ciphertext| {
-                decrypt_stored_client_secret(
-                    &state.config().auth.storage_credential_secret_key,
-                    policy_id,
-                    &ciphertext,
-                )
-            })
-            .transpose()?,
+        None => match normalize_optional_string(Some(saved_client_secret)) {
+            Some(client_secret) => Some(client_secret),
+            None => existing_metadata
+                .as_ref()
+                .and_then(|metadata| metadata_string(metadata, "client_secret_ciphertext"))
+                .map(|ciphertext| {
+                    decrypt_stored_client_secret(
+                        &state.config().auth.storage_credential_secret_key,
+                        policy_id,
+                        &ciphertext,
+                    )
+                })
+                .transpose()?,
+        },
     };
     let scopes = normalize_scopes(input.scopes);
     let redirect_uri = callback_redirect_uri(state, req)?;
@@ -562,6 +803,65 @@ async fn exchange_microsoft_graph_code(
             "Microsoft Graph OAuth token response is invalid",
             AsterError::auth_invalid_credentials,
         )?;
+    validate_microsoft_token_response(&token)?;
+    Ok(token)
+}
+
+async fn refresh_microsoft_graph_token(
+    cloud: MicrosoftGraphCloud,
+    tenant: &str,
+    client_id: &str,
+    client_secret: Option<&str>,
+    refresh_token: &str,
+) -> Result<MicrosoftTokenResponse> {
+    let client = reqwest::ClientBuilder::new()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent(OUTBOUND_HTTP_USER_AGENT)
+        .build()
+        .map_aster_err_ctx(
+            "failed to build Microsoft Graph OAuth HTTP client",
+            AsterError::internal_error,
+        )?;
+    let token_endpoint = cloud.token_endpoint(tenant);
+    let body = {
+        let mut form = url::form_urlencoded::Serializer::new(String::new());
+        form.append_pair("grant_type", "refresh_token");
+        form.append_pair("client_id", client_id);
+        form.append_pair("refresh_token", refresh_token);
+        if let Some(client_secret) = client_secret {
+            form.append_pair("client_secret", client_secret);
+        }
+        form.finish()
+    };
+    let response = client
+        .post(&token_endpoint)
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(body)
+        .send()
+        .await
+        .map_aster_err_ctx(
+            "Microsoft Graph OAuth token refresh failed",
+            AsterError::auth_invalid_credentials,
+        )?;
+    if !response.status().is_success() {
+        return Err(microsoft_token_endpoint_error(response).await);
+    }
+    let token = response
+        .json::<MicrosoftTokenResponse>()
+        .await
+        .map_aster_err_ctx(
+            "Microsoft Graph OAuth token refresh response is invalid",
+            AsterError::auth_invalid_credentials,
+        )?;
+    validate_microsoft_token_response(&token)?;
+    Ok(token)
+}
+
+fn validate_microsoft_token_response(token: &MicrosoftTokenResponse) -> Result<()> {
     if token.access_token.trim().is_empty() {
         return Err(AsterError::auth_invalid_credentials(
             "Microsoft Graph OAuth token response missing access_token",
@@ -574,7 +874,7 @@ async fn exchange_microsoft_graph_code(
             "Microsoft Graph OAuth token response returned unsupported token_type",
         ));
     }
-    Ok(token)
+    Ok(())
 }
 
 async fn microsoft_token_endpoint_error(response: reqwest::Response) -> AsterError {
@@ -654,6 +954,125 @@ fn build_pkce_challenge(verifier: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::DatabaseConfig;
+    use crate::db;
+    use crate::types::{StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
+    use migration::Migrator;
+
+    async fn setup_db() -> sea_orm::DatabaseConnection {
+        let db = db::connect_with_metrics(
+            &DatabaseConfig {
+                url: "sqlite::memory:".to_string(),
+                pool_size: 1,
+                retry_count: 0,
+            },
+            crate::metrics_core::NoopMetrics::arc(),
+        )
+        .await
+        .expect("storage credential test DB should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("storage credential migrations should succeed");
+        db
+    }
+
+    async fn create_onedrive_policy(
+        db: &sea_orm::DatabaseConnection,
+        client_id: &str,
+        client_secret: &str,
+    ) -> storage_policy::Model {
+        let now = Utc::now();
+        policy_repo::create(
+            db,
+            storage_policy::ActiveModel {
+                name: Set("onedrive".to_string()),
+                driver_type: Set(DriverType::OneDrive),
+                endpoint: Set(String::new()),
+                bucket: Set(String::new()),
+                access_key: Set(client_id.to_string()),
+                secret_key: Set(client_secret.to_string()),
+                base_path: Set(String::new()),
+                remote_node_id: Set(None),
+                max_file_size: Set(0),
+                allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
+                options: Set(StoredStoragePolicyOptions::empty()),
+                is_default: Set(false),
+                chunk_size: Set(5_242_880),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("policy should insert")
+    }
+
+    async fn create_microsoft_graph_credential(
+        db: &sea_orm::DatabaseConnection,
+        encryption_key: &str,
+        policy_id: i64,
+        access_token: &str,
+        refresh_token: Option<&str>,
+        expires_at: Option<chrono::DateTime<Utc>>,
+    ) -> storage_policy_credential::Model {
+        let now = Utc::now();
+        let access_token_ciphertext = crypto::encrypt_token(
+            encryption_key,
+            crypto::token_aad(
+                policy_id,
+                StorageCredentialProvider::MicrosoftGraph.as_str(),
+                "access",
+            )
+            .as_bytes(),
+            access_token,
+        )
+        .expect("access token should encrypt");
+        let refresh_token_ciphertext = refresh_token
+            .map(|refresh_token| {
+                crypto::encrypt_token(
+                    encryption_key,
+                    crypto::token_aad(
+                        policy_id,
+                        StorageCredentialProvider::MicrosoftGraph.as_str(),
+                        "refresh",
+                    )
+                    .as_bytes(),
+                    refresh_token,
+                )
+            })
+            .transpose()
+            .expect("refresh token should encrypt");
+        storage_policy_credential_repo::upsert_by_policy_provider_kind(
+            db,
+            storage_policy_credential::ActiveModel {
+                policy_id: Set(policy_id),
+                provider: Set(StorageCredentialProvider::MicrosoftGraph),
+                credential_kind: Set(StorageCredentialKind::OauthDelegated),
+                account_label: Set(Some("Drive".to_string())),
+                subject: Set(Some("root".to_string())),
+                tenant_id: Set(Some("common".to_string())),
+                scopes: Set(r#"["offline_access","Files.ReadWrite.All"]"#.to_string()),
+                access_token_ciphertext: Set(Some(access_token_ciphertext)),
+                refresh_token_ciphertext: Set(refresh_token_ciphertext),
+                metadata: Set(serde_json::json!({
+                    "cloud": MicrosoftGraphCloud::Global,
+                    "drive_id": "drive-id",
+                    "root_item_id": "root"
+                })
+                .to_string()),
+                status: Set(StorageCredentialStatus::Authorized),
+                status_reason: Set(None),
+                expires_at: Set(expires_at),
+                authorized_at: Set(Some(now)),
+                last_refreshed_at: Set(None),
+                last_validated_at: Set(None),
+                ..Default::default()
+            },
+            now,
+        )
+        .await
+        .expect("credential should insert")
+    }
 
     #[test]
     fn microsoft_authorization_url_uses_selected_cloud_and_pkce() {
@@ -741,6 +1160,204 @@ mod tests {
             )
             .unwrap(),
             "client-secret"
+        );
+    }
+
+    #[test]
+    fn microsoft_token_response_validation_accepts_bearer_or_missing_token_type() {
+        validate_microsoft_token_response(&MicrosoftTokenResponse {
+            access_token: "access-token".to_string(),
+            refresh_token: None,
+            token_type: Some("Bearer".to_string()),
+            expires_in: Some(3600),
+            scope: None,
+            id_token: None,
+        })
+        .unwrap();
+
+        validate_microsoft_token_response(&MicrosoftTokenResponse {
+            access_token: "access-token".to_string(),
+            refresh_token: None,
+            token_type: None,
+            expires_in: Some(3600),
+            scope: None,
+            id_token: None,
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn microsoft_token_response_validation_rejects_blank_access_token() {
+        let error = validate_microsoft_token_response(&MicrosoftTokenResponse {
+            access_token: " ".to_string(),
+            refresh_token: None,
+            token_type: Some("Bearer".to_string()),
+            expires_in: Some(3600),
+            scope: None,
+            id_token: None,
+        })
+        .unwrap_err();
+
+        assert!(error.message().contains("missing access_token"));
+    }
+
+    #[test]
+    fn microsoft_token_response_validation_rejects_unsupported_token_type() {
+        let error = validate_microsoft_token_response(&MicrosoftTokenResponse {
+            access_token: "access-token".to_string(),
+            refresh_token: None,
+            token_type: Some("mac".to_string()),
+            expires_in: Some(3600),
+            scope: None,
+            id_token: None,
+        })
+        .unwrap_err();
+
+        assert!(error.message().contains("unsupported token_type"));
+    }
+
+    #[tokio::test]
+    async fn credential_token_provider_returns_cached_access_token_before_expiry() {
+        let db = setup_db().await;
+        let encryption_key = "storage-token-test-master-key";
+        let policy = create_onedrive_policy(&db, "client-id", "client-secret").await;
+        let credential = create_microsoft_graph_credential(
+            &db,
+            encryption_key,
+            policy.id,
+            "cached-access-token",
+            None,
+            Some(Utc::now() + Duration::minutes(10)),
+        )
+        .await;
+        let provider = build_microsoft_graph_credential_token_provider(
+            db.clone(),
+            encryption_key.to_string(),
+            &policy,
+            &credential,
+            MicrosoftGraphCloud::Global,
+        )
+        .expect("provider should build");
+
+        let access_token = provider.access_token().await.expect("token should load");
+
+        assert_eq!(access_token, "cached-access-token");
+        let stored = storage_policy_credential_repo::find_by_policy_provider_kind(
+            &db,
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph,
+            StorageCredentialKind::OauthDelegated,
+        )
+        .await
+        .expect("credential lookup should succeed")
+        .expect("credential should exist");
+        assert_eq!(stored.status, StorageCredentialStatus::Authorized);
+        assert_eq!(stored.status_reason, None);
+    }
+
+    #[tokio::test]
+    async fn credential_token_provider_marks_reauth_required_when_refresh_token_is_missing() {
+        let db = setup_db().await;
+        let encryption_key = "storage-token-test-master-key";
+        let policy = create_onedrive_policy(&db, "client-id", "client-secret").await;
+        let credential = create_microsoft_graph_credential(
+            &db,
+            encryption_key,
+            policy.id,
+            "expired-access-token",
+            None,
+            Some(Utc::now() - Duration::minutes(10)),
+        )
+        .await;
+        let provider = build_microsoft_graph_credential_token_provider(
+            db.clone(),
+            encryption_key.to_string(),
+            &policy,
+            &credential,
+            MicrosoftGraphCloud::Global,
+        )
+        .expect("provider should build");
+
+        let error = provider.access_token().await.unwrap_err();
+
+        assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Auth));
+        let stored = storage_policy_credential_repo::find_by_policy_provider_kind(
+            &db,
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph,
+            StorageCredentialKind::OauthDelegated,
+        )
+        .await
+        .expect("credential lookup should succeed")
+        .expect("credential should exist");
+        assert_eq!(stored.status, StorageCredentialStatus::ReauthRequired);
+        assert!(
+            stored
+                .status_reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("missing refresh token")
+        );
+    }
+
+    #[tokio::test]
+    async fn credential_token_provider_requires_access_token_ciphertext() {
+        let db = setup_db().await;
+        let encryption_key = "storage-token-test-master-key";
+        let policy = create_onedrive_policy(&db, "client-id", "client-secret").await;
+        let mut credential = create_microsoft_graph_credential(
+            &db,
+            encryption_key,
+            policy.id,
+            "access-token",
+            Some("refresh-token"),
+            Some(Utc::now() + Duration::minutes(10)),
+        )
+        .await;
+        credential.access_token_ciphertext = None;
+
+        let error = build_microsoft_graph_credential_token_provider(
+            db,
+            encryption_key.to_string(),
+            &policy,
+            &credential,
+            MicrosoftGraphCloud::Global,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Auth));
+        assert!(error.message().contains("missing access token"));
+    }
+
+    #[tokio::test]
+    async fn credential_token_provider_requires_client_id_from_policy_or_metadata() {
+        let db = setup_db().await;
+        let encryption_key = "storage-token-test-master-key";
+        let policy = create_onedrive_policy(&db, " ", "client-secret").await;
+        let credential = create_microsoft_graph_credential(
+            &db,
+            encryption_key,
+            policy.id,
+            "access-token",
+            Some("refresh-token"),
+            Some(Utc::now() + Duration::minutes(10)),
+        )
+        .await;
+
+        let error = build_microsoft_graph_credential_token_provider(
+            db,
+            encryption_key.to_string(),
+            &policy,
+            &credential,
+            MicrosoftGraphCloud::Global,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Auth));
+        assert!(
+            error
+                .message()
+                .contains("missing Microsoft Graph client_id")
         );
     }
 }
