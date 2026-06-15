@@ -11,7 +11,7 @@ use crate::types::{
     parse_storage_policy_options,
 };
 
-use super::{StoragePolicyCredentialInfo, crypto};
+use super::{StoragePolicyCredentialInfo, crypto, resolve_onedrive_location};
 
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
@@ -71,18 +71,12 @@ pub async fn validate_policy_credential(
         access_token_ciphertext,
     )?;
     let options = parse_storage_policy_options(policy.options.as_ref());
-    let drive_id = options.onedrive_drive_id.as_deref().ok_or_else(|| {
-        AsterError::database_operation("OneDrive storage policy missing onedrive_drive_id")
-    })?;
-    let root_item_id = options.onedrive_root_item_id.as_deref().ok_or_else(|| {
-        AsterError::database_operation("OneDrive storage policy missing onedrive_root_item_id")
-    })?;
     let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::new(
         options.effective_onedrive_cloud().graph_base_url(),
         access_token,
     ))?;
-    let root_item = match client.get_drive_item_by_id(drive_id, root_item_id).await {
-        Ok(root_item) => root_item,
+    let location = match resolve_onedrive_location(&client, &options).await {
+        Ok(location) => location,
         Err(error) => {
             let mut active = credential.clone().into_active_model();
             active.status = Set(match error.storage_error_kind() {
@@ -107,10 +101,33 @@ pub async fn validate_policy_credential(
             return Err(error);
         }
     };
+    let root_item = location.root_item;
     let now = Utc::now();
+    let policy_id = credential.policy_id;
+    let existing_metadata = serde_json::from_str::<serde_json::Value>(&credential.metadata).ok();
+    let existing_client_id = existing_metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("client_id"))
+        .and_then(serde_json::Value::as_str);
+    let existing_client_secret_ciphertext = existing_metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("client_secret_ciphertext"))
+        .and_then(serde_json::Value::as_str);
     let mut active = credential.into_active_model();
     active.account_label = Set(root_item.name.clone());
     active.subject = Set(Some(root_item.id.clone()));
+    active.metadata = Set(super::oauth::storage_credential_metadata(
+        &state.config().auth.storage_credential_secret_key,
+        policy_id,
+        options.effective_onedrive_cloud(),
+        existing_client_id,
+        None,
+        existing_client_secret_ciphertext,
+        &location.drive_id,
+        &root_item.id,
+        root_item.name.as_deref(),
+        None,
+    )?);
     active.status = Set(StorageCredentialStatus::Authorized);
     active.status_reason = Set(None);
     active.last_validated_at = Set(Some(now));

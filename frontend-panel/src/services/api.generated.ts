@@ -340,6 +340,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/policies/storage-authorization/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["finish_storage_authorization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policies/storage-credential-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_storage_credential_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/policies/test": {
         parameters: {
             query?: never;
@@ -414,6 +446,54 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["promote_s3_compatible_policy_driver"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policies/{id}/storage-authorization/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_storage_authorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policies/{id}/storage-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_storage_policy_credentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policies/{id}/storage-credentials/{provider}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["validate_storage_policy_credential"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5039,7 +5119,7 @@ export interface components {
          * @description 存储驱动类型
          * @enum {string}
          */
-        DriverType: "local" | "s3" | "azure_blob" | "tencent_cos" | "remote";
+        DriverType: "local" | "s3" | "azure_blob" | "tencent_cos" | "remote" | "one_drive";
         /** @description Check a storage policy migration plan without creating a task. */
         DryRunStoragePolicyMigrationReq: {
             delete_source_after_success?: boolean;
@@ -5746,6 +5826,25 @@ export interface components {
         MicrosoftExternalAuthProviderOptions: {
             tenant: string;
         };
+        MicrosoftGraphAuthorizationContext: {
+            client_id: string;
+            client_secret_configured: boolean;
+            cloud: components["schemas"]["MicrosoftGraphCloud"];
+            scopes: string[];
+            tenant: string;
+        };
+        MicrosoftGraphAuthorizationInput: {
+            client_id?: string | null;
+            client_secret?: string | null;
+            cloud?: null | components["schemas"]["MicrosoftGraphCloud"];
+            scopes?: string[] | null;
+            tenant?: string | null;
+        };
+        /**
+         * @description Microsoft Graph cloud deployment for OneDrive / SharePoint storage backends.
+         * @enum {string}
+         */
+        MicrosoftGraphCloud: "global" | "china";
         /** @description Migrate all user and team assignments from one policy group to another. */
         MigratePolicyGroupAssignmentsReq: {
             /** Format: int64 */
@@ -6318,6 +6417,11 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        /**
+         * @description Microsoft Graph Drive location mode for OneDrive storage policies.
+         * @enum {string}
+         */
+        OneDriveAccountMode: "personal" | "work_or_school" | "sharepoint_site" | "group_drive";
         /** @description WOPI open file request. */
         OpenWopiRequest: {
             app_key: string;
@@ -6944,6 +7048,27 @@ export interface components {
         SortBy: "name" | "size" | "created_at" | "updated_at" | "type";
         /** @enum {string} */
         SortOrder: "asc" | "desc";
+        /** @description Start an OAuth authorization flow for an administrator-managed storage policy credential. */
+        StartStorageAuthorizationReq: {
+            microsoft_graph?: null | components["schemas"]["MicrosoftGraphAuthorizationInput"];
+            provider: components["schemas"]["StorageCredentialProvider"];
+        };
+        StorageAuthorizationCallbackOutcome: {
+            credential: components["schemas"]["StoragePolicyCredentialInfo"];
+        };
+        StorageAuthorizationCallbackQuery: {
+            code?: string | null;
+            error?: string | null;
+            error_description?: string | null;
+            state?: string | null;
+        };
+        StorageAuthorizationStartResponse: {
+            authorization_url: string;
+            /** Format: int64 */
+            expires_in: number;
+            microsoft_graph?: null | components["schemas"]["MicrosoftGraphAuthorizationContext"];
+            provider: components["schemas"]["StorageCredentialProvider"];
+        };
         StorageCapacityInfo: {
             /** Format: int64 */
             available_bytes?: number | null;
@@ -6980,6 +7105,27 @@ export interface components {
             /** Format: int64 */
             team_id: number;
         };
+        /**
+         * @description Authentication material shape for a storage policy credential.
+         * @enum {string}
+         */
+        StorageCredentialKind: "oauth_delegated" | "oauth_app_only" | "service_account";
+        /**
+         * @description Provider backing an OAuth-managed storage policy credential.
+         * @enum {string}
+         */
+        StorageCredentialProvider: "microsoft_graph" | "google_drive";
+        StorageCredentialProviderInfo: {
+            default_scopes: string[];
+            display_name: string;
+            provider: components["schemas"]["StorageCredentialProvider"];
+            supported: boolean;
+        };
+        /**
+         * @description Current usability state of a stored storage policy credential.
+         * @enum {string}
+         */
+        StorageCredentialStatus: "authorized" | "reauth_required" | "permission_denied" | "revoked" | "invalid";
         StoragePolicy: {
             allowed_types: string[];
             base_path: string;
@@ -7006,6 +7152,31 @@ export interface components {
         };
         /** @enum {string} */
         StoragePolicyActionType: "configure_tencent_cos_cors";
+        StoragePolicyCredentialInfo: {
+            account_label?: string | null;
+            authorized_at?: string | null;
+            created_at: string;
+            credential_kind: components["schemas"]["StorageCredentialKind"];
+            expires_at?: string | null;
+            /** Format: int64 */
+            id: number;
+            last_refreshed_at?: string | null;
+            last_validated_at?: string | null;
+            /** Format: int64 */
+            policy_id: number;
+            provider: components["schemas"]["StorageCredentialProvider"];
+            scopes: string[];
+            status: components["schemas"]["StorageCredentialStatus"];
+            status_reason?: string | null;
+            subject?: string | null;
+            tenant_id?: string | null;
+            updated_at: string;
+        };
+        StoragePolicyCredentialValidationResult: {
+            credential: components["schemas"]["StoragePolicyCredentialInfo"];
+            root_item_id: string;
+            root_item_name?: string | null;
+        };
         StoragePolicyGroup: {
             created_at: string;
             description: string;
@@ -7102,6 +7273,13 @@ export interface components {
         StoragePolicyOptions: {
             content_dedup?: boolean | null;
             media_metadata_extensions?: string[];
+            onedrive_account_mode?: null | components["schemas"]["OneDriveAccountMode"];
+            onedrive_cloud?: null | components["schemas"]["MicrosoftGraphCloud"];
+            onedrive_drive_id?: string | null;
+            onedrive_group_id?: string | null;
+            onedrive_root_item_id?: string | null;
+            onedrive_site_id?: string | null;
+            onedrive_tenant?: string | null;
             remote_download_strategy?: null | components["schemas"]["RemoteDownloadStrategy"];
             remote_upload_strategy?: null | components["schemas"]["RemoteUploadStrategy"];
             /** Format: int64 */
@@ -9545,6 +9723,103 @@ export interface operations {
             };
         };
     };
+    finish_storage_authorization: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+                error_description?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage credential authorization completed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            credential: components["schemas"]["StoragePolicyCredentialInfo"];
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Authorization callback rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_storage_credential_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Supported storage credential providers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            default_scopes: string[];
+                            display_name: string;
+                            provider: components["schemas"]["StorageCredentialProvider"];
+                            supported: boolean;
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     test_policy_params: {
         parameters: {
             query?: never;
@@ -9957,6 +10232,202 @@ export interface operations {
                 content?: never;
             };
             /** @description Policy not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_storage_authorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartStorageAuthorizationReq"];
+            };
+        };
+        responses: {
+            /** @description Storage credential authorization URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            authorization_url: string;
+                            /** Format: int64 */
+                            expires_in: number;
+                            microsoft_graph?: null | components["schemas"]["MicrosoftGraphAuthorizationContext"];
+                            provider: components["schemas"]["StorageCredentialProvider"];
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid authorization configuration */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_storage_policy_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage policy credentials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            account_label?: string | null;
+                            authorized_at?: string | null;
+                            created_at: string;
+                            credential_kind: components["schemas"]["StorageCredentialKind"];
+                            expires_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            last_refreshed_at?: string | null;
+                            last_validated_at?: string | null;
+                            /** Format: int64 */
+                            policy_id: number;
+                            provider: components["schemas"]["StorageCredentialProvider"];
+                            scopes: string[];
+                            status: components["schemas"]["StorageCredentialStatus"];
+                            status_reason?: string | null;
+                            subject?: string | null;
+                            tenant_id?: string | null;
+                            updated_at: string;
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    validate_storage_policy_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy ID */
+                id: number;
+                /** @description Storage credential provider */
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage policy credential validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            credential: components["schemas"]["StoragePolicyCredentialInfo"];
+                            root_item_id: string;
+                            root_item_name?: string | null;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid provider or credential state */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy or credential not found */
             404: {
                 headers: {
                     [name: string]: unknown;

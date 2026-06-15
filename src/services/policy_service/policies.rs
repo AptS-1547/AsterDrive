@@ -128,12 +128,32 @@ fn ensure_onedrive_options_supported(
         return Ok(());
     }
 
-    if options.onedrive_account_mode.is_none()
-        || options.onedrive_drive_id.is_none()
-        || options.onedrive_root_item_id.is_none()
+    if options.onedrive_account_mode.is_none() {
+        return Err(AsterError::validation_error(
+            "OneDrive storage policies require onedrive_account_mode",
+        ));
+    }
+    if options.onedrive_cloud == Some(crate::types::MicrosoftGraphCloud::China)
+        && options.onedrive_account_mode == Some(crate::types::OneDriveAccountMode::Personal)
     {
         return Err(AsterError::validation_error(
-            "OneDrive storage policies require onedrive_account_mode, onedrive_drive_id, and onedrive_root_item_id",
+            "personal OneDrive accounts must use the global Microsoft Graph cloud",
+        ));
+    }
+    if options.onedrive_account_mode == Some(crate::types::OneDriveAccountMode::SharepointSite)
+        && options.onedrive_drive_id.is_none()
+        && options.onedrive_site_id.is_none()
+    {
+        return Err(AsterError::validation_error(
+            "OneDrive sharepoint_site policies require onedrive_site_id when onedrive_drive_id is not set",
+        ));
+    }
+    if options.onedrive_account_mode == Some(crate::types::OneDriveAccountMode::GroupDrive)
+        && options.onedrive_drive_id.is_none()
+        && options.onedrive_group_id.is_none()
+    {
+        return Err(AsterError::validation_error(
+            "OneDrive group_drive policies require onedrive_group_id when onedrive_drive_id is not set",
         ));
     }
 
@@ -947,7 +967,9 @@ impl From<crate::storage::drivers::tencent_cos::cors::TencentCosCorsApplyResult>
 #[cfg(test)]
 mod tests {
     use super::ensure_onedrive_options_supported;
-    use crate::types::{DriverType, OneDriveAccountMode, StoragePolicyOptions};
+    use crate::types::{
+        DriverType, MicrosoftGraphCloud, OneDriveAccountMode, StoragePolicyOptions,
+    };
 
     #[test]
     fn onedrive_options_are_rejected_for_non_onedrive_policy() {
@@ -968,9 +990,20 @@ mod tests {
     }
 
     #[test]
-    fn onedrive_policy_requires_location_options() {
+    fn onedrive_policy_accepts_automatic_default_drive() {
         let options = StoragePolicyOptions {
             onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+            ..Default::default()
+        };
+
+        ensure_onedrive_options_supported(DriverType::OneDrive, &options)
+            .expect("work or school OneDrive resolves the default drive during authorization");
+    }
+
+    #[test]
+    fn onedrive_policy_requires_account_mode() {
+        let options = StoragePolicyOptions {
+            onedrive_root_item_id: Some("root".to_string()),
             ..Default::default()
         };
 
@@ -979,8 +1012,21 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("OneDrive storage policies require")
+                .contains("OneDrive storage policies require onedrive_account_mode")
         );
+    }
+
+    #[test]
+    fn onedrive_policy_rejects_personal_china_cloud() {
+        let options = StoragePolicyOptions {
+            onedrive_cloud: Some(MicrosoftGraphCloud::China),
+            onedrive_account_mode: Some(OneDriveAccountMode::Personal),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::OneDrive, &options).unwrap_err();
+
+        assert!(error.to_string().contains("global Microsoft Graph cloud"));
     }
 }
 

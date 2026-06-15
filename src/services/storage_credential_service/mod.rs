@@ -8,8 +8,11 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::entities::storage_policy_credential;
+use crate::errors::{AsterError, Result};
+use crate::storage::drivers::onedrive::{MicrosoftGraphClient, MicrosoftGraphDriveItem};
 use crate::types::{
-    MicrosoftGraphCloud, StorageCredentialKind, StorageCredentialProvider, StorageCredentialStatus,
+    MicrosoftGraphCloud, OneDriveAccountMode, StorageCredentialKind, StorageCredentialProvider,
+    StorageCredentialStatus, StoragePolicyOptions,
 };
 
 pub use management::{
@@ -77,9 +80,15 @@ pub struct MicrosoftGraphAuthorizationContext {
 pub struct MicrosoftGraphAuthorizationInput {
     pub cloud: Option<MicrosoftGraphCloud>,
     pub tenant: Option<String>,
-    pub client_id: String,
+    pub client_id: Option<String>,
     pub client_secret: Option<String>,
     pub scopes: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ResolvedOneDriveLocation {
+    pub drive_id: String,
+    pub root_item: MicrosoftGraphDriveItem,
 }
 
 impl From<storage_policy_credential::Model> for StoragePolicyCredentialInfo {
@@ -144,6 +153,60 @@ fn normalize_scopes(value: Option<Vec<String>>) -> Vec<String> {
     } else {
         scopes
     }
+}
+
+pub(crate) async fn resolve_onedrive_location(
+    client: &MicrosoftGraphClient,
+    options: &StoragePolicyOptions,
+) -> Result<ResolvedOneDriveLocation> {
+    let account_mode = options.onedrive_account_mode.ok_or_else(|| {
+        AsterError::database_operation("OneDrive storage policy missing onedrive_account_mode")
+    })?;
+    let drive_id = match options.onedrive_drive_id.as_deref() {
+        Some(value) => value.to_string(),
+        None => match account_mode {
+            OneDriveAccountMode::Personal | OneDriveAccountMode::WorkOrSchool => {
+                client.get_me_drive().await?.id
+            }
+            OneDriveAccountMode::SharepointSite => {
+                let site_id = options.onedrive_site_id.as_deref().ok_or_else(|| {
+                    AsterError::database_operation(
+                        "OneDrive sharepoint_site policy missing onedrive_site_id",
+                    )
+                })?;
+                client.get_site_drive(site_id).await?.id
+            }
+            OneDriveAccountMode::GroupDrive => {
+                let group_id = options.onedrive_group_id.as_deref().ok_or_else(|| {
+                    AsterError::database_operation(
+                        "OneDrive group_drive policy missing onedrive_group_id",
+                    )
+                })?;
+                client.get_group_drive(group_id).await?.id
+            }
+        },
+    };
+    if drive_id.trim().is_empty() {
+        return Err(AsterError::database_operation(
+            "Microsoft Graph returned empty OneDrive drive id",
+        ));
+    }
+    let configured_root_item_id = options
+        .onedrive_root_item_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("root");
+    let root_item = if configured_root_item_id.eq_ignore_ascii_case("root") {
+        client.get_drive_root(&drive_id).await?
+    } else {
+        client
+            .get_drive_item_by_id(&drive_id, configured_root_item_id)
+            .await?
+    };
+    Ok(ResolvedOneDriveLocation {
+        drive_id,
+        root_item,
+    })
 }
 
 fn scopes_to_json(scopes: &[String]) -> crate::errors::Result<String> {

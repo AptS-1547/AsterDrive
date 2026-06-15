@@ -15,7 +15,7 @@ use crate::storage::traits::extensions::{StorageCapacityInfo, StreamUploadDriver
 use crate::utils::numbers;
 
 pub use client::{
-    MicrosoftGraphClient, MicrosoftGraphClientConfig, MicrosoftGraphDriveItem,
+    MicrosoftGraphClient, MicrosoftGraphClientConfig, MicrosoftGraphDrive, MicrosoftGraphDriveItem,
     MicrosoftGraphDriveItemParentReference,
 };
 pub use paths::{

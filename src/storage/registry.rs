@@ -27,6 +27,7 @@ use crate::types::{
 };
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -55,6 +56,16 @@ impl DriverEntry {
 #[derive(Clone)]
 struct OneDriveCredentialRuntime {
     access_token: String,
+    drive_id: Option<String>,
+    root_item_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OneDriveCredentialMetadata {
+    #[serde(default)]
+    drive_id: Option<String>,
+    #[serde(default)]
+    root_item_id: Option<String>,
 }
 
 pub struct DriverRegistry {
@@ -200,9 +211,17 @@ impl DriverRegistry {
                 aad.as_bytes(),
                 access_token_ciphertext,
             )?;
+            let metadata = parse_onedrive_credential_metadata(&credential.metadata);
+            let (drive_id, root_item_id) = metadata
+                .map(|value| (value.drive_id, value.root_item_id))
+                .unwrap_or((None, None));
             by_policy_id.insert(
                 credential.policy_id,
-                OneDriveCredentialRuntime { access_token },
+                OneDriveCredentialRuntime {
+                    access_token,
+                    drive_id,
+                    root_item_id,
+                },
             );
         }
         *self.onedrive_credentials_by_policy_id.write() = by_policy_id;
@@ -355,18 +374,6 @@ impl DriverRegistry {
             }
             DriverType::OneDrive => {
                 let options = parse_storage_policy_options(policy.options.as_ref());
-                let drive_id = options.onedrive_drive_id.clone().ok_or_else(|| {
-                    storage_driver_error(
-                        StorageErrorKind::Misconfigured,
-                        "OneDrive storage policy missing onedrive_drive_id",
-                    )
-                })?;
-                let root_item_id = options.onedrive_root_item_id.clone().ok_or_else(|| {
-                    storage_driver_error(
-                        StorageErrorKind::Misconfigured,
-                        "OneDrive storage policy missing onedrive_root_item_id",
-                    )
-                })?;
                 let credential = self.get_onedrive_credential(policy.id).ok_or_else(|| {
                     storage_driver_error(
                         StorageErrorKind::Auth,
@@ -376,6 +383,40 @@ impl DriverRegistry {
                         ),
                     )
                 })?;
+                let drive_id = options
+                    .onedrive_drive_id
+                    .clone()
+                    .or_else(|| credential.drive_id.clone())
+                    .ok_or_else(|| {
+                        storage_driver_error(
+                            StorageErrorKind::Misconfigured,
+                            "OneDrive storage policy missing resolved drive_id; reauthorize Microsoft Graph",
+                        )
+                    })?;
+                let configured_root_item_id = options.onedrive_root_item_id.as_deref();
+                let root_item_id = configured_root_item_id
+                    .filter(|value| !value.eq_ignore_ascii_case("root"))
+                    .map(ToOwned::to_owned)
+                    .or_else(|| credential.root_item_id.clone())
+                    .or_else(|| configured_root_item_id.map(ToOwned::to_owned))
+                    .ok_or_else(|| {
+                        storage_driver_error(
+                            StorageErrorKind::Misconfigured,
+                            "OneDrive storage policy missing resolved root_item_id; reauthorize Microsoft Graph",
+                        )
+                    })?;
+                if root_item_id.trim().is_empty() {
+                    return Err(storage_driver_error(
+                        StorageErrorKind::Misconfigured,
+                        "OneDrive storage policy missing resolved root_item_id; reauthorize Microsoft Graph",
+                    ));
+                }
+                if drive_id.trim().is_empty() {
+                    return Err(storage_driver_error(
+                        StorageErrorKind::Misconfigured,
+                        "OneDrive storage policy missing resolved drive_id; reauthorize Microsoft Graph",
+                    ));
+                }
                 let client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::new(
                     options.effective_onedrive_cloud().graph_base_url(),
                     credential.access_token,
@@ -411,14 +452,17 @@ impl DriverRegistry {
                 driver_type,
                 self.metrics.clone(),
                 multipart.clone(),
-            ));
-            (storage as Arc<dyn StorageDriver>, multipart)
+            )) as Arc<dyn StorageDriver>;
+            (storage, multipart)
         } else {
             (storage, multipart)
         };
-
         DriverEntry { storage, multipart }
     }
+}
+
+fn parse_onedrive_credential_metadata(raw: &str) -> Option<OneDriveCredentialMetadata> {
+    serde_json::from_str(raw).ok()
 }
 
 impl Default for DriverRegistry {

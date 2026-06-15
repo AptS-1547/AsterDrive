@@ -31,6 +31,7 @@ import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { config } from "@/config/app";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
@@ -61,6 +62,7 @@ import type {
 	RemoteNodeInfo,
 	StoragePolicy,
 	StoragePolicyCapacityInfo,
+	StoragePolicyCredentialInfo,
 	StoragePolicyMigrationDryRun,
 } from "@/types/api";
 import { ApiErrorCode } from "@/types/api-helpers";
@@ -83,6 +85,14 @@ const DEFAULT_POLICY_SORT_ORDER = "desc" as const satisfies SortOrder;
 const CREATE_LAST_STEP = 2;
 const POLICY_UPLOAD_SESSION_BLOCKER_CODE =
 	ApiErrorCode.PolicyUploadSessionsExist;
+
+function getStorageAuthorizationCallbackUrl() {
+	const apiBaseUrl = new URL(config.apiBaseUrl, window.location.origin);
+	return new URL(
+		"admin/policies/storage-authorization/callback",
+		apiBaseUrl.href.endsWith("/") ? apiBaseUrl.href : `${apiBaseUrl.href}/`,
+	).toString();
+}
 
 function policyFormValueEquals(left: unknown, right: unknown): boolean {
 	if (Object.is(left, right)) {
@@ -128,10 +138,40 @@ function policyFormHasUnsavedChanges(
 		return false;
 	}
 
-	return !policyFormValueEquals(
-		normalizePolicyForm(form),
-		normalizePolicyForm(getPolicyForm(policy)),
+	const comparableForm = normalizePolicyComparableForm(form);
+	const comparablePolicyForm = normalizePolicyComparableForm(
+		getPolicyForm(policy),
 	);
+
+	return !policyFormValueEquals(comparableForm, comparablePolicyForm);
+}
+
+function normalizePolicyComparableForm(form: PolicyFormData) {
+	const normalized = normalizePolicyForm(form);
+	if (normalized.driver_type !== "one_drive") {
+		const {
+			onedrive_account_mode: _accountMode,
+			onedrive_client_id: _clientId,
+			onedrive_client_secret: _clientSecret,
+			onedrive_cloud: _cloud,
+			onedrive_drive_id: _driveId,
+			onedrive_group_id: _groupId,
+			onedrive_root_item_id: _rootItemId,
+			onedrive_scopes: _scopes,
+			onedrive_site_id: _siteId,
+			onedrive_tenant: _tenant,
+			...comparable
+		} = normalized;
+		return comparable;
+	}
+
+	const {
+		onedrive_client_id: _clientId,
+		onedrive_client_secret: _clientSecret,
+		onedrive_scopes: _scopes,
+		...comparable
+	} = normalized;
+	return comparable;
 }
 
 function useAdminPoliciesPageContent() {
@@ -190,6 +230,12 @@ function useAdminPoliciesPageContent() {
 		useState<StoragePolicyCapacityInfo | null>(null);
 	const [policyCapacityLoading, setPolicyCapacityLoading] = useState(false);
 	const policyCapacityRequestSerial = useRef(0);
+	const [storageCredentials, setStorageCredentials] = useState<
+		StoragePolicyCredentialInfo[]
+	>([]);
+	const [storageCredentialsLoading, setStorageCredentialsLoading] =
+		useState(false);
+	const storageCredentialsRequestSerial = useRef(0);
 	const [remoteNodes, setRemoteNodes] = useState<RemoteNodeInfo[]>(
 		() => readAdminRemoteNodeLookup() ?? [],
 	);
@@ -227,6 +273,14 @@ function useAdminPoliciesPageContent() {
 		pending: cosCorsSubmitting,
 		runWithPending: runWithCosCorsConfigure,
 	} = usePendingAction();
+	const {
+		pending: storageAuthorizationSubmitting,
+		runWithPending: runWithStorageAuthorization,
+	} = usePendingAction();
+	const {
+		pending: storageCredentialValidationSubmitting,
+		runWithPending: runWithStorageCredentialValidation,
+	} = usePendingAction();
 	const endpointValidationMessage = getEndpointValidationMessage(form, t);
 	const getS3CompatiblePromotionDriverLabel = (driverType: "tencent_cos") =>
 		t(getPolicyDriverLabelKey(driverType));
@@ -255,6 +309,7 @@ function useAdminPoliciesPageContent() {
 	const cosCorsUsesDraftValues =
 		editingId === null || hasConnectionFieldChanges(form, editingPolicy);
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
+	const storageAuthorizationRedirectUri = getStorageAuthorizationCallbackUrl();
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
 	const nextPageDisabled = offset + pageSize >= total;
@@ -382,11 +437,14 @@ function useAdminPoliciesPageContent() {
 
 	const resetDialogState = () => {
 		policyCapacityRequestSerial.current += 1;
+		storageCredentialsRequestSerial.current += 1;
 		setSaveAnywayConfirmOpen(false);
 		setS3DriverPromotionConfirmOpen(false);
 		setCosCorsConfirmOpen(false);
 		setPolicyCapacity(null);
 		setPolicyCapacityLoading(false);
+		setStorageCredentials([]);
+		setStorageCredentialsLoading(false);
 		setValidatedConnectionKey(null);
 		setCreateStep(0);
 		setCreateStepTouched(false);
@@ -437,16 +495,11 @@ function useAdminPoliciesPageContent() {
 		setMigrationDryRun(null);
 	};
 
-	const openEdit = (policy: StoragePolicy) => {
-		setEditingId(policy.id);
-		setEditingPolicy(policy);
-		resetDialogState();
+	const loadPolicyCapacity = (policyId: number) => {
 		const capacityRequestSerial = ++policyCapacityRequestSerial.current;
 		setPolicyCapacityLoading(true);
-		setForm(getPolicyForm(policy));
-		void refreshRemoteNodeLookup();
 		void adminPolicyService
-			.getCapacity(policy.id)
+			.getCapacity(policyId)
 			.then((capacity) => {
 				if (capacityRequestSerial === policyCapacityRequestSerial.current) {
 					setPolicyCapacity(capacity);
@@ -463,6 +516,51 @@ function useAdminPoliciesPageContent() {
 					setPolicyCapacityLoading(false);
 				}
 			});
+	};
+
+	const loadStorageCredentials = (policyId: number, driverType: DriverType) => {
+		if (driverType !== "one_drive") {
+			setStorageCredentials([]);
+			setStorageCredentialsLoading(false);
+			return;
+		}
+
+		const credentialsRequestSerial = ++storageCredentialsRequestSerial.current;
+		setStorageCredentialsLoading(true);
+		void adminPolicyService
+			.listStorageCredentials(policyId)
+			.then((credentials) => {
+				if (
+					credentialsRequestSerial === storageCredentialsRequestSerial.current
+				) {
+					setStorageCredentials(credentials);
+				}
+			})
+			.catch((error) => {
+				if (
+					credentialsRequestSerial === storageCredentialsRequestSerial.current
+				) {
+					handleApiError(error);
+					setStorageCredentials([]);
+				}
+			})
+			.finally(() => {
+				if (
+					credentialsRequestSerial === storageCredentialsRequestSerial.current
+				) {
+					setStorageCredentialsLoading(false);
+				}
+			});
+	};
+
+	const openEdit = (policy: StoragePolicy) => {
+		setEditingId(policy.id);
+		setEditingPolicy(policy);
+		resetDialogState();
+		setForm(getPolicyForm(policy));
+		void refreshRemoteNodeLookup();
+		loadPolicyCapacity(policy.id);
+		loadStorageCredentials(policy.id, policy.driver_type);
 		setDialogOpen(true);
 	};
 
@@ -563,6 +661,38 @@ function useAdminPoliciesPageContent() {
 				};
 			}
 
+			if (driverType === "one_drive") {
+				return {
+					...prevWithoutS3PathStyle,
+					driver_type: driverType,
+					endpoint: "",
+					bucket: "",
+					access_key: "",
+					secret_key: "",
+					remote_node_id: "",
+					content_dedup: false,
+					onedrive_cloud: prev.onedrive_cloud || "global",
+					onedrive_account_mode: prev.onedrive_account_mode || "work_or_school",
+					onedrive_tenant: prev.onedrive_tenant || "common",
+					onedrive_drive_id: prev.onedrive_drive_id,
+					onedrive_root_item_id: prev.onedrive_root_item_id,
+					onedrive_site_id: prev.onedrive_site_id,
+					onedrive_group_id: prev.onedrive_group_id,
+					onedrive_client_id: "",
+					onedrive_client_secret: "",
+					onedrive_scopes: "",
+					storage_native_processing_enabled: false,
+					thumbnail_processor: null,
+					thumbnail_extensions: [],
+					storage_native_media_metadata_enabled: false,
+					media_metadata_extensions: [],
+					remote_download_strategy: "relay_stream",
+					remote_upload_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+					s3_download_strategy: "relay_stream",
+				};
+			}
+
 			return {
 				...prevWithoutS3PathStyle,
 				driver_type: driverType,
@@ -657,13 +787,43 @@ function useAdminPoliciesPageContent() {
 				setEditingPolicy(updated);
 				setForm(getPolicyForm(updated));
 				setValidatedConnectionKey(null);
+				loadStorageCredentials(updated.id, updated.driver_type);
+				loadPolicyCapacity(updated.id);
 				setPolicies((prev) =>
 					prev.map((policy) => (policy.id === editingId ? updated : policy)),
 				);
 				toast.success(t("policy_updated"));
 			} else {
-				await adminPolicyService.create(buildCreatePolicyPayload(currentForm));
+				const created = await adminPolicyService.create(
+					buildCreatePolicyPayload(currentForm),
+				);
 				invalidateAdminPolicyLookup();
+				if (currentForm.driver_type === "one_drive") {
+					setEditingId(created.id);
+					setEditingPolicy(created);
+					setForm({
+						...getPolicyForm(created),
+						onedrive_client_id: currentForm.onedrive_client_id,
+						onedrive_client_secret: currentForm.onedrive_client_secret,
+						onedrive_tenant: currentForm.onedrive_tenant,
+					});
+					setValidatedConnectionKey(null);
+					setCreateStep(0);
+					setCreateStepTouched(false);
+					setPolicies((prev) => {
+						const existing = prev.some((policy) => policy.id === created.id);
+						return existing
+							? prev.map((policy) =>
+									policy.id === created.id ? created : policy,
+								)
+							: [created, ...prev];
+					});
+					setTotal((current) => current + 1);
+					loadPolicyCapacity(created.id);
+					loadStorageCredentials(created.id, created.driver_type);
+					toast.success(t("policy_onedrive_created_authorize_next"));
+					return;
+				}
 				const nextTotal = total + 1;
 				const nextLastOffset = Math.max(
 					0,
@@ -847,6 +1007,92 @@ function useAdminPoliciesPageContent() {
 		setDriverType(s3CompatibleDriverSuggestionTarget.driverType);
 	};
 
+	const startStorageAuthorization = () => {
+		if (
+			editingId === null ||
+			!editingPolicy ||
+			form.driver_type !== "one_drive"
+		) {
+			return;
+		}
+		if (policyFormHasUnsavedChanges(form, editingPolicy)) {
+			toast.error(t("onedrive_save_before_authorize"));
+			return;
+		}
+		const currentForm = normalizePolicyForm(form);
+		const hasSavedMicrosoftGraphCredential = storageCredentials.some(
+			(credential) => credential.provider === "microsoft_graph",
+		);
+		if (!currentForm.onedrive_client_id && !hasSavedMicrosoftGraphCredential) {
+			toast.error(t("onedrive_client_id_required"));
+			return;
+		}
+
+		void runWithStorageAuthorization(async () => {
+			try {
+				const result = await adminPolicyService.startStorageAuthorization(
+					editingId,
+					{
+						provider: "microsoft_graph",
+						microsoft_graph: {
+							cloud: currentForm.onedrive_cloud,
+							tenant: currentForm.onedrive_tenant || undefined,
+							client_id: currentForm.onedrive_client_id || undefined,
+							client_secret: currentForm.onedrive_client_secret || undefined,
+						},
+					},
+				);
+				toast.success(t("onedrive_authorization_started"));
+				const opened = window.open(result.authorization_url, "_blank");
+				if (opened) {
+					opened.opener = null;
+				} else {
+					window.location.assign(result.authorization_url);
+				}
+			} catch (error) {
+				handleApiError(error);
+			}
+		});
+	};
+
+	const validateStorageCredential = () => {
+		if (editingId === null || form.driver_type !== "one_drive") {
+			return;
+		}
+
+		void runWithStorageCredentialValidation(async () => {
+			try {
+				const result = await adminPolicyService.validateStorageCredential(
+					editingId,
+					"microsoft_graph",
+				);
+				setStorageCredentials((prev) => {
+					const nextCredential = result.credential;
+					const hasExisting = prev.some(
+						(credential) => credential.provider === nextCredential.provider,
+					);
+					return hasExisting
+						? prev.map((credential) =>
+								credential.provider === nextCredential.provider
+									? nextCredential
+									: credential,
+							)
+						: [nextCredential, ...prev];
+				});
+				loadPolicyCapacity(editingId);
+				toast.success(t("onedrive_validation_success"), {
+					description: result.root_item_name
+						? t("onedrive_validation_success_root", {
+								name: result.root_item_name,
+							})
+						: undefined,
+				});
+			} catch (error) {
+				handleApiError(error);
+			}
+		});
+	};
+
 	const handleCreateBack = () => {
 		setCreateStepTouched(false);
 		setCreateStep((prev) => Math.max(0, prev - 1));
@@ -885,6 +1131,10 @@ function useAdminPoliciesPageContent() {
 			return;
 		}
 
+		if (form.driver_type === "one_drive" && !form.onedrive_client_id.trim()) {
+			return;
+		}
+
 		if (endpointValidationMessage) {
 			return;
 		}
@@ -897,6 +1147,15 @@ function useAdminPoliciesPageContent() {
 	const handleSubmit = () => {
 		if (editingId === null && createStep < CREATE_LAST_STEP) {
 			handleCreateNext();
+			return;
+		}
+		if (
+			editingId === null &&
+			form.driver_type === "one_drive" &&
+			!form.onedrive_client_id.trim()
+		) {
+			setCreateStepTouched(true);
+			setCreateStep(1);
 			return;
 		}
 		void submitPolicy();
@@ -1088,6 +1347,13 @@ function useAdminPoliciesPageContent() {
 					form={form}
 					policyCapacity={policyCapacity}
 					policyCapacityLoading={policyCapacityLoading}
+					storageCredentials={storageCredentials}
+					storageCredentialsLoading={storageCredentialsLoading}
+					storageAuthorizationSubmitting={storageAuthorizationSubmitting}
+					storageCredentialValidationSubmitting={
+						storageCredentialValidationSubmitting
+					}
+					storageAuthorizationRedirectUri={storageAuthorizationRedirectUri}
 					cosCorsConfirmOpen={cosCorsConfirmOpen}
 					cosCorsSubmitting={cosCorsSubmitting}
 					cosCorsUsesDraftValues={cosCorsUsesDraftValues}
@@ -1115,6 +1381,8 @@ function useAdminPoliciesPageContent() {
 					onConfirmSaveAnyway={confirmSaveAnyway}
 					onConfirmCosCorsConfigure={requestOrConfirmCosCorsConfigure}
 					onConfirmS3DriverPromotion={confirmS3DriverPromotion}
+					onStartStorageAuthorization={startStorageAuthorization}
+					onValidateStorageCredential={validateStorageCredential}
 					onDialogOpenChange={handleDialogOpenChange}
 					onSubmit={handleSubmit}
 					onRequestS3DriverPromotion={requestS3DriverPromotion}

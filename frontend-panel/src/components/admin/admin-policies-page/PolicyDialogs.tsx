@@ -7,6 +7,7 @@ import type {
 	DriverType,
 	RemoteNodeInfo,
 	StoragePolicyCapacityInfo,
+	StoragePolicyCredentialInfo,
 } from "@/types/api";
 
 interface PolicyDialogsProps {
@@ -28,6 +29,11 @@ interface PolicyDialogsProps {
 	form: PolicyFormData;
 	policyCapacity: StoragePolicyCapacityInfo | null;
 	policyCapacityLoading: boolean;
+	storageCredentials: StoragePolicyCredentialInfo[];
+	storageCredentialsLoading: boolean;
+	storageAuthorizationSubmitting: boolean;
+	storageCredentialValidationSubmitting: boolean;
+	storageAuthorizationRedirectUri: string;
 	cosCorsConfirmOpen: boolean;
 	cosCorsSubmitting: boolean;
 	cosCorsUsesDraftValues: boolean;
@@ -46,6 +52,8 @@ interface PolicyDialogsProps {
 	onConfirmSaveAnyway: () => void;
 	onConfirmCosCorsConfigure: () => void;
 	onConfirmS3DriverPromotion: () => void;
+	onStartStorageAuthorization: () => void;
+	onValidateStorageCredential: () => void;
 	onCreateBack: () => void;
 	onCreateNext: () => void;
 	onCreateStepChange: (step: number) => void;
@@ -74,6 +82,11 @@ export function PolicyDialogs({
 	form,
 	policyCapacity,
 	policyCapacityLoading,
+	storageCredentials,
+	storageCredentialsLoading,
+	storageAuthorizationSubmitting,
+	storageCredentialValidationSubmitting,
+	storageAuthorizationRedirectUri,
 	cosCorsConfirmOpen,
 	cosCorsSubmitting,
 	cosCorsUsesDraftValues,
@@ -92,6 +105,8 @@ export function PolicyDialogs({
 	onConfirmSaveAnyway,
 	onConfirmCosCorsConfigure,
 	onConfirmS3DriverPromotion,
+	onStartStorageAuthorization,
+	onValidateStorageCredential,
 	onCreateBack,
 	onCreateNext,
 	onCreateStepChange,
@@ -127,6 +142,13 @@ export function PolicyDialogs({
 				form={form}
 				policyCapacity={policyCapacity}
 				policyCapacityLoading={policyCapacityLoading}
+				storageCredentials={storageCredentials}
+				storageCredentialsLoading={storageCredentialsLoading}
+				storageAuthorizationSubmitting={storageAuthorizationSubmitting}
+				storageCredentialValidationSubmitting={
+					storageCredentialValidationSubmitting
+				}
+				storageAuthorizationRedirectUri={storageAuthorizationRedirectUri}
 				cosCorsConfirmOpen={cosCorsConfirmOpen}
 				cosCorsSubmitting={cosCorsSubmitting}
 				cosCorsUsesDraftValues={cosCorsUsesDraftValues}
@@ -153,6 +175,8 @@ export function PolicyDialogs({
 				onConfirmSaveAnyway={onConfirmSaveAnyway}
 				onConfirmCosCorsConfigure={onConfirmCosCorsConfigure}
 				onConfirmS3DriverPromotion={onConfirmS3DriverPromotion}
+				onStartStorageAuthorization={onStartStorageAuthorization}
+				onValidateStorageCredential={onValidateStorageCredential}
 				onSubmit={onSubmit}
 				onRequestS3DriverPromotion={onRequestS3DriverPromotion}
 				onRunConnectionTest={onRunConnectionTest}

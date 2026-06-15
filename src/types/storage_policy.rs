@@ -598,31 +598,30 @@ fn validate_onedrive_options(
             Some("onedrive_account_mode is required when OneDrive options are set".into());
         return Err(error);
     }
-
-    if value.onedrive_drive_id.is_none() {
-        let mut error = ValidationError::new("invalid");
-        error.message = Some("onedrive_drive_id is required when OneDrive options are set".into());
-        return Err(error);
-    }
-
-    if value.onedrive_root_item_id.is_none() {
+    if value.onedrive_cloud == Some(crate::types::MicrosoftGraphCloud::China)
+        && value.onedrive_account_mode == Some(OneDriveAccountMode::Personal)
+    {
         let mut error = ValidationError::new("invalid");
         error.message =
-            Some("onedrive_root_item_id is required when OneDrive options are set".into());
+            Some("personal OneDrive accounts must use the global Microsoft Graph cloud".into());
         return Err(error);
     }
 
     match value.onedrive_account_mode {
-        Some(OneDriveAccountMode::SharepointSite) if value.onedrive_site_id.is_none() => {
+        Some(OneDriveAccountMode::SharepointSite)
+            if value.onedrive_drive_id.is_none() && value.onedrive_site_id.is_none() =>
+        {
             let mut error = ValidationError::new("invalid");
             error.message =
-                Some("onedrive_site_id is required for OneDrive sharepoint_site policies".into());
+                Some("onedrive_site_id is required for OneDrive sharepoint_site policies when onedrive_drive_id is not set".into());
             Err(error)
         }
-        Some(OneDriveAccountMode::GroupDrive) if value.onedrive_group_id.is_none() => {
+        Some(OneDriveAccountMode::GroupDrive)
+            if value.onedrive_drive_id.is_none() && value.onedrive_group_id.is_none() =>
+        {
             let mut error = ValidationError::new("invalid");
             error.message =
-                Some("onedrive_group_id is required for OneDrive group_drive policies".into());
+                Some("onedrive_group_id is required for OneDrive group_drive policies when onedrive_drive_id is not set".into());
             Err(error)
         }
         Some(OneDriveAccountMode::Personal | OneDriveAccountMode::WorkOrSchool)
@@ -1098,19 +1097,28 @@ mod tests {
     }
 
     #[test]
-    fn onedrive_options_require_drive_and_root() {
-        let error = StoragePolicyOptions {
+    fn onedrive_options_default_drive_and_root_are_optional() {
+        StoragePolicyOptions {
             onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+            ..Default::default()
+        }
+        .validate()
+        .expect("work or school OneDrive should resolve the default drive during authorization");
+    }
+
+    #[test]
+    fn onedrive_options_require_account_mode() {
+        let error = StoragePolicyOptions {
             onedrive_drive_id: Some("drive".to_string()),
             ..Default::default()
         }
         .validate()
-        .expect_err("missing root item should fail");
+        .expect_err("missing account mode should fail");
 
         assert!(
             error
                 .to_string()
-                .contains("onedrive_root_item_id is required"),
+                .contains("onedrive_account_mode is required"),
             "{error}"
         );
     }
@@ -1119,8 +1127,6 @@ mod tests {
     fn onedrive_group_mode_requires_group_id() {
         let error = StoragePolicyOptions {
             onedrive_account_mode: Some(OneDriveAccountMode::GroupDrive),
-            onedrive_drive_id: Some("drive".to_string()),
-            onedrive_root_item_id: Some("root".to_string()),
             ..Default::default()
         }
         .validate()
@@ -1128,6 +1134,22 @@ mod tests {
 
         assert!(
             error.to_string().contains("onedrive_group_id is required"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn onedrive_personal_mode_rejects_china_cloud() {
+        let error = StoragePolicyOptions {
+            onedrive_cloud: Some(MicrosoftGraphCloud::China),
+            onedrive_account_mode: Some(OneDriveAccountMode::Personal),
+            ..Default::default()
+        }
+        .validate()
+        .expect_err("personal Microsoft accounts must use global Graph");
+
+        assert!(
+            error.to_string().contains("global Microsoft Graph cloud"),
             "{error}"
         );
     }

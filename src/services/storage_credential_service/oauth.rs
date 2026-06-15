@@ -21,7 +21,7 @@ use crate::utils::{OUTBOUND_HTTP_USER_AGENT, id};
 use super::{
     FLOW_TTL_SECS, MicrosoftGraphAuthorizationContext, MicrosoftGraphAuthorizationInput,
     REDACTED_SECRET, StoragePolicyCredentialInfo, crypto, normalize_optional_string,
-    normalize_required_string, normalize_scopes, scopes_to_json,
+    normalize_required_string, normalize_scopes, resolve_onedrive_location, scopes_to_json,
 };
 
 #[derive(Clone, Debug, Deserialize)]
@@ -130,10 +130,49 @@ async fn start_microsoft_graph_authorization(
     let input = input.ok_or_else(|| {
         AsterError::validation_error("microsoft_graph authorization parameters are required")
     })?;
-    let cloud = input.cloud.unwrap_or_default();
-    let tenant = normalize_optional_string(input.tenant).unwrap_or_else(|| "common".to_string());
-    let client_id = normalize_required_string(&input.client_id, "client_id", 512)?;
-    let client_secret = normalize_optional_string(input.client_secret);
+    let existing_credential = storage_policy_credential_repo::find_by_policy_provider_kind(
+        state.writer_db(),
+        policy_id,
+        StorageCredentialProvider::MicrosoftGraph,
+        StorageCredentialKind::OauthDelegated,
+    )
+    .await?;
+    let existing_metadata = existing_credential
+        .as_ref()
+        .and_then(|credential| parse_metadata(&credential.metadata));
+    let cloud = input
+        .cloud
+        .or_else(|| existing_metadata.as_ref().and_then(metadata_cloud))
+        .unwrap_or_default();
+    let tenant = normalize_optional_string(input.tenant)
+        .or_else(|| {
+            existing_credential
+                .as_ref()
+                .and_then(|credential| credential.tenant_id.clone())
+        })
+        .unwrap_or_else(|| "common".to_string());
+    let client_id = match normalize_optional_string(input.client_id).or_else(|| {
+        existing_metadata
+            .as_ref()
+            .and_then(|metadata| metadata_string(metadata, "client_id"))
+    }) {
+        Some(client_id) => normalize_required_string(&client_id, "client_id", 512)?,
+        None => return Err(AsterError::validation_error("client_id is required")),
+    };
+    let client_secret = match normalize_optional_string(input.client_secret) {
+        Some(client_secret) => Some(client_secret),
+        None => existing_metadata
+            .as_ref()
+            .and_then(|metadata| metadata_string(metadata, "client_secret_ciphertext"))
+            .map(|ciphertext| {
+                decrypt_stored_client_secret(
+                    &state.config().auth.storage_credential_secret_key,
+                    policy_id,
+                    &ciphertext,
+                )
+            })
+            .transpose()?,
+    };
     let scopes = normalize_scopes(input.scopes);
     let redirect_uri = callback_redirect_uri(state, req)?;
     let state_value = format!("storage_oauth_{}", id::new_short_token());
@@ -305,19 +344,12 @@ async fn finish_microsoft_graph_callback<C: sea_orm::ConnectionTrait>(
     .await?;
     let policy = policy_repo::find_by_id(db, policy_id).await?;
     let options = parse_storage_policy_options(policy.options.as_ref());
-    let drive_id = options.onedrive_drive_id.as_deref().ok_or_else(|| {
-        AsterError::database_operation("OneDrive storage policy missing onedrive_drive_id")
-    })?;
-    let root_item_id = options.onedrive_root_item_id.as_deref().ok_or_else(|| {
-        AsterError::database_operation("OneDrive storage policy missing onedrive_root_item_id")
-    })?;
     let graph_client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::new(
         context.cloud.graph_base_url(),
         token.access_token.clone(),
     ))?;
-    let root_item = graph_client
-        .get_drive_item_by_id(drive_id, root_item_id)
-        .await?;
+    let location = resolve_onedrive_location(&graph_client, &options).await?;
+    let root_item = location.root_item;
     let expires_at = token
         .expires_in
         .and_then(|seconds| (seconds > 0).then(|| now + Duration::seconds(seconds)));
@@ -364,9 +396,14 @@ async fn finish_microsoft_graph_callback<C: sea_orm::ConnectionTrait>(
             access_token_ciphertext: Set(Some(access_token_ciphertext)),
             refresh_token_ciphertext: Set(refresh_token_ciphertext),
             metadata: Set(storage_credential_metadata(
-                &context,
-                drive_id,
-                root_item_id,
+                encryption_key,
+                policy_id,
+                context.cloud,
+                Some(&context.client_id),
+                client_secret.as_deref(),
+                None,
+                &location.drive_id,
+                &root_item.id,
                 root_item.name.as_deref(),
                 token.id_token.as_deref(),
             )?),
@@ -383,21 +420,37 @@ async fn finish_microsoft_graph_callback<C: sea_orm::ConnectionTrait>(
     .await
 }
 
-fn storage_credential_metadata(
-    context: &MicrosoftGraphFlowContext,
+pub(super) fn storage_credential_metadata(
+    encryption_key: &str,
+    policy_id: i64,
+    cloud: MicrosoftGraphCloud,
+    client_id: Option<&str>,
+    client_secret: Option<&str>,
+    client_secret_ciphertext: Option<&str>,
     drive_id: &str,
     root_item_id: &str,
     root_item_name: Option<&str>,
     id_token: Option<&str>,
 ) -> Result<String> {
     let mut metadata = serde_json::json!({
-        "cloud": context.cloud,
-        "graph_base_url": context.cloud.graph_base_url(),
-        "client_id": context.client_id,
-        "client_secret_configured": context.client_secret_ciphertext.is_some(),
+        "cloud": cloud,
+        "graph_base_url": cloud.graph_base_url(),
         "drive_id": drive_id,
         "root_item_id": root_item_id,
     });
+    if let Some(client_id) = client_id {
+        metadata["client_id"] = serde_json::Value::String(client_id.to_string());
+    }
+    if let Some(client_secret) = client_secret {
+        let ciphertext = encrypt_stored_client_secret(encryption_key, policy_id, client_secret)?;
+        metadata["client_secret_configured"] = serde_json::Value::Bool(true);
+        metadata["client_secret_ciphertext"] = serde_json::Value::String(ciphertext);
+    } else if let Some(ciphertext) = client_secret_ciphertext {
+        metadata["client_secret_configured"] = serde_json::Value::Bool(true);
+        metadata["client_secret_ciphertext"] = serde_json::Value::String(ciphertext.to_string());
+    } else {
+        metadata["client_secret_configured"] = serde_json::Value::Bool(false);
+    }
     if let Some(root_item_name) = root_item_name {
         metadata["root_item_name"] = serde_json::Value::String(root_item_name.to_string());
     }
@@ -412,6 +465,51 @@ fn storage_credential_metadata(
 
 fn flow_client_secret_aad(policy_id: i64, state_hash: &str) -> String {
     format!("storage_policy_authorization_flow:{policy_id}:{state_hash}:client_secret")
+}
+
+fn stored_client_secret_aad(policy_id: i64) -> String {
+    format!("storage_policy_credential:{policy_id}:microsoft_graph:client_secret")
+}
+
+fn encrypt_stored_client_secret(
+    encryption_key: &str,
+    policy_id: i64,
+    client_secret: &str,
+) -> Result<String> {
+    crypto::encrypt_token(
+        encryption_key,
+        stored_client_secret_aad(policy_id).as_bytes(),
+        client_secret,
+    )
+}
+
+fn decrypt_stored_client_secret(
+    encryption_key: &str,
+    policy_id: i64,
+    ciphertext: &str,
+) -> Result<String> {
+    crypto::decrypt_token(
+        encryption_key,
+        stored_client_secret_aad(policy_id).as_bytes(),
+        ciphertext,
+    )
+}
+
+fn parse_metadata(value: &str) -> Option<serde_json::Value> {
+    serde_json::from_str(value).ok()
+}
+
+fn metadata_string(metadata: &serde_json::Value, key: &str) -> Option<String> {
+    metadata
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn metadata_cloud(metadata: &serde_json::Value) -> Option<MicrosoftGraphCloud> {
+    serde_json::from_value(metadata.get("cloud")?.clone()).ok()
 }
 
 async fn exchange_microsoft_graph_code(
@@ -580,5 +678,69 @@ mod tests {
         assert!(url.contains("client_id=client-id"));
         assert!(url.contains("code_challenge=challenge"));
         assert!(url.contains("code_challenge_method=S256"));
+    }
+
+    #[test]
+    fn storage_metadata_encrypts_client_secret_for_reuse() {
+        let key = "storage-token-test-master-key";
+        let metadata = storage_credential_metadata(
+            key,
+            42,
+            MicrosoftGraphCloud::Global,
+            Some("client-id"),
+            Some("client-secret"),
+            None,
+            "drive-id",
+            "root",
+            Some("Root"),
+            None,
+        )
+        .unwrap();
+        let parsed = serde_json::from_str::<serde_json::Value>(&metadata).unwrap();
+
+        assert_eq!(parsed["client_id"], "client-id");
+        assert_eq!(parsed["client_secret_configured"], true);
+        assert_ne!(parsed["client_secret_ciphertext"], "client-secret");
+        assert_eq!(
+            decrypt_stored_client_secret(
+                key,
+                42,
+                parsed["client_secret_ciphertext"].as_str().unwrap(),
+            )
+            .unwrap(),
+            "client-secret"
+        );
+    }
+
+    #[test]
+    fn storage_metadata_preserves_existing_client_secret_ciphertext() {
+        let key = "storage-token-test-master-key";
+        let ciphertext = encrypt_stored_client_secret(key, 42, "client-secret").unwrap();
+        let metadata = storage_credential_metadata(
+            key,
+            42,
+            MicrosoftGraphCloud::China,
+            Some("client-id"),
+            None,
+            Some(&ciphertext),
+            "drive-id",
+            "root",
+            Some("Root"),
+            None,
+        )
+        .unwrap();
+        let parsed = serde_json::from_str::<serde_json::Value>(&metadata).unwrap();
+
+        assert_eq!(parsed["client_secret_configured"], true);
+        assert_eq!(parsed["client_secret_ciphertext"], ciphertext);
+        assert_eq!(
+            decrypt_stored_client_secret(
+                key,
+                42,
+                parsed["client_secret_ciphertext"].as_str().unwrap(),
+            )
+            .unwrap(),
+            "client-secret"
+        );
     }
 }

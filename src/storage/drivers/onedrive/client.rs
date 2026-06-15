@@ -55,7 +55,10 @@ pub struct MicrosoftGraphDriveItemParentReference {
 }
 
 #[derive(Debug, Deserialize)]
-struct MicrosoftGraphDrive {
+pub struct MicrosoftGraphDrive {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     quota: Option<MicrosoftGraphQuota>,
 }
@@ -134,6 +137,35 @@ impl MicrosoftGraphClient {
                 encode_path_segment(item_id)
             ),
             "get OneDrive item metadata",
+        )
+        .await
+    }
+
+    pub async fn get_drive_root(&self, drive_id: &str) -> Result<MicrosoftGraphDriveItem> {
+        self.get_json(
+            &format!("/drives/{}/root", encode_path_segment(drive_id)),
+            "get OneDrive drive root metadata",
+        )
+        .await
+    }
+
+    pub async fn get_me_drive(&self) -> Result<MicrosoftGraphDrive> {
+        self.get_json("/me/drive", "get signed-in user's default OneDrive")
+            .await
+    }
+
+    pub async fn get_site_drive(&self, site_id: &str) -> Result<MicrosoftGraphDrive> {
+        self.get_json(
+            &format!("/sites/{}/drive", encode_path_segment(site_id)),
+            "get SharePoint site's default document library",
+        )
+        .await
+    }
+
+    pub async fn get_group_drive(&self, group_id: &str) -> Result<MicrosoftGraphDrive> {
+        self.get_json(
+            &format!("/groups/{}/drive", encode_path_segment(group_id)),
+            "get Microsoft 365 group's default drive",
         )
         .await
     }

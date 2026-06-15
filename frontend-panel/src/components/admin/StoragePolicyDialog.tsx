@@ -4,6 +4,7 @@ import { getPolicyDriverBadgeClass } from "@/components/admin/admin-policies-pag
 import type { StoragePolicyDriverOption } from "@/components/admin/StoragePolicyDialogFields";
 import {
 	isObjectStorageDriver,
+	isOneDriveDriver,
 	type PolicyFormData,
 } from "@/components/admin/storagePolicyDialogShared";
 import { InlineConfirm } from "@/components/common/ManagerDialogShell";
@@ -22,6 +23,7 @@ import type {
 	DriverType,
 	RemoteNodeInfo,
 	StoragePolicyCapacityInfo,
+	StoragePolicyCredentialInfo,
 } from "@/types/api";
 import { StoragePolicyCreateWizard } from "./storage-policy-dialog/StoragePolicyCreateWizard";
 import type { StoragePolicyDialogStep } from "./storage-policy-dialog/StoragePolicyDialogTypes";
@@ -34,6 +36,11 @@ interface StoragePolicyDialogProps {
 	form: PolicyFormData;
 	policyCapacity: StoragePolicyCapacityInfo | null;
 	policyCapacityLoading: boolean;
+	storageCredentials: StoragePolicyCredentialInfo[];
+	storageCredentialsLoading: boolean;
+	storageAuthorizationSubmitting: boolean;
+	storageCredentialValidationSubmitting: boolean;
+	storageAuthorizationRedirectUri: string;
 	s3CompatibleDriverSuggestionTargetLabel: string | null;
 	s3DriverPromotionBlocked: boolean;
 	s3DriverPromotionConfirmOpen: boolean;
@@ -56,6 +63,8 @@ interface StoragePolicyDialogProps {
 	onConfirmSaveAnyway: () => void;
 	onConfirmCosCorsConfigure: () => void;
 	onConfirmS3DriverPromotion: () => void;
+	onStartStorageAuthorization: () => void;
+	onValidateStorageCredential: () => void;
 	onSubmit: () => void;
 	onRequestS3DriverPromotion: () => void;
 	onRunConnectionTest: () => Promise<boolean>;
@@ -96,6 +105,11 @@ function useStoragePolicyDialogContent({
 	form,
 	policyCapacity,
 	policyCapacityLoading,
+	storageCredentials,
+	storageCredentialsLoading,
+	storageAuthorizationSubmitting,
+	storageCredentialValidationSubmitting,
+	storageAuthorizationRedirectUri,
 	s3CompatibleDriverSuggestionTargetLabel,
 	s3DriverPromotionBlocked,
 	s3DriverPromotionConfirmOpen,
@@ -118,6 +132,8 @@ function useStoragePolicyDialogContent({
 	onConfirmSaveAnyway,
 	onConfirmCosCorsConfigure,
 	onConfirmS3DriverPromotion,
+	onStartStorageAuthorization,
+	onValidateStorageCredential,
 	onSubmit,
 	onRequestS3DriverPromotion,
 	onRunConnectionTest,
@@ -161,6 +177,12 @@ function useStoragePolicyDialogContent({
 			description: t("policy_wizard_azure_blob_storage_desc"),
 			iconSrc: "/static/storage/azure-blob.svg",
 		},
+		{
+			type: "one_drive",
+			title: t("driver_type_onedrive"),
+			description: t("policy_wizard_onedrive_storage_desc"),
+			iconSrc: "/static/storage/onedrive.svg",
+		},
 	];
 	const createSteps: StoragePolicyDialogStep[] = [
 		{
@@ -172,7 +194,9 @@ function useStoragePolicyDialogContent({
 				? t("policy_wizard_step_connection_title")
 				: form.driver_type === "remote"
 					? t("policy_wizard_step_remote_title")
-					: t("policy_wizard_step_local_title"),
+					: isOneDriveDriver(form.driver_type)
+						? t("policy_wizard_step_onedrive_title")
+						: t("policy_wizard_step_local_title"),
 			description: isObjectStorageDriver(form.driver_type)
 				? form.driver_type === "tencent_cos"
 					? t("policy_wizard_step_tencent_cos_connection_desc")
@@ -181,7 +205,9 @@ function useStoragePolicyDialogContent({
 						: t("policy_wizard_step_connection_desc")
 				: form.driver_type === "remote"
 					? t("policy_wizard_step_remote_desc")
-					: t("policy_wizard_step_local_desc"),
+					: isOneDriveDriver(form.driver_type)
+						? t("policy_wizard_step_onedrive_desc")
+						: t("policy_wizard_step_local_desc"),
 		},
 		{
 			title: t("policy_wizard_step_rules_title"),
@@ -225,6 +251,14 @@ function useStoragePolicyDialogContent({
 						? "policy_wizard_container_required"
 						: "policy_wizard_bucket_required",
 				)
+			: null;
+	const createOneDriveClientIdError =
+		isCreateMode &&
+		createStep === 1 &&
+		createStepTouched &&
+		form.driver_type === "one_drive" &&
+		!form.onedrive_client_id.trim()
+			? t("onedrive_client_id_required")
 			: null;
 	const createEndpointError =
 		isObjectStorageDriver(form.driver_type) && !form.endpoint.trim()
@@ -368,6 +402,54 @@ function useStoragePolicyDialogContent({
 					},
 				]
 			: []),
+		...(isOneDriveDriver(form.driver_type)
+			? [
+					{
+						label: t("onedrive_cloud"),
+						value: t(`onedrive_cloud_${form.onedrive_cloud}`),
+					},
+					...(isCreateMode
+						? [
+								{
+									label: t("onedrive_target_summary"),
+									value: t("onedrive_target_summary_auto"),
+								},
+							]
+						: [
+								{
+									label: t("onedrive_account_mode"),
+									value: t(
+										`onedrive_account_mode_${form.onedrive_account_mode}`,
+									),
+								},
+								{
+									label: t("onedrive_drive_id"),
+									value:
+										form.onedrive_drive_id || t("policy_wizard_default_drive"),
+								},
+								{
+									label: t("onedrive_root_item_id"),
+									value: form.onedrive_root_item_id || "root",
+								},
+								...(form.onedrive_account_mode === "sharepoint_site"
+									? [
+											{
+												label: t("onedrive_site_id"),
+												value: form.onedrive_site_id || "—",
+											},
+										]
+									: []),
+								...(form.onedrive_account_mode === "group_drive"
+									? [
+											{
+												label: t("onedrive_group_id"),
+												value: form.onedrive_group_id || "—",
+											},
+										]
+									: []),
+							]),
+				]
+			: []),
 	];
 	useEffect(() => {
 		if (!open || !isCreateMode) {
@@ -403,6 +485,7 @@ function useStoragePolicyDialogContent({
 							<StoragePolicyCreateWizard
 								createBucketError={createBucketError}
 								createNameError={createNameError}
+								createOneDriveClientIdError={createOneDriveClientIdError}
 								createRemoteNodeError={createRemoteNodeError}
 								createStep={createStep}
 								createStepDirection={createStepDirection}
@@ -436,6 +519,15 @@ function useStoragePolicyDialogContent({
 								form={form}
 								policyCapacity={policyCapacity}
 								policyCapacityLoading={policyCapacityLoading}
+								storageCredentials={storageCredentials}
+								storageCredentialsLoading={storageCredentialsLoading}
+								storageAuthorizationSubmitting={storageAuthorizationSubmitting}
+								storageCredentialValidationSubmitting={
+									storageCredentialValidationSubmitting
+								}
+								storageAuthorizationRedirectUri={
+									storageAuthorizationRedirectUri
+								}
 								s3DriverPromotionBlocked={s3DriverPromotionBlocked}
 								s3DriverPromotionConfirmOpen={s3DriverPromotionConfirmOpen}
 								s3DriverPromotionSubmitting={s3DriverPromotionSubmitting}
@@ -445,6 +537,8 @@ function useStoragePolicyDialogContent({
 								onCancelCosCorsConfigure={onCancelCosCorsConfigure}
 								onConfirmCosCorsConfigure={onConfirmCosCorsConfigure}
 								onConfirmS3DriverPromotion={onConfirmS3DriverPromotion}
+								onStartStorageAuthorization={onStartStorageAuthorization}
+								onValidateStorageCredential={onValidateStorageCredential}
 								onRequestS3DriverPromotion={onRequestS3DriverPromotion}
 								onSyncNormalizedS3Form={onSyncNormalizedS3Form}
 								cosCorsConfirmOpen={cosCorsConfirmOpen}
@@ -560,10 +654,12 @@ function useStoragePolicyDialogContent({
 												t={t}
 											/>
 										) : null}
-										<StoragePolicyTestConnectionButton
-											onTest={onRunConnectionTest}
-											disabled={submitting}
-										/>
+										{isOneDriveDriver(form.driver_type) ? null : (
+											<StoragePolicyTestConnectionButton
+												onTest={onRunConnectionTest}
+												disabled={submitting}
+											/>
+										)}
 										<Button
 											type="button"
 											className={ADMIN_CONTROL_HEIGHT_CLASS}
@@ -597,10 +693,12 @@ function useStoragePolicyDialogContent({
 								)
 							) : (
 								<>
-									<StoragePolicyTestConnectionButton
-										onTest={onRunConnectionTest}
-										disabled={submitting}
-									/>
+									{isOneDriveDriver(form.driver_type) ? null : (
+										<StoragePolicyTestConnectionButton
+											onTest={onRunConnectionTest}
+											disabled={submitting}
+										/>
+									)}
 									<Button
 										type="button"
 										className={ADMIN_CONTROL_HEIGHT_CLASS}

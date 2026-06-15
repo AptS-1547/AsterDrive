@@ -3,6 +3,8 @@ import type {
 	CreatePolicyRequest,
 	DriverType,
 	ExecuteDraftStoragePolicyActionRequest,
+	MicrosoftGraphCloud,
+	OneDriveAccountMode,
 	RemoteDownloadStrategy,
 	RemoteUploadStrategy,
 	S3DownloadStrategy,
@@ -29,6 +31,10 @@ export function isObjectStorageDriver(driverType: DriverType) {
 		driverType === "tencent_cos" ||
 		driverType === "azure_blob"
 	);
+}
+
+export function isOneDriveDriver(driverType: DriverType) {
+	return driverType === "one_drive";
 }
 
 export function supportsStorageNativeProcessing(driverType: DriverType) {
@@ -124,6 +130,16 @@ export interface PolicyFormData {
 	s3_upload_strategy: S3UploadStrategy;
 	s3_download_strategy: S3DownloadStrategy;
 	s3_path_style?: boolean;
+	onedrive_cloud: MicrosoftGraphCloud;
+	onedrive_account_mode: OneDriveAccountMode;
+	onedrive_tenant: string;
+	onedrive_drive_id: string;
+	onedrive_root_item_id: string;
+	onedrive_site_id: string;
+	onedrive_group_id: string;
+	onedrive_client_id: string;
+	onedrive_client_secret: string;
+	onedrive_scopes: string;
 	storage_native_processing_enabled: boolean;
 	storage_native_media_metadata_enabled?: boolean;
 	thumbnail_processor: StoragePolicyOptions["thumbnail_processor"];
@@ -188,6 +204,27 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 		if (form.driver_type === "s3" && form.s3_path_style === false) {
 			options.s3_path_style = false;
 		}
+	} else if (isOneDriveDriver(form.driver_type)) {
+		options.onedrive_cloud = form.onedrive_cloud;
+		options.onedrive_account_mode = form.onedrive_account_mode;
+		const tenant = form.onedrive_tenant.trim();
+		const driveId = form.onedrive_drive_id.trim();
+		const rootItemId = form.onedrive_root_item_id.trim();
+		const siteId = form.onedrive_site_id.trim();
+		const groupId = form.onedrive_group_id.trim();
+		if (tenant) {
+			options.onedrive_tenant = tenant;
+		}
+		if (driveId) {
+			options.onedrive_drive_id = driveId;
+		}
+		options.onedrive_root_item_id = rootItemId || "root";
+		if (siteId) {
+			options.onedrive_site_id = siteId;
+		}
+		if (groupId) {
+			options.onedrive_group_id = groupId;
+		}
 	}
 
 	if (form.storage_native_processing_enabled) {
@@ -241,6 +278,16 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 		...(policy.driver_type === "s3"
 			? { s3_path_style: getEffectiveS3PathStyle(options) }
 			: {}),
+		onedrive_cloud: options.onedrive_cloud ?? "global",
+		onedrive_account_mode: options.onedrive_account_mode ?? "work_or_school",
+		onedrive_tenant: options.onedrive_tenant ?? "common",
+		onedrive_drive_id: options.onedrive_drive_id ?? "",
+		onedrive_root_item_id: options.onedrive_root_item_id ?? "",
+		onedrive_site_id: options.onedrive_site_id ?? "",
+		onedrive_group_id: options.onedrive_group_id ?? "",
+		onedrive_client_id: "",
+		onedrive_client_secret: "",
+		onedrive_scopes: "",
 		storage_native_processing_enabled:
 			options.storage_native_processing_enabled === true,
 		thumbnail_processor:
@@ -262,8 +309,35 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 }
 
 export function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
-	if (!isObjectStorageDriver(form.driver_type)) {
+	if (
+		!isObjectStorageDriver(form.driver_type) &&
+		!isOneDriveDriver(form.driver_type)
+	) {
 		return form;
+	}
+
+	if (isOneDriveDriver(form.driver_type)) {
+		const normalized = {
+			...form,
+			onedrive_tenant: form.onedrive_tenant.trim(),
+			onedrive_drive_id: form.onedrive_drive_id.trim(),
+			onedrive_root_item_id: form.onedrive_root_item_id.trim(),
+			onedrive_site_id: form.onedrive_site_id.trim(),
+			onedrive_group_id: form.onedrive_group_id.trim(),
+			onedrive_client_id: form.onedrive_client_id.trim(),
+			onedrive_client_secret: form.onedrive_client_secret.trim(),
+			onedrive_scopes: form.onedrive_scopes.trim(),
+		};
+		return normalized.onedrive_tenant === form.onedrive_tenant &&
+			normalized.onedrive_drive_id === form.onedrive_drive_id &&
+			normalized.onedrive_root_item_id === form.onedrive_root_item_id &&
+			normalized.onedrive_site_id === form.onedrive_site_id &&
+			normalized.onedrive_group_id === form.onedrive_group_id &&
+			normalized.onedrive_client_id === form.onedrive_client_id &&
+			normalized.onedrive_client_secret === form.onedrive_client_secret &&
+			normalized.onedrive_scopes === form.onedrive_scopes
+			? form
+			: normalized;
 	}
 
 	const normalized = normalizeS3ConnectionFields(form.endpoint, form.bucket);
@@ -405,6 +479,36 @@ export function hasConnectionFieldChanges(
 		);
 	}
 
+	if (isOneDriveDriver(normalizedForm.driver_type)) {
+		return (
+			normalizedForm.base_path !== editingPolicy.base_path ||
+			JSON.stringify(buildPolicyOptions(normalizedForm)) !==
+				JSON.stringify({
+					onedrive_cloud: editingPolicy.options.onedrive_cloud ?? "global",
+					onedrive_account_mode:
+						editingPolicy.options.onedrive_account_mode ?? "work_or_school",
+					...(editingPolicy.options.onedrive_tenant
+						? { onedrive_tenant: editingPolicy.options.onedrive_tenant }
+						: {}),
+					...(editingPolicy.options.onedrive_drive_id
+						? { onedrive_drive_id: editingPolicy.options.onedrive_drive_id }
+						: {}),
+					...(editingPolicy.options.onedrive_root_item_id
+						? {
+								onedrive_root_item_id:
+									editingPolicy.options.onedrive_root_item_id,
+							}
+						: {}),
+					...(editingPolicy.options.onedrive_site_id
+						? { onedrive_site_id: editingPolicy.options.onedrive_site_id }
+						: {}),
+					...(editingPolicy.options.onedrive_group_id
+						? { onedrive_group_id: editingPolicy.options.onedrive_group_id }
+						: {}),
+				})
+		);
+	}
+
 	return normalizedForm.base_path !== editingPolicy.base_path;
 }
 
@@ -472,6 +576,16 @@ export const emptyForm: PolicyFormData = {
 	s3_upload_strategy: "relay_stream",
 	s3_download_strategy: "relay_stream",
 	s3_path_style: true,
+	onedrive_cloud: "global",
+	onedrive_account_mode: "work_or_school",
+	onedrive_tenant: "common",
+	onedrive_drive_id: "",
+	onedrive_root_item_id: "",
+	onedrive_site_id: "",
+	onedrive_group_id: "",
+	onedrive_client_id: "",
+	onedrive_client_secret: "",
+	onedrive_scopes: "",
 	storage_native_processing_enabled: false,
 	storage_native_media_metadata_enabled: false,
 	thumbnail_processor: null,

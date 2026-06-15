@@ -4,6 +4,7 @@ import {
 	DefaultPolicyToggle,
 	LimitsFields,
 	LocalContentDedupField,
+	OneDriveConnectionFields,
 	PolicyBasePathField,
 	PolicyNameField,
 	PolicySectionIntro,
@@ -22,6 +23,7 @@ import {
 } from "@/components/admin/StoragePolicyDialogFields";
 import {
 	isObjectStorageDriver,
+	isOneDriveDriver,
 	type PolicyFormData,
 	supportsStorageNativeProcessing,
 } from "@/components/admin/storagePolicyDialogShared";
@@ -39,6 +41,7 @@ import type {
 interface StoragePolicyCreateWizardProps {
 	createBucketError: string | null;
 	createNameError: string | null;
+	createOneDriveClientIdError: string | null;
 	createRemoteNodeError: string | null;
 	createStep: number;
 	createStepDirection: "idle" | "forward" | "backward";
@@ -61,6 +64,7 @@ interface StoragePolicyCreateWizardProps {
 export function StoragePolicyCreateWizard({
 	createBucketError,
 	createNameError,
+	createOneDriveClientIdError,
 	createRemoteNodeError,
 	createStep,
 	createStepDirection,
@@ -119,6 +123,7 @@ export function StoragePolicyCreateWizard({
 							<ConnectionStep
 								createBucketError={createBucketError}
 								createNameError={createNameError}
+								createOneDriveClientIdError={createOneDriveClientIdError}
 								createRemoteNodeError={createRemoteNodeError}
 								currentStorageOption={currentStorageOption}
 								endpointValidationMessage={endpointValidationMessage}
@@ -288,6 +293,7 @@ function DriverSelectionStep({
 interface ConnectionStepProps {
 	createBucketError: string | null;
 	createNameError: string | null;
+	createOneDriveClientIdError: string | null;
 	createRemoteNodeError: string | null;
 	currentStorageOption: StoragePolicyDriverOption;
 	endpointValidationMessage: string | null;
@@ -303,6 +309,7 @@ interface ConnectionStepProps {
 function ConnectionStep({
 	createBucketError,
 	createNameError,
+	createOneDriveClientIdError,
 	createRemoteNodeError,
 	currentStorageOption,
 	endpointValidationMessage,
@@ -341,6 +348,15 @@ function ConnectionStep({
 						form={form}
 						error={createRemoteNodeError}
 						remoteNodes={remoteNodes}
+						showCreateValidation
+						t={t}
+						onFieldChange={onFieldChange}
+					/>
+				) : isOneDriveDriver(form.driver_type) ? (
+					<OneDriveConnectionFields
+						clientIdError={createOneDriveClientIdError}
+						form={form}
+						mode="create"
 						showCreateValidation
 						t={t}
 						onFieldChange={onFieldChange}
@@ -415,7 +431,9 @@ function DriverHelperPanel({
 							: t("policy_wizard_s3_helper")
 					: driverType === "remote"
 						? t("policy_wizard_remote_helper")
-						: t("policy_wizard_local_helper")}
+						: isOneDriveDriver(driverType)
+							? t("policy_wizard_onedrive_helper")
+							: t("policy_wizard_local_helper")}
 			</p>
 			<AnimatedCollapsible
 				open={showSpecializedDriverSuggestion}
@@ -563,6 +581,14 @@ function DriverBehaviorFields({
 					onFieldChange={onFieldChange}
 				/>
 			</>
+		);
+	}
+
+	if (isOneDriveDriver(form.driver_type)) {
+		return (
+			<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm leading-6 text-muted-foreground">
+				{t("policy_wizard_onedrive_rules_helper")}
+			</div>
 		);
 	}
 
