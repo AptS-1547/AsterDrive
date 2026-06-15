@@ -16,10 +16,13 @@ use super::*;
 use crate::config::DatabaseConfig;
 use crate::db;
 use crate::entities::{audit_log, storage_policy};
+use crate::services::storage_credential_service::{
+    default_microsoft_graph_scopes_for_onedrive_options, normalize_scopes_with_default,
+};
 use crate::storage::StorageErrorKind;
 use crate::types::{
-    AuditAction, AuditEntityType, MicrosoftGraphCloud, StoredStoragePolicyAllowedTypes,
-    StoredStoragePolicyOptions,
+    AuditAction, AuditEntityType, MicrosoftGraphCloud, OneDriveAccountMode, StoragePolicyOptions,
+    StoredStoragePolicyAllowedTypes,
 };
 use migration::Migrator;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -103,6 +106,21 @@ async fn create_onedrive_policy(
     client_id: &str,
     client_secret: &str,
 ) -> storage_policy::Model {
+    create_onedrive_policy_with_options(
+        db,
+        client_id,
+        client_secret,
+        StoragePolicyOptions::default(),
+    )
+    .await
+}
+
+async fn create_onedrive_policy_with_options(
+    db: &sea_orm::DatabaseConnection,
+    client_id: &str,
+    client_secret: &str,
+    options: StoragePolicyOptions,
+) -> storage_policy::Model {
     let now = Utc::now();
     policy_repo::create(
         db,
@@ -117,7 +135,7 @@ async fn create_onedrive_policy(
             remote_node_id: Set(None),
             max_file_size: Set(0),
             allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
-            options: Set(StoredStoragePolicyOptions::empty()),
+            options: Set(crate::types::serialize_storage_policy_options(&options).unwrap()),
             is_default: Set(false),
             chunk_size: Set(5_242_880),
             created_at: Set(now),
@@ -267,6 +285,111 @@ fn storage_authorization_failure_reason_values_are_stable() {
     assert_eq!(
         StorageAuthorizationFailureReason::UnsupportedProvider.as_str(),
         "unsupported_provider"
+    );
+}
+
+#[test]
+fn microsoft_graph_scopes_default_to_user_drive_for_personal_and_work_or_school() {
+    for mode in [
+        OneDriveAccountMode::Personal,
+        OneDriveAccountMode::WorkOrSchool,
+    ] {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(mode),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            normalize_scopes_with_default(
+                None,
+                default_microsoft_graph_scopes_for_onedrive_options(&options),
+            ),
+            vec!["offline_access".to_string(), "Files.ReadWrite".to_string()]
+        );
+    }
+}
+
+#[test]
+fn microsoft_graph_scopes_default_to_broad_drive_access_for_explicit_drive_id() {
+    let options = StoragePolicyOptions {
+        onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+        onedrive_drive_id: Some("drive-id".to_string()),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        normalize_scopes_with_default(
+            None,
+            default_microsoft_graph_scopes_for_onedrive_options(&options),
+        ),
+        vec![
+            "offline_access".to_string(),
+            "Files.ReadWrite.All".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn microsoft_graph_scopes_default_to_shared_drive_access_for_site_and_group_modes() {
+    for mode in [
+        OneDriveAccountMode::SharepointSite,
+        OneDriveAccountMode::GroupDrive,
+    ] {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(mode),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            normalize_scopes_with_default(
+                None,
+                default_microsoft_graph_scopes_for_onedrive_options(&options),
+            ),
+            vec![
+                "offline_access".to_string(),
+                "Files.ReadWrite.All".to_string(),
+                "Sites.ReadWrite.All".to_string(),
+            ]
+        );
+    }
+}
+
+#[test]
+fn microsoft_graph_scopes_keep_existing_broad_default_when_account_mode_is_missing() {
+    assert_eq!(
+        normalize_scopes_with_default(
+            None,
+            default_microsoft_graph_scopes_for_onedrive_options(&StoragePolicyOptions::default()),
+        ),
+        vec![
+            "offline_access".to_string(),
+            "Files.ReadWrite.All".to_string(),
+            "Sites.ReadWrite.All".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn microsoft_graph_scope_input_overrides_account_mode_default_and_deduplicates() {
+    let options = StoragePolicyOptions {
+        onedrive_account_mode: Some(OneDriveAccountMode::Personal),
+        ..Default::default()
+    };
+
+    assert_eq!(
+        normalize_scopes_with_default(
+            Some(vec![
+                " Files.ReadWrite.All ".to_string(),
+                "offline_access".to_string(),
+                "Files.ReadWrite.All".to_string(),
+                " ".to_string(),
+            ]),
+            default_microsoft_graph_scopes_for_onedrive_options(&options),
+        ),
+        vec![
+            "Files.ReadWrite.All".to_string(),
+            "offline_access".to_string(),
+        ]
     );
 }
 

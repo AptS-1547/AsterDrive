@@ -29,6 +29,10 @@ pub(crate) use oauth::build_microsoft_graph_credential_token_provider;
 const FLOW_TTL_SECS: u64 = 300;
 const DEFAULT_MICROSOFT_GRAPH_SCOPES: &str =
     "offline_access Files.ReadWrite.All Sites.ReadWrite.All";
+const DEFAULT_MICROSOFT_GRAPH_USER_DRIVE_SCOPES: &str = "offline_access Files.ReadWrite";
+const DEFAULT_MICROSOFT_GRAPH_ANY_DRIVE_SCOPES: &str = "offline_access Files.ReadWrite.All";
+const DEFAULT_MICROSOFT_GRAPH_SHARED_DRIVE_SCOPES: &str =
+    "offline_access Files.ReadWrite.All Sites.ReadWrite.All";
 const REDACTED_SECRET: &str = "***REDACTED***";
 
 #[derive(Clone, Debug, Serialize)]
@@ -137,8 +141,15 @@ pub fn list_supported_providers() -> Vec<StorageCredentialProviderInfo> {
 }
 
 fn normalize_scopes(value: Option<Vec<String>>) -> Vec<String> {
+    normalize_scopes_with_default(value, DEFAULT_MICROSOFT_GRAPH_SCOPES)
+}
+
+pub(crate) fn normalize_scopes_with_default(
+    value: Option<Vec<String>>,
+    default_scopes: &str,
+) -> Vec<String> {
     let input = value.unwrap_or_else(|| {
-        DEFAULT_MICROSOFT_GRAPH_SCOPES
+        default_scopes
             .split_whitespace()
             .map(ToOwned::to_owned)
             .collect()
@@ -151,12 +162,31 @@ fn normalize_scopes(value: Option<Vec<String>>) -> Vec<String> {
         }
     }
     if scopes.is_empty() {
-        DEFAULT_MICROSOFT_GRAPH_SCOPES
+        default_scopes
             .split_whitespace()
             .map(ToOwned::to_owned)
             .collect()
     } else {
         scopes
+    }
+}
+
+pub(crate) fn default_microsoft_graph_scopes_for_onedrive_options(
+    options: &StoragePolicyOptions,
+) -> &'static str {
+    match options.onedrive_account_mode {
+        Some(OneDriveAccountMode::Personal | OneDriveAccountMode::WorkOrSchool)
+            if options.onedrive_drive_id.is_none() =>
+        {
+            DEFAULT_MICROSOFT_GRAPH_USER_DRIVE_SCOPES
+        }
+        Some(OneDriveAccountMode::Personal | OneDriveAccountMode::WorkOrSchool) => {
+            DEFAULT_MICROSOFT_GRAPH_ANY_DRIVE_SCOPES
+        }
+        Some(OneDriveAccountMode::SharepointSite | OneDriveAccountMode::GroupDrive) => {
+            DEFAULT_MICROSOFT_GRAPH_SHARED_DRIVE_SCOPES
+        }
+        None => DEFAULT_MICROSOFT_GRAPH_SCOPES,
     }
 }
 

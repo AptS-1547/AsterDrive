@@ -148,10 +148,8 @@ pub async fn start_authorization(
             start_microsoft_graph_authorization(
                 state,
                 req,
-                policy_id,
                 created_by_user_id,
-                policy.access_key,
-                policy.secret_key,
+                policy,
                 input.microsoft_graph,
             )
             .await
@@ -165,15 +163,14 @@ pub async fn start_authorization(
 async fn start_microsoft_graph_authorization(
     state: &impl SharedRuntimeState,
     req: &actix_web::HttpRequest,
-    policy_id: i64,
     created_by_user_id: i64,
-    saved_client_id: String,
-    saved_client_secret: String,
+    policy: crate::entities::storage_policy::Model,
     input: Option<MicrosoftGraphAuthorizationInput>,
 ) -> Result<StorageAuthorizationStartResponse> {
     let input = input.ok_or_else(|| {
         AsterError::validation_error("microsoft_graph authorization parameters are required")
     })?;
+    let policy_id = policy.id;
     let existing_credential = storage_policy_credential_repo::find_by_policy_provider_kind(
         state.writer_db(),
         policy_id,
@@ -196,7 +193,7 @@ async fn start_microsoft_graph_authorization(
         })
         .unwrap_or_else(|| "common".to_string());
     let client_id = match normalize_optional_string(input.client_id).or_else(|| {
-        normalize_optional_string(Some(saved_client_id)).or_else(|| {
+        normalize_optional_string(Some(policy.access_key.clone())).or_else(|| {
             existing_metadata
                 .as_ref()
                 .and_then(|metadata| metadata_string(metadata, "client_id"))
@@ -207,7 +204,7 @@ async fn start_microsoft_graph_authorization(
     };
     let client_secret = match normalize_optional_string(input.client_secret) {
         Some(client_secret) => Some(client_secret),
-        None => match normalize_optional_string(Some(saved_client_secret)) {
+        None => match normalize_optional_string(Some(policy.secret_key.clone())) {
             Some(client_secret) => Some(client_secret),
             None => existing_metadata
                 .as_ref()
@@ -222,7 +219,9 @@ async fn start_microsoft_graph_authorization(
                 .transpose()?,
         },
     };
-    let scopes = normalize_scopes(input.scopes);
+    let options = parse_storage_policy_options(policy.options.as_ref());
+    let default_scopes = super::default_microsoft_graph_scopes_for_onedrive_options(&options);
+    let scopes = super::normalize_scopes_with_default(input.scopes, default_scopes);
     let redirect_uri = callback_redirect_uri(state, req)?;
     let state_value = format!("storage_oauth_{}", id::new_short_token());
     let pkce_verifier = build_pkce_verifier();
