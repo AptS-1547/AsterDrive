@@ -1,0 +1,181 @@
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { writeTextToClipboard } from "@/lib/clipboard";
+import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
+import { cn } from "@/lib/utils";
+import type { StoragePolicyCredentialInfo } from "@/types/api";
+import { OneDriveApplicationFields } from "./OneDriveApplicationFields";
+import { formatDateTime, MICROSOFT_GRAPH_PROVIDER } from "./onedriveFieldUtils";
+import type { SharedFieldProps, Translate } from "./StoragePolicyFieldTypes";
+
+export function OneDriveCredentialPanel({
+	authorizationPending,
+	credentials,
+	form,
+	loading,
+	redirectUri,
+	t,
+	validationPending,
+	onFieldChange,
+	onStartAuthorization,
+	onValidateCredential,
+}: {
+	authorizationPending: boolean;
+	credentials: StoragePolicyCredentialInfo[];
+	form: SharedFieldProps["form"];
+	loading: boolean;
+	redirectUri: string;
+	t: Translate;
+	validationPending: boolean;
+	onFieldChange: SharedFieldProps["onFieldChange"];
+	onStartAuthorization: () => void;
+	onValidateCredential: () => void;
+}) {
+	const credential =
+		credentials.find((item) => item.provider === MICROSOFT_GRAPH_PROVIDER) ??
+		null;
+	const status = credential?.status ?? "invalid";
+	const statusClassName =
+		status === "authorized"
+			? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+			: status === "reauth_required"
+				? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+				: "border-destructive/30 bg-destructive/10 text-destructive";
+	const authorizedAt = formatDateTime(credential?.authorized_at);
+	const validatedAt = formatDateTime(credential?.last_validated_at);
+	const copyRedirectUri = async () => {
+		try {
+			await writeTextToClipboard(redirectUri);
+			toast.success(t("core:copied_to_clipboard"));
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : String(error));
+		}
+	};
+
+	return (
+		<div className="space-y-4 rounded-lg border border-sky-500/25 bg-sky-500/5 p-3">
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+				<div className="min-w-0 space-y-1">
+					<div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+						<Icon
+							name="Key"
+							className="size-4 shrink-0 text-sky-700 dark:text-sky-300"
+						/>
+						<span>{t("onedrive_credential_title")}</span>
+						<Badge
+							variant="outline"
+							className={cn("shadow-sm", statusClassName)}
+						>
+							{loading
+								? t("onedrive_credential_loading")
+								: credential
+									? t(`onedrive_credential_status_${credential.status}`)
+									: t("onedrive_credential_status_missing")}
+						</Badge>
+					</div>
+					<p className="text-xs leading-5 text-muted-foreground">
+						{credential
+							? t("onedrive_credential_desc_authorized")
+							: t("onedrive_credential_desc_missing")}
+					</p>
+					{credential?.account_label || credential?.subject ? (
+						<p className="text-xs text-muted-foreground">
+							{credential.account_label ?? credential.subject}
+						</p>
+					) : null}
+					{credential?.status_reason ? (
+						<p className="text-xs text-amber-700 dark:text-amber-300">
+							{credential.status_reason}
+						</p>
+					) : null}
+					{authorizedAt || validatedAt ? (
+						<p className="text-xs text-muted-foreground">
+							{[
+								authorizedAt
+									? t("onedrive_credential_authorized_at", {
+											time: authorizedAt,
+										})
+									: null,
+								validatedAt
+									? t("onedrive_credential_validated_at", {
+											time: validatedAt,
+										})
+									: null,
+							]
+								.filter(Boolean)
+								.join(" · ")}
+						</p>
+					) : null}
+				</div>
+				<div className="flex shrink-0 flex-wrap items-center gap-2">
+					<Button
+						type="button"
+						variant="outline"
+						className={ADMIN_CONTROL_HEIGHT_CLASS}
+						disabled={authorizationPending}
+						onClick={onStartAuthorization}
+					>
+						{authorizationPending ? (
+							<Icon name="Spinner" className="mr-1 size-3.5 animate-spin" />
+						) : (
+							<Icon name="ArrowSquareOut" className="mr-1 size-3.5" />
+						)}
+						{credential
+							? t("onedrive_reauthorize_action")
+							: t("onedrive_authorize_action")}
+					</Button>
+					<Button
+						type="button"
+						variant="outline"
+						className={ADMIN_CONTROL_HEIGHT_CLASS}
+						disabled={!credential || validationPending}
+						onClick={onValidateCredential}
+					>
+						{validationPending ? (
+							<Icon name="Spinner" className="mr-1 size-3.5 animate-spin" />
+						) : (
+							<Icon name="Check" className="mr-1 size-3.5" />
+						)}
+						{t("onedrive_validate_action")}
+					</Button>
+				</div>
+			</div>
+			<div className="space-y-2">
+				<Label htmlFor="onedrive_redirect_uri">
+					{t("onedrive_redirect_uri")}
+				</Label>
+				<div className="flex gap-2">
+					<Input
+						id="onedrive_redirect_uri"
+						readOnly
+						value={redirectUri}
+						className="font-mono text-xs"
+					/>
+					<Button
+						type="button"
+						variant="outline"
+						size="icon"
+						onClick={() => void copyRedirectUri()}
+						aria-label={t("onedrive_copy_redirect_uri")}
+						title={t("onedrive_copy_redirect_uri")}
+					>
+						<Icon name="Copy" className="size-4" />
+					</Button>
+				</div>
+				<p className="text-xs leading-5 text-muted-foreground">
+					{t("onedrive_redirect_uri_desc")}
+				</p>
+			</div>
+			<OneDriveApplicationFields
+				form={form}
+				t={t}
+				useSavedCredentialPlaceholder={credential != null}
+				onFieldChange={onFieldChange}
+			/>
+		</div>
+	);
+}

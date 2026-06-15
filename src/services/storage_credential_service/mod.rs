@@ -80,6 +80,9 @@ pub struct MicrosoftGraphAuthorizationContext {
 pub struct MicrosoftGraphAuthorizationInput {
     pub cloud: Option<MicrosoftGraphCloud>,
     pub tenant: Option<String>,
+    // Microsoft application settings currently live with the OAuth credential metadata so
+    // reauthorization can reuse them. Promote this to a shared app-config model only if
+    // multiple storage policies need to share one Microsoft app registration.
     pub client_id: Option<String>,
     pub client_secret: Option<String>,
     pub scopes: Option<Vec<String>>,
