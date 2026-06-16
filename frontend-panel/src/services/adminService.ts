@@ -68,9 +68,15 @@ import type {
 	RemovedCountResponse,
 	ResetUserPasswordRequest,
 	ShareInfo,
+	StartStorageAuthorizationRequest,
+	StorageAuthorizationStartResponse,
+	StorageCredentialProvider,
+	StorageCredentialProviderInfo,
 	StoragePolicy,
 	StoragePolicyActionResult,
 	StoragePolicyCapacityInfo,
+	StoragePolicyCredentialInfo,
+	StoragePolicyCredentialValidationResult,
 	StoragePolicyGroup,
 	StoragePolicyGroupPage,
 	StoragePolicyMigrationDryRun,
@@ -340,6 +346,33 @@ export const adminPolicyService = {
 		id: number,
 		data: PromoteS3CompatiblePolicyDriverRequest,
 	) => api.post<StoragePolicy>(`/admin/policies/${id}/promote-s3-driver`, data),
+
+	listStorageCredentialProviders: () =>
+		api.get<StorageCredentialProviderInfo[]>(
+			"/admin/policies/storage-credential-providers",
+		),
+
+	startStorageAuthorization: (
+		id: number,
+		data: StartStorageAuthorizationRequest,
+	) =>
+		api.post<StorageAuthorizationStartResponse>(
+			`/admin/policies/${id}/storage-authorization/start`,
+			data,
+		),
+
+	listStorageCredentials: (id: number) =>
+		api.get<StoragePolicyCredentialInfo[]>(
+			`/admin/policies/${id}/storage-credentials`,
+		),
+
+	validateStorageCredential: (
+		id: number,
+		provider: StorageCredentialProvider,
+	) =>
+		api.post<StoragePolicyCredentialValidationResult>(
+			`/admin/policies/${id}/storage-credentials/${provider}/validate`,
+		),
 
 	createMigration: (data: CreateStoragePolicyMigrationRequest) =>
 		api.post<TaskInfo>("/admin/storage-migrations", data),

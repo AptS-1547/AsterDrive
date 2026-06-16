@@ -1,5 +1,5 @@
 ---
-description: Overview of AsterDrive storage policy backends, covering the configuration flow for local disks, S3 / MinIO / R2, Tencent COS, and follower node storage.
+description: Overview of AsterDrive storage policy backends, covering backend configuration flows, pre-launch validation, and migration cautions.
 ---
 
 # Storage Policy Backends
@@ -10,7 +10,7 @@ These tutorials are organized by backend type: how to prepare the external servi
 
 AsterDrive has two layers of concepts:
 
-- **Storage policy**: where files are ultimately written, such as a local disk, S3 / MinIO / R2, Tencent COS, or a follower node
+- **Storage policy**: which storage policy backend files are ultimately written to
 - **Policy group**: which storage policy a user or team upload matches, based on rules
 
 If you only want to understand the overall model, start with [Storage Policies](/en/config/storage).  
@@ -22,7 +22,9 @@ If you have already decided which backend to connect, use the tutorials here.
 | --- | --- | --- |
 | Local disk | Single-node setups, NAS, small teams, minimum dependencies | [Local disk](/en/storage/local) |
 | S3 / MinIO / R2 | Object storage, large files, external buckets, cloud storage | [S3 / MinIO / R2](/en/storage/s3-minio-r2) |
+| Azure Blob Storage | Azure Storage accounts, Blob containers, Azure-managed object storage | [Azure Blob Storage](/en/storage/azure-blob) |
 | Tencent COS | Tencent object storage, COS CI, per-policy native processing | [Tencent COS](/en/storage/tencent-cos) |
+| OneDrive | Microsoft 365, OneDrive, SharePoint / group drives, Microsoft Graph authorization | [OneDrive](/en/storage/onedrive) |
 | Follower node | The control plane stays on the primary node, while real objects are written to another AsterDrive node | [Follower Node Storage Policy](/en/storage/remote-follower) |
 
 ## General Configuration Flow
@@ -49,5 +51,5 @@ Recommended flow:
 5. After confirming there are no issues, move real users or teams to the new policy group
 
 ::: warning Do not directly change the real destination for policies that already have files
-The `local` directory, S3 bucket / endpoint / prefix, and follower node binding determine where old files are located. If you change them directly, old files may no longer be found.
+The `local` directory, S3 bucket / endpoint / prefix, Azure Blob endpoint / container / base path, OneDrive drive / root item / site or group identifiers, and follower node binding determine where old files are located. If you change them directly, old files may no longer be found.
 :::

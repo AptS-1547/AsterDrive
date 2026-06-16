@@ -155,7 +155,8 @@ pub(crate) async fn create_empty(
             }
             crate::types::DriverType::S3
             | crate::types::DriverType::TencentCos
-            | crate::types::DriverType::AzureBlob => {
+            | crate::types::DriverType::AzureBlob
+            | crate::types::DriverType::OneDrive => {
                 let upload_id = crate::utils::id::new_uuid();
                 create_s3_nondedup_blob(&txn, EMPTY_SIZE, policy.id, &upload_id).await?
             }

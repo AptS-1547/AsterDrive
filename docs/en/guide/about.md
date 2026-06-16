@@ -36,7 +36,7 @@ Later, I began thinking of it as a hub.
 
 First, this hub has to let files dock safely. After files come in, there are directories, permissions, trash, versions, locks, and background cleanup. When something goes wrong, you should be able to see what happened, trace logs, run checks, and recover what can be recovered.
 
-Then it needs to route flows. Files do not have to stay on this machine forever. They may land on local disk, go to object storage such as S3 / MinIO / Tencent COS, or be written to another AsterDrive node. Browsers, WebDAV clients, Office editors, share pages, and background tasks can all be entry points. AsterDrive's job is to make these entry points, destinations, permissions, and lifecycles explicit and understandable.
+Then it needs to route flows. Files do not have to stay on this machine forever. They may land on different storage policy backends, including object storage, Microsoft Graph-backed drives, or another AsterDrive node. Browsers, WebDAV clients, Office editors, share pages, and background tasks can all be entry points. AsterDrive's job is to make these entry points, destinations, permissions, and lifecycles explicit and understandable.
 
 Finally, it should let me stay in control as much as possible. Where files are, who can access them, whether they can be shared, how long they remain after deletion, and which upload path large files take are not things I want to hand entirely to a black box.
 
@@ -50,7 +50,7 @@ This is why AsterDrive later grew storage policies, policy groups, S3, remote fo
 
 > After a file comes in, how should it reliably reach where it belongs?
 
-Today AsterDrive can start from default SQLite + local storage, and it can also connect to PostgreSQL / MySQL, S3-compatible object storage, Tencent COS, and remote follower nodes. It can handle regular direct uploads, resumable chunked uploads, object-storage presigned uploads, and multipart uploads. It no longer sounds like the original file browser, but it still grew from those same three things: upload, download, and trash.
+Today AsterDrive can start from default SQLite + local storage, and it can also connect to PostgreSQL / MySQL, S3-compatible object storage, Azure Blob Storage, Tencent COS, Microsoft Graph-backed OneDrive / SharePoint drives, and remote follower nodes. It can handle regular direct uploads, resumable chunked uploads, object-storage presigned uploads, and multipart uploads. It no longer sounds like the original file browser, but it still grew from those same three things: upload, download, and trash.
 
 ## What I Want It to Become
 
@@ -82,7 +82,7 @@ If you want to control your own files instead of handing everything to a commerc
 
 If you want to share photos, videos, documents, and materials with family, friends, or a small team, and you want uploads, sharing, recovery, preview, and integration with existing workflows through WebDAV or Office services, AsterDrive may fit you.
 
-If you care where files ultimately land, want to start from local disk, and later move part of the data to S3 or follower nodes, AsterDrive may fit you.
+If you care where files ultimately land, want to start from local disk, and later move part of the data to S3-compatible storage, Azure Blob Storage, OneDrive / SharePoint, or follower nodes, AsterDrive may fit you.
 
 If you want to build on top of a file service without being crushed at the start by a complex ecosystem, plugin marketplace, and heavy historical baggage, AsterDrive may also fit you.
 

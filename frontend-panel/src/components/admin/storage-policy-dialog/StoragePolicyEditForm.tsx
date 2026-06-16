@@ -4,6 +4,8 @@ import {
 	DefaultPolicyToggle,
 	LimitsFields,
 	LocalContentDedupField,
+	OneDriveConnectionFields,
+	OneDriveCredentialPanel,
 	PolicyBasePathField,
 	PolicyNameField,
 	PolicySectionIntro,
@@ -19,6 +21,7 @@ import {
 } from "@/components/admin/StoragePolicyDialogFields";
 import {
 	isObjectStorageDriver,
+	isOneDriveDriver,
 	type PolicyFormData,
 	supportsStorageNativeProcessing,
 } from "@/components/admin/storagePolicyDialogShared";
@@ -30,7 +33,11 @@ import { Icon } from "@/components/ui/icon";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { RemoteNodeInfo, StoragePolicyCapacityInfo } from "@/types/api";
+import type {
+	RemoteNodeInfo,
+	StoragePolicyCapacityInfo,
+	StoragePolicyCredentialInfo,
+} from "@/types/api";
 import type { StoragePolicyFieldChangeHandler } from "./StoragePolicyDialogTypes";
 
 interface StoragePolicyEditFormProps {
@@ -43,6 +50,11 @@ interface StoragePolicyEditFormProps {
 	form: PolicyFormData;
 	policyCapacity: StoragePolicyCapacityInfo | null;
 	policyCapacityLoading: boolean;
+	storageCredentials: StoragePolicyCredentialInfo[];
+	storageCredentialsLoading: boolean;
+	storageAuthorizationSubmitting: boolean;
+	storageCredentialValidationSubmitting: boolean;
+	storageAuthorizationRedirectUri: string;
 	cosCorsConfirmOpen: boolean;
 	cosCorsSubmitting: boolean;
 	cosCorsUsesDraftValues: boolean;
@@ -55,6 +67,8 @@ interface StoragePolicyEditFormProps {
 	onConfirmCosCorsConfigure: () => void;
 	onCancelS3DriverPromotion: () => void;
 	onConfirmS3DriverPromotion: () => void;
+	onStartStorageAuthorization: () => void;
+	onValidateStorageCredential: () => void;
 	onRequestS3DriverPromotion: () => void;
 	onSyncNormalizedS3Form: () => void;
 	remoteNodes: RemoteNodeInfo[];
@@ -70,6 +84,11 @@ export function StoragePolicyEditForm({
 	form,
 	policyCapacity,
 	policyCapacityLoading,
+	storageCredentials,
+	storageCredentialsLoading,
+	storageAuthorizationSubmitting,
+	storageCredentialValidationSubmitting,
+	storageAuthorizationRedirectUri,
 	cosCorsConfirmOpen,
 	cosCorsSubmitting,
 	cosCorsUsesDraftValues,
@@ -82,6 +101,8 @@ export function StoragePolicyEditForm({
 	onConfirmCosCorsConfigure,
 	onCancelS3DriverPromotion,
 	onConfirmS3DriverPromotion,
+	onStartStorageAuthorization,
+	onValidateStorageCredential,
 	onRequestS3DriverPromotion,
 	onSyncNormalizedS3Form,
 	remoteNodes,
@@ -190,6 +211,32 @@ export function StoragePolicyEditForm({
 							<RemoteRulesHelper t={t} />
 						</div>
 					</section>
+				) : isOneDriveDriver(form.driver_type) ? (
+					<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
+						<PolicySectionIntro
+							title={t("policy_editor_onedrive_title")}
+							description={t("policy_editor_onedrive_desc")}
+						/>
+						<div className="space-y-4">
+							<OneDriveConnectionFields
+								form={form}
+								t={t}
+								onFieldChange={onFieldChange}
+							/>
+							<OneDriveCredentialPanel
+								authorizationPending={storageAuthorizationSubmitting}
+								credentials={storageCredentials}
+								form={form}
+								loading={storageCredentialsLoading}
+								redirectUri={storageAuthorizationRedirectUri}
+								t={t}
+								validationPending={storageCredentialValidationSubmitting}
+								onFieldChange={onFieldChange}
+								onStartAuthorization={onStartStorageAuthorization}
+								onValidateCredential={onValidateStorageCredential}
+							/>
+						</div>
+					</section>
 				) : null}
 
 				<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
@@ -224,7 +271,7 @@ export function StoragePolicyEditForm({
 									onFieldChange={onFieldChange}
 								/>
 							</>
-						) : (
+						) : isOneDriveDriver(form.driver_type) ? null : (
 							<LocalContentDedupField
 								form={form}
 								t={t}
@@ -452,7 +499,9 @@ function PolicyEditContextBar({
 								: t("policy_edit_context_s3_desc")
 							: form.driver_type === "remote"
 								? t("policy_edit_context_remote_desc")
-								: t("policy_edit_context_local_desc")}
+								: isOneDriveDriver(form.driver_type)
+									? t("policy_edit_context_onedrive_desc")
+									: t("policy_edit_context_local_desc")}
 					</p>
 				</div>
 

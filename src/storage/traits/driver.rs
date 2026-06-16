@@ -25,6 +25,7 @@ pub fn driver_type_supports_native_thumbnail(driver_type: DriverType) -> bool {
         DriverType::AzureBlob => false,
         DriverType::TencentCos => true,
         DriverType::Remote => false,
+        DriverType::OneDrive => false,
     }
 }
 
@@ -35,6 +36,7 @@ pub fn driver_type_supports_native_media_metadata(driver_type: DriverType) -> bo
         DriverType::AzureBlob => false,
         DriverType::TencentCos => true,
         DriverType::Remote => false,
+        DriverType::OneDrive => false,
     }
 }
 
@@ -259,6 +261,7 @@ mod tests {
             DriverType::TencentCos
         ));
         assert!(!driver_type_supports_native_thumbnail(DriverType::Remote));
+        assert!(!driver_type_supports_native_thumbnail(DriverType::OneDrive));
     }
 
     #[test]
@@ -275,6 +278,9 @@ mod tests {
         ));
         assert!(!driver_type_supports_native_media_metadata(
             DriverType::Remote
+        ));
+        assert!(!driver_type_supports_native_media_metadata(
+            DriverType::OneDrive
         ));
     }
 

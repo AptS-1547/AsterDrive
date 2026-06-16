@@ -2804,6 +2804,36 @@ async fn test_policy_connection_endpoints_for_local_driver() {
 }
 
 #[actix_web::test]
+async fn test_policy_params_rejects_onedrive_draft_connection_test() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies/test")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "driver_type": "one_drive",
+            "base_path": "draft-root",
+            "options": {
+                "onedrive_cloud": "global",
+                "onedrive_account_mode": "work_or_school",
+                "onedrive_root_item_id": "root"
+            }
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], ApiErrorCode::PolicyActionUnsupported.as_str());
+    assert_eq!(
+        body["msg"],
+        "OneDrive draft connection tests require a saved storage policy with completed Microsoft Graph authorization; use the saved policy connection test after authorization"
+    );
+}
+
+#[actix_web::test]
 async fn test_tencent_cos_cors_config_rejects_invalid_inputs_with_stable_codes() {
     let state = common::setup().await;
     assert!(

@@ -33,6 +33,8 @@ pub mod search_repo;
 pub mod share_repo;
 pub mod sort;
 pub mod storage_migration_checkpoint_repo;
+pub mod storage_policy_authorization_flow_repo;
+pub mod storage_policy_credential_repo;
 pub mod tag_repo;
 pub mod team_member_repo;
 pub mod team_repo;

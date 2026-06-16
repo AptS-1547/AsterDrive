@@ -3,6 +3,10 @@
 use super::StorageErrorKind;
 use super::drivers::azure_blob::AzureBlobDriver;
 use super::drivers::local::LocalDriver;
+use super::drivers::onedrive::{
+    MicrosoftGraphAccessTokenProvider, MicrosoftGraphClient, MicrosoftGraphClientConfig,
+    OneDriveDriver,
+};
 use super::drivers::remote::RemoteDriver;
 use super::drivers::s3::S3Driver;
 use super::drivers::tencent_cos::TencentCosDriver;
@@ -11,14 +15,22 @@ use super::metrics_driver::{MetricsMultipartStorageDriver, MetricsStorageDriver}
 use super::traits::driver::StorageDriver;
 use super::traits::multipart::MultipartStorageDriver;
 use crate::api::api_error_code::ApiErrorCode;
-use crate::db::repository::{managed_follower_repo, master_binding_repo};
+use crate::config::Config;
+use crate::db::repository::{
+    managed_follower_repo, master_binding_repo, policy_repo, storage_policy_credential_repo,
+};
 use crate::entities::storage_policy;
 use crate::errors::{Result, precondition_failed_with_code};
 use crate::metrics_core::SharedMetricsRecorder;
+use crate::services::storage_credential_service::build_microsoft_graph_credential_token_provider;
 use crate::storage::remote_protocol::RemoteProtocolRuntime;
-use crate::types::{DriverType, parse_storage_policy_options};
+use crate::types::{
+    DriverType, StorageCredentialKind, StorageCredentialProvider, StorageCredentialStatus,
+    parse_storage_policy_options,
+};
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -44,12 +56,28 @@ impl DriverEntry {
     }
 }
 
+#[derive(Clone)]
+struct OneDriveCredentialRuntime {
+    token_provider: Arc<dyn MicrosoftGraphAccessTokenProvider>,
+    drive_id: Option<String>,
+    root_item_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OneDriveCredentialMetadata {
+    #[serde(default)]
+    drive_id: Option<String>,
+    #[serde(default)]
+    root_item_id: Option<String>,
+}
+
 pub struct DriverRegistry {
     /// policy_id → 已实例化的 driver
     drivers: DashMap<i64, DriverEntry>,
     driver_init_lock: parking_lot::Mutex<()>,
     managed_followers_by_id: RwLock<HashMap<i64, crate::entities::managed_follower::Model>>,
     master_bindings_by_access_key: RwLock<HashMap<String, crate::entities::master_binding::Model>>,
+    onedrive_credentials_by_policy_id: RwLock<HashMap<i64, OneDriveCredentialRuntime>>,
     metrics: SharedMetricsRecorder,
     remote_protocol: RwLock<Option<Arc<RemoteProtocolRuntime>>>,
 }
@@ -61,6 +89,7 @@ impl DriverRegistry {
             driver_init_lock: parking_lot::Mutex::new(()),
             managed_followers_by_id: RwLock::new(HashMap::new()),
             master_bindings_by_access_key: RwLock::new(HashMap::new()),
+            onedrive_credentials_by_policy_id: RwLock::new(HashMap::new()),
             metrics,
             remote_protocol: RwLock::new(None),
         }
@@ -121,9 +150,14 @@ impl DriverRegistry {
         self.drivers.clear();
     }
 
-    pub async fn reload_primary_state(&self, db: &sea_orm::DatabaseConnection) -> Result<()> {
+    pub async fn reload_primary_state(
+        &self,
+        db: &sea_orm::DatabaseConnection,
+        config: &Config,
+    ) -> Result<()> {
         self.reload_managed_followers(db).await?;
-        self.reload_master_bindings(db).await
+        self.reload_master_bindings(db).await?;
+        self.reload_storage_policy_credentials(db, config).await
     }
 
     pub fn set_remote_protocol(&self, remote_protocol: Arc<RemoteProtocolRuntime>) {
@@ -155,6 +189,68 @@ impl DriverRegistry {
         Ok(())
     }
 
+    pub async fn reload_storage_policy_credentials(
+        &self,
+        db: &sea_orm::DatabaseConnection,
+        config: &Config,
+    ) -> Result<()> {
+        let credentials = storage_policy_credential_repo::find_all(db).await?;
+        let mut by_policy_id = HashMap::new();
+        for credential in credentials {
+            if credential.provider != StorageCredentialProvider::MicrosoftGraph
+                || credential.credential_kind != StorageCredentialKind::OauthDelegated
+                || credential.status != StorageCredentialStatus::Authorized
+            {
+                continue;
+            }
+            let policy = match policy_repo::find_by_id(db, credential.policy_id).await {
+                Ok(policy) => policy,
+                Err(error) => {
+                    tracing::warn!(
+                        policy_id = credential.policy_id,
+                        error = %error,
+                        "skipping OneDrive credential reload because policy lookup failed"
+                    );
+                    continue;
+                }
+            };
+            let metadata = parse_onedrive_credential_metadata(&credential.metadata);
+            let (drive_id, root_item_id) = metadata
+                .map(|value| (value.drive_id, value.root_item_id))
+                .unwrap_or((None, None));
+            let options = parse_storage_policy_options(policy.options.as_ref());
+            let token_provider = match build_microsoft_graph_credential_token_provider(
+                db.clone(),
+                config.auth.storage_credential_secret_key.clone(),
+                &policy,
+                &credential,
+                options.effective_onedrive_cloud(),
+            ) {
+                Ok(token_provider) => token_provider,
+                Err(error) => {
+                    tracing::warn!(
+                        policy_id = credential.policy_id,
+                        credential_id = credential.id,
+                        error = %error,
+                        "skipping OneDrive credential reload because token provider initialization failed"
+                    );
+                    continue;
+                }
+            };
+            by_policy_id.insert(
+                credential.policy_id,
+                OneDriveCredentialRuntime {
+                    token_provider,
+                    drive_id,
+                    root_item_id,
+                },
+            );
+        }
+        *self.onedrive_credentials_by_policy_id.write() = by_policy_id;
+        self.invalidate_all();
+        Ok(())
+    }
+
     pub fn get_managed_follower(
         &self,
         follower_id: i64,
@@ -172,6 +268,13 @@ impl DriverRegistry {
         self.master_bindings_by_access_key
             .read()
             .get(access_key)
+            .cloned()
+    }
+
+    fn get_onedrive_credential(&self, policy_id: i64) -> Option<OneDriveCredentialRuntime> {
+        self.onedrive_credentials_by_policy_id
+            .read()
+            .get(&policy_id)
             .cloned()
     }
 
@@ -291,6 +394,68 @@ impl DriverRegistry {
                 let multipart: Arc<dyn MultipartStorageDriver> = driver;
                 Ok(self.build_entry(policy.driver_type, storage, Some(multipart)))
             }
+            DriverType::OneDrive => {
+                let options = parse_storage_policy_options(policy.options.as_ref());
+                let credential = self.get_onedrive_credential(policy.id).ok_or_else(|| {
+                    storage_driver_error(
+                        StorageErrorKind::Auth,
+                        format!(
+                            "OneDrive storage policy {} is missing authorized Microsoft Graph credentials",
+                            policy.id
+                        ),
+                    )
+                })?;
+                let drive_id = non_empty_string(options.onedrive_drive_id.clone())
+                    .or_else(|| non_empty_string(credential.drive_id.clone()))
+                    .ok_or_else(|| {
+                        storage_driver_error(
+                            StorageErrorKind::Misconfigured,
+                            "OneDrive storage policy missing resolved drive_id; reauthorize Microsoft Graph",
+                        )
+                    })?;
+                let configured_root_item_id = options
+                    .onedrive_root_item_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                let root_item_id = configured_root_item_id
+                    .filter(|value| !value.eq_ignore_ascii_case("root"))
+                    .map(ToOwned::to_owned)
+                    .or_else(|| non_empty_string(credential.root_item_id.clone()))
+                    .or_else(|| configured_root_item_id.map(ToOwned::to_owned))
+                    .ok_or_else(|| {
+                        storage_driver_error(
+                            StorageErrorKind::Misconfigured,
+                            "OneDrive storage policy missing resolved root_item_id; reauthorize Microsoft Graph",
+                        )
+                    })?;
+                if root_item_id.trim().is_empty() {
+                    return Err(storage_driver_error(
+                        StorageErrorKind::Misconfigured,
+                        "OneDrive storage policy missing resolved root_item_id; reauthorize Microsoft Graph",
+                    ));
+                }
+                if drive_id.trim().is_empty() {
+                    return Err(storage_driver_error(
+                        StorageErrorKind::Misconfigured,
+                        "OneDrive storage policy missing resolved drive_id; reauthorize Microsoft Graph",
+                    ));
+                }
+                let client =
+                    MicrosoftGraphClient::new(MicrosoftGraphClientConfig::with_token_provider(
+                        options.effective_onedrive_cloud().graph_base_url(),
+                        credential.token_provider,
+                    ))?;
+                let driver = Arc::new(OneDriveDriver::new(
+                    client,
+                    drive_id,
+                    root_item_id,
+                    policy.base_path.clone(),
+                    policy.chunk_size,
+                ));
+                let storage: Arc<dyn StorageDriver> = driver;
+                Ok(self.build_entry(policy.driver_type, storage, None))
+            }
         }
     }
 
@@ -313,14 +478,23 @@ impl DriverRegistry {
                 driver_type,
                 self.metrics.clone(),
                 multipart.clone(),
-            ));
-            (storage as Arc<dyn StorageDriver>, multipart)
+            )) as Arc<dyn StorageDriver>;
+            (storage, multipart)
         } else {
             (storage, multipart)
         };
-
         DriverEntry { storage, multipart }
     }
+}
+
+fn parse_onedrive_credential_metadata(raw: &str) -> Option<OneDriveCredentialMetadata> {
+    serde_json::from_str(raw).ok()
+}
+
+fn non_empty_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 impl Default for DriverRegistry {
@@ -478,6 +652,27 @@ mod tests {
             created_at: now,
             updated_at: now,
         }
+    }
+
+    #[test]
+    fn non_empty_string_trims_and_filters_blank_values() {
+        assert_eq!(
+            non_empty_string(Some(" drive-id ".to_string())),
+            Some("drive-id".to_string())
+        );
+        assert_eq!(non_empty_string(Some(" \t\n ".to_string())), None);
+        assert_eq!(non_empty_string(None), None);
+    }
+
+    #[test]
+    fn onedrive_metadata_parse_preserves_optional_ids_for_runtime_fallback() {
+        let metadata = parse_onedrive_credential_metadata(
+            r#"{"drive_id":"resolved-drive","root_item_id":"resolved-root"}"#,
+        )
+        .expect("metadata should parse");
+
+        assert_eq!(metadata.drive_id, Some("resolved-drive".to_string()));
+        assert_eq!(metadata.root_item_id, Some("resolved-root".to_string()));
     }
 
     fn managed_follower(is_enabled: bool) -> crate::entities::managed_follower::Model {

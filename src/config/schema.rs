@@ -134,8 +134,8 @@ pub struct AuthConfig {
     pub share_cookie_secret: String,
     #[serde(default = "AuthConfig::default_direct_link_secret")]
     pub direct_link_secret: String,
-    #[serde(default = "AuthConfig::default_mfa_secret_key")]
     pub mfa_secret_key: String,
+    pub storage_credential_secret_key: String,
     /// 首次初始化 system_config 时，是否把 auth_cookie_secure 设为 false。
     #[serde(default = "AuthConfig::default_bootstrap_insecure_cookies")]
     pub bootstrap_insecure_cookies: bool,
@@ -148,6 +148,7 @@ impl Default for AuthConfig {
             share_cookie_secret: Self::default_share_cookie_secret(),
             direct_link_secret: Self::default_direct_link_secret(),
             mfa_secret_key: Self::default_mfa_secret_key(),
+            storage_credential_secret_key: Self::default_storage_credential_secret_key(),
             bootstrap_insecure_cookies: Self::default_bootstrap_insecure_cookies(),
         }
     }
@@ -170,6 +171,9 @@ impl AuthConfig {
         Self::random_hex_secret()
     }
     fn default_mfa_secret_key() -> String {
+        Self::random_hex_secret()
+    }
+    fn default_storage_credential_secret_key() -> String {
         Self::random_hex_secret()
     }
     fn default_bootstrap_insecure_cookies() -> bool {

@@ -18,7 +18,7 @@ pub use crate::api::dto::admin::{
     ExecuteSavedStoragePolicyActionReq, MigratePolicyGroupAssignmentsReq, PatchPolicyGroupReq,
     PatchPolicyReq, PatchRemoteNodeReq, PatchUserReq, PolicyGroupItemReq,
     PromoteS3CompatiblePolicyDriverReq, ResetUserPasswordReq, SetConfigReq, SetFolderPolicyReq,
-    TestPolicyParamsReq, TestRemoteNodeParamsReq,
+    StartStorageAuthorizationReq, TestPolicyParamsReq, TestRemoteNodeParamsReq,
 };
 
 pub(crate) mod audit_logs;
@@ -56,10 +56,12 @@ pub use locks::{cleanup_expired_locks, force_unlock, list_locks};
 pub use overview::get_overview;
 pub use policies::{
     create_policy, create_policy_group, delete_policy, delete_policy_group,
-    execute_draft_storage_policy_action, execute_saved_storage_policy_action, get_policy,
-    get_policy_capacity, get_policy_group, list_policies, list_policy_groups,
-    migrate_policy_group_assignments, promote_s3_compatible_policy_driver, test_policy_connection,
-    test_policy_params, update_policy, update_policy_group,
+    execute_draft_storage_policy_action, execute_saved_storage_policy_action,
+    finish_storage_authorization, get_policy, get_policy_capacity, get_policy_group, list_policies,
+    list_policy_groups, list_storage_credential_providers, list_storage_policy_credentials,
+    migrate_policy_group_assignments, promote_s3_compatible_policy_driver,
+    start_storage_authorization, test_policy_connection, test_policy_params, update_policy,
+    update_policy_group, validate_storage_policy_credential,
 };
 pub use remote_nodes::{
     create_remote_node, create_remote_node_enrollment_token, create_remote_node_ingress_profile,
@@ -92,6 +94,10 @@ pub fn routes(
 
     web::scope("/admin")
         .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
+        .route(
+            "/policies/storage-authorization/callback",
+            web::get().to(finish_storage_authorization),
+        )
         .service(
             web::scope("").wrap(JwtAuth).service(
                 web::scope("")
@@ -101,6 +107,10 @@ pub fn routes(
                     // policies
                     .route("/policies", web::get().to(list_policies))
                     .route("/policies", web::post().to(create_policy))
+                    .route(
+                        "/policies/storage-credential-providers",
+                        web::get().to(list_storage_credential_providers),
+                    )
                     .route("/policies/{id}", web::get().to(get_policy))
                     .route(
                         "/policies/{id}/capacity",
@@ -119,6 +129,18 @@ pub fn routes(
                     .route(
                         "/policies/{id}/action",
                         web::post().to(execute_saved_storage_policy_action),
+                    )
+                    .route(
+                        "/policies/{id}/storage-authorization/start",
+                        web::post().to(start_storage_authorization),
+                    )
+                    .route(
+                        "/policies/{id}/storage-credentials",
+                        web::get().to(list_storage_policy_credentials),
+                    )
+                    .route(
+                        "/policies/{id}/storage-credentials/{provider}/validate",
+                        web::post().to(validate_storage_policy_credential),
                     )
                     .route("/policies/test", web::post().to(test_policy_params))
                     .route(

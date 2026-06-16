@@ -340,6 +340,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/policies/storage-authorization/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["finish_storage_authorization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policies/storage-credential-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_storage_credential_providers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/policies/test": {
         parameters: {
             query?: never;
@@ -414,6 +446,54 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["promote_s3_compatible_policy_driver"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policies/{id}/storage-authorization/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["start_storage_authorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policies/{id}/storage-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_storage_policy_credentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/policies/{id}/storage-credentials/{provider}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["validate_storage_policy_credential"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4396,7 +4476,7 @@ export interface components {
         /** @enum {string} */
         AdminUserSortBy: "id" | "username" | "email" | "role" | "status" | "storage_used" | "storage_quota" | "created_at" | "updated_at";
         /** @enum {string} */
-        ApiErrorCode: "success" | "bad_request" | "not_found" | "internal_server_error" | "database.error" | "config.error" | "endpoint.not_found" | "rate_limited" | "mail.not_configured" | "mail.delivery_failed" | "conflict" | "config.public_site_url_required" | "config.public_site_url_invalid" | "auth.failed" | "auth.token_expired" | "auth.token_invalid" | "forbidden" | "auth.pending_activation" | "auth.contact_verification_invalid" | "auth.contact_verification_expired" | "auth.token_missing" | "auth.credentials_failed" | "auth.mfa_failed" | "auth.refresh_token_stale" | "auth.refresh_token_reuse_detected" | "file.not_found" | "file.too_large" | "file.type_not_allowed" | "file.upload_failed" | "upload.session_not_found" | "upload.session_expired" | "upload.chunk_failed" | "upload.assembly_failed" | "thumbnail.failed" | "resource.locked" | "precondition_failed" | "upload.assembling" | "storage.policy_not_found" | "storage.driver_error" | "storage.quota_exceeded" | "storage.unsupported_driver" | "storage.auth_failed" | "storage.permission_denied" | "storage.misconfigured" | "storage.object_not_found" | "storage.rate_limited" | "storage.transient_failure" | "storage.precondition_failed" | "storage.operation_unsupported" | "folder.not_found" | "share.not_found" | "share.expired" | "share.password_required" | "share.download_limit_reached" | "archive_preview.disabled" | "archive_preview.user_disabled" | "archive_preview.share_disabled" | "archive_preview.source_too_large" | "archive_preview.invalid_archive" | "archive_preview.manifest_too_large" | "archive_preview.unsupported_type" | "archive_preview.rejected" | "archive_preview.source_size_mismatch" | "archive_compress.disabled" | "archive_download.user_disabled" | "archive_download.share_disabled" | "auth.username_exists" | "auth.email_exists" | "auth.identifier_exists" | "auth.admin_required" | "auth.account_disabled" | "auth.request_source_untrusted" | "auth.request_origin_untrusted" | "auth.request_referer_untrusted" | "auth.request_source_missing" | "auth.session_user_mismatch" | "auth.csrf_cookie_missing" | "auth.csrf_header_missing" | "auth.csrf_token_invalid" | "auth.passkey_login_disabled" | "auth.registration_disabled" | "auth.email_blocked" | "auth.email_not_allowlisted" | "auth.mfa_flow_invalid" | "auth.mfa_flow_expired" | "auth.mfa_code_invalid" | "auth.mfa_attempts_exceeded" | "auth.mfa_factor_required" | "auth.mfa_factor_already_exists" | "auth.mfa_recovery_code_used" | "auth.mfa_email_code_required" | "auth.mfa_email_code_expired" | "auth.invitation_invalid" | "auth.invitation_expired" | "auth.invitation_revoked" | "auth.invitation_accepted" | "auth.password_change_required" | "avatar.file_required" | "avatar.upload_read_failed" | "avatar.processor_unavailable" | "avatar.empty_image" | "avatar.render_failed" | "avatar.output_invalid" | "file.name_conflict" | "file.etag_mismatch" | "file.modified_during_write" | "folder.name_conflict" | "lock.not_owner" | "share.scope_denied" | "managed_ingress.binding_mismatch" | "managed_ingress.default_delete_requires_replacement" | "managed_ingress.default_error" | "managed_ingress.default_missing" | "managed_ingress.default_not_applied" | "managed_ingress.default_update_requires_replacement" | "managed_ingress.driver_unsupported" | "managed_ingress.local_path_invalid" | "managed_ingress.required" | "managed_ingress.single_primary_required" | "master_binding.disabled" | "passkey.name_invalid" | "passkey.name_too_long" | "passkey.not_discoverable" | "team.not_member" | "team.owner_required" | "team.admin_or_owner_required" | "policy.upload_sessions_exist" | "policy.storage_access_key_required" | "policy.storage_secret_key_required" | "policy.storage_bucket_required" | "policy.storage_endpoint_invalid" | "policy.remote_node_required" | "policy.remote_node_unexpected" | "policy.remote_node_disabled" | "policy.remote_node_base_url_required" | "policy.remote_node_transfer_strategy_unsupported" | "policy.native_thumbnail_unsupported" | "policy.promotion_source_unsupported" | "policy.promotion_target_unsupported" | "policy.promotion_bucket_change_denied" | "policy.action_unsupported" | "policy.action_parameter_required" | "policy.action_parameter_invalid" | "workspace.scope_denied" | "external_auth.provider_disabled" | "external_auth.policy_denied" | "external_auth.callback_redirect_uri_required" | "offline_download.aria2_rpc_auth_failed" | "offline_download.aria2_rpc_probe_failed" | "remote_node.disabled" | "remote_node.enrollment_required" | "remote_node.unique_conflict" | "storage.auth" | "storage.not_found" | "storage.permission" | "storage.precondition" | "storage.transient" | "storage.unsupported" | "storage.unknown" | "task.lease_lost" | "task.lease_renewal_timed_out" | "task.worker_shutdown_requested" | "task.retry_status_conflict" | "task.retry_not_allowed" | "team.member_exists" | "thumbnail.format_guess_failed" | "thumbnail.decode_failed" | "thumbnail.encode_failed" | "thumbnail.source_open_failed" | "thumbnail.source_stream_failed" | "thumbnail.task_panicked" | "thumbnail.source_too_large" | "thumbnail.processor_unavailable" | "thumbnail.render_failed" | "thumbnail.output_invalid" | "thumbnail.source_temp_create_failed" | "thumbnail.source_temp_flush_failed" | "thumbnail.source_temp_copy_failed" | "wopi.public_site_url_required" | "wopi.app_disabled" | "wopi.request_origin_untrusted" | "wopi.request_referer_untrusted" | "upload.temp_dir_create_failed" | "upload.temp_file_create_failed" | "upload.temp_file_write_failed" | "upload.temp_file_flush_failed" | "upload.request_body_read_failed" | "upload.request_body_size_overflow" | "upload.request_size_mismatch" | "upload.hash_temp_open_failed" | "upload.hash_temp_read_failed" | "upload.field_read_failed" | "upload.local_staging_path_resolve_failed" | "upload.local_staging_dir_create_failed" | "upload.local_staging_file_create_failed" | "upload.local_staging_write_failed" | "upload.local_staging_flush_failed" | "upload.direct_relay_write_failed" | "upload.direct_relay_shutdown_failed" | "upload.direct_relay_task_failed" | "upload.body_size_overflow" | "upload.declared_size_invalid" | "upload.empty_file" | "upload.chunk_persist_failed" | "upload.chunk_relay_failed" | "upload.chunk_transport_mismatch" | "upload.chunk_session_invalid" | "upload.chunk_number_out_of_range" | "upload.chunk_size_mismatch" | "upload.chunk_too_large" | "upload.chunk_size_overflow" | "upload.status_conflict" | "upload.completed_file_missing" | "upload.previous_failure" | "upload.parts_required" | "upload.incomplete_chunks" | "upload.incomplete_parts" | "upload.missing_part" | "upload.temp_object_missing" | "upload.temp_object_size_mismatch" | "upload.final_object_size_mismatch" | "upload.session_corrupted" | "upload.part_numbers_empty" | "upload.part_numbers_too_many" | "upload.part_number_out_of_range" | "upload.assembly_io_failed" | "upload.assembly_size_overflow" | "webdav.username_exists" | "wopi.max_expected_size_exceeded" | "validation.request_origin_invalid" | "validation.request_referer_invalid" | "validation.request_host_invalid" | "validation.request_scheme_invalid" | "validation.request_header_value_invalid" | "validation.system_already_initialized" | "search.query_empty" | "search.type_invalid" | "search.tag_match_invalid" | "search.size_range_invalid" | "search.file_filter_type_conflict" | "search.mime_type_empty" | "search.category_invalid" | "search.extensions_invalid" | "search.tag_ids_invalid" | "search.date_invalid" | "search.date_range_invalid" | "internal_storage.range_length_invalid" | "internal_storage.range_empty_object" | "internal_storage.range_offset_out_of_bounds" | "internal_storage.range_header_invalid" | "internal_storage.range_multiple_unsupported" | "internal_storage.range_bounds_invalid" | "internal_storage.content_length_required" | "internal_storage.content_length_invalid" | "internal_storage.compose_parts_required" | "internal_storage.compose_expected_size_invalid";
+        ApiErrorCode: "success" | "bad_request" | "not_found" | "internal_server_error" | "database.error" | "config.error" | "endpoint.not_found" | "rate_limited" | "mail.not_configured" | "mail.delivery_failed" | "conflict" | "config.public_site_url_required" | "config.public_site_url_invalid" | "auth.failed" | "auth.token_expired" | "auth.token_invalid" | "forbidden" | "auth.pending_activation" | "auth.contact_verification_invalid" | "auth.contact_verification_expired" | "auth.token_missing" | "auth.credentials_failed" | "auth.mfa_failed" | "auth.refresh_token_stale" | "auth.refresh_token_reuse_detected" | "file.not_found" | "file.too_large" | "file.type_not_allowed" | "file.upload_failed" | "upload.session_not_found" | "upload.session_expired" | "upload.chunk_failed" | "upload.assembly_failed" | "thumbnail.failed" | "resource.locked" | "precondition_failed" | "upload.assembling" | "storage.policy_not_found" | "storage.driver_error" | "storage.quota_exceeded" | "storage.unsupported_driver" | "storage.auth_failed" | "storage.permission_denied" | "storage.misconfigured" | "storage.object_not_found" | "storage.rate_limited" | "storage.transient_failure" | "storage.precondition_failed" | "storage.operation_unsupported" | "folder.not_found" | "share.not_found" | "share.expired" | "share.password_required" | "share.download_limit_reached" | "archive_preview.disabled" | "archive_preview.user_disabled" | "archive_preview.share_disabled" | "archive_preview.source_too_large" | "archive_preview.invalid_archive" | "archive_preview.manifest_too_large" | "archive_preview.unsupported_type" | "archive_preview.rejected" | "archive_preview.source_size_mismatch" | "archive_compress.disabled" | "archive_download.user_disabled" | "archive_download.share_disabled" | "auth.username_exists" | "auth.email_exists" | "auth.identifier_exists" | "auth.admin_required" | "auth.account_disabled" | "auth.request_source_untrusted" | "auth.request_origin_untrusted" | "auth.request_referer_untrusted" | "auth.request_source_missing" | "auth.session_user_mismatch" | "auth.csrf_cookie_missing" | "auth.csrf_header_missing" | "auth.csrf_token_invalid" | "auth.passkey_login_disabled" | "auth.registration_disabled" | "auth.email_blocked" | "auth.email_not_allowlisted" | "auth.mfa_flow_invalid" | "auth.mfa_flow_expired" | "auth.mfa_code_invalid" | "auth.mfa_attempts_exceeded" | "auth.mfa_factor_required" | "auth.mfa_factor_already_exists" | "auth.mfa_recovery_code_used" | "auth.mfa_email_code_required" | "auth.mfa_email_code_expired" | "auth.invitation_invalid" | "auth.invitation_expired" | "auth.invitation_revoked" | "auth.invitation_accepted" | "auth.password_change_required" | "avatar.file_required" | "avatar.upload_read_failed" | "avatar.processor_unavailable" | "avatar.empty_image" | "avatar.render_failed" | "avatar.output_invalid" | "file.name_conflict" | "file.etag_mismatch" | "file.modified_during_write" | "folder.name_conflict" | "lock.not_owner" | "share.scope_denied" | "managed_ingress.binding_mismatch" | "managed_ingress.default_delete_requires_replacement" | "managed_ingress.default_error" | "managed_ingress.default_missing" | "managed_ingress.default_not_applied" | "managed_ingress.default_update_requires_replacement" | "managed_ingress.driver_unsupported" | "managed_ingress.local_path_invalid" | "managed_ingress.required" | "managed_ingress.single_primary_required" | "master_binding.disabled" | "passkey.name_invalid" | "passkey.name_too_long" | "passkey.not_discoverable" | "team.not_member" | "team.owner_required" | "team.admin_or_owner_required" | "policy.upload_sessions_exist" | "policy.storage_access_key_required" | "policy.storage_secret_key_required" | "policy.storage_bucket_required" | "policy.storage_endpoint_invalid" | "policy.remote_node_required" | "policy.remote_node_unexpected" | "policy.remote_node_disabled" | "policy.remote_node_base_url_required" | "policy.remote_node_transfer_strategy_unsupported" | "policy.onedrive_options_unsupported" | "policy.onedrive_account_mode_required" | "policy.onedrive_personal_china_cloud_unsupported" | "policy.onedrive_sharepoint_site_required" | "policy.onedrive_group_required" | "policy.native_thumbnail_unsupported" | "policy.promotion_source_unsupported" | "policy.promotion_target_unsupported" | "policy.promotion_bucket_change_denied" | "policy.action_unsupported" | "policy.action_parameter_required" | "policy.action_parameter_invalid" | "workspace.scope_denied" | "external_auth.provider_disabled" | "external_auth.policy_denied" | "external_auth.callback_redirect_uri_required" | "offline_download.aria2_rpc_auth_failed" | "offline_download.aria2_rpc_probe_failed" | "remote_node.disabled" | "remote_node.enrollment_required" | "remote_node.unique_conflict" | "storage.auth" | "storage.not_found" | "storage.permission" | "storage.precondition" | "storage.transient" | "storage.unsupported" | "storage.unknown" | "task.lease_lost" | "task.lease_renewal_timed_out" | "task.worker_shutdown_requested" | "task.retry_status_conflict" | "task.retry_not_allowed" | "team.member_exists" | "thumbnail.format_guess_failed" | "thumbnail.decode_failed" | "thumbnail.encode_failed" | "thumbnail.source_open_failed" | "thumbnail.source_stream_failed" | "thumbnail.task_panicked" | "thumbnail.source_too_large" | "thumbnail.processor_unavailable" | "thumbnail.render_failed" | "thumbnail.output_invalid" | "thumbnail.source_temp_create_failed" | "thumbnail.source_temp_flush_failed" | "thumbnail.source_temp_copy_failed" | "wopi.public_site_url_required" | "wopi.app_disabled" | "wopi.request_origin_untrusted" | "wopi.request_referer_untrusted" | "upload.temp_dir_create_failed" | "upload.temp_file_create_failed" | "upload.temp_file_write_failed" | "upload.temp_file_flush_failed" | "upload.request_body_read_failed" | "upload.request_body_size_overflow" | "upload.request_size_mismatch" | "upload.hash_temp_open_failed" | "upload.hash_temp_read_failed" | "upload.field_read_failed" | "upload.local_staging_path_resolve_failed" | "upload.local_staging_dir_create_failed" | "upload.local_staging_file_create_failed" | "upload.local_staging_write_failed" | "upload.local_staging_flush_failed" | "upload.direct_relay_write_failed" | "upload.direct_relay_shutdown_failed" | "upload.direct_relay_task_failed" | "upload.body_size_overflow" | "upload.declared_size_invalid" | "upload.empty_file" | "upload.chunk_persist_failed" | "upload.chunk_relay_failed" | "upload.chunk_transport_mismatch" | "upload.chunk_session_invalid" | "upload.chunk_number_out_of_range" | "upload.chunk_size_mismatch" | "upload.chunk_too_large" | "upload.chunk_size_overflow" | "upload.status_conflict" | "upload.completed_file_missing" | "upload.previous_failure" | "upload.parts_required" | "upload.incomplete_chunks" | "upload.incomplete_parts" | "upload.missing_part" | "upload.temp_object_missing" | "upload.temp_object_size_mismatch" | "upload.final_object_size_mismatch" | "upload.session_corrupted" | "upload.part_numbers_empty" | "upload.part_numbers_too_many" | "upload.part_number_out_of_range" | "upload.assembly_io_failed" | "upload.assembly_size_overflow" | "webdav.username_exists" | "wopi.max_expected_size_exceeded" | "validation.request_origin_invalid" | "validation.request_referer_invalid" | "validation.request_host_invalid" | "validation.request_scheme_invalid" | "validation.request_header_value_invalid" | "validation.system_already_initialized" | "search.query_empty" | "search.type_invalid" | "search.tag_match_invalid" | "search.size_range_invalid" | "search.file_filter_type_conflict" | "search.mime_type_empty" | "search.category_invalid" | "search.extensions_invalid" | "search.tag_ids_invalid" | "search.date_invalid" | "search.date_range_invalid" | "internal_storage.range_length_invalid" | "internal_storage.range_empty_object" | "internal_storage.range_offset_out_of_bounds" | "internal_storage.range_header_invalid" | "internal_storage.range_multiple_unsupported" | "internal_storage.range_bounds_invalid" | "internal_storage.content_length_required" | "internal_storage.content_length_invalid" | "internal_storage.compose_parts_required" | "internal_storage.compose_expected_size_invalid";
         ApiErrorInfo: {
             retryable: boolean;
         };
@@ -5039,7 +5119,7 @@ export interface components {
          * @description 存储驱动类型
          * @enum {string}
          */
-        DriverType: "local" | "s3" | "azure_blob" | "tencent_cos" | "remote";
+        DriverType: "local" | "s3" | "azure_blob" | "tencent_cos" | "remote" | "one_drive";
         /** @description Check a storage policy migration plan without creating a task. */
         DryRunStoragePolicyMigrationReq: {
             delete_source_after_success?: boolean;
@@ -5746,6 +5826,25 @@ export interface components {
         MicrosoftExternalAuthProviderOptions: {
             tenant: string;
         };
+        MicrosoftGraphAuthorizationContext: {
+            client_id: string;
+            client_secret_configured: boolean;
+            cloud: components["schemas"]["MicrosoftGraphCloud"];
+            scopes: string[];
+            tenant: string;
+        };
+        MicrosoftGraphAuthorizationInput: {
+            client_id?: string | null;
+            client_secret?: string | null;
+            cloud?: null | components["schemas"]["MicrosoftGraphCloud"];
+            scopes?: string[] | null;
+            tenant?: string | null;
+        };
+        /**
+         * @description Microsoft Graph cloud deployment for OneDrive / SharePoint storage backends.
+         * @enum {string}
+         */
+        MicrosoftGraphCloud: "global" | "china";
         /** @description Migrate all user and team assignments from one policy group to another. */
         MigratePolicyGroupAssignmentsReq: {
             /** Format: int64 */
@@ -6318,6 +6417,11 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        /**
+         * @description Microsoft Graph Drive location mode for OneDrive storage policies.
+         * @enum {string}
+         */
+        OneDriveAccountMode: "personal" | "work_or_school" | "sharepoint_site" | "group_drive";
         /** @description WOPI open file request. */
         OpenWopiRequest: {
             app_key: string;
@@ -6944,6 +7048,27 @@ export interface components {
         SortBy: "name" | "size" | "created_at" | "updated_at" | "type";
         /** @enum {string} */
         SortOrder: "asc" | "desc";
+        /** @description Start an OAuth authorization flow for an administrator-managed storage policy credential. */
+        StartStorageAuthorizationReq: {
+            microsoft_graph?: null | components["schemas"]["MicrosoftGraphAuthorizationInput"];
+            provider: components["schemas"]["StorageCredentialProvider"];
+        };
+        StorageAuthorizationCallbackOutcome: {
+            credential: components["schemas"]["StoragePolicyCredentialInfo"];
+        };
+        StorageAuthorizationCallbackQuery: {
+            code?: string | null;
+            error?: string | null;
+            error_description?: string | null;
+            state?: string | null;
+        };
+        StorageAuthorizationStartResponse: {
+            authorization_url: string;
+            /** Format: int64 */
+            expires_in: number;
+            microsoft_graph?: null | components["schemas"]["MicrosoftGraphAuthorizationContext"];
+            provider: components["schemas"]["StorageCredentialProvider"];
+        };
         StorageCapacityInfo: {
             /** Format: int64 */
             available_bytes?: number | null;
@@ -6980,6 +7105,27 @@ export interface components {
             /** Format: int64 */
             team_id: number;
         };
+        /**
+         * @description Authentication material shape for a storage policy credential.
+         * @enum {string}
+         */
+        StorageCredentialKind: "oauth_delegated" | "oauth_app_only" | "service_account";
+        /**
+         * @description Provider backing an OAuth-managed storage policy credential.
+         * @enum {string}
+         */
+        StorageCredentialProvider: "microsoft_graph" | "google_drive";
+        StorageCredentialProviderInfo: {
+            default_scopes: string[];
+            display_name: string;
+            provider: components["schemas"]["StorageCredentialProvider"];
+            supported: boolean;
+        };
+        /**
+         * @description Current usability state of a stored storage policy credential.
+         * @enum {string}
+         */
+        StorageCredentialStatus: "authorized" | "reauth_required" | "permission_denied" | "revoked" | "invalid";
         StoragePolicy: {
             allowed_types: string[];
             base_path: string;
@@ -7006,6 +7152,31 @@ export interface components {
         };
         /** @enum {string} */
         StoragePolicyActionType: "configure_tencent_cos_cors";
+        StoragePolicyCredentialInfo: {
+            account_label?: string | null;
+            authorized_at?: string | null;
+            created_at: string;
+            credential_kind: components["schemas"]["StorageCredentialKind"];
+            expires_at?: string | null;
+            /** Format: int64 */
+            id: number;
+            last_refreshed_at?: string | null;
+            last_validated_at?: string | null;
+            /** Format: int64 */
+            policy_id: number;
+            provider: components["schemas"]["StorageCredentialProvider"];
+            scopes: string[];
+            status: components["schemas"]["StorageCredentialStatus"];
+            status_reason?: string | null;
+            subject?: string | null;
+            tenant_id?: string | null;
+            updated_at: string;
+        };
+        StoragePolicyCredentialValidationResult: {
+            credential: components["schemas"]["StoragePolicyCredentialInfo"];
+            root_item_id: string;
+            root_item_name?: string | null;
+        };
         StoragePolicyGroup: {
             created_at: string;
             description: string;
@@ -7102,6 +7273,13 @@ export interface components {
         StoragePolicyOptions: {
             content_dedup?: boolean | null;
             media_metadata_extensions?: string[];
+            onedrive_account_mode?: null | components["schemas"]["OneDriveAccountMode"];
+            onedrive_cloud?: null | components["schemas"]["MicrosoftGraphCloud"];
+            onedrive_drive_id?: string | null;
+            onedrive_group_id?: string | null;
+            onedrive_root_item_id?: string | null;
+            onedrive_site_id?: string | null;
+            onedrive_tenant?: string | null;
             remote_download_strategy?: null | components["schemas"]["RemoteDownloadStrategy"];
             remote_upload_strategy?: null | components["schemas"]["RemoteUploadStrategy"];
             /** Format: int64 */
@@ -9545,6 +9723,80 @@ export interface operations {
             };
         };
     };
+    finish_storage_authorization: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+                error_description?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage credential authorization completed and redirected to the admin policies page */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authorization callback rejected */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_storage_credential_providers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Supported storage credential providers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            default_scopes: string[];
+                            display_name: string;
+                            provider: components["schemas"]["StorageCredentialProvider"];
+                            supported: boolean;
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     test_policy_params: {
         parameters: {
             query?: never;
@@ -9957,6 +10209,202 @@ export interface operations {
                 content?: never;
             };
             /** @description Policy not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_storage_authorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartStorageAuthorizationReq"];
+            };
+        };
+        responses: {
+            /** @description Storage credential authorization URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            authorization_url: string;
+                            /** Format: int64 */
+                            expires_in: number;
+                            microsoft_graph?: null | components["schemas"]["MicrosoftGraphAuthorizationContext"];
+                            provider: components["schemas"]["StorageCredentialProvider"];
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid authorization configuration */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_storage_policy_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage policy credentials */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            account_label?: string | null;
+                            authorized_at?: string | null;
+                            created_at: string;
+                            credential_kind: components["schemas"]["StorageCredentialKind"];
+                            expires_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            last_refreshed_at?: string | null;
+                            last_validated_at?: string | null;
+                            /** Format: int64 */
+                            policy_id: number;
+                            provider: components["schemas"]["StorageCredentialProvider"];
+                            scopes: string[];
+                            status: components["schemas"]["StorageCredentialStatus"];
+                            status_reason?: string | null;
+                            subject?: string | null;
+                            tenant_id?: string | null;
+                            updated_at: string;
+                        }[];
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    validate_storage_policy_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Policy ID */
+                id: number;
+                /** @description Storage credential provider */
+                provider: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Storage policy credential validation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ApiErrorCode"];
+                        data?: {
+                            credential: components["schemas"]["StoragePolicyCredentialInfo"];
+                            root_item_id: string;
+                            root_item_name?: string | null;
+                        };
+                        error?: null | components["schemas"]["ApiErrorInfo"];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid provider or credential state */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Policy or credential not found */
             404: {
                 headers: {
                     [name: string]: unknown;

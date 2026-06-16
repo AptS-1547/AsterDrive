@@ -1,9 +1,10 @@
 //! 存储策略删除后的临时对象兜底清理任务。
 
 use chrono::{Duration, Utc};
+use std::sync::Arc;
 
 use crate::api::constants::HOUR_SECS;
-use crate::db::repository::managed_follower_repo;
+use crate::db::repository::{managed_follower_repo, storage_policy_credential_repo};
 use crate::entities::{background_task, managed_follower, storage_policy};
 use crate::errors::{AsterError, Result};
 use crate::runtime::{
@@ -12,9 +13,16 @@ use crate::runtime::{
 use crate::storage::StorageDriver;
 use crate::storage::StorageErrorKind;
 use crate::storage::drivers::{
-    azure_blob::AzureBlobDriver, local::LocalDriver, s3::S3Driver, tencent_cos::TencentCosDriver,
+    azure_blob::AzureBlobDriver,
+    local::LocalDriver,
+    onedrive::{MicrosoftGraphClient, MicrosoftGraphClientConfig, OneDriveDriver},
+    s3::S3Driver,
+    tencent_cos::TencentCosDriver,
 };
-use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
+use crate::types::{
+    DriverType, StorageCredentialStatus, StoredStoragePolicyAllowedTypes,
+    StoredStoragePolicyOptions,
+};
 use crate::utils::numbers::u64_to_i64;
 
 use super::spec::{self, StoragePolicyTempCleanupTask, decode_payload_as};
@@ -23,6 +31,7 @@ use super::steps::{
     set_task_step_active, set_task_step_succeeded,
 };
 use super::types::{
+    StoragePolicyCleanupDriverSnapshot, StoragePolicyCleanupOneDriveCredentialSnapshot,
     StoragePolicyCleanupPolicySnapshot, StoragePolicyCleanupRemoteNodeSnapshot,
     StoragePolicyTempCleanupTarget, StoragePolicyTempCleanupTaskPayload,
     StoragePolicyTempCleanupTaskResult,
@@ -52,9 +61,16 @@ pub(crate) async fn create_storage_policy_temp_cleanup_task(
         return Ok(None);
     }
 
+    let driver_snapshot = driver_snapshot_for_policy(state, policy).await?;
+    if !can_create_cleanup_task_with_driver_snapshot(policy.driver_type, &driver_snapshot) {
+        return Ok(None);
+    }
+
     let payload = StoragePolicyTempCleanupTaskPayload {
         policy: policy_snapshot(policy),
-        remote_node: remote_node_snapshot_for_policy(state, policy).await?,
+        driver_snapshot,
+        onedrive_credential: None,
+        remote_node: None,
         temp_keys: dedup_strings(temp_keys.iter().cloned()),
         multipart_uploads: dedup_multipart_targets(multipart_uploads.iter().cloned()),
     };
@@ -256,18 +272,45 @@ fn policy_snapshot(policy: &storage_policy::Model) -> StoragePolicyCleanupPolicy
     }
 }
 
+fn metadata_string(metadata: &serde_json::Value, key: &str) -> Option<String> {
+    metadata
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn non_empty_string(value: String) -> Option<String> {
+    let value = value.trim().to_string();
+    if value.is_empty() { None } else { Some(value) }
+}
+
+async fn driver_snapshot_for_policy(
+    state: &impl SharedRuntimeState,
+    policy: &storage_policy::Model,
+) -> Result<Option<StoragePolicyCleanupDriverSnapshot>> {
+    match policy.driver_type {
+        DriverType::Remote => remote_node_snapshot_for_policy(state, policy)
+            .await
+            .map(StoragePolicyCleanupDriverSnapshot::RemoteNode)
+            .map(Some),
+        DriverType::OneDrive => Ok(onedrive_credential_snapshot_for_policy(state, policy)
+            .await?
+            .map(StoragePolicyCleanupDriverSnapshot::MicrosoftGraph)),
+        _ => Ok(None),
+    }
+}
+
 async fn remote_node_snapshot_for_policy(
     state: &impl SharedRuntimeState,
     policy: &storage_policy::Model,
-) -> Result<Option<StoragePolicyCleanupRemoteNodeSnapshot>> {
-    if policy.driver_type != DriverType::Remote {
-        return Ok(None);
-    }
+) -> Result<StoragePolicyCleanupRemoteNodeSnapshot> {
     let remote_node_id = policy.remote_node_id.ok_or_else(|| {
         AsterError::validation_error("remote storage policy requires remote_node_id")
     })?;
     let remote = managed_follower_repo::find_by_id(state.writer_db(), remote_node_id).await?;
-    Ok(Some(StoragePolicyCleanupRemoteNodeSnapshot {
+    Ok(StoragePolicyCleanupRemoteNodeSnapshot {
         id: remote.id,
         name: remote.name,
         base_url: remote.base_url,
@@ -275,13 +318,116 @@ async fn remote_node_snapshot_for_policy(
         access_key: remote.access_key,
         secret_key: remote.secret_key,
         last_capabilities: remote.last_capabilities,
+    })
+}
+
+async fn onedrive_credential_snapshot_for_policy(
+    state: &impl SharedRuntimeState,
+    policy: &storage_policy::Model,
+) -> Result<Option<StoragePolicyCleanupOneDriveCredentialSnapshot>> {
+    let Some(credential) = storage_policy_credential_repo::find_by_policy_provider_kind(
+        state.writer_db(),
+        policy.id,
+        crate::types::StorageCredentialProvider::MicrosoftGraph,
+        crate::types::StorageCredentialKind::OauthDelegated,
+    )
+    .await?
+    else {
+        tracing::warn!(
+            policy_id = policy.id,
+            "OneDrive storage policy cleanup missing credential snapshot; skipping deferred cleanup"
+        );
+        return Ok(None);
+    };
+    if !onedrive_cleanup_allows_credential_status(credential.status) {
+        tracing::warn!(
+            policy_id = policy.id,
+            status = ?credential.status,
+            "OneDrive storage policy credential is not authorized; skipping deferred cleanup"
+        );
+        return Ok(None);
+    }
+    let Some(access_token_ciphertext) = credential.access_token_ciphertext else {
+        tracing::warn!(
+            policy_id = policy.id,
+            "OneDrive storage policy cleanup missing access token snapshot; skipping deferred cleanup"
+        );
+        return Ok(None);
+    };
+    let Some(refresh_token_ciphertext) = credential.refresh_token_ciphertext else {
+        tracing::warn!(
+            policy_id = policy.id,
+            "OneDrive storage policy cleanup missing refresh token snapshot; skipping deferred cleanup"
+        );
+        return Ok(None);
+    };
+    let metadata = serde_json::from_str::<serde_json::Value>(&credential.metadata)
+        .ok()
+        .unwrap_or_default();
+    let options = crate::types::parse_storage_policy_options(policy.options.as_ref());
+    let cloud = metadata
+        .get("cloud")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_else(|| options.effective_onedrive_cloud());
+    let Some(drive_id) = options
+        .onedrive_drive_id
+        .clone()
+        .and_then(non_empty_string)
+        .or_else(|| metadata_string(&metadata, "drive_id"))
+    else {
+        tracing::warn!(
+            policy_id = policy.id,
+            "OneDrive storage policy cleanup missing drive_id snapshot; skipping deferred cleanup"
+        );
+        return Ok(None);
+    };
+    let configured_root_item_id = options
+        .onedrive_root_item_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let Some(root_item_id) = configured_root_item_id
+        .filter(|value| !value.eq_ignore_ascii_case("root"))
+        .map(ToOwned::to_owned)
+        .or_else(|| metadata_string(&metadata, "root_item_id"))
+        .or_else(|| configured_root_item_id.map(ToOwned::to_owned))
+    else {
+        tracing::warn!(
+            policy_id = policy.id,
+            "OneDrive storage policy cleanup missing root_item_id snapshot; skipping deferred cleanup"
+        );
+        return Ok(None);
+    };
+
+    Ok(Some(StoragePolicyCleanupOneDriveCredentialSnapshot {
+        cloud,
+        tenant_id: credential.tenant_id,
+        client_id: metadata_string(&metadata, "client_id"),
+        client_secret_ciphertext: metadata_string(&metadata, "client_secret_ciphertext"),
+        drive_id,
+        root_item_id,
+        access_token_ciphertext,
+        refresh_token_ciphertext: Some(refresh_token_ciphertext),
+        expires_at: credential.expires_at,
     }))
+}
+
+fn onedrive_cleanup_allows_credential_status(status: StorageCredentialStatus) -> bool {
+    status == StorageCredentialStatus::Authorized
+}
+
+fn can_create_cleanup_task_with_driver_snapshot(
+    driver_type: DriverType,
+    driver_snapshot: &Option<StoragePolicyCleanupDriverSnapshot>,
+) -> bool {
+    driver_type != DriverType::OneDrive || driver_snapshot.is_some()
 }
 
 async fn driver_from_payload(
     state: &impl RemoteProtocolRuntimeState,
     payload: &StoragePolicyTempCleanupTaskPayload,
-) -> Result<Box<dyn StorageDriver>> {
+) -> Result<Arc<dyn StorageDriver>> {
     let policy = storage_policy::Model {
         id: payload.policy.id,
         name: payload.policy.name.clone(),
@@ -302,16 +448,28 @@ async fn driver_from_payload(
     };
 
     match policy.driver_type {
-        DriverType::Local => Ok(Box::new(LocalDriver::new(&policy)?)),
-        DriverType::S3 => Ok(Box::new(S3Driver::new(&policy)?)),
-        DriverType::AzureBlob => Ok(Box::new(AzureBlobDriver::new(&policy)?)),
-        DriverType::TencentCos => Ok(Box::new(TencentCosDriver::new(&policy)?)),
+        DriverType::Local => Ok(Arc::new(LocalDriver::new(&policy)?)),
+        DriverType::S3 => Ok(Arc::new(S3Driver::new(&policy)?)),
+        DriverType::AzureBlob => Ok(Arc::new(AzureBlobDriver::new(&policy)?)),
+        DriverType::TencentCos => Ok(Arc::new(TencentCosDriver::new(&policy)?)),
+        DriverType::OneDrive => {
+            let credential = onedrive_snapshot_from_payload(payload)?;
+            let token_provider = cleanup_onedrive_token_provider(state, &policy, credential)?;
+            let client =
+                MicrosoftGraphClient::new(MicrosoftGraphClientConfig::with_token_provider(
+                    credential.cloud.graph_base_url(),
+                    token_provider,
+                ))?;
+            Ok(Arc::new(OneDriveDriver::new(
+                client,
+                credential.drive_id.clone(),
+                credential.root_item_id.clone(),
+                policy.base_path.clone(),
+                policy.chunk_size,
+            )))
+        }
         DriverType::Remote => {
-            let remote = payload.remote_node.as_ref().ok_or_else(|| {
-                AsterError::validation_error(
-                    "remote storage policy cleanup missing remote snapshot",
-                )
-            })?;
+            let remote = remote_snapshot_from_payload(payload)?;
             let follower = managed_follower::Model {
                 id: remote.id,
                 name: remote.name.clone(),
@@ -329,12 +487,62 @@ async fn driver_from_payload(
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             };
-            Ok(Box::new(
+            Ok(Arc::new(
                 state
                     .remote_protocol()
                     .driver_for_policy(&policy, &follower)?,
             ))
         }
+    }
+}
+
+fn onedrive_snapshot_from_payload(
+    payload: &StoragePolicyTempCleanupTaskPayload,
+) -> Result<&StoragePolicyCleanupOneDriveCredentialSnapshot> {
+    match payload.driver_snapshot.as_ref() {
+        Some(StoragePolicyCleanupDriverSnapshot::MicrosoftGraph(snapshot)) => Ok(snapshot),
+        Some(_) => Err(AsterError::validation_error(
+            "OneDrive storage policy cleanup received incompatible driver snapshot",
+        )),
+        None => payload.onedrive_credential.as_ref().ok_or_else(|| {
+            AsterError::validation_error(
+                "OneDrive storage policy cleanup missing credential snapshot",
+            )
+        }),
+    }
+}
+
+fn cleanup_onedrive_token_provider(
+    state: &impl RemoteProtocolRuntimeState,
+    policy: &storage_policy::Model,
+    credential: &StoragePolicyCleanupOneDriveCredentialSnapshot,
+) -> Result<Arc<dyn crate::storage::drivers::onedrive::MicrosoftGraphAccessTokenProvider>> {
+    crate::services::storage_credential_service::build_microsoft_graph_cleanup_token_provider(
+        state.config().auth.storage_credential_secret_key.clone(),
+        policy,
+        crate::services::storage_credential_service::MicrosoftGraphCleanupTokenSnapshot {
+            cloud: credential.cloud,
+            tenant_id: credential.tenant_id.clone(),
+            client_id: credential.client_id.clone(),
+            client_secret_ciphertext: credential.client_secret_ciphertext.clone(),
+            access_token_ciphertext: credential.access_token_ciphertext.clone(),
+            refresh_token_ciphertext: credential.refresh_token_ciphertext.clone(),
+            expires_at: credential.expires_at,
+        },
+    )
+}
+
+fn remote_snapshot_from_payload(
+    payload: &StoragePolicyTempCleanupTaskPayload,
+) -> Result<&StoragePolicyCleanupRemoteNodeSnapshot> {
+    match payload.driver_snapshot.as_ref() {
+        Some(StoragePolicyCleanupDriverSnapshot::RemoteNode(snapshot)) => Ok(snapshot),
+        Some(_) => Err(AsterError::validation_error(
+            "remote storage policy cleanup received incompatible driver snapshot",
+        )),
+        None => payload.remote_node.as_ref().ok_or_else(|| {
+            AsterError::validation_error("remote storage policy cleanup missing remote snapshot")
+        }),
     }
 }
 
@@ -413,4 +621,80 @@ fn dedup_multipart_targets(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metadata_string_trims_and_filters_blank_values() {
+        let metadata = serde_json::json!({
+            "drive_id": " drive ",
+            "blank": "   "
+        });
+
+        assert_eq!(
+            metadata_string(&metadata, "drive_id"),
+            Some("drive".to_string())
+        );
+        assert_eq!(metadata_string(&metadata, "blank"), None);
+        assert_eq!(metadata_string(&metadata, "missing"), None);
+    }
+
+    #[test]
+    fn non_empty_string_trims_and_filters_blank_values() {
+        assert_eq!(
+            non_empty_string(" root ".to_string()),
+            Some("root".to_string())
+        );
+        assert_eq!(non_empty_string(" \n\t ".to_string()), None);
+    }
+
+    #[test]
+    fn onedrive_cleanup_task_requires_driver_snapshot() {
+        assert!(!can_create_cleanup_task_with_driver_snapshot(
+            DriverType::OneDrive,
+            &None
+        ));
+        assert!(can_create_cleanup_task_with_driver_snapshot(
+            DriverType::Local,
+            &None
+        ));
+
+        let snapshot = StoragePolicyCleanupOneDriveCredentialSnapshot {
+            cloud: crate::types::MicrosoftGraphCloud::Global,
+            tenant_id: None,
+            client_id: None,
+            client_secret_ciphertext: None,
+            drive_id: "drive".to_string(),
+            root_item_id: "root".to_string(),
+            access_token_ciphertext: "access".to_string(),
+            refresh_token_ciphertext: Some("refresh".to_string()),
+            expires_at: None,
+        };
+        assert!(can_create_cleanup_task_with_driver_snapshot(
+            DriverType::OneDrive,
+            &Some(StoragePolicyCleanupDriverSnapshot::MicrosoftGraph(snapshot))
+        ));
+    }
+
+    #[test]
+    fn onedrive_cleanup_snapshot_requires_authorized_credential_status() {
+        assert!(onedrive_cleanup_allows_credential_status(
+            StorageCredentialStatus::Authorized
+        ));
+        assert!(!onedrive_cleanup_allows_credential_status(
+            StorageCredentialStatus::ReauthRequired
+        ));
+        assert!(!onedrive_cleanup_allows_credential_status(
+            StorageCredentialStatus::PermissionDenied
+        ));
+        assert!(!onedrive_cleanup_allows_credential_status(
+            StorageCredentialStatus::Revoked
+        ));
+        assert!(!onedrive_cleanup_allows_credential_status(
+            StorageCredentialStatus::Invalid
+        ));
+    }
 }

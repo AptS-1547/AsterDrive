@@ -17,6 +17,7 @@ const mockState = vi.hoisted(() => ({
 	dryRunMigration: vi.fn(),
 	executeDraftPolicyAction: vi.fn(),
 	executeSavedPolicyAction: vi.fn(),
+	getPolicy: vi.fn(),
 	createMigration: vi.fn(),
 	deletePolicy: vi.fn(),
 	handleApiError: vi.fn(),
@@ -24,6 +25,7 @@ const mockState = vi.hoisted(() => ({
 	listAllPolicies: vi.fn(),
 	listPolicies: vi.fn(),
 	listRemoteNodes: vi.fn(),
+	listStorageCredentials: vi.fn(),
 	loading: false,
 	navigate: vi.fn(),
 	promoteS3CompatibleDriver: vi.fn(),
@@ -33,10 +35,12 @@ const mockState = vi.hoisted(() => ({
 	setSearchParams: vi.fn(),
 	testConnection: vi.fn(),
 	testParams: vi.fn(),
+	startStorageAuthorization: vi.fn(),
 	total: 0,
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
 	update: vi.fn(),
+	validateStorageCredential: vi.fn(),
 }));
 
 vi.mock("react-router-dom", () => ({
@@ -64,6 +68,8 @@ vi.mock("react-i18next", () => ({
 					return "Azure Blob";
 				case "driver_type_remote":
 					return "Remote";
+				case "driver_type_onedrive":
+					return "OneDrive";
 				case "azure_blob_account_name":
 					return "Account Name";
 				case "azure_blob_account_key":
@@ -533,6 +539,7 @@ vi.mock("@/services/adminService", () => ({
 			mockState.executeDraftPolicyAction(...args),
 		executeSavedPolicyAction: (...args: unknown[]) =>
 			mockState.executeSavedPolicyAction(...args),
+		get: (...args: unknown[]) => mockState.getPolicy(...args),
 		getCapacity: vi.fn(async () => ({
 			blob_count: 2,
 			blob_total_bytes: 1024,
@@ -549,11 +556,17 @@ vi.mock("@/services/adminService", () => ({
 		})),
 		list: (...args: unknown[]) => mockState.listPolicies(...args),
 		listAll: (...args: unknown[]) => mockState.listAllPolicies(...args),
+		listStorageCredentials: (...args: unknown[]) =>
+			mockState.listStorageCredentials(...args),
 		promoteS3CompatibleDriver: (...args: unknown[]) =>
 			mockState.promoteS3CompatibleDriver(...args),
+		startStorageAuthorization: (...args: unknown[]) =>
+			mockState.startStorageAuthorization(...args),
 		testConnection: (...args: unknown[]) => mockState.testConnection(...args),
 		testParams: (...args: unknown[]) => mockState.testParams(...args),
 		update: (...args: unknown[]) => mockState.update(...args),
+		validateStorageCredential: (...args: unknown[]) =>
+			mockState.validateStorageCredential(...args),
 	},
 	adminRemoteNodeService: {
 		list: (...args: unknown[]) => mockState.listRemoteNodes(...args),
@@ -581,7 +594,13 @@ function createPolicy(overrides: Record<string, unknown> = {}) {
 }
 
 function openCreateWizard(
-	driver: "local" | "remote" | "s3" | "tencent_cos" | "azure_blob" = "local",
+	driver:
+		| "local"
+		| "remote"
+		| "s3"
+		| "tencent_cos"
+		| "azure_blob"
+		| "one_drive" = "local",
 ) {
 	fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
 	if (driver === "local") {
@@ -594,6 +613,8 @@ function openCreateWizard(
 		fireEvent.click(screen.getByRole("button", { name: /Tencent COS/ }));
 	} else if (driver === "azure_blob") {
 		fireEvent.click(screen.getByRole("button", { name: /Azure Blob/ }));
+	} else if (driver === "one_drive") {
+		fireEvent.click(screen.getByRole("button", { name: /OneDrive/ }));
 	}
 }
 
@@ -618,6 +639,7 @@ describe("AdminPoliciesPage", () => {
 	beforeEach(() => {
 		mockState.executeDraftPolicyAction.mockReset();
 		mockState.executeSavedPolicyAction.mockReset();
+		mockState.getPolicy.mockReset();
 		mockState.create.mockReset();
 		mockState.dryRunMigration.mockReset();
 		mockState.createMigration.mockReset();
@@ -628,6 +650,7 @@ describe("AdminPoliciesPage", () => {
 		mockState.listAllPolicies.mockReset();
 		mockState.listPolicies.mockReset();
 		mockState.listRemoteNodes.mockReset();
+		mockState.listStorageCredentials.mockReset();
 		mockState.loading = false;
 		mockState.navigate.mockReset();
 		mockState.promoteS3CompatibleDriver.mockReset();
@@ -637,10 +660,12 @@ describe("AdminPoliciesPage", () => {
 		mockState.setSearchParams.mockReset();
 		mockState.testConnection.mockReset();
 		mockState.testParams.mockReset();
+		mockState.startStorageAuthorization.mockReset();
 		mockState.total = 0;
 		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.update.mockReset();
+		mockState.validateStorageCredential.mockReset();
 
 		mockState.create.mockImplementation(async (payload) =>
 			createPolicy({
@@ -689,7 +714,18 @@ describe("AdminPoliciesPage", () => {
 			items: mockState.items,
 			total: mockState.total || mockState.items.length,
 		}));
+		mockState.getPolicy.mockImplementation(async (id: number) => {
+			const policy = mockState.items.find((item) => item.id === id);
+			if (!policy) {
+				throw new Error(`policy ${id} not found`);
+			}
+			return policy;
+		});
 		mockState.listAllPolicies.mockImplementation(async () => mockState.items);
+		mockState.listStorageCredentials.mockResolvedValue([]);
+		mockState.startStorageAuthorization.mockResolvedValue({
+			authorization_url: "https://login.example.test/authorize",
+		});
 		mockState.testConnection.mockResolvedValue(undefined);
 		mockState.testParams.mockResolvedValue(undefined);
 		mockState.executeDraftPolicyAction.mockResolvedValue({
@@ -769,6 +805,148 @@ describe("AdminPoliciesPage", () => {
 		expect(localBadge).toHaveClass("bg-emerald-500/10", "text-emerald-600");
 		expect(s3Badge).toHaveAttribute("data-variant", "outline");
 		expect(s3Badge).toHaveClass("bg-blue-500/10", "text-blue-600");
+	});
+
+	it("shows OneDrive authorization success returned from callback and refreshes policies", async () => {
+		mockState.searchParams =
+			"storage_authorization=success&policy_id=12&sortBy=name";
+		mockState.items = [createPolicy({ id: 1, name: "Current Page Local" })];
+		mockState.getPolicy.mockResolvedValue(
+			createPolicy({
+				id: 12,
+				name: "Authorized OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		);
+		mockState.listStorageCredentials.mockResolvedValue([
+			{
+				account_label: "root",
+				authorized_at: "2026-06-15T10:20:00Z",
+				created_at: "2026-06-15T10:20:00Z",
+				credential_kind: "oauth_delegated",
+				expires_at: null,
+				id: 7,
+				last_refreshed_at: null,
+				last_validated_at: null,
+				policy_id: 12,
+				provider: "microsoft_graph",
+				scopes: ["offline_access", "Files.ReadWrite.All"],
+				status: "authorized",
+				status_reason: null,
+				subject: "root-id",
+				tenant_id: "common",
+				updated_at: "2026-06-15T10:20:00Z",
+			},
+		]);
+
+		render(<AdminPoliciesPage />);
+
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"onedrive_authorization_completed",
+				{
+					description: "onedrive_authorization_completed_policy",
+				},
+			);
+		});
+		expect(mockState.reload).toHaveBeenCalled();
+		await waitFor(() => {
+			expect(mockState.getPolicy).toHaveBeenCalledWith(12);
+		});
+		expect(mockState.listStorageCredentials).toHaveBeenCalledWith(12);
+		expect(
+			await screen.findByDisplayValue("Authorized OneDrive"),
+		).toBeInTheDocument();
+		expect(
+			await screen.findByText("onedrive_credential_status_authorized"),
+		).toBeInTheDocument();
+		const cleanupCall = mockState.setSearchParams.mock.calls.find(
+			([params]) =>
+				params instanceof URLSearchParams &&
+				!params.has("storage_authorization") &&
+				!params.has("policy_id") &&
+				params.get("sortBy") === "name",
+		);
+		expect(cleanupCall).toBeTruthy();
+	});
+
+	it("handles identical OneDrive authorization callbacks after the previous one completes", async () => {
+		const callbackSearch =
+			"storage_authorization=success&policy_id=12&sortBy=name";
+		mockState.searchParams = callbackSearch;
+		mockState.getPolicy.mockResolvedValue(
+			createPolicy({
+				id: 12,
+				name: "Authorized OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		);
+		mockState.listStorageCredentials.mockResolvedValue([]);
+
+		const { rerender } = render(<AdminPoliciesPage />);
+
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledTimes(1);
+		});
+		expect(mockState.reload).toHaveBeenCalledTimes(1);
+
+		mockState.searchParams = "";
+		rerender(<AdminPoliciesPage />);
+		mockState.searchParams = callbackSearch;
+		rerender(<AdminPoliciesPage />);
+
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledTimes(2);
+		});
+		expect(mockState.reload).toHaveBeenCalledTimes(2);
+	});
+
+	it("shows OneDrive authorization callback failures without refreshing policies", async () => {
+		mockState.searchParams =
+			"storage_authorization=error&policy_id=12&reason=invalid_state";
+
+		render(<AdminPoliciesPage />);
+
+		await waitFor(() => {
+			expect(mockState.toastError).toHaveBeenCalledWith(
+				"onedrive_authorization_failed_invalid_state",
+			);
+		});
+		expect(mockState.reload).not.toHaveBeenCalled();
+		const cleanupCall = mockState.setSearchParams.mock.calls.find(
+			([params]) =>
+				params instanceof URLSearchParams &&
+				!params.has("storage_authorization") &&
+				!params.has("policy_id") &&
+				!params.has("reason"),
+		);
+		expect(cleanupCall).toBeTruthy();
+	});
+
+	it("shows unsupported OneDrive authorization provider callback failures", async () => {
+		mockState.searchParams =
+			"storage_authorization=error&policy_id=12&reason=unsupported_provider";
+
+		render(<AdminPoliciesPage />);
+
+		await waitFor(() => {
+			expect(mockState.toastError).toHaveBeenCalledWith(
+				"onedrive_authorization_failed_unsupported_provider",
+			);
+		});
+		expect(mockState.reload).not.toHaveBeenCalled();
 	});
 
 	it("renders Azure Blob rows with Azure-specific badge styling", () => {
@@ -874,6 +1052,22 @@ describe("AdminPoliciesPage", () => {
 
 		expect(mockState.setSearchParams).toHaveBeenLastCalledWith(
 			new URLSearchParams("offset=20"),
+			{ replace: true },
+		);
+	});
+
+	it("moves to the previous policy page without going below zero", () => {
+		mockState.searchParams = "offset=20";
+		mockState.items = [createPolicy({ id: 1, name: "Default Local" })];
+		mockState.total = 45;
+
+		render(<AdminPoliciesPage />);
+
+		const buttons = screen.getAllByRole("button");
+		fireEvent.click(buttons[buttons.length - 2]);
+
+		expect(mockState.setSearchParams).toHaveBeenLastCalledWith(
+			new URLSearchParams(""),
 			{ replace: true },
 		);
 	});
@@ -1286,6 +1480,97 @@ describe("AdminPoliciesPage", () => {
 				secret_key: "",
 			});
 		});
+	});
+
+	it("requires OneDrive application details at create time and starts authorization directly after save", async () => {
+		const openedWindow = { opener: {} } as Window;
+		const openSpy = vi.spyOn(window, "open").mockReturnValue(openedWindow);
+		try {
+			render(<AdminPoliciesPage />);
+
+			openCreateWizard("one_drive");
+
+			fireEvent.change(screen.getByLabelText("core:name"), {
+				target: { value: "Team OneDrive" },
+			});
+			fireEvent.click(
+				screen.getByRole("button", { name: "policy_wizard_review" }),
+			);
+
+			expect(
+				screen.getByText("onedrive_client_id_required"),
+			).toBeInTheDocument();
+			expect(
+				screen.getByText("onedrive_client_secret_required"),
+			).toBeInTheDocument();
+			expect(mockState.create).not.toHaveBeenCalled();
+
+			fireEvent.change(screen.getByLabelText("onedrive_client_id"), {
+				target: { value: "client-id" },
+			});
+			fireEvent.click(
+				screen.getByRole("button", { name: "policy_wizard_review" }),
+			);
+			expect(
+				screen.getByText("onedrive_client_secret_required"),
+			).toBeInTheDocument();
+			expect(mockState.create).not.toHaveBeenCalled();
+
+			fireEvent.change(screen.getByLabelText("onedrive_client_secret"), {
+				target: { value: "client-secret" },
+			});
+			fireEvent.click(
+				screen.getByRole("button", { name: "policy_wizard_review" }),
+			);
+			fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+			await waitFor(() => {
+				expect(mockState.create).toHaveBeenCalledWith({
+					access_key: "client-id",
+					base_path: "",
+					bucket: "",
+					chunk_size: 5 * 1024 * 1024,
+					driver_type: "one_drive",
+					endpoint: "",
+					is_default: false,
+					max_file_size: undefined,
+					name: "Team OneDrive",
+					options: {
+						onedrive_account_mode: "work_or_school",
+						onedrive_cloud: "global",
+						onedrive_root_item_id: "root",
+						onedrive_tenant: "common",
+					},
+					remote_node_id: undefined,
+					secret_key: "client-secret",
+				});
+			});
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"policy_onedrive_created_authorize_next",
+			);
+
+			fireEvent.click(
+				screen.getByRole("button", { name: /onedrive_authorize_action/ }),
+			);
+
+			await waitFor(() => {
+				expect(mockState.startStorageAuthorization).toHaveBeenCalledWith(99, {
+					provider: "microsoft_graph",
+					microsoft_graph: {
+						cloud: "global",
+						tenant: "common",
+						client_id: undefined,
+						client_secret: undefined,
+					},
+				});
+			});
+			expect(openSpy).toHaveBeenCalledWith(
+				"https://login.example.test/authorize",
+				"_blank",
+			);
+		} finally {
+			openSpy.mockRestore();
+		}
 	});
 
 	it("keeps the create dialog shell fixed and scrolls the form body internally", () => {
@@ -2034,6 +2319,306 @@ describe("AdminPoliciesPage", () => {
 			"flex-nowrap",
 			"justify-end",
 		);
+	});
+
+	it("reuses saved OneDrive application settings when authorization fields are left empty", async () => {
+		const openedWindow = { opener: {} } as Window;
+		const openSpy = vi.spyOn(window, "open").mockReturnValue(openedWindow);
+		mockState.items = [
+			createPolicy({
+				id: 12,
+				name: "Saved OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		];
+		mockState.listStorageCredentials.mockResolvedValue([
+			{
+				account_label: "root",
+				authorized_at: "2026-06-15T10:20:00Z",
+				created_at: "2026-06-15T10:20:00Z",
+				credential_kind: "oauth_delegated",
+				expires_at: null,
+				id: 7,
+				last_refreshed_at: "2026-06-15T10:40:00Z",
+				last_validated_at: "2026-06-15T10:20:00Z",
+				policy_id: 12,
+				provider: "microsoft_graph",
+				scopes: ["offline_access", "Files.ReadWrite.All"],
+				status: "authorized",
+				status_reason: null,
+				subject: "root-id",
+				tenant_id: "common",
+				updated_at: "2026-06-15T10:20:00Z",
+			},
+		]);
+		try {
+			render(<AdminPoliciesPage />);
+
+			openEditPolicy("Saved OneDrive");
+			await screen.findByText("onedrive_credential_status_authorized");
+
+			expect(screen.getByLabelText("onedrive_client_id")).toHaveAttribute(
+				"placeholder",
+				"onedrive_client_id_keep_placeholder",
+			);
+			expect(screen.getByLabelText("onedrive_client_secret")).toHaveAttribute(
+				"placeholder",
+				"onedrive_client_secret_keep_placeholder",
+			);
+			expect(
+				screen.getByText(/onedrive_credential_refreshed_at/),
+			).toBeInTheDocument();
+
+			fireEvent.click(
+				screen.getByRole("button", { name: /onedrive_reauthorize_action/ }),
+			);
+
+			await waitFor(() => {
+				expect(mockState.startStorageAuthorization).toHaveBeenCalledWith(12, {
+					provider: "microsoft_graph",
+					microsoft_graph: {
+						cloud: "global",
+						tenant: "common",
+						client_id: undefined,
+						client_secret: undefined,
+					},
+				});
+			});
+			expect(openSpy).toHaveBeenCalledWith(
+				"https://login.example.test/authorize",
+				"_blank",
+			);
+		} finally {
+			openSpy.mockRestore();
+		}
+	});
+
+	it("requires saving changed OneDrive settings before validating credentials", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 12,
+				name: "Saved OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		];
+		mockState.listStorageCredentials.mockResolvedValue([
+			{
+				account_label: "root",
+				authorized_at: "2026-06-15T10:20:00Z",
+				created_at: "2026-06-15T10:20:00Z",
+				credential_kind: "oauth_delegated",
+				expires_at: null,
+				id: 7,
+				last_refreshed_at: "2026-06-15T10:40:00Z",
+				last_validated_at: "2026-06-15T10:20:00Z",
+				policy_id: 12,
+				provider: "microsoft_graph",
+				scopes: ["offline_access", "Files.ReadWrite.All"],
+				status: "authorized",
+				status_reason: null,
+				subject: "root-id",
+				tenant_id: "common",
+				updated_at: "2026-06-15T10:20:00Z",
+			},
+		]);
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Saved OneDrive");
+		await screen.findByText("onedrive_credential_status_authorized");
+		fireEvent.change(screen.getByLabelText("onedrive_client_id"), {
+			target: { value: "new-client-id" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: /onedrive_validate_action/ }),
+		);
+
+		expect(mockState.toastError).toHaveBeenCalledWith(
+			"onedrive_save_before_validate",
+		);
+		expect(mockState.validateStorageCredential).not.toHaveBeenCalled();
+	});
+
+	it("validates saved OneDrive credentials against the current policy", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 12,
+				name: "Saved OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		];
+		mockState.listStorageCredentials.mockResolvedValue([
+			{
+				account_label: "root",
+				authorized_at: "2026-06-15T10:20:00Z",
+				created_at: "2026-06-15T10:20:00Z",
+				credential_kind: "oauth_delegated",
+				expires_at: null,
+				id: 7,
+				last_refreshed_at: "2026-06-15T10:40:00Z",
+				last_validated_at: null,
+				policy_id: 12,
+				provider: "microsoft_graph",
+				scopes: ["offline_access", "Files.ReadWrite.All"],
+				status: "authorized",
+				status_reason: null,
+				subject: "root-id",
+				tenant_id: "common",
+				updated_at: "2026-06-15T10:20:00Z",
+			},
+		]);
+		mockState.validateStorageCredential.mockResolvedValue({
+			credential: {
+				account_label: "root",
+				authorized_at: "2026-06-15T10:20:00Z",
+				created_at: "2026-06-15T10:20:00Z",
+				credential_kind: "oauth_delegated",
+				expires_at: null,
+				id: 7,
+				last_refreshed_at: "2026-06-15T10:40:00Z",
+				last_validated_at: "2026-06-16T10:20:00Z",
+				policy_id: 12,
+				provider: "microsoft_graph",
+				scopes: ["offline_access", "Files.ReadWrite.All"],
+				status: "authorized",
+				status_reason: null,
+				subject: "root-id",
+				tenant_id: "common",
+				updated_at: "2026-06-16T10:20:00Z",
+			},
+			root_item_name: "Documents",
+		});
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Saved OneDrive");
+		await screen.findByText("onedrive_credential_status_authorized");
+		fireEvent.click(
+			screen.getByRole("button", { name: /onedrive_validate_action/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.validateStorageCredential).toHaveBeenCalledWith(
+				12,
+				"microsoft_graph",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"onedrive_validation_success",
+			{
+				description: "onedrive_validation_success_root",
+			},
+		);
+	});
+
+	it("shows normalized OneDrive reauthorization reasons without exposing raw provider errors", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 12,
+				name: "Saved OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		];
+		mockState.listStorageCredentials.mockResolvedValue([
+			{
+				account_label: "root",
+				authorized_at: "2026-06-15T10:20:00Z",
+				created_at: "2026-06-15T10:20:00Z",
+				credential_kind: "oauth_delegated",
+				expires_at: null,
+				id: 7,
+				last_refreshed_at: null,
+				last_validated_at: null,
+				policy_id: 12,
+				provider: "microsoft_graph",
+				scopes: ["offline_access", "Files.ReadWrite.All"],
+				status: "reauth_required",
+				status_reason: "invalid_grant: raw provider diagnostic",
+				subject: "root-id",
+				tenant_id: "common",
+				updated_at: "2026-06-15T10:20:00Z",
+			},
+		]);
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Saved OneDrive");
+
+		expect(
+			await screen.findByText("onedrive_credential_reauth_required_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("onedrive_credential_reason_invalid_grant"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("onedrive_credential_reauth_required_desc"),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText("invalid_grant: raw provider diagnostic"),
+		).not.toBeInTheDocument();
+	});
+
+	it("saves updated OneDrive application settings as policy connection credentials", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 12,
+				name: "Saved OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Saved OneDrive");
+		await screen.findByLabelText("onedrive_client_id");
+
+		fireEvent.change(screen.getByLabelText("onedrive_client_id"), {
+			target: { value: "new-client-id" },
+		});
+		fireEvent.change(screen.getByLabelText("onedrive_client_secret"), {
+			target: { value: "new-client-secret" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledWith(
+				12,
+				expect.objectContaining({
+					access_key: "new-client-id",
+					secret_key: "new-client-secret",
+				}),
+			);
+		});
 	});
 
 	it("tests changed s3 params and updates with provided credentials", async () => {

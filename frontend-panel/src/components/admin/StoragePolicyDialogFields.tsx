@@ -16,6 +16,10 @@ export type {
 	Translate,
 } from "@/components/admin/storage-policy-dialog/StoragePolicyFieldTypes";
 export {
+	OneDriveConnectionFields,
+	OneDriveCredentialPanel,
+} from "@/components/admin/storage-policy-dialog/StoragePolicyOneDriveFields";
+export {
 	RemoteDownloadStrategyField,
 	RemoteNodeField,
 	RemoteRulesHelper,

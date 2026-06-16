@@ -32,13 +32,17 @@ pub use super::preferences::{
     BrowserOpenMode, ColorPreset, Language, PrefViewMode, StoredUserConfig, ThemeMode, UserConfig,
     UserPreferences,
 };
+pub use super::storage_credential::{
+    MicrosoftGraphCloud, StorageAuthorizationFlowStatus, StorageCredentialKind,
+    StorageCredentialProvider, StorageCredentialStatus,
+};
 pub use super::storage_policy::{
-    DriverType, MediaProcessorKind, RemoteDownloadStrategy, RemoteNodeTransportMode,
-    RemoteUploadStrategy, S3_MULTIPART_MIN_PART_SIZE, S3DownloadStrategy, S3UploadStrategy,
-    StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, UploadMode,
-    UploadSessionStatus, effective_s3_multipart_chunk_size, parse_storage_policy_allowed_types,
-    parse_storage_policy_options, serialize_storage_policy_allowed_types,
-    serialize_storage_policy_options,
+    DriverType, MediaProcessorKind, OneDriveAccountMode, RemoteDownloadStrategy,
+    RemoteNodeTransportMode, RemoteUploadStrategy, S3_MULTIPART_MIN_PART_SIZE, S3DownloadStrategy,
+    S3UploadStrategy, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
+    StoredStoragePolicyOptions, UploadMode, UploadSessionStatus, effective_s3_multipart_chunk_size,
+    parse_storage_policy_allowed_types, parse_storage_policy_options,
+    serialize_storage_policy_allowed_types, serialize_storage_policy_options,
 };
 pub use super::tag::TagScopeType;
 pub use super::task::{

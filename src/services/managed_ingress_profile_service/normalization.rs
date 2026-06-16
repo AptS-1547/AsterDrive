@@ -155,12 +155,13 @@ fn normalize_profile_fields(fields: IngressProfileFields) -> Result<NormalizedIn
     }
 
     match driver_type {
-        DriverType::AzureBlob | DriverType::TencentCos | DriverType::Remote => {
-            Err(validation_error_with_code(
-                ApiErrorCode::ManagedIngressDriverUnsupported,
-                "managed ingress profiles only support local and s3 drivers",
-            ))
-        }
+        DriverType::AzureBlob
+        | DriverType::TencentCos
+        | DriverType::Remote
+        | DriverType::OneDrive => Err(validation_error_with_code(
+            ApiErrorCode::ManagedIngressDriverUnsupported,
+            "managed ingress profiles only support local and s3 drivers",
+        )),
         DriverType::Local => Ok(NormalizedIngressProfileInput {
             name,
             driver_type,

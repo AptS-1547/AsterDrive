@@ -150,6 +150,10 @@ fn ensure_stable_default_config_keys(
         ("share_cookie_secret", auth_defaults.share_cookie_secret),
         ("direct_link_secret", auth_defaults.direct_link_secret),
         ("mfa_secret_key", auth_defaults.mfa_secret_key),
+        (
+            "storage_credential_secret_key",
+            auth_defaults.storage_credential_secret_key,
+        ),
     ] {
         if !auth_table.contains_key(key) && std::env::var_os(auth_env_name(key)).is_none() {
             auth_table.insert(key, value(secret));
@@ -261,6 +265,32 @@ mod tests {
         run()
     }
 
+    fn clear_auth_secret_env_vars<T>(run: impl FnOnce() -> T) -> T {
+        let names = [
+            "ASTER__AUTH__JWT_SECRET",
+            "ASTER__AUTH__SHARE_COOKIE_SECRET",
+            "ASTER__AUTH__DIRECT_LINK_SECRET",
+            "ASTER__AUTH__MFA_SECRET_KEY",
+            "ASTER__AUTH__STORAGE_CREDENTIAL_SECRET_KEY",
+        ];
+        let guards: Vec<_> = names
+            .into_iter()
+            .map(|name| {
+                let guard = EnvVarGuard {
+                    name,
+                    old: std::env::var_os(name),
+                };
+                unsafe {
+                    std::env::remove_var(name);
+                }
+                guard
+            })
+            .collect();
+        let result = run();
+        drop(guards);
+        result
+    }
+
     #[test]
     fn load_creates_default_config_under_data_dir() {
         let dir = make_temp_dir("create-default");
@@ -291,65 +321,81 @@ mod tests {
         assert!(generated.contains("share_cookie_secret"));
         assert!(generated.contains("direct_link_secret"));
         assert!(generated.contains("mfa_secret_key"));
+        assert!(generated.contains("storage_credential_secret_key"));
 
         let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
     fn load_backfills_missing_auth_secrets_without_reusing_existing_jwt_secret() {
-        let dir = make_temp_dir("backfill-auth-secrets");
-        let legacy_jwt_secret = "legacy-jwt-secret";
-        write(
-            &dir.join(DEFAULT_CONFIG_PATH),
-            format!(
-                r#"[auth]
+        let _lock = env_lock()
+            .lock()
+            .expect("config loader env test lock should not be poisoned");
+        clear_auth_secret_env_vars(|| {
+            let dir = make_temp_dir("backfill-auth-secrets");
+            let legacy_jwt_secret = "legacy-jwt-secret";
+            write(
+                &dir.join(DEFAULT_CONFIG_PATH),
+                format!(
+                    r#"[auth]
 jwt_secret = "{legacy_jwt_secret}"
 "#
-            )
-            .as_bytes(),
-        );
+                )
+                .as_bytes(),
+            );
 
-        let cfg = load_from_dir(&dir, None, false).unwrap();
-        let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
+            let cfg = load_from_dir(&dir, None, false).unwrap();
+            let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
 
-        assert_eq!(cfg.auth.jwt_secret, legacy_jwt_secret);
-        assert!(!cfg.auth.share_cookie_secret.is_empty());
-        assert!(!cfg.auth.direct_link_secret.is_empty());
-        assert!(!cfg.auth.mfa_secret_key.is_empty());
-        assert_ne!(cfg.auth.share_cookie_secret, legacy_jwt_secret);
-        assert_ne!(cfg.auth.direct_link_secret, legacy_jwt_secret);
-        assert_ne!(cfg.auth.mfa_secret_key, legacy_jwt_secret);
-        assert!(updated.contains("share_cookie_secret"));
-        assert!(updated.contains("direct_link_secret"));
-        assert!(updated.contains("mfa_secret_key"));
+            assert_eq!(cfg.auth.jwt_secret, legacy_jwt_secret);
+            assert!(!cfg.auth.share_cookie_secret.is_empty());
+            assert!(!cfg.auth.direct_link_secret.is_empty());
+            assert!(!cfg.auth.mfa_secret_key.is_empty());
+            assert!(!cfg.auth.storage_credential_secret_key.is_empty());
+            assert_ne!(cfg.auth.share_cookie_secret, legacy_jwt_secret);
+            assert_ne!(cfg.auth.direct_link_secret, legacy_jwt_secret);
+            assert_ne!(cfg.auth.mfa_secret_key, legacy_jwt_secret);
+            assert_ne!(cfg.auth.storage_credential_secret_key, legacy_jwt_secret);
+            assert!(updated.contains("share_cookie_secret"));
+            assert!(updated.contains("direct_link_secret"));
+            assert!(updated.contains("mfa_secret_key"));
+            assert!(updated.contains("storage_credential_secret_key"));
 
-        let _ = std::fs::remove_dir_all(dir);
+            let _ = std::fs::remove_dir_all(dir);
+        });
     }
 
     #[test]
     fn load_backfills_jwt_secret_when_auth_table_is_missing() {
-        let dir = make_temp_dir("backfill-missing-auth-table");
-        write(
-            &dir.join(DEFAULT_CONFIG_PATH),
-            br#"[database]
+        let _lock = env_lock()
+            .lock()
+            .expect("config loader env test lock should not be poisoned");
+        clear_auth_secret_env_vars(|| {
+            let dir = make_temp_dir("backfill-missing-auth-table");
+            write(
+                &dir.join(DEFAULT_CONFIG_PATH),
+                br#"[database]
 url = "sqlite://asterdrive.db?mode=rwc"
 "#,
-        );
+            );
 
-        let cfg = load_from_dir(&dir, None, false).unwrap();
-        let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
+            let cfg = load_from_dir(&dir, None, false).unwrap();
+            let updated = std::fs::read_to_string(dir.join(DEFAULT_CONFIG_PATH)).unwrap();
 
-        assert!(!cfg.auth.jwt_secret.is_empty());
-        assert!(!cfg.auth.share_cookie_secret.is_empty());
-        assert!(!cfg.auth.direct_link_secret.is_empty());
-        assert!(!cfg.auth.mfa_secret_key.is_empty());
-        assert!(updated.contains("[auth]"));
-        assert!(updated.contains("jwt_secret"));
-        assert!(updated.contains("share_cookie_secret"));
-        assert!(updated.contains("direct_link_secret"));
-        assert!(updated.contains("mfa_secret_key"));
+            assert!(!cfg.auth.jwt_secret.is_empty());
+            assert!(!cfg.auth.share_cookie_secret.is_empty());
+            assert!(!cfg.auth.direct_link_secret.is_empty());
+            assert!(!cfg.auth.mfa_secret_key.is_empty());
+            assert!(!cfg.auth.storage_credential_secret_key.is_empty());
+            assert!(updated.contains("[auth]"));
+            assert!(updated.contains("jwt_secret"));
+            assert!(updated.contains("share_cookie_secret"));
+            assert!(updated.contains("direct_link_secret"));
+            assert!(updated.contains("mfa_secret_key"));
+            assert!(updated.contains("storage_credential_secret_key"));
 
-        let _ = std::fs::remove_dir_all(dir);
+            let _ = std::fs::remove_dir_all(dir);
+        });
     }
 
     #[test]

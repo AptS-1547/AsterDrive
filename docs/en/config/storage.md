@@ -3,7 +3,7 @@
 ::: tip This page covers the model and boundaries only
 - **`Admin -> Storage Policies`**: where files are actually written
 - **`Admin -> Policy Groups`**: which storage policy a user or team upload hits
-- **Backend tutorials**: for local disk, MinIO, Tencent COS, or follower nodes, see [Storage Policy Backends](/en/storage/)
+- **Backend tutorials**: for specific storage policy backends, see [Storage Policy Backends](/en/storage/)
 
 Users and teams are not bound to storage policies directly. They are bound to **policy groups**; policy groups then route uploads to specific policies by rules.
 :::
@@ -23,7 +23,9 @@ If you change nothing, new users are automatically bound to the default policy g
 | --- | --- | --- |
 | `local` | Files are stored in a local directory | [Local disk](/en/storage/local) |
 | `s3` | Files are stored in S3 or S3-compatible object storage, such as MinIO / R2 / B2 / OSS | [S3 / MinIO / R2](/en/storage/s3-minio-r2) |
+| `azure_blob` | Files are stored in an Azure Blob Storage container using the Azure Blob SDK and SAS URLs | [Azure Blob Storage](/en/storage/azure-blob) |
 | `tencent_cos` | Files are stored in Tencent COS; base object operations reuse S3-compatible behavior, with additional Tencent-native capabilities such as COS CI (Cloud Infinite / 数据万象). See the Tencent COS tutorial for what COS CI provides and when it may be billed. | [Tencent COS](/en/storage/tencent-cos) |
+| `one_drive` | Files are written to Microsoft Graph-accessible OneDrive, SharePoint, or Microsoft 365 group drives | [OneDrive](/en/storage/onedrive) |
 | `remote` | Files are written to another AsterDrive follower node through the internal remote storage protocol | [Follower Node Storage Policy](/en/storage/remote-follower) |
 
 ## Storage Policies vs Policy Groups
@@ -44,8 +46,8 @@ If you are migrating existing data, do not directly change the old policy path, 
 | Item | Purpose |
 | --- | --- |
 | Name | Display name in the admin console |
-| Driver type | `local`, `s3`, `tencent_cos`, or `remote` |
-| Connection information | Local directory / S3 endpoint, bucket, secrets / COS endpoint, bucket, secrets / bound follower node |
+| Driver type | `local`, `s3`, `azure_blob`, `tencent_cos`, `one_drive`, or `remote` |
+| Connection information | Local directory / S3 endpoint, bucket, secrets / Azure Blob endpoint, container, account keys / COS endpoint, bucket, secrets / OneDrive Microsoft Graph target and authorization settings / bound follower node |
 | Base path | Directory, prefix, or remote-target relative path used when writing through this policy |
 | Single-file size limit | Maximum upload size. `0` = unlimited. |
 | Chunk size | Size of each chunk for large-file uploads |
@@ -58,7 +60,7 @@ If you are migrating existing data, do not directly change the old policy path, 
 AsterDrive caches generated thumbnails, media information, and similar derivatives so they are not processed on every view, but initial generation and subsequent provider-side processing requests may incur charges from your cloud provider. For Tencent COS setup, suffix rules, and free-quota notes, see the [Tencent COS storage policy tutorial](/en/storage/tencent-cos).
 :::
 
-## How to Choose Between the Four Storage Types
+## How to Choose Between Storage Types
 
 ### `local`
 
@@ -75,6 +77,18 @@ Generic `s3` policies can control path-style access. When enabled, requests look
 If an older policy configured Tencent COS as generic `s3`, the admin console may suggest promoting the driver to `tencent_cos`. This does not migrate objects or change the bucket. It only makes that policy use the Tencent COS driver. AsterDrive only allows explicit allowlisted promotion directions and rejects promotion when active upload sessions exist or the bucket no longer matches.
 
 For buckets, credentials, CORS, upload/download modes, and policy-group routing, see the [S3 / MinIO / R2 storage policy tutorial](/en/storage/s3-minio-r2).
+
+### `azure_blob`
+
+Suitable when files are stored in Azure Blob Storage containers. `azure_blob` uses the Azure Blob SDK and Azure SAS URLs. It does not use the S3-compatible API.
+
+When configuring it, keep the field names straight: Endpoint is the Blob service endpoint, Bucket means Azure container, Access Key means storage account name, and Secret Key means storage account key. If you use `presigned` direct upload, configure Blob service CORS and allow the `x-ms-blob-type` request header. See the [Azure Blob Storage policy tutorial](/en/storage/azure-blob) for the full flow.
+
+### `one_drive`
+
+Suitable when files should be written to Microsoft Graph-accessible OneDrive, SharePoint document libraries, or Microsoft 365 group drives.
+
+OneDrive policies require a Microsoft app registration and administrator delegated OAuth authorization. The target drive can be resolved automatically after authorization, or specified with a Drive ID, SharePoint site ID, or group ID. See the [OneDrive storage policy tutorial](/en/storage/onedrive) for the full flow.
 
 ### `tencent_cos`
 
@@ -96,6 +110,8 @@ The storage policy edit dialog shows current capacity observation:
 | --- | --- |
 | `local` | Reads total, available, and used bytes from the filesystem that contains the policy base directory |
 | `s3` / `tencent_cos` | Shows unsupported; the standard S3-compatible API does not expose a unified, reliable bucket free-capacity interface |
+| `azure_blob` | Shows unsupported; the Blob data API does not expose unified storage account capacity observation |
+| `one_drive` | Reads Microsoft Graph drive quota; if Graph does not return quota data, the result is shown as unavailable |
 | `remote` | Asks the follower's real ingress target through the internal remote storage protocol. If the follower ingress target is local, filesystem capacity is usually available. If the ingress target is S3, it is also shown as unsupported. |
 
 During data migration, preflight compares the target policy's available capacity with the estimated bytes that still need to be copied. It does not simply use the source policy's total size. Content SHA-256 blobs that already exist in the target policy are treated as reusable and are excluded from the estimated copy size.
@@ -106,7 +122,7 @@ Capacity check statuses:
 | --- | --- | --- |
 | Sufficient | Target available capacity is greater than or equal to estimated copy bytes | No |
 | Insufficient | Target is confirmed to have too little capacity | Yes |
-| Unsupported | The driver has no reliable capacity interface, such as S3/COS | No, but the UI warns you to confirm capacity |
+| Unsupported | The driver has no reliable capacity interface, such as S3/COS/Azure Blob | No, but the UI warns you to confirm capacity |
 | Unavailable | This capacity check failed or returned incomplete information | No, but the UI warns you to confirm capacity |
 
 ## Blob Matching Rules During Storage Migration

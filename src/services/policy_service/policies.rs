@@ -37,6 +37,7 @@ fn driver_type_name(driver_type: DriverType) -> &'static str {
         DriverType::AzureBlob => "azure_blob",
         DriverType::TencentCos => "tencent_cos",
         DriverType::Remote => "remote",
+        DriverType::OneDrive => "onedrive",
     }
 }
 
@@ -102,8 +103,81 @@ fn validate_connection_credentials(
             validate_connection_secret(access_key, "access_key", driver)?;
             validate_connection_secret(secret_key, "secret_key", driver)?;
         }
-        DriverType::Local | DriverType::Remote => {}
+        DriverType::Local | DriverType::Remote | DriverType::OneDrive => {}
     }
+    Ok(())
+}
+
+fn ensure_onedrive_options_supported(
+    driver_type: DriverType,
+    options: &StoragePolicyOptions,
+) -> Result<()> {
+    let has_onedrive_options = options.onedrive_cloud.is_some()
+        || options.onedrive_account_mode.is_some()
+        || options.onedrive_tenant.is_some()
+        || options.onedrive_drive_id.is_some()
+        || options.onedrive_root_item_id.is_some()
+        || options.onedrive_site_id.is_some()
+        || options.onedrive_group_id.is_some();
+    if driver_type != DriverType::OneDrive {
+        if has_onedrive_options {
+            return Err(validation_error_with_code(
+                ApiErrorCode::PolicyOneDriveOptionsUnsupported,
+                "OneDrive options are only valid for OneDrive storage policies",
+            ));
+        }
+        return Ok(());
+    }
+
+    if options.onedrive_account_mode.is_none() {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyOneDriveAccountModeRequired,
+            "OneDrive storage policies require onedrive_account_mode",
+        ));
+    }
+    if options.onedrive_cloud == Some(crate::types::MicrosoftGraphCloud::China)
+        && options.onedrive_account_mode == Some(crate::types::OneDriveAccountMode::Personal)
+    {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyOneDrivePersonalChinaCloudUnsupported,
+            "personal OneDrive accounts must use the global Microsoft Graph cloud",
+        ));
+    }
+    if options.onedrive_account_mode == Some(crate::types::OneDriveAccountMode::SharepointSite)
+        && options.onedrive_drive_id.is_none()
+        && options.onedrive_site_id.is_none()
+    {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyOneDriveSharePointSiteRequired,
+            "OneDrive sharepoint_site policies require onedrive_site_id when onedrive_drive_id is not set",
+        ));
+    }
+    if options.onedrive_account_mode == Some(crate::types::OneDriveAccountMode::SharepointSite)
+        && options.onedrive_group_id.is_some()
+    {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyOneDriveOptionsUnsupported,
+            "onedrive_group_id is only valid for OneDrive group_drive policies",
+        ));
+    }
+    if options.onedrive_account_mode == Some(crate::types::OneDriveAccountMode::GroupDrive)
+        && options.onedrive_drive_id.is_none()
+        && options.onedrive_group_id.is_none()
+    {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyOneDriveGroupRequired,
+            "OneDrive group_drive policies require onedrive_group_id when onedrive_drive_id is not set",
+        ));
+    }
+    if options.onedrive_account_mode == Some(crate::types::OneDriveAccountMode::GroupDrive)
+        && options.onedrive_site_id.is_some()
+    {
+        return Err(validation_error_with_code(
+            ApiErrorCode::PolicyOneDriveOptionsUnsupported,
+            "onedrive_site_id is only valid for OneDrive sharepoint_site policies",
+        ));
+    }
+
     Ok(())
 }
 
@@ -206,6 +280,7 @@ pub async fn create(
     let serialized_options = serialize_options(&options)?;
     let chunk_size = chunk_size.unwrap_or(5_242_880);
     ensure_storage_native_thumbnail_supported(driver_type, &options)?;
+    ensure_onedrive_options_supported(driver_type, &options)?;
     ensure_remote_transport_supports_policy_options(
         state.writer_db(),
         driver_type,
@@ -399,6 +474,7 @@ pub async fn update(
     let final_options = options.unwrap_or(existing_options).normalized();
     let serialized_final_options = serialize_options(&final_options)?;
     ensure_storage_native_thumbnail_supported(existing.driver_type, &final_options)?;
+    ensure_onedrive_options_supported(existing.driver_type, &final_options)?;
     ensure_remote_transport_supports_policy_options(
         &txn,
         existing.driver_type,
@@ -660,6 +736,8 @@ pub async fn test_connection_params<S: RemoteProtocolRuntimeState>(
     validate_connection_credentials(driver_type, &access_key, &secret_key)?;
     let remote_node_id =
         validate_remote_binding(state.writer_db(), driver_type, remote_node_id).await?;
+    let options = options.normalized();
+    ensure_onedrive_options_supported(driver_type, &options)?;
 
     let fake_policy = storage_policy::Model {
         id: 0,
@@ -696,6 +774,15 @@ pub async fn test_connection_params<S: RemoteProtocolRuntimeState>(
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
         DriverType::AzureBlob => Box::new(AzureBlobDriver::new(&fake_policy)?),
         DriverType::TencentCos => Box::new(TencentCosDriver::new(&fake_policy)?),
+        DriverType::OneDrive => {
+            // OneDrive credentials are OAuth records bound to a saved policy id.
+            // A draft policy uses id=0 here, so there is no authorization context
+            // to reuse for a real Microsoft Graph probe.
+            return Err(validation_error_with_code(
+                ApiErrorCode::PolicyActionUnsupported,
+                "OneDrive draft connection tests require a saved storage policy with completed Microsoft Graph authorization; use the saved policy connection test after authorization",
+            ));
+        }
     };
 
     probe_storage_driver(driver.as_ref(), "connection test failed").await
@@ -745,25 +832,25 @@ async fn merge_draft_action_saved_credentials<S: SharedRuntimeState>(
     policy_id: Option<i64>,
     mut connection: StoragePolicyConnectionInput,
 ) -> Result<StoragePolicyConnectionInput> {
-    if connection.access_key.trim().is_empty() || connection.secret_key.trim().is_empty() {
-        if let Some(policy_id) = policy_id {
-            let saved = policy_repo::find_by_id(state.reader_db(), policy_id).await?;
-            if saved.driver_type != connection.driver_type {
-                return Err(validation_error_with_code(
-                    ApiErrorCode::PolicyActionParameterInvalid,
-                    format!(
-                        "draft storage policy action driver '{}' does not match saved policy driver '{}'",
-                        driver_type_name(connection.driver_type),
-                        driver_type_name(saved.driver_type),
-                    ),
-                ));
-            }
-            if connection.access_key.trim().is_empty() {
-                connection.access_key = saved.access_key;
-            }
-            if connection.secret_key.trim().is_empty() {
-                connection.secret_key = saved.secret_key;
-            }
+    if (connection.access_key.trim().is_empty() || connection.secret_key.trim().is_empty())
+        && let Some(policy_id) = policy_id
+    {
+        let saved = policy_repo::find_by_id(state.reader_db(), policy_id).await?;
+        if saved.driver_type != connection.driver_type {
+            return Err(validation_error_with_code(
+                ApiErrorCode::PolicyActionParameterInvalid,
+                format!(
+                    "draft storage policy action driver '{}' does not match saved policy driver '{}'",
+                    driver_type_name(connection.driver_type),
+                    driver_type_name(saved.driver_type),
+                ),
+            ));
+        }
+        if connection.access_key.trim().is_empty() {
+            connection.access_key = saved.access_key;
+        }
+        if connection.secret_key.trim().is_empty() {
+            connection.secret_key = saved.secret_key;
         }
     }
     Ok(connection)
@@ -852,6 +939,8 @@ async fn build_connection_test_policy<S: RemoteProtocolRuntimeState>(
     validate_connection_credentials(driver_type, &access_key, &secret_key)?;
     let remote_node_id =
         validate_remote_binding(state.writer_db(), driver_type, remote_node_id).await?;
+    let options = options.normalized();
+    ensure_onedrive_options_supported(driver_type, &options)?;
 
     Ok(storage_policy::Model {
         id: 0,
@@ -919,4 +1008,148 @@ async fn probe_storage_driver(
             AsterError::storage_driver_error,
         )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_onedrive_options_supported;
+    use crate::api::api_error_code::ApiErrorCode;
+    use crate::types::{
+        DriverType, MicrosoftGraphCloud, OneDriveAccountMode, StoragePolicyOptions,
+    };
+
+    #[test]
+    fn onedrive_options_are_rejected_for_non_onedrive_policy() {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+            onedrive_drive_id: Some("drive".to_string()),
+            onedrive_root_item_id: Some("root".to_string()),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::S3, &options).unwrap_err();
+
+        assert_eq!(
+            error.api_error_code(),
+            ApiErrorCode::PolicyOneDriveOptionsUnsupported
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("OneDrive options are only valid for OneDrive")
+        );
+    }
+
+    #[test]
+    fn onedrive_policy_accepts_automatic_default_drive() {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+            ..Default::default()
+        };
+
+        ensure_onedrive_options_supported(DriverType::OneDrive, &options)
+            .expect("work or school OneDrive resolves the default drive during authorization");
+    }
+
+    #[test]
+    fn onedrive_policy_requires_account_mode() {
+        let options = StoragePolicyOptions {
+            onedrive_root_item_id: Some("root".to_string()),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::OneDrive, &options).unwrap_err();
+
+        assert_eq!(
+            error.api_error_code(),
+            ApiErrorCode::PolicyOneDriveAccountModeRequired
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("OneDrive storage policies require onedrive_account_mode")
+        );
+    }
+
+    #[test]
+    fn onedrive_policy_rejects_personal_china_cloud() {
+        let options = StoragePolicyOptions {
+            onedrive_cloud: Some(MicrosoftGraphCloud::China),
+            onedrive_account_mode: Some(OneDriveAccountMode::Personal),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::OneDrive, &options).unwrap_err();
+
+        assert_eq!(
+            error.api_error_code(),
+            ApiErrorCode::PolicyOneDrivePersonalChinaCloudUnsupported
+        );
+        assert!(error.to_string().contains("global Microsoft Graph cloud"));
+    }
+
+    #[test]
+    fn onedrive_sharepoint_site_requires_site_id_without_drive_id() {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::SharepointSite),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::OneDrive, &options).unwrap_err();
+
+        assert_eq!(
+            error.api_error_code(),
+            ApiErrorCode::PolicyOneDriveSharePointSiteRequired
+        );
+        assert!(error.to_string().contains("onedrive_site_id"));
+    }
+
+    #[test]
+    fn onedrive_group_drive_requires_group_id_without_drive_id() {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::GroupDrive),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::OneDrive, &options).unwrap_err();
+
+        assert_eq!(
+            error.api_error_code(),
+            ApiErrorCode::PolicyOneDriveGroupRequired
+        );
+        assert!(error.to_string().contains("onedrive_group_id"));
+    }
+
+    #[test]
+    fn onedrive_modes_reject_other_mode_target_ids() {
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::SharepointSite),
+            onedrive_site_id: Some("site".to_string()),
+            onedrive_group_id: Some("group".to_string()),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::OneDrive, &options).unwrap_err();
+
+        assert_eq!(
+            error.api_error_code(),
+            ApiErrorCode::PolicyOneDriveOptionsUnsupported
+        );
+        assert!(error.to_string().contains("onedrive_group_id"));
+
+        let options = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::GroupDrive),
+            onedrive_site_id: Some("site".to_string()),
+            onedrive_group_id: Some("group".to_string()),
+            ..Default::default()
+        };
+
+        let error = ensure_onedrive_options_supported(DriverType::OneDrive, &options).unwrap_err();
+
+        assert_eq!(
+            error.api_error_code(),
+            ApiErrorCode::PolicyOneDriveOptionsUnsupported
+        );
+        assert!(error.to_string().contains("onedrive_site_id"));
+    }
 }

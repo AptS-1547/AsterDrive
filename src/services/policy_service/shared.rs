@@ -78,7 +78,7 @@ pub(super) fn normalize_connection_fields(
 ) -> Result<(String, String)> {
     match driver_type {
         DriverType::Local => Ok((endpoint.trim().to_string(), bucket.trim().to_string())),
-        DriverType::Remote => Ok((String::new(), String::new())),
+        DriverType::Remote | DriverType::OneDrive => Ok((String::new(), String::new())),
         DriverType::AzureBlob => {
             let normalized = AzureBlobDriver::try_normalize_endpoint_and_container(
                 endpoint, bucket,
@@ -143,7 +143,11 @@ pub(super) async fn validate_remote_binding<C: sea_orm::ConnectionTrait>(
             }
             Ok(Some(remote_node_id))
         }
-        DriverType::Local | DriverType::S3 | DriverType::AzureBlob | DriverType::TencentCos => {
+        DriverType::Local
+        | DriverType::S3
+        | DriverType::AzureBlob
+        | DriverType::TencentCos
+        | DriverType::OneDrive => {
             if remote_node_id.is_some() {
                 return Err(validation_error_with_code(
                     ApiErrorCode::PolicyRemoteNodeUnexpected,

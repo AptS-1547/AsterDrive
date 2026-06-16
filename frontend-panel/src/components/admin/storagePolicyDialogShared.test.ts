@@ -112,6 +112,16 @@ describe("storagePolicyDialogShared", () => {
 			remote_upload_strategy: "relay_stream",
 			s3_upload_strategy: "relay_stream",
 			s3_download_strategy: "relay_stream",
+			onedrive_cloud: "global",
+			onedrive_account_mode: "work_or_school",
+			onedrive_tenant: "common",
+			onedrive_drive_id: "",
+			onedrive_root_item_id: "",
+			onedrive_site_id: "",
+			onedrive_group_id: "",
+			onedrive_client_id: "",
+			onedrive_client_secret: "",
+			onedrive_scopes: "",
 			storage_native_processing_enabled: true,
 			storage_native_media_metadata_enabled: false,
 			thumbnail_processor: "storage_native",
@@ -188,6 +198,144 @@ describe("storagePolicyDialogShared", () => {
 			s3_download_strategy: "relay_stream",
 			s3_path_style: false,
 		});
+	});
+
+	it("stores OneDrive Microsoft app settings as policy connection credentials", () => {
+		const form = getPolicyForm({
+			id: 12,
+			name: "Graph Drive",
+			driver_type: "one_drive",
+			endpoint: "",
+			bucket: "",
+			access_key: "",
+			secret_key: "",
+			base_path: "teams/archive",
+			remote_node_id: null,
+			max_file_size: 0,
+			allowed_types: [],
+			options: {
+				onedrive_cloud: "china",
+				onedrive_account_mode: "sharepoint_site",
+				onedrive_tenant: "contoso.partner.onmschina.cn",
+				onedrive_drive_id: "drive-1",
+				onedrive_root_item_id: "root-item-1",
+				onedrive_site_id: "site-1",
+			},
+			is_default: false,
+			chunk_size: 10 * 1024 * 1024,
+			created_at: "",
+			updated_at: "",
+		} as StoragePolicy);
+
+		expect(form).toMatchObject({
+			driver_type: "one_drive",
+			onedrive_cloud: "china",
+			onedrive_account_mode: "sharepoint_site",
+			onedrive_tenant: "contoso.partner.onmschina.cn",
+			onedrive_drive_id: "drive-1",
+			onedrive_root_item_id: "root-item-1",
+			onedrive_site_id: "site-1",
+			onedrive_client_id: "",
+			onedrive_client_secret: "",
+			onedrive_scopes: "",
+		});
+
+		expect(
+			buildCreatePolicyPayload({
+				...form,
+				onedrive_client_id: "client-id",
+				onedrive_client_secret: "secret",
+				onedrive_scopes: "Files.ReadWrite.All offline_access",
+			}),
+		).toMatchObject({
+			access_key: "client-id",
+			secret_key: "secret",
+			options: {
+				onedrive_cloud: "china",
+				onedrive_account_mode: "sharepoint_site",
+				onedrive_tenant: "contoso.partner.onmschina.cn",
+				onedrive_drive_id: "drive-1",
+				onedrive_root_item_id: "root-item-1",
+				onedrive_site_id: "site-1",
+			},
+		});
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_client_id: "new-client-id",
+				onedrive_client_secret: "new-secret",
+			}),
+		).toMatchObject({
+			access_key: "new-client-id",
+			secret_key: "new-secret",
+		});
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_tenant: " organizations ",
+				onedrive_drive_id: " ",
+				onedrive_root_item_id: " ",
+				onedrive_site_id: " ",
+				onedrive_group_id: " ",
+			}).options,
+		).toEqual({
+			onedrive_cloud: "china",
+			onedrive_account_mode: "sharepoint_site",
+			onedrive_tenant: "organizations",
+			onedrive_root_item_id: "root",
+		});
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_account_mode: "work_or_school",
+				onedrive_site_id: "stale-site",
+				onedrive_group_id: "stale-group",
+			}).options,
+		).toEqual({
+			onedrive_cloud: "china",
+			onedrive_account_mode: "work_or_school",
+			onedrive_tenant: "contoso.partner.onmschina.cn",
+			onedrive_drive_id: "drive-1",
+			onedrive_root_item_id: "root-item-1",
+		});
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_account_mode: "group_drive",
+				onedrive_site_id: "stale-site",
+				onedrive_group_id: "group-1",
+			}).options,
+		).toMatchObject({
+			onedrive_account_mode: "group_drive",
+			onedrive_group_id: "group-1",
+		});
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_account_mode: "group_drive",
+				onedrive_site_id: "stale-site",
+				onedrive_group_id: "group-1",
+			}).options,
+		).not.toHaveProperty("onedrive_site_id");
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_account_mode: "sharepoint_site",
+				onedrive_site_id: "site-1",
+				onedrive_group_id: "stale-group",
+			}).options,
+		).not.toHaveProperty("onedrive_group_id");
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+			}),
+		).not.toHaveProperty("secret_key");
 	});
 
 	it("validates S3-compatible endpoint protocols without blocking remote policies", () => {
@@ -851,6 +999,27 @@ describe("storagePolicyDialogShared", () => {
 		expect(hasConnectionFieldChanges(s3Form, s3Policy)).toBe(false);
 		expect(
 			hasConnectionFieldChanges({ ...s3Form, secret_key: "SECRET" }, s3Policy),
+		).toBe(true);
+
+		const oneDrivePolicy = {
+			...localPolicy,
+			id: 14,
+			name: "OneDrive",
+			driver_type: "one_drive",
+			options: {
+				onedrive_account_mode: "work_or_school",
+				onedrive_cloud: "global",
+				onedrive_tenant: "common",
+			},
+		} as StoragePolicy;
+		const oneDriveForm = getPolicyForm(oneDrivePolicy);
+
+		expect(hasConnectionFieldChanges(oneDriveForm, oneDrivePolicy)).toBe(false);
+		expect(
+			hasConnectionFieldChanges(
+				{ ...oneDriveForm, onedrive_root_item_id: "folder-id" },
+				oneDrivePolicy,
+			),
 		).toBe(true);
 	});
 });

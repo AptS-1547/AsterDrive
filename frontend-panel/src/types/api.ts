@@ -311,6 +311,7 @@ export type AdminFilePage = components["schemas"]["OffsetPage_AdminFileInfo"];
 export type AdminFileBlobPage =
 	components["schemas"]["OffsetPage_AdminFileBlobInfo"];
 export type DriverType = components["schemas"]["DriverType"];
+export type MicrosoftGraphCloud = components["schemas"]["MicrosoftGraphCloud"];
 export type MediaProcessorKind = components["schemas"]["MediaProcessorKind"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
 export type RemoteCreateIngressProfileRequest =
@@ -339,6 +340,19 @@ export type ResourceLockOwnerInfo =
 export type S3UploadStrategy = components["schemas"]["S3UploadStrategy"];
 export type StoragePolicyOptions =
 	components["schemas"]["StoragePolicyOptions"];
+export type OneDriveAccountMode = components["schemas"]["OneDriveAccountMode"];
+export type StartStorageAuthorizationRequest =
+	components["schemas"]["StartStorageAuthorizationReq"];
+export type StorageAuthorizationStartResponse =
+	components["schemas"]["StorageAuthorizationStartResponse"];
+export type StorageCredentialProvider =
+	components["schemas"]["StorageCredentialProvider"];
+export type StorageCredentialProviderInfo =
+	components["schemas"]["StorageCredentialProviderInfo"];
+export type StoragePolicyCredentialInfo =
+	components["schemas"]["StoragePolicyCredentialInfo"];
+export type StoragePolicyCredentialValidationResult =
+	components["schemas"]["StoragePolicyCredentialValidationResult"];
 export type MigratePolicyGroupAssignmentsRequest =
 	components["schemas"]["MigratePolicyGroupAssignmentsReq"];
 export type PolicyGroupItemRequest =

@@ -109,6 +109,7 @@ async fn insert_task(
                 "is_default": false,
                 "chunk_size": 5_242_880,
             },
+            "driver_snapshot": null,
             "remote_node": null,
             "temp_keys": ["files/temp-object"],
             "multipart_uploads": [],

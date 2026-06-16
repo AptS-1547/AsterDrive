@@ -39,6 +39,10 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::storage_policy_authorization_flow::Entity")]
+    StoragePolicyAuthorizationFlows,
+    #[sea_orm(has_many = "super::storage_policy_credential::Entity")]
+    StoragePolicyCredentials,
     #[sea_orm(has_many = "super::storage_policy_group_item::Entity")]
     StoragePolicyGroupItems,
     #[sea_orm(has_many = "super::file_blob::Entity")]
@@ -51,6 +55,18 @@ pub enum Relation {
         to = "super::managed_follower::Column::Id"
     )]
     ManagedFollower,
+}
+
+impl Related<super::storage_policy_authorization_flow::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StoragePolicyAuthorizationFlows.def()
+    }
+}
+
+impl Related<super::storage_policy_credential::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::StoragePolicyCredentials.def()
+    }
 }
 
 impl Related<super::storage_policy_group_item::Entity> for Entity {
