@@ -167,9 +167,9 @@ fn active_provider(
 ) -> Result<StorageCredentialProvider> {
     match value {
         sea_orm::ActiveValue::Set(value) | sea_orm::ActiveValue::Unchanged(value) => Ok(*value),
-        sea_orm::ActiveValue::NotSet => Err(AsterError::internal_error(format!(
-            "storage credential active model missing provider"
-        ))),
+        sea_orm::ActiveValue::NotSet => Err(AsterError::internal_error(
+            "storage credential active model missing provider".to_string(),
+        )),
     }
 }
 
@@ -178,8 +178,8 @@ fn active_credential_kind(
 ) -> Result<StorageCredentialKind> {
     match value {
         sea_orm::ActiveValue::Set(value) | sea_orm::ActiveValue::Unchanged(value) => Ok(*value),
-        sea_orm::ActiveValue::NotSet => Err(AsterError::internal_error(format!(
-            "storage credential active model missing credential_kind"
-        ))),
+        sea_orm::ActiveValue::NotSet => Err(AsterError::internal_error(
+            "storage credential active model missing credential_kind".to_string(),
+        )),
     }
 }

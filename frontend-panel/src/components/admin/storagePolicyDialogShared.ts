@@ -363,6 +363,12 @@ export function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
 	};
 }
 
+function getComparableOneDrivePolicyOptions(
+	policy: StoragePolicy,
+): StoragePolicyOptions {
+	return buildPolicyOptions(getPolicyForm(policy));
+}
+
 export function buildPolicyTestPayload(form: PolicyFormData) {
 	const normalizedForm = normalizePolicyForm(form);
 
@@ -501,29 +507,7 @@ export function hasConnectionFieldChanges(
 		return (
 			normalizedForm.base_path !== editingPolicy.base_path ||
 			JSON.stringify(buildPolicyOptions(normalizedForm)) !==
-				JSON.stringify({
-					onedrive_cloud: editingPolicy.options.onedrive_cloud ?? "global",
-					onedrive_account_mode:
-						editingPolicy.options.onedrive_account_mode ?? "work_or_school",
-					...(editingPolicy.options.onedrive_tenant
-						? { onedrive_tenant: editingPolicy.options.onedrive_tenant }
-						: {}),
-					...(editingPolicy.options.onedrive_drive_id
-						? { onedrive_drive_id: editingPolicy.options.onedrive_drive_id }
-						: {}),
-					...(editingPolicy.options.onedrive_root_item_id
-						? {
-								onedrive_root_item_id:
-									editingPolicy.options.onedrive_root_item_id,
-							}
-						: {}),
-					...(editingPolicy.options.onedrive_site_id
-						? { onedrive_site_id: editingPolicy.options.onedrive_site_id }
-						: {}),
-					...(editingPolicy.options.onedrive_group_id
-						? { onedrive_group_id: editingPolicy.options.onedrive_group_id }
-						: {}),
-				})
+				JSON.stringify(getComparableOneDrivePolicyOptions(editingPolicy))
 		);
 	}
 

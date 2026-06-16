@@ -64,7 +64,7 @@ Prepare an app in Microsoft Entra ID app registrations.
 At minimum, check:
 
 - Application (client) ID
-- Client Secret, optional for public-client scenarios but recommended for typical server deployments
+- Client Secret, required by the current AsterDrive server-side storage authorization flow
 - Redirect URI
 - Microsoft Graph delegated permissions
 
@@ -118,7 +118,7 @@ Fill in:
 | --- | --- |
 | Microsoft cloud | Choose Global or China based on the account's cloud |
 | Client ID | Application (client) ID from the Microsoft app registration |
-| Client Secret | Microsoft app secret; leave empty only for public-client setups |
+| Client Secret | Microsoft app secret; currently required. Public-client / no-secret flows are not supported by this storage backend. |
 | Drive type | Usually keep the default during creation and let authorization resolve the default drive |
 
 After saving the policy, open the policy edit page and start authorization.

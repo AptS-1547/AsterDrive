@@ -51,5 +51,5 @@ Recommended flow:
 5. After confirming there are no issues, move real users or teams to the new policy group
 
 ::: warning Do not directly change the real destination for policies that already have files
-The `local` directory, S3 bucket / endpoint / prefix, and follower node binding determine where old files are located. If you change them directly, old files may no longer be found.
+The `local` directory, S3 bucket / endpoint / prefix, Azure Blob endpoint / container / base path, OneDrive drive / root item / site or group identifiers, and follower node binding determine where old files are located. If you change them directly, old files may no longer be found.
 :::

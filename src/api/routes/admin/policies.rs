@@ -619,8 +619,7 @@ pub async fn validate_storage_policy_credential(
     operation_id = "finish_storage_authorization",
     params(storage_credential_service::StorageAuthorizationCallbackQuery),
     responses(
-        (status = 302, description = "Storage credential authorization completed and redirected to the admin policies page"),
-        (status = 400, description = "Authorization callback rejected"),
+        (status = 302, description = "Storage credential authorization callback handled and redirected to the admin policies page with success or error state"),
     ),
 )]
 pub async fn finish_storage_authorization(

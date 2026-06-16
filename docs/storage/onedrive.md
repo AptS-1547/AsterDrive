@@ -64,7 +64,7 @@ Microsoft 应用注册、登录端点和 Graph 端点需要在同一个云环境
 最少需要关注：
 
 - Application (client) ID
-- Client Secret，公共客户端场景可以不填，但服务端部署通常建议准备 secret
+- Client Secret，当前 AsterDrive 服务端存储授权流程必填
 - Redirect URI
 - Microsoft Graph delegated permissions
 
@@ -118,7 +118,7 @@ OneDrive
 | --- | --- |
 | Microsoft 云端点 | 按账号所在云选择国际版或中国版 |
 | Client ID | Microsoft 应用注册里的 Application (client) ID |
-| Client Secret | Microsoft 应用 secret；如果使用公共客户端可留空 |
+| Client Secret | Microsoft 应用 secret；当前必填，不支持公共客户端 / 无 secret 授权流程 |
 | Drive 类型 | 新建时通常保持默认，授权后自动解析默认 drive |
 
 保存策略后，进入策略编辑页发起授权。

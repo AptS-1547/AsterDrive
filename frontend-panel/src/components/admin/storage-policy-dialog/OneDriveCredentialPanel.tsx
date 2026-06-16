@@ -41,8 +41,9 @@ export function OneDriveCredentialPanel({
 		credentials.find((item) => item.provider === MICROSOFT_GRAPH_PROVIDER) ??
 		null;
 	const status = credential?.status ?? "invalid";
-	const statusClassName =
-		status === "authorized"
+	const statusClassName = loading
+		? "border-muted-foreground/20 bg-muted text-muted-foreground"
+		: status === "authorized"
 			? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
 			: status === "reauth_required"
 				? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"

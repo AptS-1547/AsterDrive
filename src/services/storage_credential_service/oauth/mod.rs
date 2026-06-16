@@ -40,8 +40,11 @@ use microsoft::{
     microsoft_graph_flow_tenant, parse_metadata,
 };
 
-pub(crate) use microsoft::storage_credential_metadata;
-pub(crate) use provider::build_microsoft_graph_credential_token_provider;
+pub(crate) use microsoft::{StorageCredentialMetadataInput, storage_credential_metadata};
+pub(crate) use provider::{
+    MicrosoftGraphCleanupTokenSnapshot, build_microsoft_graph_cleanup_token_provider,
+    build_microsoft_graph_credential_token_provider,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
@@ -630,7 +633,7 @@ async fn finish_microsoft_graph_callback(
         token.access_token.clone(),
     ))
     .map_err(storage_authorization_callback_server_error)?;
-    let location = resolve_onedrive_location(&graph_client, &options)
+    let location = resolve_onedrive_location(&graph_client, options)
         .await
         .map_err(|error| {
             StorageAuthorizationCallbackError::new(
@@ -684,18 +687,18 @@ async fn finish_microsoft_graph_callback(
         ),
         access_token_ciphertext: Set(Some(access_token_ciphertext)),
         refresh_token_ciphertext: Set(refresh_token_ciphertext),
-        metadata: Set(storage_credential_metadata(
+        metadata: Set(storage_credential_metadata(StorageCredentialMetadataInput {
             encryption_key,
             policy_id,
-            context.cloud,
-            Some(&context.client_id),
-            Some(client_secret.as_str()),
-            None,
-            &location.drive_id,
-            &root_item.id,
-            root_item.name.as_deref(),
-            token.id_token.as_deref(),
-        )
+            cloud: context.cloud,
+            client_id: Some(&context.client_id),
+            client_secret: Some(client_secret.as_str()),
+            client_secret_ciphertext: None,
+            drive_id: &location.drive_id,
+            root_item_id: &root_item.id,
+            root_item_name: root_item.name.as_deref(),
+            id_token: token.id_token.as_deref(),
+        })
         .map_err(storage_authorization_callback_server_error)?),
         status: Set(StorageCredentialStatus::Authorized),
         status_reason: Set(None),

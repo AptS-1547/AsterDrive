@@ -24,7 +24,10 @@ pub use oauth::{
     finish_authorization_callback, start_authorization,
 };
 
-pub(crate) use oauth::build_microsoft_graph_credential_token_provider;
+pub(crate) use oauth::{
+    build_microsoft_graph_cleanup_token_provider, build_microsoft_graph_credential_token_provider,
+    MicrosoftGraphCleanupTokenSnapshot,
+};
 
 const FLOW_TTL_SECS: u64 = 300;
 const DEFAULT_MICROSOFT_GRAPH_SCOPES: &str =
@@ -195,28 +198,30 @@ pub(crate) async fn resolve_onedrive_location(
     options: &StoragePolicyOptions,
 ) -> Result<ResolvedOneDriveLocation> {
     let account_mode = options.onedrive_account_mode.ok_or_else(|| {
-        AsterError::database_operation("OneDrive storage policy missing onedrive_account_mode")
+        AsterError::validation_error("OneDrive storage policy missing onedrive_account_mode")
     })?;
-    let drive_id = match options.onedrive_drive_id.as_deref() {
+    let drive_id = match normalized_option_ref(options.onedrive_drive_id.as_deref()) {
         Some(value) => value.to_string(),
         None => match account_mode {
             OneDriveAccountMode::Personal | OneDriveAccountMode::WorkOrSchool => {
                 client.get_me_drive().await?.id
             }
             OneDriveAccountMode::SharepointSite => {
-                let site_id = options.onedrive_site_id.as_deref().ok_or_else(|| {
-                    AsterError::database_operation(
-                        "OneDrive sharepoint_site policy missing onedrive_site_id",
-                    )
-                })?;
+                let site_id = normalized_option_ref(options.onedrive_site_id.as_deref())
+                    .ok_or_else(|| {
+                        AsterError::validation_error(
+                            "OneDrive sharepoint_site policy missing onedrive_site_id",
+                        )
+                    })?;
                 client.get_site_drive(site_id).await?.id
             }
             OneDriveAccountMode::GroupDrive => {
-                let group_id = options.onedrive_group_id.as_deref().ok_or_else(|| {
-                    AsterError::database_operation(
-                        "OneDrive group_drive policy missing onedrive_group_id",
-                    )
-                })?;
+                let group_id = normalized_option_ref(options.onedrive_group_id.as_deref())
+                    .ok_or_else(|| {
+                        AsterError::validation_error(
+                            "OneDrive group_drive policy missing onedrive_group_id",
+                        )
+                    })?;
                 client.get_group_drive(group_id).await?.id
             }
         },
@@ -242,6 +247,10 @@ pub(crate) async fn resolve_onedrive_location(
         drive_id,
         root_item,
     })
+}
+
+fn normalized_option_ref(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
 }
 
 fn scopes_to_json(scopes: &[String]) -> crate::errors::Result<String> {

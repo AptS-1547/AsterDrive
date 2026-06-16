@@ -380,9 +380,19 @@ pub(crate) struct StoragePolicyCleanupRemoteNodeSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct StoragePolicyCleanupOneDriveCredentialSnapshot {
     pub cloud: crate::types::MicrosoftGraphCloud,
+    #[serde(default)]
+    pub tenant_id: Option<String>,
+    #[serde(default)]
+    pub client_id: Option<String>,
+    #[serde(default)]
+    pub client_secret_ciphertext: Option<String>,
     pub drive_id: String,
     pub root_item_id: String,
     pub access_token_ciphertext: String,
+    #[serde(default)]
+    pub refresh_token_ciphertext: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -437,6 +447,59 @@ impl From<StoragePolicyTempCleanupTaskPayload> for StoragePolicyTempCleanupTaskP
             temp_key_count: value.temp_keys.len(),
             multipart_upload_count: value.multipart_uploads.len(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_onedrive_cleanup_snapshot_decodes_without_refresh_fields() {
+        let value = serde_json::json!({
+            "cloud": "global",
+            "drive_id": "drive",
+            "root_item_id": "root",
+            "access_token_ciphertext": "access",
+        });
+
+        let snapshot: StoragePolicyCleanupOneDriveCredentialSnapshot =
+            serde_json::from_value(value).expect("legacy snapshot should decode");
+
+        assert_eq!(snapshot.tenant_id, None);
+        assert_eq!(snapshot.client_id, None);
+        assert_eq!(snapshot.client_secret_ciphertext, None);
+        assert_eq!(snapshot.refresh_token_ciphertext, None);
+        assert_eq!(snapshot.expires_at, None);
+    }
+
+    #[test]
+    fn onedrive_cleanup_snapshot_serializes_refresh_fields_for_new_tasks() {
+        let expires_at = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let snapshot = StoragePolicyCleanupOneDriveCredentialSnapshot {
+            cloud: crate::types::MicrosoftGraphCloud::Global,
+            tenant_id: Some("tenant".to_string()),
+            client_id: Some("client-id".to_string()),
+            client_secret_ciphertext: Some("client-secret-ciphertext".to_string()),
+            drive_id: "drive".to_string(),
+            root_item_id: "root".to_string(),
+            access_token_ciphertext: "access".to_string(),
+            refresh_token_ciphertext: Some("refresh".to_string()),
+            expires_at: Some(expires_at),
+        };
+
+        let value = serde_json::to_value(snapshot).expect("snapshot should serialize");
+
+        assert_eq!(value["tenant_id"], "tenant");
+        assert_eq!(value["client_id"], "client-id");
+        assert_eq!(
+            value["client_secret_ciphertext"],
+            "client-secret-ciphertext"
+        );
+        assert_eq!(value["refresh_token_ciphertext"], "refresh");
+        assert!(value.get("expires_at").is_some());
     }
 }
 

@@ -126,6 +126,8 @@ function storageAuthorizationFailureI18nKey(reason: string | null) {
 			return "onedrive_authorization_failed_token_exchange";
 		case "drive_resolution_failed":
 			return "onedrive_authorization_failed_drive_resolution";
+		case "unsupported_provider":
+			return "onedrive_authorization_failed_unsupported_provider";
 		case "invalid_request":
 			return "onedrive_authorization_failed_invalid_request";
 		case "server_error":
@@ -271,6 +273,7 @@ function useAdminPoliciesPageContent() {
 	);
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingId, setEditingId] = useState<number | null>(null);
+	const currentEditingIdRef = useRef<number | null>(null);
 	const [editingPolicy, setEditingPolicy] = useState<StoragePolicy | null>(
 		null,
 	);
@@ -284,12 +287,15 @@ function useAdminPoliciesPageContent() {
 	const [storageCredentialsLoading, setStorageCredentialsLoading] =
 		useState(false);
 	const storageCredentialsRequestSerial = useRef(0);
+	const storageCredentialValidationRequestSerial = useRef(0);
 	const consumedStorageAuthorizationSearchRef = useRef<string | null>(null);
 	const [remoteNodes, setRemoteNodes] = useState<RemoteNodeInfo[]>(
 		() => readAdminRemoteNodeLookup() ?? [],
 	);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
 	const [submitting, setSubmitting] = useState(false);
+
+	currentEditingIdRef.current = editingId;
 	const [saveAnywayConfirmOpen, setSaveAnywayConfirmOpen] = useState(false);
 	const [s3DriverPromotionConfirmOpen, setS3DriverPromotionConfirmOpen] =
 		useState(false);
@@ -490,6 +496,7 @@ function useAdminPoliciesPageContent() {
 	const resetDialogState = useCallback(() => {
 		policyCapacityRequestSerial.current += 1;
 		storageCredentialsRequestSerial.current += 1;
+		storageCredentialValidationRequestSerial.current += 1;
 		setSaveAnywayConfirmOpen(false);
 		setS3DriverPromotionConfirmOpen(false);
 		setCosCorsConfirmOpen(false);
@@ -664,7 +671,7 @@ function useAdminPoliciesPageContent() {
 						})
 					: undefined,
 			});
-			void reload();
+			void reload().catch(handleApiError);
 			const policyId = Number(callback.policyId);
 			if (Number.isSafeInteger(policyId) && policyId > 0) {
 				void openPolicyById(policyId).catch(handleApiError);
@@ -1158,36 +1165,60 @@ function useAdminPoliciesPageContent() {
 		if (editingId === null || form.driver_type !== "one_drive") {
 			return;
 		}
+		if (policyFormHasUnsavedChanges(form, editingPolicy)) {
+			toast.error(t("onedrive_save_before_validate"));
+			return;
+		}
+
+		const policyId = editingId;
+		const validationRequestSerial =
+			++storageCredentialValidationRequestSerial.current;
 
 		void runWithStorageCredentialValidation(async () => {
 			try {
+				const isCurrentValidationRequest = () =>
+					validationRequestSerial ===
+						storageCredentialValidationRequestSerial.current &&
+					policyId === currentEditingIdRef.current;
+				if (!isCurrentValidationRequest()) {
+					return;
+				}
+
 				const result = await adminPolicyService.validateStorageCredential(
-					editingId,
+					policyId,
 					"microsoft_graph",
 				);
-				setStorageCredentials((prev) => {
-					const nextCredential = result.credential;
-					const hasExisting = prev.some(
-						(credential) => credential.provider === nextCredential.provider,
-					);
-					return hasExisting
-						? prev.map((credential) =>
-								credential.provider === nextCredential.provider
-									? nextCredential
-									: credential,
-							)
-						: [nextCredential, ...prev];
-				});
-				loadPolicyCapacity(editingId);
-				toast.success(t("onedrive_validation_success"), {
-					description: result.root_item_name
-						? t("onedrive_validation_success_root", {
-								name: result.root_item_name,
-							})
-						: undefined,
-				});
+				if (isCurrentValidationRequest()) {
+					setStorageCredentials((prev) => {
+						const nextCredential = result.credential;
+						const hasExisting = prev.some(
+							(credential) => credential.provider === nextCredential.provider,
+						);
+						return hasExisting
+							? prev.map((credential) =>
+									credential.provider === nextCredential.provider
+										? nextCredential
+										: credential,
+								)
+							: [nextCredential, ...prev];
+					});
+					loadPolicyCapacity(policyId);
+					toast.success(t("onedrive_validation_success"), {
+						description: result.root_item_name
+							? t("onedrive_validation_success_root", {
+									name: result.root_item_name,
+								})
+							: undefined,
+					});
+				}
 			} catch (error) {
-				handleApiError(error);
+				if (
+					validationRequestSerial ===
+						storageCredentialValidationRequestSerial.current &&
+					policyId === currentEditingIdRef.current
+				) {
+					handleApiError(error);
+				}
 			}
 		});
 	};
@@ -1234,7 +1265,10 @@ function useAdminPoliciesPageContent() {
 			return;
 		}
 
-		if (form.driver_type === "one_drive" && !form.onedrive_client_secret.trim()) {
+		if (
+			form.driver_type === "one_drive" &&
+			!form.onedrive_client_secret.trim()
+		) {
 			return;
 		}
 

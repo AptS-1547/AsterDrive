@@ -51,5 +51,5 @@ flowchart TD
 5. 确认没有问题后，再把真实用户或团队迁到新策略组
 
 ::: warning 已写入文件的策略，不要直接改真实落点
-`local` 的目录、S3 的 bucket / endpoint / prefix、远程节点绑定，这些字段决定旧文件在哪里。直接改掉，旧文件可能会找不到。
+`local` 的目录、S3 的 bucket / endpoint / prefix、Azure Blob 的 endpoint / container / 基础路径、OneDrive 的 drive / root item / site 或 group 定位字段、远程节点绑定，这些字段决定旧文件在哪里。直接改掉，旧文件可能会找不到。
 :::

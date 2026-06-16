@@ -117,15 +117,11 @@ impl StorageAuthorizationFlowStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum MicrosoftGraphCloud {
+    #[default]
     Global,
     China,
-}
-
-impl Default for MicrosoftGraphCloud {
-    fn default() -> Self {
-        Self::Global
-    }
 }
 
 impl MicrosoftGraphCloud {

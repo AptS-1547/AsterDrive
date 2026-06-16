@@ -5,11 +5,13 @@ use super::audit::{
     storage_credential_oauth_audit_details, write_storage_credential_oauth_audit,
 };
 use super::microsoft::{
-    MicrosoftTokenResponse, decrypt_stored_client_secret, encrypt_stored_client_secret,
-    microsoft_authorization_url, storage_credential_metadata, validate_microsoft_token_response,
+    MicrosoftTokenResponse, StorageCredentialMetadataInput, decrypt_stored_client_secret,
+    encrypt_stored_client_secret, microsoft_authorization_url, storage_credential_metadata,
+    validate_microsoft_token_response,
 };
 use super::provider::{
-    MicrosoftGraphTokenRefreshRequest, MicrosoftGraphTokenRefresher,
+    MicrosoftGraphCleanupTokenSnapshot, MicrosoftGraphTokenRefreshRequest,
+    MicrosoftGraphTokenRefresher, build_microsoft_graph_cleanup_token_provider_with_refresher,
     build_microsoft_graph_credential_token_provider_with_refresher,
 };
 use super::*;
@@ -26,7 +28,7 @@ use crate::types::{
     StoredStoragePolicyAllowedTypes,
 };
 use migration::Migrator;
-use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -296,6 +298,18 @@ async fn create_microsoft_graph_credential(
     )
     .await
     .expect("credential should insert")
+}
+
+async fn latest_oauth_audit_details(db: &sea_orm::DatabaseConnection) -> serde_json::Value {
+    let entry = audit_log::Entity::find()
+        .filter(audit_log::Column::Action.eq(AuditAction::AdminTriggerStorageAction))
+        .order_by_desc(audit_log::Column::Id)
+        .one(db)
+        .await
+        .expect("audit lookup should succeed")
+        .expect("audit entry should exist");
+    serde_json::from_str(entry.details.as_deref().unwrap_or("{}"))
+        .expect("audit details should be valid json")
 }
 
 #[tokio::test]
@@ -669,18 +683,18 @@ fn storage_credential_oauth_audit_details_omit_absent_optional_fields() {
 #[test]
 fn storage_metadata_encrypts_client_secret_for_reuse() {
     let key = "storage-token-test-master-key-32bytes";
-    let metadata = storage_credential_metadata(
-        key,
-        42,
-        MicrosoftGraphCloud::Global,
-        Some("client-id"),
-        Some("client-secret"),
-        None,
-        "drive-id",
-        "root",
-        Some("Root"),
-        None,
-    )
+    let metadata = storage_credential_metadata(StorageCredentialMetadataInput {
+        encryption_key: key,
+        policy_id: 42,
+        cloud: MicrosoftGraphCloud::Global,
+        client_id: Some("client-id"),
+        client_secret: Some("client-secret"),
+        client_secret_ciphertext: None,
+        drive_id: "drive-id",
+        root_item_id: "root",
+        root_item_name: Some("Root"),
+        id_token: None,
+    })
     .unwrap();
     let parsed = serde_json::from_str::<serde_json::Value>(&metadata).unwrap();
 
@@ -702,18 +716,18 @@ fn storage_metadata_encrypts_client_secret_for_reuse() {
 fn storage_metadata_preserves_existing_client_secret_ciphertext() {
     let key = "storage-token-test-master-key-32bytes";
     let ciphertext = encrypt_stored_client_secret(key, 42, "client-secret").unwrap();
-    let metadata = storage_credential_metadata(
-        key,
-        42,
-        MicrosoftGraphCloud::China,
-        Some("client-id"),
-        None,
-        Some(&ciphertext),
-        "drive-id",
-        "root",
-        Some("Root"),
-        None,
-    )
+    let metadata = storage_credential_metadata(StorageCredentialMetadataInput {
+        encryption_key: key,
+        policy_id: 42,
+        cloud: MicrosoftGraphCloud::China,
+        client_id: Some("client-id"),
+        client_secret: None,
+        client_secret_ciphertext: Some(&ciphertext),
+        drive_id: "drive-id",
+        root_item_id: "root",
+        root_item_name: Some("Root"),
+        id_token: None,
+    })
     .unwrap();
     let parsed = serde_json::from_str::<serde_json::Value>(&metadata).unwrap();
 
@@ -733,18 +747,18 @@ fn storage_metadata_preserves_existing_client_secret_ciphertext() {
 #[test]
 fn storage_metadata_ignores_blank_client_secret_values() {
     let key = "storage-token-test-master-key-32bytes";
-    let metadata = storage_credential_metadata(
-        key,
-        42,
-        MicrosoftGraphCloud::Global,
-        Some(" client-id "),
-        Some("   "),
-        Some("   "),
-        "drive-id",
-        "root",
-        None,
-        None,
-    )
+    let metadata = storage_credential_metadata(StorageCredentialMetadataInput {
+        encryption_key: key,
+        policy_id: 42,
+        cloud: MicrosoftGraphCloud::Global,
+        client_id: Some(" client-id "),
+        client_secret: Some("   "),
+        client_secret_ciphertext: Some("   "),
+        drive_id: "drive-id",
+        root_item_id: "root",
+        root_item_name: None,
+        id_token: None,
+    })
     .unwrap();
     let parsed = serde_json::from_str::<serde_json::Value>(&metadata).unwrap();
 
@@ -867,6 +881,175 @@ async fn credential_token_provider_refreshes_when_access_token_expiry_is_missing
 
     assert_eq!(access_token, "refreshed-access-token");
     assert_eq!(refresher.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn cleanup_token_provider_refreshes_from_snapshot_without_database_writes() {
+    let db = setup_db().await;
+    let encryption_key = "storage-token-test-master-key-32bytes";
+    let policy = create_onedrive_policy(&db, "client-id", "client-secret").await;
+    let access_token_ciphertext = crypto::encrypt_token(
+        encryption_key,
+        crypto::token_aad(
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            "access",
+        )
+        .as_bytes(),
+        "expired-access-token",
+    )
+    .expect("access token should encrypt");
+    let refresh_token_ciphertext = crypto::encrypt_token(
+        encryption_key,
+        crypto::token_aad(
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            "refresh",
+        )
+        .as_bytes(),
+        "snapshot-refresh-token",
+    )
+    .expect("refresh token should encrypt");
+    let refresher = Arc::new(TestMicrosoftGraphTokenRefresher::new(vec![Ok(
+        microsoft_token_response(
+            "cleanup-access-token",
+            Some("rotated-cleanup-refresh"),
+            3600,
+        ),
+    )]));
+    let provider = build_microsoft_graph_cleanup_token_provider_with_refresher(
+        encryption_key.to_string(),
+        &policy,
+        MicrosoftGraphCleanupTokenSnapshot {
+            cloud: MicrosoftGraphCloud::Global,
+            tenant_id: Some("tenant-id".to_string()),
+            client_id: None,
+            client_secret_ciphertext: None,
+            access_token_ciphertext,
+            refresh_token_ciphertext: Some(refresh_token_ciphertext),
+            expires_at: Some(Utc::now() - Duration::minutes(5)),
+        },
+        refresher.clone(),
+    )
+    .expect("cleanup provider should build");
+
+    let access_token = provider.access_token().await.expect("token should refresh");
+    let cached = provider
+        .access_token()
+        .await
+        .expect("fresh token should be cached");
+
+    assert_eq!(access_token, "cleanup-access-token");
+    assert_eq!(cached, "cleanup-access-token");
+    let requests = refresher.requests();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.cloud, MicrosoftGraphCloud::Global);
+    assert_eq!(request.tenant, "tenant-id");
+    assert_eq!(request.client_id, "client-id");
+    assert_eq!(request.client_secret.as_deref(), Some("client-secret"));
+    assert_eq!(request.refresh_token, "snapshot-refresh-token");
+}
+
+#[tokio::test]
+async fn cleanup_token_provider_uses_snapshot_client_credentials_when_policy_secret_is_empty() {
+    let db = setup_db().await;
+    let encryption_key = "storage-token-test-master-key-32bytes";
+    let policy = create_onedrive_policy(&db, "   ", "   ").await;
+    let access_token_ciphertext = crypto::encrypt_token(
+        encryption_key,
+        crypto::token_aad(
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            "access",
+        )
+        .as_bytes(),
+        "expired-access-token",
+    )
+    .expect("access token should encrypt");
+    let refresh_token_ciphertext = crypto::encrypt_token(
+        encryption_key,
+        crypto::token_aad(
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            "refresh",
+        )
+        .as_bytes(),
+        "snapshot-refresh-token",
+    )
+    .expect("refresh token should encrypt");
+    let client_secret_ciphertext =
+        encrypt_stored_client_secret(encryption_key, policy.id, "snapshot-client-secret")
+            .expect("client secret should encrypt");
+    let refresher = Arc::new(TestMicrosoftGraphTokenRefresher::new(vec![Ok(
+        microsoft_token_response("cleanup-access-token", None, 3600),
+    )]));
+    let provider = build_microsoft_graph_cleanup_token_provider_with_refresher(
+        encryption_key.to_string(),
+        &policy,
+        MicrosoftGraphCleanupTokenSnapshot {
+            cloud: MicrosoftGraphCloud::Global,
+            tenant_id: Some("tenant-id".to_string()),
+            client_id: Some(" snapshot-client-id ".to_string()),
+            client_secret_ciphertext: Some(format!(" {client_secret_ciphertext} ")),
+            access_token_ciphertext,
+            refresh_token_ciphertext: Some(refresh_token_ciphertext),
+            expires_at: Some(Utc::now() - Duration::minutes(5)),
+        },
+        refresher.clone(),
+    )
+    .expect("cleanup provider should build with snapshot client credentials");
+
+    let access_token = provider.access_token().await.expect("token should refresh");
+
+    assert_eq!(access_token, "cleanup-access-token");
+    let requests = refresher.requests();
+    assert_eq!(requests.len(), 1);
+    let request = &requests[0];
+    assert_eq!(request.client_id, "snapshot-client-id");
+    assert_eq!(
+        request.client_secret.as_deref(),
+        Some("snapshot-client-secret")
+    );
+}
+
+#[tokio::test]
+async fn cleanup_token_provider_rejects_missing_refresh_token_after_expiry() {
+    let db = setup_db().await;
+    let encryption_key = "storage-token-test-master-key-32bytes";
+    let policy = create_onedrive_policy(&db, "client-id", "client-secret").await;
+    let access_token_ciphertext = crypto::encrypt_token(
+        encryption_key,
+        crypto::token_aad(
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            "access",
+        )
+        .as_bytes(),
+        "expired-access-token",
+    )
+    .expect("access token should encrypt");
+    let refresher = Arc::new(TestMicrosoftGraphTokenRefresher::new(Vec::new()));
+    let provider = build_microsoft_graph_cleanup_token_provider_with_refresher(
+        encryption_key.to_string(),
+        &policy,
+        MicrosoftGraphCleanupTokenSnapshot {
+            cloud: MicrosoftGraphCloud::Global,
+            tenant_id: None,
+            client_id: None,
+            client_secret_ciphertext: None,
+            access_token_ciphertext,
+            refresh_token_ciphertext: None,
+            expires_at: Some(Utc::now() - Duration::minutes(5)),
+        },
+        refresher,
+    )
+    .expect("cleanup provider should build");
+
+    let error = provider.access_token().await.unwrap_err();
+
+    assert_eq!(error.storage_error_kind(), Some(StorageErrorKind::Auth));
+    assert!(error.message().contains("missing refresh token"));
 }
 
 #[tokio::test]
@@ -1040,8 +1223,8 @@ async fn credential_token_provider_refresh_success_writes_new_access_and_refresh
 }
 
 #[tokio::test]
-async fn credential_token_provider_refresh_success_preserves_refresh_token_when_response_omits_it()
-{
+async fn credential_token_provider_refresh_success_preserves_refresh_token_when_response_omits_or_blanks_it()
+ {
     let db = setup_db().await;
     let encryption_key = "storage-token-test-master-key-32bytes";
     let policy = create_onedrive_policy(&db, "client-id", "client-secret").await;
@@ -1055,7 +1238,7 @@ async fn credential_token_provider_refresh_success_preserves_refresh_token_when_
     )
     .await;
     let refresher = Arc::new(TestMicrosoftGraphTokenRefresher::new(vec![Ok(
-        microsoft_token_response("new-access-token", None, 3600),
+        microsoft_token_response("new-access-token", Some("   "), 3600),
     )]));
     let provider = build_microsoft_graph_credential_token_provider_with_refresher(
         db.clone(),
@@ -1097,6 +1280,8 @@ async fn credential_token_provider_refresh_success_preserves_refresh_token_when_
         ),
         "new-access-token"
     );
+    let audit = latest_oauth_audit_details(&db).await;
+    assert_eq!(audit["refresh_token_rotated"], false);
 }
 
 #[tokio::test]

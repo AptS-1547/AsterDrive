@@ -17,6 +17,9 @@ export function OneDriveApplicationFields({
 	showValidation?: boolean;
 	useSavedCredentialPlaceholder?: boolean;
 }) {
+	const clientIdErrorId = "onedrive_client_id_error";
+	const clientSecretErrorId = "onedrive_client_secret_error";
+
 	return (
 		<div className="grid gap-4 md:grid-cols-2">
 			<div className="space-y-2">
@@ -28,6 +31,9 @@ export function OneDriveApplicationFields({
 						onFieldChange("onedrive_client_id", event.target.value)
 					}
 					aria-invalid={showValidation && clientIdError ? true : undefined}
+					aria-describedby={
+						showValidation && clientIdError ? clientIdErrorId : undefined
+					}
 					className={ADMIN_CONTROL_HEIGHT_CLASS}
 					autoComplete="off"
 					placeholder={
@@ -38,7 +44,9 @@ export function OneDriveApplicationFields({
 					required={showValidation}
 				/>
 				{showValidation && clientIdError ? (
-					<p className="text-xs text-destructive">{clientIdError}</p>
+					<p id={clientIdErrorId} className="text-xs text-destructive">
+						{clientIdError}
+					</p>
 				) : null}
 			</div>
 			<div className="space-y-2">
@@ -53,6 +61,11 @@ export function OneDriveApplicationFields({
 						onFieldChange("onedrive_client_secret", event.target.value)
 					}
 					aria-invalid={showValidation && clientSecretError ? true : undefined}
+					aria-describedby={
+						showValidation && clientSecretError
+							? clientSecretErrorId
+							: undefined
+					}
 					className={ADMIN_CONTROL_HEIGHT_CLASS}
 					autoComplete="new-password"
 					placeholder={
@@ -63,7 +76,9 @@ export function OneDriveApplicationFields({
 					required={showValidation}
 				/>
 				{showValidation && clientSecretError ? (
-					<p className="text-xs text-destructive">{clientSecretError}</p>
+					<p id={clientSecretErrorId} className="text-xs text-destructive">
+						{clientSecretError}
+					</p>
 				) : null}
 			</div>
 		</div>

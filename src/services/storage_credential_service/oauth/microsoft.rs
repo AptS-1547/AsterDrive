@@ -43,37 +43,48 @@ struct MicrosoftTokenError {
     error_description: Option<String>,
 }
 
+pub(crate) struct StorageCredentialMetadataInput<'a> {
+    pub(crate) encryption_key: &'a str,
+    pub(crate) policy_id: i64,
+    pub(crate) cloud: MicrosoftGraphCloud,
+    pub(crate) client_id: Option<&'a str>,
+    pub(crate) client_secret: Option<&'a str>,
+    pub(crate) client_secret_ciphertext: Option<&'a str>,
+    pub(crate) drive_id: &'a str,
+    pub(crate) root_item_id: &'a str,
+    pub(crate) root_item_name: Option<&'a str>,
+    pub(crate) id_token: Option<&'a str>,
+}
+
 pub(crate) fn storage_credential_metadata(
-    encryption_key: &str,
-    policy_id: i64,
-    cloud: MicrosoftGraphCloud,
-    client_id: Option<&str>,
-    client_secret: Option<&str>,
-    client_secret_ciphertext: Option<&str>,
-    drive_id: &str,
-    root_item_id: &str,
-    root_item_name: Option<&str>,
-    id_token: Option<&str>,
+    input: StorageCredentialMetadataInput<'_>,
 ) -> Result<String> {
     let mut metadata = serde_json::json!({
-        "cloud": cloud,
-        "graph_base_url": cloud.graph_base_url(),
-        "drive_id": drive_id,
-        "root_item_id": root_item_id,
+        "cloud": input.cloud,
+        "graph_base_url": input.cloud.graph_base_url(),
+        "drive_id": input.drive_id,
+        "root_item_id": input.root_item_id,
     });
     // Empty secret fields must not be persisted as "configured"; OneDrive
     // storage uses a confidential Microsoft app and requires a real secret.
-    let client_secret = client_secret
+    let client_secret = input
+        .client_secret
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let client_secret_ciphertext = client_secret_ciphertext
+    let client_secret_ciphertext = input
+        .client_secret_ciphertext
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    if let Some(client_id) = client_id.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(client_id) = input
+        .client_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         metadata["client_id"] = serde_json::Value::String(client_id.to_string());
     }
     if let Some(client_secret) = client_secret {
-        let ciphertext = encrypt_stored_client_secret(encryption_key, policy_id, client_secret)?;
+        let ciphertext =
+            encrypt_stored_client_secret(input.encryption_key, input.policy_id, client_secret)?;
         metadata["client_secret_configured"] = serde_json::Value::Bool(true);
         metadata["client_secret_ciphertext"] = serde_json::Value::String(ciphertext);
     } else if let Some(ciphertext) = client_secret_ciphertext {
@@ -82,10 +93,10 @@ pub(crate) fn storage_credential_metadata(
     } else {
         metadata["client_secret_configured"] = serde_json::Value::Bool(false);
     }
-    if let Some(root_item_name) = root_item_name {
+    if let Some(root_item_name) = input.root_item_name {
         metadata["root_item_name"] = serde_json::Value::String(root_item_name.to_string());
     }
-    if id_token.is_some() {
+    if input.id_token.is_some() {
         metadata["id_token"] = serde_json::Value::String(REDACTED_SECRET.to_string());
     }
     serde_json::to_string(&metadata).map_aster_err_ctx(

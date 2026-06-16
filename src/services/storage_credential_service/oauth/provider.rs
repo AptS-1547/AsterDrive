@@ -37,6 +37,29 @@ pub(crate) struct MicrosoftGraphCredentialTokenProvider {
 }
 
 #[derive(Debug)]
+pub(crate) struct MicrosoftGraphCleanupTokenProvider {
+    encryption_key: String,
+    policy_id: i64,
+    cloud: MicrosoftGraphCloud,
+    tenant: String,
+    client_id: String,
+    client_secret: Option<String>,
+    cache: Mutex<MicrosoftGraphCredentialTokenCache>,
+    token_refresher: Arc<dyn MicrosoftGraphTokenRefresher>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct MicrosoftGraphCleanupTokenSnapshot {
+    pub(crate) cloud: MicrosoftGraphCloud,
+    pub(crate) tenant_id: Option<String>,
+    pub(crate) client_id: Option<String>,
+    pub(crate) client_secret_ciphertext: Option<String>,
+    pub(crate) access_token_ciphertext: String,
+    pub(crate) refresh_token_ciphertext: Option<String>,
+    pub(crate) expires_at: Option<chrono::DateTime<Utc>>,
+}
+
+#[derive(Debug)]
 struct MicrosoftGraphCredentialTokenCache {
     access_token: String,
     expires_at: Option<chrono::DateTime<Utc>>,
@@ -97,6 +120,94 @@ pub(crate) fn build_microsoft_graph_credential_token_provider(
     )
 }
 
+pub(crate) fn build_microsoft_graph_cleanup_token_provider(
+    encryption_key: String,
+    policy: &storage_policy::Model,
+    snapshot: MicrosoftGraphCleanupTokenSnapshot,
+) -> Result<Arc<dyn MicrosoftGraphAccessTokenProvider>> {
+    build_microsoft_graph_cleanup_token_provider_with_refresher(
+        encryption_key,
+        policy,
+        snapshot,
+        Arc::new(DefaultMicrosoftGraphTokenRefresher),
+    )
+}
+
+pub(super) fn build_microsoft_graph_cleanup_token_provider_with_refresher(
+    encryption_key: String,
+    policy: &storage_policy::Model,
+    snapshot: MicrosoftGraphCleanupTokenSnapshot,
+    token_refresher: Arc<dyn MicrosoftGraphTokenRefresher>,
+) -> Result<Arc<dyn MicrosoftGraphAccessTokenProvider>> {
+    let access_token = decrypt_oauth_token(
+        &encryption_key,
+        policy.id,
+        "access",
+        &snapshot.access_token_ciphertext,
+    )?;
+    let client_id = normalize_optional_string(Some(policy.access_key.clone()))
+        .or_else(|| {
+            snapshot
+                .client_id
+                .and_then(|value| normalize_optional_string(Some(value)))
+        })
+        .ok_or_else(|| {
+            storage_driver_error(
+                StorageErrorKind::Auth,
+                "storage cleanup credential is missing Microsoft Graph client_id snapshot",
+            )
+        })?;
+    let client_secret = match normalize_optional_string(Some(policy.secret_key.clone())) {
+        Some(client_secret) => Some(client_secret),
+        None => snapshot
+            .client_secret_ciphertext
+            .and_then(|value| normalize_optional_string(Some(value)))
+            .map(|ciphertext| decrypt_stored_client_secret(&encryption_key, policy.id, &ciphertext))
+            .transpose()?,
+    }
+    .ok_or_else(|| {
+        storage_driver_error(
+            StorageErrorKind::Auth,
+            "storage cleanup credential is missing Microsoft Graph client_secret snapshot",
+        )
+    })?;
+    Ok(Arc::new(MicrosoftGraphCleanupTokenProvider {
+        encryption_key,
+        policy_id: policy.id,
+        cloud: snapshot.cloud,
+        tenant: snapshot
+            .tenant_id
+            .and_then(|tenant| normalize_optional_string(Some(tenant)))
+            .unwrap_or_else(|| "common".to_string()),
+        client_id,
+        client_secret: Some(client_secret),
+        cache: Mutex::new(MicrosoftGraphCredentialTokenCache {
+            access_token,
+            expires_at: snapshot.expires_at,
+            refresh_token_ciphertext: snapshot.refresh_token_ciphertext,
+        }),
+        token_refresher,
+    }))
+}
+
+fn decrypt_oauth_token(
+    encryption_key: &str,
+    policy_id: i64,
+    token_name: &str,
+    ciphertext: &str,
+) -> Result<String> {
+    crypto::decrypt_token(
+        encryption_key,
+        crypto::token_aad(
+            policy_id,
+            StorageCredentialProvider::MicrosoftGraph.as_str(),
+            token_name,
+        )
+        .as_bytes(),
+        ciphertext,
+    )
+}
+
 pub(super) fn build_microsoft_graph_credential_token_provider_with_refresher(
     db: sea_orm::DatabaseConnection,
     encryption_key: String,
@@ -116,14 +227,10 @@ pub(super) fn build_microsoft_graph_credential_token_provider_with_refresher(
                     "storage credential is missing access token",
                 )
             })?;
-    let access_token = crypto::decrypt_token(
+    let access_token = decrypt_oauth_token(
         &encryption_key,
-        crypto::token_aad(
-            credential.policy_id,
-            StorageCredentialProvider::MicrosoftGraph.as_str(),
-            "access",
-        )
-        .as_bytes(),
+        credential.policy_id,
+        "access",
         access_token_ciphertext,
     )?;
     let client_id = normalize_optional_string(Some(policy.access_key.clone()))
@@ -337,6 +444,7 @@ impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCredentialTokenProvider
 
         cache.access_token = token.access_token;
         cache.expires_at = expires_at;
+        let refresh_token_rotated = new_refresh_token_ciphertext.is_some();
         if let Some(refresh_token_ciphertext) = new_refresh_token_ciphertext {
             cache.refresh_token_ciphertext = Some(refresh_token_ciphertext);
         }
@@ -349,11 +457,80 @@ impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCredentialTokenProvider
                 policy_id: Some(self.policy_id),
                 cloud: Some(self.cloud),
                 tenant: Some(&self.tenant),
-                refresh_token_rotated: Some(token.refresh_token.is_some()),
+                refresh_token_rotated: Some(refresh_token_rotated),
                 ..Default::default()
             },
         )
         .await;
+        Ok(cache.access_token.clone())
+    }
+}
+
+#[async_trait::async_trait]
+impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCleanupTokenProvider {
+    async fn access_token(&self) -> Result<String> {
+        {
+            let cache = self.cache.lock().await;
+            if cached_access_token_is_fresh(cache.expires_at) {
+                return Ok(cache.access_token.clone());
+            }
+        }
+        self.refresh_access_token().await
+    }
+
+    async fn refresh_access_token(&self) -> Result<String> {
+        let mut cache = self.cache.lock().await;
+        let Some(refresh_token_ciphertext) = cache.refresh_token_ciphertext.as_deref() else {
+            return Err(storage_driver_error(
+                StorageErrorKind::Auth,
+                "storage cleanup credential is missing refresh token; reauthorize Microsoft Graph",
+            ));
+        };
+        let refresh_token = decrypt_oauth_token(
+            &self.encryption_key,
+            self.policy_id,
+            "refresh",
+            refresh_token_ciphertext,
+        )?;
+        let token = self
+            .token_refresher
+            .refresh_token(MicrosoftGraphTokenRefreshRequest {
+                cloud: self.cloud,
+                tenant: self.tenant.clone(),
+                client_id: self.client_id.clone(),
+                client_secret: self.client_secret.clone(),
+                refresh_token,
+            })
+            .await
+            .map_err(|error| {
+                let kind = error.storage_error_kind().unwrap_or(StorageErrorKind::Auth);
+                storage_driver_error(
+                    kind,
+                    format!("refresh Microsoft Graph cleanup access token: {error}"),
+                )
+            })?;
+        let now = Utc::now();
+        cache.access_token = token.access_token;
+        cache.expires_at = token
+            .expires_in
+            .and_then(|seconds| (seconds > 0).then(|| now + Duration::seconds(seconds)));
+        if let Some(refresh_token) = token
+            .refresh_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|refresh_token| !refresh_token.is_empty())
+        {
+            cache.refresh_token_ciphertext = Some(crypto::encrypt_token(
+                &self.encryption_key,
+                crypto::token_aad(
+                    self.policy_id,
+                    StorageCredentialProvider::MicrosoftGraph.as_str(),
+                    "refresh",
+                )
+                .as_bytes(),
+                refresh_token,
+            )?);
+        }
         Ok(cache.access_token.clone())
     }
 }

@@ -1000,5 +1000,26 @@ describe("storagePolicyDialogShared", () => {
 		expect(
 			hasConnectionFieldChanges({ ...s3Form, secret_key: "SECRET" }, s3Policy),
 		).toBe(true);
+
+		const oneDrivePolicy = {
+			...localPolicy,
+			id: 14,
+			name: "OneDrive",
+			driver_type: "one_drive",
+			options: {
+				onedrive_account_mode: "work_or_school",
+				onedrive_cloud: "global",
+				onedrive_tenant: "common",
+			},
+		} as StoragePolicy;
+		const oneDriveForm = getPolicyForm(oneDrivePolicy);
+
+		expect(hasConnectionFieldChanges(oneDriveForm, oneDrivePolicy)).toBe(false);
+		expect(
+			hasConnectionFieldChanges(
+				{ ...oneDriveForm, onedrive_root_item_id: "folder-id" },
+				oneDrivePolicy,
+			),
+		).toBe(true);
 	});
 });

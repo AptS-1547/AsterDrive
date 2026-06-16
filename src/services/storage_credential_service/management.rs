@@ -6,6 +6,7 @@ use crate::db::repository::{policy_repo, storage_policy_credential_repo};
 use crate::errors::{AsterError, Result};
 use crate::runtime::SharedRuntimeState;
 use crate::storage::drivers::onedrive::{MicrosoftGraphClient, MicrosoftGraphClientConfig};
+use crate::storage::error::StorageErrorKind;
 use crate::types::{
     DriverType, StorageCredentialKind, StorageCredentialProvider, StorageCredentialStatus,
     parse_storage_policy_options,
@@ -74,15 +75,10 @@ pub async fn validate_policy_credential(
         Ok(location) => location,
         Err(error) => {
             let mut active = credential.clone().into_active_model();
-            active.status = Set(match error.storage_error_kind() {
-                Some(crate::storage::StorageErrorKind::Auth) => {
-                    StorageCredentialStatus::ReauthRequired
-                }
-                Some(crate::storage::StorageErrorKind::Permission) => {
-                    StorageCredentialStatus::PermissionDenied
-                }
-                _ => StorageCredentialStatus::Invalid,
-            });
+            if let Some(status) = credential_status_for_validation_error(error.storage_error_kind())
+            {
+                active.status = Set(status);
+            }
             active.status_reason = Set(Some(error.message().to_string()));
             active.updated_at = Set(Utc::now());
             active
@@ -112,16 +108,18 @@ pub async fn validate_policy_credential(
     active.account_label = Set(root_item.name.clone());
     active.subject = Set(Some(root_item.id.clone()));
     active.metadata = Set(super::oauth::storage_credential_metadata(
-        &state.config().auth.storage_credential_secret_key,
-        policy_id,
-        options.effective_onedrive_cloud(),
-        existing_client_id,
-        None,
-        existing_client_secret_ciphertext,
-        &location.drive_id,
-        &root_item.id,
-        root_item.name.as_deref(),
-        None,
+        super::oauth::StorageCredentialMetadataInput {
+            encryption_key: &state.config().auth.storage_credential_secret_key,
+            policy_id,
+            cloud: options.effective_onedrive_cloud(),
+            client_id: existing_client_id,
+            client_secret: None,
+            client_secret_ciphertext: existing_client_secret_ciphertext,
+            drive_id: &location.drive_id,
+            root_item_id: &root_item.id,
+            root_item_name: root_item.name.as_deref(),
+            id_token: None,
+        },
     )?);
     active.status = Set(StorageCredentialStatus::Authorized);
     active.status_reason = Set(None);
@@ -141,4 +139,48 @@ pub async fn validate_policy_credential(
         root_item_id: root_item.id,
         root_item_name: root_item.name,
     })
+}
+
+fn credential_status_for_validation_error(
+    kind: Option<StorageErrorKind>,
+) -> Option<StorageCredentialStatus> {
+    match kind {
+        Some(StorageErrorKind::Auth) => Some(StorageCredentialStatus::ReauthRequired),
+        Some(StorageErrorKind::Permission) => Some(StorageCredentialStatus::PermissionDenied),
+        Some(StorageErrorKind::Misconfigured) => Some(StorageCredentialStatus::Invalid),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn credential_status_for_validation_error_only_persists_deterministic_failures() {
+        assert_eq!(
+            credential_status_for_validation_error(Some(StorageErrorKind::Auth)),
+            Some(StorageCredentialStatus::ReauthRequired)
+        );
+        assert_eq!(
+            credential_status_for_validation_error(Some(StorageErrorKind::Permission)),
+            Some(StorageCredentialStatus::PermissionDenied)
+        );
+        assert_eq!(
+            credential_status_for_validation_error(Some(StorageErrorKind::Misconfigured)),
+            Some(StorageCredentialStatus::Invalid)
+        );
+        assert_eq!(
+            credential_status_for_validation_error(Some(StorageErrorKind::Transient)),
+            None
+        );
+        assert_eq!(
+            credential_status_for_validation_error(Some(StorageErrorKind::RateLimited)),
+            None
+        );
+        assert_eq!(
+            credential_status_for_validation_error(Some(StorageErrorKind::Unknown)),
+            None
+        );
+    }
 }

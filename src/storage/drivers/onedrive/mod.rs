@@ -28,16 +28,42 @@ pub struct OneDriveDriver {
     drive_id: String,
     root_item_id: String,
     base_path: String,
+    policy_chunk_size: i64,
 }
 
 // Microsoft Graph documents the simple PUT content limit as 250 MB, not 250 MiB.
 const GRAPH_SIMPLE_UPLOAD_MAX_BYTES: usize = 250_000_000;
+const GRAPH_SIMPLE_UPLOAD_IN_MEMORY_MAX_BYTES: usize = 50 * 1024 * 1024;
 // Upload session fragments must align to 320 KiB; Microsoft recommends 5-10 MiB chunks.
 const GRAPH_UPLOAD_FRAGMENT_ALIGNMENT: usize = 320 * 1024;
 const GRAPH_UPLOAD_FRAGMENT_SIZE: usize = 10 * 1024 * 1024;
+const GRAPH_UPLOAD_FRAGMENT_MAX_BYTES: usize = 50 * 1024 * 1024;
 
 fn can_use_graph_simple_upload(size: u64) -> bool {
     size <= GRAPH_SIMPLE_UPLOAD_MAX_BYTES as u64
+}
+
+fn can_use_graph_in_memory_upload(size: u64, policy_chunk_size: i64) -> bool {
+    if !can_use_graph_simple_upload(size) {
+        return false;
+    }
+    let memory_limit = match u64::try_from(policy_chunk_size) {
+        Ok(value) if value > 0 => value.min(GRAPH_SIMPLE_UPLOAD_IN_MEMORY_MAX_BYTES as u64),
+        _ => GRAPH_SIMPLE_UPLOAD_IN_MEMORY_MAX_BYTES as u64,
+    };
+    size <= memory_limit
+}
+
+fn graph_upload_fragment_size(policy_chunk_size: i64) -> usize {
+    let requested = match usize::try_from(policy_chunk_size) {
+        Ok(value) if value > 0 => value,
+        _ => GRAPH_UPLOAD_FRAGMENT_SIZE,
+    };
+    let capped = requested.clamp(
+        GRAPH_UPLOAD_FRAGMENT_ALIGNMENT,
+        GRAPH_UPLOAD_FRAGMENT_MAX_BYTES,
+    );
+    capped - (capped % GRAPH_UPLOAD_FRAGMENT_ALIGNMENT)
 }
 
 fn graph_simple_upload_too_large_error() -> AsterError {
@@ -53,12 +79,14 @@ impl OneDriveDriver {
         drive_id: impl Into<String>,
         root_item_id: impl Into<String>,
         base_path: impl Into<String>,
+        policy_chunk_size: i64,
     ) -> Self {
         Self {
             client,
             drive_id: drive_id.into(),
             root_item_id: root_item_id.into(),
             base_path: base_path.into(),
+            policy_chunk_size,
         }
     }
 
@@ -100,7 +128,7 @@ impl OneDriveDriver {
             self.put(path, &[]).await?;
             return Ok(path.to_string());
         }
-        if can_use_graph_simple_upload(total_size) {
+        if can_use_graph_in_memory_upload(total_size, self.policy_chunk_size) {
             let capacity = numbers::u64_to_usize(total_size, "OneDrive simple upload size")?;
             let mut data = vec![0_u8; capacity];
             reader
@@ -119,12 +147,13 @@ impl OneDriveDriver {
             .client
             .create_upload_session(&upload_session_path)
             .await?;
+        let fragment_size = graph_upload_fragment_size(self.policy_chunk_size);
         let mut uploaded = 0_u64;
         while uploaded < total_size {
             let remaining = total_size - uploaded;
             let read_len = numbers::u64_to_usize(
                 remaining.min(numbers::usize_to_u64(
-                    GRAPH_UPLOAD_FRAGMENT_SIZE,
+                    fragment_size,
                     "OneDrive upload fragment size",
                 )?),
                 "OneDrive upload next fragment size",
@@ -279,5 +308,52 @@ mod tests {
         );
         assert!(error.message().contains("250 MB"));
         assert!(!error.message().contains("MiB"));
+    }
+
+    #[test]
+    fn graph_in_memory_upload_uses_policy_chunk_size_capped_at_50_mib() {
+        assert!(can_use_graph_in_memory_upload(
+            5 * 1024 * 1024,
+            5 * 1024 * 1024
+        ));
+        assert!(!can_use_graph_in_memory_upload(
+            5 * 1024 * 1024 + 1,
+            5 * 1024 * 1024
+        ));
+        assert!(can_use_graph_in_memory_upload(
+            GRAPH_SIMPLE_UPLOAD_IN_MEMORY_MAX_BYTES as u64,
+            250_000_000
+        ));
+        assert!(!can_use_graph_in_memory_upload(
+            GRAPH_SIMPLE_UPLOAD_IN_MEMORY_MAX_BYTES as u64 + 1,
+            250_000_000
+        ));
+        assert!(can_use_graph_in_memory_upload(
+            GRAPH_SIMPLE_UPLOAD_IN_MEMORY_MAX_BYTES as u64,
+            0
+        ));
+        assert!(!can_use_graph_in_memory_upload(
+            GRAPH_SIMPLE_UPLOAD_IN_MEMORY_MAX_BYTES as u64 + 1,
+            0
+        ));
+        assert!(can_use_graph_in_memory_upload(1, -1));
+    }
+
+    #[test]
+    fn graph_upload_fragment_size_uses_policy_chunk_size_with_alignment() {
+        assert_eq!(graph_upload_fragment_size(0), GRAPH_UPLOAD_FRAGMENT_SIZE);
+        assert_eq!(graph_upload_fragment_size(-1), GRAPH_UPLOAD_FRAGMENT_SIZE);
+        assert_eq!(
+            graph_upload_fragment_size((5 * 1024 * 1024 + 123) as i64),
+            5 * 1024 * 1024
+        );
+        assert_eq!(
+            graph_upload_fragment_size(1),
+            GRAPH_UPLOAD_FRAGMENT_ALIGNMENT
+        );
+        assert_eq!(
+            graph_upload_fragment_size(250_000_000),
+            GRAPH_UPLOAD_FRAGMENT_MAX_BYTES
+        );
     }
 }
