@@ -37,6 +37,8 @@ export function isOneDriveDriver(driverType: DriverType) {
 	return driverType === "one_drive";
 }
 
+// TODO(#328): load storage driver capability metadata from the backend instead
+// of hard-coding policy UI feature gates in the frontend.
 export function supportsStorageNativeProcessing(driverType: DriverType) {
 	return driverType === "tencent_cos";
 }
@@ -219,10 +221,10 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 			options.onedrive_drive_id = driveId;
 		}
 		options.onedrive_root_item_id = rootItemId || "root";
-		if (siteId) {
+		if (form.onedrive_account_mode === "sharepoint_site" && siteId) {
 			options.onedrive_site_id = siteId;
 		}
-		if (groupId) {
+		if (form.onedrive_account_mode === "group_drive" && groupId) {
 			options.onedrive_group_id = groupId;
 		}
 	}

@@ -42,6 +42,7 @@ interface StoragePolicyCreateWizardProps {
 	createBucketError: string | null;
 	createNameError: string | null;
 	createOneDriveClientIdError: string | null;
+	createOneDriveClientSecretError: string | null;
 	createRemoteNodeError: string | null;
 	createStep: number;
 	createStepDirection: "idle" | "forward" | "backward";
@@ -65,6 +66,7 @@ export function StoragePolicyCreateWizard({
 	createBucketError,
 	createNameError,
 	createOneDriveClientIdError,
+	createOneDriveClientSecretError,
 	createRemoteNodeError,
 	createStep,
 	createStepDirection,
@@ -124,6 +126,9 @@ export function StoragePolicyCreateWizard({
 								createBucketError={createBucketError}
 								createNameError={createNameError}
 								createOneDriveClientIdError={createOneDriveClientIdError}
+								createOneDriveClientSecretError={
+									createOneDriveClientSecretError
+								}
 								createRemoteNodeError={createRemoteNodeError}
 								currentStorageOption={currentStorageOption}
 								endpointValidationMessage={endpointValidationMessage}
@@ -294,6 +299,7 @@ interface ConnectionStepProps {
 	createBucketError: string | null;
 	createNameError: string | null;
 	createOneDriveClientIdError: string | null;
+	createOneDriveClientSecretError: string | null;
 	createRemoteNodeError: string | null;
 	currentStorageOption: StoragePolicyDriverOption;
 	endpointValidationMessage: string | null;
@@ -310,6 +316,7 @@ function ConnectionStep({
 	createBucketError,
 	createNameError,
 	createOneDriveClientIdError,
+	createOneDriveClientSecretError,
 	createRemoteNodeError,
 	currentStorageOption,
 	endpointValidationMessage,
@@ -355,6 +362,7 @@ function ConnectionStep({
 				) : isOneDriveDriver(form.driver_type) ? (
 					<OneDriveConnectionFields
 						clientIdError={createOneDriveClientIdError}
+						clientSecretError={createOneDriveClientSecretError}
 						form={form}
 						mode="create"
 						showCreateValidation

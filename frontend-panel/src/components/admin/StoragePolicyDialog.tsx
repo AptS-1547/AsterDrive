@@ -260,6 +260,14 @@ function useStoragePolicyDialogContent({
 		!form.onedrive_client_id.trim()
 			? t("onedrive_client_id_required")
 			: null;
+	const createOneDriveClientSecretError =
+		isCreateMode &&
+		createStep === 1 &&
+		createStepTouched &&
+		form.driver_type === "one_drive" &&
+		!form.onedrive_client_secret.trim()
+			? t("onedrive_client_secret_required")
+			: null;
 	const createEndpointError =
 		isObjectStorageDriver(form.driver_type) && !form.endpoint.trim()
 			? isCreateMode
@@ -486,6 +494,9 @@ function useStoragePolicyDialogContent({
 								createBucketError={createBucketError}
 								createNameError={createNameError}
 								createOneDriveClientIdError={createOneDriveClientIdError}
+								createOneDriveClientSecretError={
+									createOneDriveClientSecretError
+								}
 								createRemoteNodeError={createRemoteNodeError}
 								createStep={createStep}
 								createStepDirection={createStepDirection}

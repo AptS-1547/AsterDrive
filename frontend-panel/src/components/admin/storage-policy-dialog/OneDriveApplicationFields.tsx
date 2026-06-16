@@ -5,6 +5,7 @@ import type { SharedFieldProps } from "./StoragePolicyFieldTypes";
 
 export function OneDriveApplicationFields({
 	clientIdError,
+	clientSecretError,
 	form,
 	onFieldChange,
 	showValidation = false,
@@ -12,6 +13,7 @@ export function OneDriveApplicationFields({
 	useSavedCredentialPlaceholder = false,
 }: SharedFieldProps & {
 	clientIdError?: string | null;
+	clientSecretError?: string | null;
 	showValidation?: boolean;
 	useSavedCredentialPlaceholder?: boolean;
 }) {
@@ -50,14 +52,19 @@ export function OneDriveApplicationFields({
 					onChange={(event) =>
 						onFieldChange("onedrive_client_secret", event.target.value)
 					}
+					aria-invalid={showValidation && clientSecretError ? true : undefined}
 					className={ADMIN_CONTROL_HEIGHT_CLASS}
 					autoComplete="new-password"
 					placeholder={
 						useSavedCredentialPlaceholder
 							? t("onedrive_client_secret_keep_placeholder")
-							: t("onedrive_client_secret_optional")
+							: t("onedrive_client_secret_placeholder")
 					}
+					required={showValidation}
 				/>
+				{showValidation && clientSecretError ? (
+					<p className="text-xs text-destructive">{clientSecretError}</p>
+				) : null}
 			</div>
 		</div>
 	);

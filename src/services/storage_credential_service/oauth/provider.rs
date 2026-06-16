@@ -148,6 +148,12 @@ pub(super) fn build_microsoft_graph_credential_token_provider_with_refresher(
             })
             .transpose()?,
     };
+    let client_secret = client_secret.ok_or_else(|| {
+        storage_driver_error(
+            StorageErrorKind::Auth,
+            "storage credential is missing Microsoft Graph client_secret; save the OneDrive policy application settings and reauthorize",
+        )
+    })?;
     Ok(Arc::new(MicrosoftGraphCredentialTokenProvider {
         db,
         encryption_key,
@@ -159,7 +165,7 @@ pub(super) fn build_microsoft_graph_credential_token_provider_with_refresher(
             .filter(|tenant| !tenant.trim().is_empty())
             .unwrap_or_else(|| "common".to_string()),
         client_id,
-        client_secret,
+        client_secret: Some(client_secret),
         cache: Mutex::new(MicrosoftGraphCredentialTokenCache {
             access_token,
             expires_at: credential.expires_at,
@@ -238,9 +244,12 @@ impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCredentialTokenProvider
                     .await;
                     return Ok(access_token);
                 }
-                let _ = self.mark_reauth_required(error.message()).await;
+                let kind = error.storage_error_kind().unwrap_or(StorageErrorKind::Auth);
+                if matches!(kind, StorageErrorKind::Auth | StorageErrorKind::Permission) {
+                    let _ = self.mark_reauth_required(error.message()).await;
+                }
                 return Err(storage_driver_error(
-                    StorageErrorKind::Auth,
+                    kind,
                     format!("refresh Microsoft Graph access token: {error}"),
                 ));
             }
@@ -264,13 +273,13 @@ impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCredentialTokenProvider
             access_aad.as_bytes(),
             &token.access_token,
         )?;
-        let refresh_token_ciphertext = match token.refresh_token.as_deref() {
+        let new_refresh_token_ciphertext = match token.refresh_token.as_deref() {
             Some(refresh_token) if !refresh_token.trim().is_empty() => Some(crypto::encrypt_token(
                 &self.encryption_key,
                 refresh_aad.as_bytes(),
                 refresh_token,
             )?),
-            _ => cache.refresh_token_ciphertext.clone(),
+            _ => None,
         };
         let scopes = if let Some(scope) = token.scope.as_deref() {
             let scopes = normalize_scopes(Some(
@@ -289,7 +298,7 @@ impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCredentialTokenProvider
                     credential_kind: StorageCredentialKind::OauthDelegated,
                     expected_refresh_token_ciphertext: &used_refresh_token_ciphertext,
                     access_token_ciphertext,
-                    refresh_token_ciphertext: refresh_token_ciphertext.clone(),
+                    refresh_token_ciphertext: new_refresh_token_ciphertext.clone(),
                     expires_at,
                     scopes,
                     now,
@@ -328,7 +337,9 @@ impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCredentialTokenProvider
 
         cache.access_token = token.access_token;
         cache.expires_at = expires_at;
-        cache.refresh_token_ciphertext = refresh_token_ciphertext;
+        if let Some(refresh_token_ciphertext) = new_refresh_token_ciphertext {
+            cache.refresh_token_ciphertext = Some(refresh_token_ciphertext);
+        }
         write_storage_credential_oauth_audit(
             &self.db,
             0,
@@ -436,5 +447,5 @@ impl MicrosoftGraphCredentialTokenProvider {
 }
 
 fn cached_access_token_is_fresh(expires_at: Option<chrono::DateTime<Utc>>) -> bool {
-    expires_at.is_none_or(|expires_at| expires_at > Utc::now() + Duration::seconds(60))
+    expires_at.is_some_and(|expires_at| expires_at > Utc::now() + Duration::seconds(60))
 }

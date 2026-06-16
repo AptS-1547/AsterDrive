@@ -219,6 +219,17 @@ async fn start_microsoft_graph_authorization(
                 .transpose()?,
         },
     };
+    let client_secret = client_secret
+        .map(|client_secret| normalize_required_string(&client_secret, "client_secret", 2048))
+        .transpose()?
+        .ok_or_else(|| {
+            // AsterDrive stores OneDrive as a server-side backend. Treat the Microsoft app
+            // as a confidential client so background refresh cannot silently fall back to
+            // public-client OAuth semantics.
+            AsterError::validation_error(
+                "client_secret is required for Microsoft Graph storage authorization",
+            )
+        })?;
     let options = parse_storage_policy_options(policy.options.as_ref());
     let default_scopes = super::default_microsoft_graph_scopes_for_onedrive_options(&options);
     let scopes = super::normalize_scopes_with_default(input.scopes, default_scopes);
@@ -236,14 +247,11 @@ async fn start_microsoft_graph_authorization(
         &pkce_challenge,
     )?;
     let state_hash = crypto::token_hash(&state_value);
-    let client_secret_ciphertext = match client_secret.as_deref() {
-        Some(secret) => Some(crypto::encrypt_token(
-            &state.config().auth.storage_credential_secret_key,
-            flow_client_secret_aad(policy_id, &state_hash).as_bytes(),
-            secret,
-        )?),
-        None => None,
-    };
+    let client_secret_ciphertext = Some(crypto::encrypt_token(
+        &state.config().auth.storage_credential_secret_key,
+        flow_client_secret_aad(policy_id, &state_hash).as_bytes(),
+        &client_secret,
+    )?);
     let context = MicrosoftGraphFlowContext {
         cloud,
         tenant: tenant.clone(),
@@ -290,7 +298,7 @@ async fn start_microsoft_graph_authorization(
             policy_id: Some(policy_id),
             cloud: Some(cloud),
             tenant: Some(&tenant),
-            client_secret_configured: Some(client_secret.is_some()),
+            client_secret_configured: Some(true),
             ..Default::default()
         },
     )
@@ -304,7 +312,7 @@ async fn start_microsoft_graph_authorization(
             cloud,
             tenant,
             client_id,
-            client_secret_configured: client_secret.is_some(),
+            client_secret_configured: true,
             scopes,
         }),
     })
@@ -419,29 +427,96 @@ pub async fn finish_authorization_callback(
     let flow_user_id = flow.created_by_user_id;
     let flow_cloud = microsoft_graph_flow_cloud(&flow);
     let flow_tenant = microsoft_graph_flow_tenant(&flow);
-    let credential_result = match flow.provider {
-        StorageCredentialProvider::MicrosoftGraph => {
-            finish_microsoft_graph_callback(
-                &txn,
-                &state.config().auth.storage_credential_secret_key,
-                &flow,
-                code,
-                now,
-            )
-            .await
-        }
-        StorageCredentialProvider::GoogleDrive => Err(StorageAuthorizationCallbackError::new(
+    // TODO(#328): Move provider-specific callback capability and persistence
+    // rules into storage connector metadata instead of branching here.
+    if flow.provider != StorageCredentialProvider::MicrosoftGraph {
+        let _ = txn.rollback().await;
+        let error = StorageAuthorizationCallbackError::new(
             StorageAuthorizationFailureReason::UnsupportedProvider,
             AsterError::unsupported_driver(
                 "Google Drive storage credential authorization is not implemented yet",
             ),
-        )),
+        );
+        log_storage_credential_oauth_audit(
+            state,
+            &AuditContext {
+                user_id: flow_user_id,
+                ip_address: None,
+                user_agent: None,
+            },
+            StorageCredentialOauthAuditDetails {
+                event: OAUTH_AUDIT_EVENT_AUTHORIZATION_FAILED,
+                result: OAUTH_AUDIT_RESULT_FAILED,
+                policy_id: flow_policy_id,
+                cloud: flow_cloud,
+                tenant: flow_tenant.as_deref(),
+                reason: Some(error.reason().as_str()),
+                ..Default::default()
+            },
+        )
+        .await;
+        return Err(error);
+    }
+    let policy_id = match flow.policy_id {
+        Some(policy_id) => policy_id,
+        None => {
+            let _ = txn.rollback().await;
+            return Err(storage_authorization_callback_server_error(
+                AsterError::database_operation("storage authorization flow missing policy_id"),
+            ));
+        }
     };
+    let policy = match policy_repo::find_by_id(&txn, policy_id)
+        .await
+        .map_err(storage_authorization_callback_server_error)
+    {
+        Ok(policy) => policy,
+        Err(error) => {
+            let _ = txn.rollback().await;
+            return Err(error);
+        }
+    };
+    let policy_options = parse_storage_policy_options(policy.options.as_ref());
+    // Keep Microsoft Graph token exchange and drive resolution outside the DB
+    // transaction; provider latency must not hold SQLite/MySQL/Postgres locks.
+    txn.commit()
+        .await
+        .map_err(|error| storage_authorization_callback_server_error(error.into()))?;
+    let now = Utc::now();
+    let credential_result = finish_microsoft_graph_callback(
+        &state.config().auth.storage_credential_secret_key,
+        &flow,
+        &policy_options,
+        code,
+        now,
+    )
+    .await;
     let credential = match credential_result {
-        Ok(credential) => credential,
+        Ok(credential) => {
+            let txn = state
+                .writer_db()
+                .begin()
+                .await
+                .map_err(|error| storage_authorization_callback_server_error(error.into()))?;
+            let credential = match storage_policy_credential_repo::upsert_by_policy_provider_kind(
+                &txn, credential, now,
+            )
+            .await
+            .map_err(storage_authorization_callback_server_error)
+            {
+                Ok(credential) => credential,
+                Err(error) => {
+                    let _ = txn.rollback().await;
+                    return Err(error);
+                }
+            };
+            txn.commit()
+                .await
+                .map_err(|error| storage_authorization_callback_server_error(error.into()))?;
+            credential
+        }
         Err(error) => {
             let reason = error.reason().as_str();
-            let _ = txn.rollback().await;
             log_storage_credential_oauth_audit(
                 state,
                 &AuditContext {
@@ -463,9 +538,6 @@ pub async fn finish_authorization_callback(
             return Err(error);
         }
     };
-    txn.commit()
-        .await
-        .map_err(|error| storage_authorization_callback_server_error(error.into()))?;
     state
         .driver_registry()
         .reload_storage_policy_credentials(state.writer_db(), state.config().as_ref())
@@ -499,13 +571,14 @@ fn storage_authorization_callback_server_error(
     StorageAuthorizationCallbackError::new(StorageAuthorizationFailureReason::ServerError, error)
 }
 
-async fn finish_microsoft_graph_callback<C: sea_orm::ConnectionTrait>(
-    db: &C,
+async fn finish_microsoft_graph_callback(
     encryption_key: &str,
     flow: &storage_policy_authorization_flow::Model,
+    options: &crate::types::StoragePolicyOptions,
     code: &str,
     now: chrono::DateTime<Utc>,
-) -> std::result::Result<storage_policy_credential::Model, StorageAuthorizationCallbackError> {
+) -> std::result::Result<storage_policy_credential::ActiveModel, StorageAuthorizationCallbackError>
+{
     let policy_id = flow.policy_id.ok_or_else(|| {
         storage_authorization_callback_server_error(AsterError::database_operation(
             "storage authorization flow missing policy_id",
@@ -523,19 +596,24 @@ async fn finish_microsoft_graph_callback<C: sea_orm::ConnectionTrait>(
         ))
     })?;
     let client_secret = match context.client_secret_ciphertext.as_deref() {
-        Some(ciphertext) => Some(
-            crypto::decrypt_token(
-                encryption_key,
-                flow_client_secret_aad(policy_id, &flow.state_hash).as_bytes(),
-                ciphertext,
-            )
-            .map_err(storage_authorization_callback_server_error)?,
-        ),
-        None => None,
+        Some(ciphertext) => crypto::decrypt_token(
+            encryption_key,
+            flow_client_secret_aad(policy_id, &flow.state_hash).as_bytes(),
+            ciphertext,
+        )
+        .map_err(storage_authorization_callback_server_error)?,
+        None => {
+            return Err(StorageAuthorizationCallbackError::new(
+                StorageAuthorizationFailureReason::InvalidRequest,
+                AsterError::validation_error(
+                    "client_secret is required for Microsoft Graph storage authorization",
+                ),
+            ));
+        }
     };
     let token = exchange_microsoft_graph_code(
         &context,
-        client_secret.as_deref(),
+        Some(client_secret.as_str()),
         code,
         &flow.redirect_uri,
         pkce_verifier,
@@ -547,10 +625,6 @@ async fn finish_microsoft_graph_callback<C: sea_orm::ConnectionTrait>(
             error,
         )
     })?;
-    let policy = policy_repo::find_by_id(db, policy_id)
-        .await
-        .map_err(storage_authorization_callback_server_error)?;
-    let options = parse_storage_policy_options(policy.options.as_ref());
     let graph_client = MicrosoftGraphClient::new(MicrosoftGraphClientConfig::new(
         context.cloud.graph_base_url(),
         token.access_token.clone(),
@@ -598,44 +672,39 @@ async fn finish_microsoft_graph_callback<C: sea_orm::ConnectionTrait>(
         ),
         _ => None,
     };
-    storage_policy_credential_repo::upsert_by_policy_provider_kind(
-        db,
-        storage_policy_credential::ActiveModel {
-            policy_id: Set(policy_id),
-            provider: Set(StorageCredentialProvider::MicrosoftGraph),
-            credential_kind: Set(StorageCredentialKind::OauthDelegated),
-            account_label: Set(root_item.name.clone()),
-            subject: Set(Some(root_item.id.clone())),
-            tenant_id: Set(Some(context.tenant.clone())),
-            scopes: Set(scopes_to_json(&granted_scopes)
-                .map_err(storage_authorization_callback_server_error)?),
-            access_token_ciphertext: Set(Some(access_token_ciphertext)),
-            refresh_token_ciphertext: Set(refresh_token_ciphertext),
-            metadata: Set(storage_credential_metadata(
-                encryption_key,
-                policy_id,
-                context.cloud,
-                Some(&context.client_id),
-                client_secret.as_deref(),
-                None,
-                &location.drive_id,
-                &root_item.id,
-                root_item.name.as_deref(),
-                token.id_token.as_deref(),
-            )
-            .map_err(storage_authorization_callback_server_error)?),
-            status: Set(StorageCredentialStatus::Authorized),
-            status_reason: Set(None),
-            expires_at: Set(expires_at),
-            authorized_at: Set(Some(now)),
-            last_refreshed_at: Set(None),
-            last_validated_at: Set(None),
-            ..Default::default()
-        },
-        now,
-    )
-    .await
-    .map_err(storage_authorization_callback_server_error)
+    Ok(storage_policy_credential::ActiveModel {
+        policy_id: Set(policy_id),
+        provider: Set(StorageCredentialProvider::MicrosoftGraph),
+        credential_kind: Set(StorageCredentialKind::OauthDelegated),
+        account_label: Set(root_item.name.clone()),
+        subject: Set(Some(root_item.id.clone())),
+        tenant_id: Set(Some(context.tenant.clone())),
+        scopes: Set(
+            scopes_to_json(&granted_scopes).map_err(storage_authorization_callback_server_error)?
+        ),
+        access_token_ciphertext: Set(Some(access_token_ciphertext)),
+        refresh_token_ciphertext: Set(refresh_token_ciphertext),
+        metadata: Set(storage_credential_metadata(
+            encryption_key,
+            policy_id,
+            context.cloud,
+            Some(&context.client_id),
+            Some(client_secret.as_str()),
+            None,
+            &location.drive_id,
+            &root_item.id,
+            root_item.name.as_deref(),
+            token.id_token.as_deref(),
+        )
+        .map_err(storage_authorization_callback_server_error)?),
+        status: Set(StorageCredentialStatus::Authorized),
+        status_reason: Set(None),
+        expires_at: Set(expires_at),
+        authorized_at: Set(Some(now)),
+        last_refreshed_at: Set(None),
+        last_validated_at: Set(None),
+        ..Default::default()
+    })
 }
 
 fn callback_redirect_uri(

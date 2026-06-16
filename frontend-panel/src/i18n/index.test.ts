@@ -164,6 +164,11 @@ describe("i18n", () => {
 			ApiErrorCode.PolicyRemoteNodeDisabled,
 			ApiErrorCode.PolicyRemoteNodeBaseUrlRequired,
 			ApiErrorCode.PolicyRemoteNodeTransferStrategyUnsupported,
+			"policy.onedrive_options_unsupported",
+			"policy.onedrive_account_mode_required",
+			"policy.onedrive_personal_china_cloud_unsupported",
+			"policy.onedrive_sharepoint_site_required",
+			"policy.onedrive_group_required",
 			ApiErrorCode.PolicyNativeThumbnailUnsupported,
 			ApiErrorCode.PolicyPromotionSourceUnsupported,
 			ApiErrorCode.PolicyPromotionTargetUnsupported,
@@ -193,7 +198,7 @@ describe("i18n", () => {
 			ApiErrorCode.InternalStorageContentLengthInvalid,
 			ApiErrorCode.InternalStorageComposePartsRequired,
 			ApiErrorCode.InternalStorageComposeExpectedSizeInvalid,
-		] satisfies readonly ApiErrorCode[];
+		] satisfies readonly string[];
 
 		for (const code of granularCodes) {
 			const key = `errors:${code.replaceAll(".", "_")}`;

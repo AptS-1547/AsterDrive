@@ -876,6 +876,43 @@ describe("AdminPoliciesPage", () => {
 		expect(cleanupCall).toBeTruthy();
 	});
 
+	it("handles identical OneDrive authorization callbacks after the previous one completes", async () => {
+		const callbackSearch =
+			"storage_authorization=success&policy_id=12&sortBy=name";
+		mockState.searchParams = callbackSearch;
+		mockState.getPolicy.mockResolvedValue(
+			createPolicy({
+				id: 12,
+				name: "Authorized OneDrive",
+				driver_type: "one_drive",
+				options: {
+					onedrive_account_mode: "work_or_school",
+					onedrive_cloud: "global",
+					onedrive_root_item_id: "root",
+					onedrive_tenant: "common",
+				},
+			}),
+		);
+		mockState.listStorageCredentials.mockResolvedValue([]);
+
+		const { rerender } = render(<AdminPoliciesPage />);
+
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledTimes(1);
+		});
+		expect(mockState.reload).toHaveBeenCalledTimes(1);
+
+		mockState.searchParams = "";
+		rerender(<AdminPoliciesPage />);
+		mockState.searchParams = callbackSearch;
+		rerender(<AdminPoliciesPage />);
+
+		await waitFor(() => {
+			expect(mockState.toastSuccess).toHaveBeenCalledTimes(2);
+		});
+		expect(mockState.reload).toHaveBeenCalledTimes(2);
+	});
+
 	it("shows OneDrive authorization callback failures without refreshing policies", async () => {
 		mockState.searchParams =
 			"storage_authorization=error&policy_id=12&reason=invalid_state";
@@ -1433,11 +1470,22 @@ describe("AdminPoliciesPage", () => {
 			expect(
 				screen.getByText("onedrive_client_id_required"),
 			).toBeInTheDocument();
+			expect(
+				screen.getByText("onedrive_client_secret_required"),
+			).toBeInTheDocument();
 			expect(mockState.create).not.toHaveBeenCalled();
 
 			fireEvent.change(screen.getByLabelText("onedrive_client_id"), {
 				target: { value: "client-id" },
 			});
+			fireEvent.click(
+				screen.getByRole("button", { name: "policy_wizard_review" }),
+			);
+			expect(
+				screen.getByText("onedrive_client_secret_required"),
+			).toBeInTheDocument();
+			expect(mockState.create).not.toHaveBeenCalled();
+
 			fireEvent.change(screen.getByLabelText("onedrive_client_secret"), {
 				target: { value: "client-secret" },
 			});

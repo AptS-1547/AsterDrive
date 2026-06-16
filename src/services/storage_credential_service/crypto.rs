@@ -13,12 +13,19 @@ use crate::utils::hash;
 
 const CIPHERTEXT_VERSION: &str = "v1";
 const STORAGE_CREDENTIAL_INFO: &[u8] = b"asterdrive:storage-credential-token:v1";
+const MIN_MASTER_KEY_LEN: usize = 32;
 
 pub fn token_hash(token: &str) -> String {
     hash::sha256_hex(token.as_bytes())
 }
 
 fn cipher(master_key: &str) -> Result<Aes256Gcm> {
+    let master_key = master_key.trim();
+    if master_key.len() < MIN_MASTER_KEY_LEN {
+        return Err(AsterError::config_error(format!(
+            "storage credential encryption master key must be at least {MIN_MASTER_KEY_LEN} characters"
+        )));
+    }
     let hk = Hkdf::<Sha256>::new(None, master_key.as_bytes());
     let mut key = [0_u8; 32];
     hk.expand(STORAGE_CREDENTIAL_INFO, &mut key)
@@ -114,7 +121,7 @@ mod tests {
 
     #[test]
     fn token_ciphertext_round_trips_with_matching_aad() {
-        let key = "storage-token-test-master-key";
+        let key = "storage-token-test-master-key-32bytes";
         let aad = token_aad(7, "microsoft_graph", "access");
         let encrypted = encrypt_token(key, aad.as_bytes(), "secret-token").unwrap();
 
@@ -127,9 +134,16 @@ mod tests {
 
     #[test]
     fn token_ciphertext_rejects_wrong_aad() {
-        let key = "storage-token-test-master-key";
+        let key = "storage-token-test-master-key-32bytes";
         let encrypted = encrypt_token(key, b"aad-one", "secret-token").unwrap();
 
         assert!(decrypt_token(key, b"aad-two", &encrypted).is_err());
+    }
+
+    #[test]
+    fn token_ciphertext_rejects_short_master_key() {
+        let error = encrypt_token("short", b"aad", "secret-token").unwrap_err();
+
+        assert!(error.to_string().contains("at least 32 characters"));
     }
 }

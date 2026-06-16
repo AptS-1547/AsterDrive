@@ -30,9 +30,22 @@ pub struct OneDriveDriver {
     base_path: String,
 }
 
-const GRAPH_SIMPLE_UPLOAD_MAX_BYTES: usize = 250 * 1024 * 1024;
+// Microsoft Graph documents the simple PUT content limit as 250 MB, not 250 MiB.
+const GRAPH_SIMPLE_UPLOAD_MAX_BYTES: usize = 250_000_000;
+// Upload session fragments must align to 320 KiB; Microsoft recommends 5-10 MiB chunks.
 const GRAPH_UPLOAD_FRAGMENT_ALIGNMENT: usize = 320 * 1024;
 const GRAPH_UPLOAD_FRAGMENT_SIZE: usize = 10 * 1024 * 1024;
+
+fn can_use_graph_simple_upload(size: u64) -> bool {
+    size <= GRAPH_SIMPLE_UPLOAD_MAX_BYTES as u64
+}
+
+fn graph_simple_upload_too_large_error() -> AsterError {
+    storage_driver_error(
+        StorageErrorKind::Unsupported,
+        "OneDrive simple upload is limited to 250 MB; use upload session support for larger objects",
+    )
+}
 
 impl OneDriveDriver {
     pub fn new(
@@ -87,12 +100,7 @@ impl OneDriveDriver {
             self.put(path, &[]).await?;
             return Ok(path.to_string());
         }
-        if total_size
-            <= numbers::usize_to_u64(
-                GRAPH_SIMPLE_UPLOAD_MAX_BYTES,
-                "OneDrive simple upload limit",
-            )?
-        {
+        if can_use_graph_simple_upload(total_size) {
             let capacity = numbers::u64_to_usize(total_size, "OneDrive simple upload size")?;
             let mut data = vec![0_u8; capacity];
             reader
@@ -150,10 +158,7 @@ impl OneDriveDriver {
 impl StorageDriver for OneDriveDriver {
     async fn put(&self, path: &str, data: &[u8]) -> Result<String> {
         if data.len() > GRAPH_SIMPLE_UPLOAD_MAX_BYTES {
-            return Err(storage_driver_error(
-                StorageErrorKind::Unsupported,
-                "OneDrive simple upload is limited to 250 MiB; use upload session support for larger objects",
-            ));
+            return Err(graph_simple_upload_too_large_error());
         }
         self.client
             .put_small_content(&self.graph_content_path(path)?, data)
@@ -250,4 +255,29 @@ async fn reject_extra_upload_bytes(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graph_simple_upload_limit_uses_decimal_mb() {
+        assert_eq!(GRAPH_SIMPLE_UPLOAD_MAX_BYTES, 250_000_000);
+        assert!(can_use_graph_simple_upload(250_000_000));
+        assert!(!can_use_graph_simple_upload(250_000_001));
+        assert!(!can_use_graph_simple_upload(250 * 1024 * 1024));
+    }
+
+    #[test]
+    fn graph_simple_upload_too_large_error_uses_decimal_units() {
+        let error = graph_simple_upload_too_large_error();
+
+        assert_eq!(
+            error.storage_error_kind(),
+            Some(StorageErrorKind::Unsupported)
+        );
+        assert!(error.message().contains("250 MB"));
+        assert!(!error.message().contains("MiB"));
+    }
 }

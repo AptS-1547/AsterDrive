@@ -46,8 +46,8 @@ If you are migrating existing data, do not directly change the old policy path, 
 | Item | Purpose |
 | --- | --- |
 | Name | Display name in the admin console |
-| Driver type | `local`, `s3`, `tencent_cos`, or `remote` |
-| Connection information | Local directory / S3 endpoint, bucket, secrets / COS endpoint, bucket, secrets / bound follower node |
+| Driver type | `local`, `s3`, `azure_blob`, `tencent_cos`, `one_drive`, or `remote` |
+| Connection information | Local directory / S3 endpoint, bucket, secrets / Azure Blob endpoint, container, account keys / COS endpoint, bucket, secrets / OneDrive Microsoft Graph target and authorization settings / bound follower node |
 | Base path | Directory, prefix, or remote-target relative path used when writing through this policy |
 | Single-file size limit | Maximum upload size. `0` = unlimited. |
 | Chunk size | Size of each chunk for large-file uploads |
@@ -60,7 +60,7 @@ If you are migrating existing data, do not directly change the old policy path, 
 AsterDrive caches generated thumbnails, media information, and similar derivatives so they are not processed on every view, but initial generation and subsequent provider-side processing requests may incur charges from your cloud provider. For Tencent COS setup, suffix rules, and free-quota notes, see the [Tencent COS storage policy tutorial](/en/storage/tencent-cos).
 :::
 
-## How to Choose Between the Four Storage Types
+## How to Choose Between Storage Types
 
 ### `local`
 
@@ -84,6 +84,12 @@ Suitable when files are stored in Azure Blob Storage containers. `azure_blob` us
 
 When configuring it, keep the field names straight: Endpoint is the Blob service endpoint, Bucket means Azure container, Access Key means storage account name, and Secret Key means storage account key. If you use `presigned` direct upload, configure Blob service CORS and allow the `x-ms-blob-type` request header. See the [Azure Blob Storage policy tutorial](/en/storage/azure-blob) for the full flow.
 
+### `one_drive`
+
+Suitable when files should be written to Microsoft Graph-accessible OneDrive, SharePoint document libraries, or Microsoft 365 group drives.
+
+OneDrive policies require a Microsoft app registration and administrator delegated OAuth authorization. The target drive can be resolved automatically after authorization, or specified with a Drive ID, SharePoint site ID, or group ID. See the [OneDrive storage policy tutorial](/en/storage/onedrive) for the full flow.
+
 ### `tencent_cos`
 
 Suitable when files are stored in Tencent COS and you want to enable Tencent-native capabilities per policy.
@@ -104,6 +110,8 @@ The storage policy edit dialog shows current capacity observation:
 | --- | --- |
 | `local` | Reads total, available, and used bytes from the filesystem that contains the policy base directory |
 | `s3` / `tencent_cos` | Shows unsupported; the standard S3-compatible API does not expose a unified, reliable bucket free-capacity interface |
+| `azure_blob` | Shows unsupported; the Blob data API does not expose unified storage account capacity observation |
+| `one_drive` | Reads Microsoft Graph drive quota; if Graph does not return quota data, the result is shown as unavailable |
 | `remote` | Asks the follower's real ingress target through the internal remote storage protocol. If the follower ingress target is local, filesystem capacity is usually available. If the ingress target is S3, it is also shown as unsupported. |
 
 During data migration, preflight compares the target policy's available capacity with the estimated bytes that still need to be copied. It does not simply use the source policy's total size. Content SHA-256 blobs that already exist in the target policy are treated as reusable and are excluded from the estimated copy size.
@@ -114,7 +122,7 @@ Capacity check statuses:
 | --- | --- | --- |
 | Sufficient | Target available capacity is greater than or equal to estimated copy bytes | No |
 | Insufficient | Target is confirmed to have too little capacity | Yes |
-| Unsupported | The driver has no reliable capacity interface, such as S3/COS | No, but the UI warns you to confirm capacity |
+| Unsupported | The driver has no reliable capacity interface, such as S3/COS/Azure Blob | No, but the UI warns you to confirm capacity |
 | Unavailable | This capacity check failed or returned incomplete information | No, but the UI warns you to confirm capacity |
 
 ## Blob Matching Rules During Storage Migration

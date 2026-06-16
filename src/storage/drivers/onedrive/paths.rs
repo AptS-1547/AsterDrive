@@ -9,6 +9,10 @@ const GRAPH_PATH_SEGMENT_ENCODE_SET: &AsciiSet = &CONTROLS
     .add(b'"')
     .add(b'#')
     .add(b'%')
+    // Drive and item IDs are inserted into Graph route segments. Encode Graph's
+    // structural separators so opaque IDs cannot change the URL shape.
+    .add(b'/')
+    .add(b':')
     .add(b'<')
     .add(b'>')
     .add(b'?')
@@ -124,6 +128,14 @@ mod tests {
         assert_eq!(
             graph_drive_item_path("drive", "root", "folder/a b#.txt").unwrap(),
             "/drives/drive/items/root:/folder/a%20b%23.txt"
+        );
+    }
+
+    #[test]
+    fn graph_path_encodes_drive_and_root_item_ids_as_segments() {
+        assert_eq!(
+            graph_drive_item_path("dr/ive:1", "root/item:1", "").unwrap(),
+            "/drives/dr%2Five%3A1/items/root%2Fitem%3A1"
         );
     }
 

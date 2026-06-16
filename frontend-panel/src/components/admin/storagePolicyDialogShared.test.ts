@@ -290,6 +290,50 @@ describe("storagePolicyDialogShared", () => {
 		expect(
 			buildUpdatePolicyPayload({
 				...form,
+				onedrive_account_mode: "work_or_school",
+				onedrive_site_id: "stale-site",
+				onedrive_group_id: "stale-group",
+			}).options,
+		).toEqual({
+			onedrive_cloud: "china",
+			onedrive_account_mode: "work_or_school",
+			onedrive_tenant: "contoso.partner.onmschina.cn",
+			onedrive_drive_id: "drive-1",
+			onedrive_root_item_id: "root-item-1",
+		});
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_account_mode: "group_drive",
+				onedrive_site_id: "stale-site",
+				onedrive_group_id: "group-1",
+			}).options,
+		).toMatchObject({
+			onedrive_account_mode: "group_drive",
+			onedrive_group_id: "group-1",
+		});
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_account_mode: "group_drive",
+				onedrive_site_id: "stale-site",
+				onedrive_group_id: "group-1",
+			}).options,
+		).not.toHaveProperty("onedrive_site_id");
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
+				onedrive_account_mode: "sharepoint_site",
+				onedrive_site_id: "site-1",
+				onedrive_group_id: "stale-group",
+			}).options,
+		).not.toHaveProperty("onedrive_group_id");
+
+		expect(
+			buildUpdatePolicyPayload({
+				...form,
 			}),
 		).not.toHaveProperty("secret_key");
 	});

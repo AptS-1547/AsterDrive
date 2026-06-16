@@ -88,7 +88,7 @@ export function OneDriveTargetFields({
 						onFieldChange("onedrive_root_item_id", event.target.value)
 					}
 					className={ADMIN_CONTROL_HEIGHT_CLASS}
-					placeholder="root"
+					placeholder={t("onedrive_root_item_id_placeholder")}
 				/>
 				<p className="text-xs leading-5 text-muted-foreground">
 					{t("onedrive_root_item_id_desc")}
@@ -105,7 +105,7 @@ export function OneDriveTargetFields({
 							onFieldChange("onedrive_site_id", event.target.value)
 						}
 						className={ADMIN_CONTROL_HEIGHT_CLASS}
-						placeholder="contoso.sharepoint.com,site-id,web-id"
+						placeholder={t("onedrive_site_id_placeholder")}
 					/>
 					<p className="text-xs leading-5 text-muted-foreground">
 						{t("onedrive_site_id_desc")}
@@ -121,7 +121,7 @@ export function OneDriveTargetFields({
 							onFieldChange("onedrive_group_id", event.target.value)
 						}
 						className={ADMIN_CONTROL_HEIGHT_CLASS}
-						placeholder="00000000-0000-0000-0000-000000000000"
+						placeholder={t("onedrive_group_id_placeholder")}
 					/>
 					<p className="text-xs leading-5 text-muted-foreground">
 						{t("onedrive_group_id_desc")}

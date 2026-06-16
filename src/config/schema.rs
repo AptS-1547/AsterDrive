@@ -134,9 +134,7 @@ pub struct AuthConfig {
     pub share_cookie_secret: String,
     #[serde(default = "AuthConfig::default_direct_link_secret")]
     pub direct_link_secret: String,
-    #[serde(default = "AuthConfig::default_mfa_secret_key")]
     pub mfa_secret_key: String,
-    #[serde(default = "AuthConfig::default_storage_credential_secret_key")]
     pub storage_credential_secret_key: String,
     /// 首次初始化 system_config 时，是否把 auth_cookie_secure 设为 false。
     #[serde(default = "AuthConfig::default_bootstrap_insecure_cookies")]

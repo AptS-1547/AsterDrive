@@ -466,6 +466,8 @@ impl MicrosoftGraphClient {
             })?;
             let download_url = base_url.join(download_url).map_err(invalid_graph_url)?;
             let mut request = self.http.get(download_url);
+            // Microsoft Graph documents partial downloads as Range on the
+            // actual downloadUrl/redirect target, not on the /content request.
             if let Some(range_header) = range_header(offset, length)? {
                 request = request.header(RANGE, range_header);
             }

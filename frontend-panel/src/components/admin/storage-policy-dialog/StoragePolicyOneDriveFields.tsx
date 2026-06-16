@@ -72,6 +72,7 @@ function OneDriveSetupNotice({ t }: { t: Translate }) {
 
 export function OneDriveConnectionFields({
 	clientIdError,
+	clientSecretError,
 	form,
 	mode = "edit",
 	onFieldChange,
@@ -79,6 +80,7 @@ export function OneDriveConnectionFields({
 	t,
 }: SharedFieldProps & {
 	clientIdError?: string | null;
+	clientSecretError?: string | null;
 	mode?: "create" | "edit";
 	showCreateValidation?: boolean;
 }) {
@@ -129,6 +131,7 @@ export function OneDriveConnectionFields({
 				{mode === "create" ? (
 					<OneDriveApplicationFields
 						clientIdError={clientIdError}
+						clientSecretError={clientSecretError}
 						form={form}
 						showValidation={showCreateValidation}
 						t={t}

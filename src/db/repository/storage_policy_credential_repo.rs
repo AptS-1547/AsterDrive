@@ -2,8 +2,8 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveEnum, ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set,
-    sea_query::Expr,
+    ActiveEnum, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set,
+    sea_query::{Expr, OnConflict},
 };
 
 use crate::entities::storage_policy_credential::{self, Entity as StoragePolicyCredential};
@@ -52,18 +52,41 @@ pub async fn upsert_by_policy_provider_kind<C: ConnectionTrait>(
     let provider = active_provider(&model.provider)?;
     let credential_kind = active_credential_kind(&model.credential_kind)?;
 
-    if let Some(existing) =
-        find_by_policy_provider_kind(db, policy_id, provider, credential_kind).await?
-    {
-        model.id = Set(existing.id);
-        model.created_at = Set(existing.created_at);
-        model.updated_at = Set(now);
-        model.update(db).await.map_err(AsterError::from)
-    } else {
-        model.created_at = Set(now);
-        model.updated_at = Set(now);
-        model.insert(db).await.map_err(AsterError::from)
-    }
+    model.created_at = Set(now);
+    model.updated_at = Set(now);
+
+    StoragePolicyCredential::insert(model)
+        .on_conflict(
+            OnConflict::columns([
+                storage_policy_credential::Column::PolicyId,
+                storage_policy_credential::Column::Provider,
+                storage_policy_credential::Column::CredentialKind,
+            ])
+            .update_columns([
+                storage_policy_credential::Column::AccountLabel,
+                storage_policy_credential::Column::Subject,
+                storage_policy_credential::Column::TenantId,
+                storage_policy_credential::Column::Scopes,
+                storage_policy_credential::Column::AccessTokenCiphertext,
+                storage_policy_credential::Column::RefreshTokenCiphertext,
+                storage_policy_credential::Column::Metadata,
+                storage_policy_credential::Column::Status,
+                storage_policy_credential::Column::StatusReason,
+                storage_policy_credential::Column::ExpiresAt,
+                storage_policy_credential::Column::AuthorizedAt,
+                storage_policy_credential::Column::LastRefreshedAt,
+                storage_policy_credential::Column::LastValidatedAt,
+                storage_policy_credential::Column::UpdatedAt,
+            ])
+            .to_owned(),
+        )
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    find_by_policy_provider_kind(db, policy_id, provider, credential_kind)
+        .await?
+        .ok_or_else(|| AsterError::record_not_found("storage policy credential after upsert"))
 }
 
 pub struct OAuthRefreshUpdate<'a> {
@@ -86,10 +109,6 @@ pub async fn update_oauth_refresh_result_if_refresh_token_matches<C: ConnectionT
         .col_expr(
             storage_policy_credential::Column::AccessTokenCiphertext,
             Expr::value(Some(input.access_token_ciphertext)),
-        )
-        .col_expr(
-            storage_policy_credential::Column::RefreshTokenCiphertext,
-            Expr::value(input.refresh_token_ciphertext),
         )
         .col_expr(
             storage_policy_credential::Column::ExpiresAt,
@@ -122,6 +141,12 @@ pub async fn update_oauth_refresh_result_if_refresh_token_matches<C: ConnectionT
         update = update.col_expr(
             storage_policy_credential::Column::Scopes,
             Expr::value(scopes),
+        );
+    }
+    if let Some(refresh_token_ciphertext) = input.refresh_token_ciphertext {
+        update = update.col_expr(
+            storage_policy_credential::Column::RefreshTokenCiphertext,
+            Expr::value(Some(refresh_token_ciphertext)),
         );
     }
     let result = update.exec(db).await.map_err(AsterError::from)?;

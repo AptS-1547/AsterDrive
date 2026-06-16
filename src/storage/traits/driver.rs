@@ -261,6 +261,7 @@ mod tests {
             DriverType::TencentCos
         ));
         assert!(!driver_type_supports_native_thumbnail(DriverType::Remote));
+        assert!(!driver_type_supports_native_thumbnail(DriverType::OneDrive));
     }
 
     #[test]
@@ -277,6 +278,9 @@ mod tests {
         ));
         assert!(!driver_type_supports_native_media_metadata(
             DriverType::Remote
+        ));
+        assert!(!driver_type_supports_native_media_metadata(
+            DriverType::OneDrive
         ));
     }
 

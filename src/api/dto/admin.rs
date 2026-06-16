@@ -203,6 +203,7 @@ pub struct ExecuteSavedStoragePolicyActionReq {
 
 /// Start an OAuth authorization flow for an administrator-managed storage policy credential.
 #[derive(Deserialize, Validate)]
+#[validate(schema(function = "validate_start_storage_authorization"))]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StartStorageAuthorizationReq {
     pub provider: crate::types::StorageCredentialProvider,
@@ -806,6 +807,27 @@ fn validate_policy_group_item(
     Ok(())
 }
 
+fn validate_start_storage_authorization(
+    value: &StartStorageAuthorizationReq,
+) -> std::result::Result<(), ValidationError> {
+    match value.provider {
+        crate::types::StorageCredentialProvider::MicrosoftGraph
+            if value.microsoft_graph.is_none() =>
+        {
+            Err(crate::api::dto::validation::message_validation_error(
+                "microsoft_graph is required for Microsoft Graph authorization",
+            ))
+        }
+        crate::types::StorageCredentialProvider::MicrosoftGraph => Ok(()),
+        _ if value.microsoft_graph.is_some() => {
+            Err(crate::api::dto::validation::message_validation_error(
+                "microsoft_graph authorization parameters are only valid for Microsoft Graph",
+            ))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn validate_create_policy_group(
     value: &CreatePolicyGroupReq,
 ) -> std::result::Result<(), ValidationError> {
@@ -898,4 +920,38 @@ fn validate_admin_patch_team(
         crate::api::dto::validation::validate_team_name(name)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::storage_credential_service::MicrosoftGraphAuthorizationInput;
+    use crate::types::StorageCredentialProvider;
+
+    #[test]
+    fn start_storage_authorization_requires_matching_provider_payload() {
+        let error = StartStorageAuthorizationReq {
+            provider: StorageCredentialProvider::MicrosoftGraph,
+            microsoft_graph: None,
+        }
+        .validate()
+        .expect_err("Microsoft Graph authorization should require parameters");
+
+        assert!(error.to_string().contains("microsoft_graph is required"));
+
+        let error = StartStorageAuthorizationReq {
+            provider: StorageCredentialProvider::GoogleDrive,
+            microsoft_graph: Some(MicrosoftGraphAuthorizationInput {
+                cloud: None,
+                tenant: None,
+                client_id: None,
+                client_secret: None,
+                scopes: None,
+            }),
+        }
+        .validate()
+        .expect_err("Microsoft Graph parameters should not be accepted for Google Drive");
+
+        assert!(error.to_string().contains("only valid for Microsoft Graph"));
+    }
 }

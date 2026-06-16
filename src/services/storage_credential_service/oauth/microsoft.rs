@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::entities::storage_policy_authorization_flow;
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::types::{MicrosoftGraphCloud, StorageCredentialProvider};
 use crate::utils::OUTBOUND_HTTP_USER_AGENT;
 
@@ -60,7 +61,15 @@ pub(crate) fn storage_credential_metadata(
         "drive_id": drive_id,
         "root_item_id": root_item_id,
     });
-    if let Some(client_id) = client_id {
+    // Empty secret fields must not be persisted as "configured"; OneDrive
+    // storage uses a confidential Microsoft app and requires a real secret.
+    let client_secret = client_secret
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let client_secret_ciphertext = client_secret_ciphertext
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(client_id) = client_id.map(str::trim).filter(|value| !value.is_empty()) {
         metadata["client_id"] = serde_json::Value::String(client_id.to_string());
     }
     if let Some(client_secret) = client_secret {
@@ -246,12 +255,14 @@ pub(super) async fn refresh_microsoft_graph_token(
         .body(body)
         .send()
         .await
-        .map_aster_err_ctx(
-            "Microsoft Graph OAuth token refresh failed",
-            AsterError::auth_invalid_credentials,
-        )?;
+        .map_err(|err| {
+            storage_driver_error(
+                StorageErrorKind::Transient,
+                format!("Microsoft Graph OAuth token refresh failed: {err}"),
+            )
+        })?;
     if !response.status().is_success() {
-        return Err(microsoft_token_endpoint_error(response).await);
+        return Err(microsoft_refresh_token_endpoint_error(response).await);
     }
     let token = response
         .json::<MicrosoftTokenResponse>()
@@ -290,6 +301,30 @@ async fn microsoft_token_endpoint_error(response: reqwest::Response) -> AsterErr
     AsterError::auth_invalid_credentials(format!(
         "Microsoft Graph OAuth token exchange failed: {message}"
     ))
+}
+
+async fn microsoft_refresh_token_endpoint_error(response: reqwest::Response) -> AsterError {
+    let status = response.status();
+    let parsed = response.json::<MicrosoftTokenError>().await.ok();
+    let message = parsed
+        .and_then(|body| body.error_description.or(body.error))
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| format!("HTTP {status}"));
+    let kind = if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        StorageErrorKind::RateLimited
+    } else if status == reqwest::StatusCode::UNAUTHORIZED {
+        StorageErrorKind::Auth
+    } else if status == reqwest::StatusCode::FORBIDDEN {
+        StorageErrorKind::Permission
+    } else if status.is_server_error() {
+        StorageErrorKind::Transient
+    } else {
+        StorageErrorKind::Auth
+    };
+    storage_driver_error(
+        kind,
+        format!("Microsoft Graph OAuth token refresh failed: {message}"),
+    )
 }
 
 pub(super) fn microsoft_authorization_url(

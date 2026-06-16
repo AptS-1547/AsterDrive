@@ -378,6 +378,21 @@ pub(crate) struct StoragePolicyCleanupRemoteNodeSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct StoragePolicyCleanupOneDriveCredentialSnapshot {
+    pub cloud: crate::types::MicrosoftGraphCloud,
+    pub drive_id: String,
+    pub root_item_id: String,
+    pub access_token_ciphertext: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum StoragePolicyCleanupDriverSnapshot {
+    RemoteNode(StoragePolicyCleanupRemoteNodeSnapshot),
+    MicrosoftGraph(StoragePolicyCleanupOneDriveCredentialSnapshot),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StoragePolicyTempCleanupTarget {
     pub temp_key: String,
@@ -387,6 +402,17 @@ pub struct StoragePolicyTempCleanupTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct StoragePolicyTempCleanupTaskPayload {
     pub policy: StoragePolicyCleanupPolicySnapshot,
+    // TODO(#328): make cleanup snapshot requirements part of backend driver
+    // capability metadata instead of extending this enum one driver at a time.
+    #[serde(default)]
+    pub driver_snapshot: Option<StoragePolicyCleanupDriverSnapshot>,
+    /// Deprecated legacy OneDrive cleanup snapshot. New tasks store this under
+    /// `driver_snapshot`; keep this field so queued pre-migration tasks decode.
+    #[serde(default)]
+    pub onedrive_credential: Option<StoragePolicyCleanupOneDriveCredentialSnapshot>,
+    /// Deprecated legacy remote cleanup snapshot. New tasks store this under
+    /// `driver_snapshot`; keep this field so queued pre-migration tasks decode.
+    #[serde(default)]
     pub remote_node: Option<StoragePolicyCleanupRemoteNodeSnapshot>,
     pub temp_keys: Vec<String>,
     pub multipart_uploads: Vec<StoragePolicyTempCleanupTarget>,

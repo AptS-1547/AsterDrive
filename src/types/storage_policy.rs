@@ -616,12 +616,24 @@ fn validate_onedrive_options(
                 Some("onedrive_site_id is required for OneDrive sharepoint_site policies when onedrive_drive_id is not set".into());
             Err(error)
         }
+        Some(OneDriveAccountMode::SharepointSite) if value.onedrive_group_id.is_some() => {
+            let mut error = ValidationError::new("invalid");
+            error.message =
+                Some("onedrive_group_id is only valid for OneDrive group_drive policies".into());
+            Err(error)
+        }
         Some(OneDriveAccountMode::GroupDrive)
             if value.onedrive_drive_id.is_none() && value.onedrive_group_id.is_none() =>
         {
             let mut error = ValidationError::new("invalid");
             error.message =
                 Some("onedrive_group_id is required for OneDrive group_drive policies when onedrive_drive_id is not set".into());
+            Err(error)
+        }
+        Some(OneDriveAccountMode::GroupDrive) if value.onedrive_site_id.is_some() => {
+            let mut error = ValidationError::new("invalid");
+            error.message =
+                Some("onedrive_site_id is only valid for OneDrive sharepoint_site policies".into());
             Err(error)
         }
         Some(OneDriveAccountMode::Personal | OneDriveAccountMode::WorkOrSchool)
@@ -1134,6 +1146,39 @@ mod tests {
 
         assert!(
             error.to_string().contains("onedrive_group_id is required"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn onedrive_modes_reject_other_mode_target_ids() {
+        let error = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::SharepointSite),
+            onedrive_site_id: Some("site".to_string()),
+            onedrive_group_id: Some("group".to_string()),
+            ..Default::default()
+        }
+        .validate()
+        .expect_err("sharepoint site mode should reject group id");
+
+        assert!(
+            error
+                .to_string()
+                .contains("onedrive_group_id is only valid"),
+            "{error}"
+        );
+
+        let error = StoragePolicyOptions {
+            onedrive_account_mode: Some(OneDriveAccountMode::GroupDrive),
+            onedrive_site_id: Some("site".to_string()),
+            onedrive_group_id: Some("group".to_string()),
+            ..Default::default()
+        }
+        .validate()
+        .expect_err("group drive mode should reject site id");
+
+        assert!(
+            error.to_string().contains("onedrive_site_id is only valid"),
             "{error}"
         );
     }

@@ -645,6 +645,7 @@ function useAdminPoliciesPageContent() {
 	useEffect(() => {
 		const callback = consumeStorageAuthorizationSearchParams(searchParams);
 		if (!callback) {
+			consumedStorageAuthorizationSearchRef.current = null;
 			return;
 		}
 
@@ -1233,6 +1234,10 @@ function useAdminPoliciesPageContent() {
 			return;
 		}
 
+		if (form.driver_type === "one_drive" && !form.onedrive_client_secret.trim()) {
+			return;
+		}
+
 		if (endpointValidationMessage) {
 			return;
 		}
@@ -1250,7 +1255,7 @@ function useAdminPoliciesPageContent() {
 		if (
 			editingId === null &&
 			form.driver_type === "one_drive" &&
-			!form.onedrive_client_id.trim()
+			(!form.onedrive_client_id.trim() || !form.onedrive_client_secret.trim())
 		) {
 			setCreateStepTouched(true);
 			setCreateStep(1);

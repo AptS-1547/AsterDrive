@@ -46,8 +46,8 @@
 | 项目 | 作用 |
 | --- | --- |
 | 名称 | 后台显示名 |
-| 驱动类型 | `local`、`s3`、`tencent_cos` 或 `remote` |
-| 连接信息 | 本地目录 / S3 endpoint、bucket、密钥 / COS endpoint、bucket、密钥 / 绑定的远程节点 |
+| 驱动类型 | `local`、`s3`、`azure_blob`、`tencent_cos`、`one_drive` 或 `remote` |
+| 连接信息 | 本地目录 / S3 endpoint、bucket、密钥 / Azure Blob endpoint、container、账号密钥 / COS endpoint、bucket、密钥 / OneDrive Microsoft Graph 目标与授权配置 / 绑定的远程节点 |
 | 基础路径 | 写入该策略时使用的目录、prefix 或远程落点相对路径 |
 | 单文件大小上限 | 允许上传的最大文件；`0` = 不限 |
 | 分片大小 | 大文件上传时每一片的大小 |
@@ -60,7 +60,7 @@
 AsterDrive 会缓存缩略图和媒体信息等派生结果，避免每次查看文件都重新处理；但首次生成或云厂商侧处理请求仍可能产生费用。腾讯云 COS 的具体配置、后缀策略和免费额度说明见 [腾讯云 COS 存储策略教程](/storage/tencent-cos)。
 :::
 
-## 四类存储怎么选
+## 存储类型怎么选
 
 ### `local`
 
@@ -84,6 +84,12 @@ AsterDrive 会缓存缩略图和媒体信息等派生结果，避免每次查看
 
 配置时要区分这些字段：Endpoint 是 Blob service endpoint，Bucket 字段对应 Azure container，Access Key 对应 storage account name，Secret Key 对应 storage account key。如果使用 `presigned` 直传，还要配置 Blob service CORS，并允许 `x-ms-blob-type` 请求头。完整流程见 [Azure Blob Storage 存储策略教程](/storage/azure-blob)。
 
+### `one_drive`
+
+适合把文件写到 Microsoft Graph 可访问的 OneDrive、SharePoint 文档库或 Microsoft 365 group drive。
+
+OneDrive 策略需要 Microsoft 应用注册和管理员 delegated OAuth 授权。目标 drive 可以在授权后自动解析，也可以通过 Drive ID、SharePoint site ID 或 group ID 指定。完整流程见 [OneDrive 存储策略教程](/storage/onedrive)。
+
 ### `tencent_cos`
 
 适合文件放到腾讯云 COS，并且希望按策略启用腾讯云原生能力。
@@ -104,6 +110,8 @@ AsterDrive 会缓存缩略图和媒体信息等派生结果，避免每次查看
 | --- | --- |
 | `local` | 读取策略基础目录所在文件系统的总量、可用量和已用量 |
 | `s3` / `tencent_cos` | 返回“不支持”；标准 S3 兼容 API 没有统一可靠的 bucket 剩余容量接口 |
+| `azure_blob` | 返回“不支持”；Blob data API 不提供统一的 storage account 容量观测 |
+| `one_drive` | 读取 Microsoft Graph drive quota；如果 Graph 未返回 quota，则显示“不可用” |
 | `remote` | 通过内部远程存储协议询问 follower 的实际接收落点；如果 follower 接收落点是 local，通常能看到文件系统容量；如果接收落点是 S3，则同样显示“不支持” |
 
 迁移数据时，预检查会用目标策略的可用容量和“预计需要复制的 blob 字节数”比较，而不是简单使用源策略总大小。目标策略已经有的 content SHA-256 blob 会被视为可复用，不再计入预计复制量。
@@ -114,7 +122,7 @@ AsterDrive 会缓存缩略图和媒体信息等派生结果，避免每次查看
 | --- | --- | --- |
 | 充足 | 目标可用容量大于或等于预计复制字节数 | 否 |
 | 不足 | 目标明确没有足够容量 | 是 |
-| 不支持 | 驱动没有可靠容量接口，例如 S3/COS | 否，会提示确认容量 |
+| 不支持 | 驱动没有可靠容量接口，例如 S3/COS/Azure Blob | 否，会提示确认容量 |
 | 不可用 | 本次容量查询失败或返回信息不完整 | 否，会提示确认容量 |
 
 ## 存储迁移中的 Blob 匹配规则
