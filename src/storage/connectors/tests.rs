@@ -94,6 +94,63 @@ fn onedrive_descriptor_requires_saved_authorized_connection_test() {
 }
 
 #[test]
+fn onedrive_prepare_connection_for_storage_clears_legacy_policy_key_fields() {
+    let prepared = prepare_connection_for_storage(
+        StorageConnectorConnectionInput {
+            driver_type: DriverType::OneDrive,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key: "legacy-client-id".to_string(),
+            secret_key: "legacy-client-secret".to_string(),
+            base_path: "docs".to_string(),
+            remote_node_id: None,
+            options: StoragePolicyOptions::default(),
+        },
+        &StorageConnectorApplicationConfigInput {
+            microsoft_graph: Some(crate::storage::MicrosoftGraphApplicationConfigInput {
+                client_id: Some("metadata-client-id".to_string()),
+                client_secret: Some("metadata-client-secret".to_string()),
+                ..Default::default()
+            }),
+        },
+    )
+    .expect("OneDrive app config should be accepted by connector");
+
+    assert_eq!(prepared.access_key, "");
+    assert_eq!(prepared.secret_key, "");
+    assert_eq!(prepared.base_path, "docs");
+}
+
+#[test]
+fn non_onedrive_connectors_reject_microsoft_graph_application_config() {
+    let error = prepare_connection_for_storage(
+        StorageConnectorConnectionInput {
+            driver_type: DriverType::S3,
+            endpoint: "https://s3.example.test".to_string(),
+            bucket: "bucket".to_string(),
+            access_key: "access".to_string(),
+            secret_key: "secret".to_string(),
+            base_path: String::new(),
+            remote_node_id: None,
+            options: StoragePolicyOptions::default(),
+        },
+        &StorageConnectorApplicationConfigInput {
+            microsoft_graph: Some(crate::storage::MicrosoftGraphApplicationConfigInput {
+                client_id: Some("client-id".to_string()),
+                ..Default::default()
+            }),
+        },
+    )
+    .expect_err("S3 connector should reject Microsoft Graph app config");
+
+    assert!(
+        error
+            .to_string()
+            .contains("application credential config is not valid for s3")
+    );
+}
+
+#[test]
 fn credential_validation_support_is_declared_by_connector_action() {
     assert_eq!(
         ensure_storage_credential_validation_supported(

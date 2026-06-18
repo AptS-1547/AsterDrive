@@ -3,7 +3,29 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::storage::StoragePolicyExecutableAction;
-use crate::types::{DriverType, RemoteNodeTransportMode};
+use crate::types::{DriverType, MicrosoftGraphCloud, RemoteNodeTransportMode};
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct MicrosoftGraphApplicationConfigInput {
+    pub cloud: Option<MicrosoftGraphCloud>,
+    pub tenant: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub scopes: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct StorageConnectorApplicationConfigInput {
+    pub microsoft_graph: Option<MicrosoftGraphApplicationConfigInput>,
+}
+
+impl StorageConnectorApplicationConfigInput {
+    pub fn is_empty(&self) -> bool {
+        self.microsoft_graph.is_none()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct StorageConnectorConnectionInput {

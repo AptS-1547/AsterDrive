@@ -101,6 +101,7 @@ pub async fn create(
         is_default,
         allowed_types,
         options,
+        application_config,
     } = input;
     let connection =
         crate::storage::connectors::normalize_policy_connection(state.writer_db(), connection)
@@ -114,7 +115,10 @@ pub async fn create(
         base_path,
         remote_node_id,
         options: _,
-    } = connection;
+    } = crate::storage::connectors::prepare_connection_for_storage(
+        connection,
+        &application_config,
+    )?;
     let allowed_types = allowed_types.unwrap_or_default();
     let options = options.unwrap_or_default().normalized();
     let serialized_options = serialize_options(&options)?;
@@ -148,6 +152,15 @@ pub async fn create(
         ..Default::default()
     };
     let result = policy_repo::create(&txn, model).await?;
+    crate::storage::connectors::persist_application_config(
+        &txn,
+        driver_type,
+        &state.config().auth.storage_credential_secret_key,
+        result.id,
+        &options,
+        application_config,
+    )
+    .await?;
     if is_default {
         lock_default_group_assignment(&txn).await?;
         policy_repo::set_only_default(&txn, result.id).await?;
@@ -282,6 +295,7 @@ pub async fn update(
         is_default,
         allowed_types,
         options,
+        application_config,
     } = input;
     let txn = crate::db::transaction::begin(state.writer_db()).await?;
     let existing = policy_repo::find_by_id(&txn, id).await?;
@@ -289,6 +303,7 @@ pub async fn update(
     let existing_bucket = existing.bucket.clone();
     let existing_access_key = existing.access_key.clone();
     let existing_secret_key = existing.secret_key.clone();
+    let existing_driver_type = existing.driver_type;
     let existing_remote_node_id = existing.remote_node_id;
     let existing_options = parse_storage_policy_options(existing.options.as_ref());
     let final_endpoint = endpoint.unwrap_or_else(|| existing_endpoint.clone());
@@ -305,7 +320,7 @@ pub async fn update(
     let normalized_connection = crate::storage::connectors::normalize_policy_connection(
         &txn,
         StoragePolicyConnectionInput {
-            driver_type: existing.driver_type,
+            driver_type: existing_driver_type,
             endpoint: final_endpoint,
             bucket: final_bucket,
             access_key: final_access_key,
@@ -316,15 +331,21 @@ pub async fn update(
         },
     )
     .await?;
+    let normalized_connection = crate::storage::connectors::prepare_connection_for_storage(
+        normalized_connection,
+        &application_config,
+    )?;
     let normalized_endpoint = normalized_connection.endpoint.clone();
     let normalized_bucket = normalized_connection.bucket.clone();
+    let normalized_access_key = normalized_connection.access_key.clone();
+    let normalized_secret_key = normalized_connection.secret_key.clone();
     let normalized_remote_node_id = normalized_connection.remote_node_id;
     let options_provided = options.is_some();
     let final_options = options.unwrap_or(existing_options).normalized();
     let serialized_final_options = serialize_options(&final_options)?;
     crate::storage::connectors::validate_policy_options(
         &txn,
-        existing.driver_type,
+        existing_driver_type,
         normalized_remote_node_id,
         &final_options,
     )
@@ -354,11 +375,11 @@ pub async fn update(
     if normalized_bucket != existing_bucket {
         active.bucket = Set(normalized_bucket);
     }
-    if let Some(v) = access_key {
-        active.access_key = Set(v);
+    if normalized_access_key != existing_access_key {
+        active.access_key = Set(normalized_access_key);
     }
-    if let Some(v) = secret_key {
-        active.secret_key = Set(v);
+    if normalized_secret_key != existing_secret_key {
+        active.secret_key = Set(normalized_secret_key);
     }
     if let Some(v) = base_path {
         active.base_path = Set(v);
@@ -386,6 +407,16 @@ pub async fn update(
         .update(&txn)
         .await
         .map_aster_err(AsterError::database_operation)?;
+
+    crate::storage::connectors::persist_application_config(
+        &txn,
+        existing_driver_type,
+        &state.config().auth.storage_credential_secret_key,
+        result.id,
+        &final_options,
+        application_config,
+    )
+    .await?;
 
     if is_default == Some(true) {
         lock_default_group_assignment(&txn).await?;
@@ -575,4 +606,208 @@ pub async fn execute_draft_action<S: RemoteProtocolRuntimeState + Sync>(
     input: ExecuteDraftStoragePolicyActionInput,
 ) -> Result<StoragePolicyActionResult> {
     crate::storage::connectors::execute_draft_action(state, input).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
+    use crate::db;
+    use crate::db::repository::storage_policy_credential_repo;
+    use crate::storage::{DriverRegistry, PolicySnapshot};
+    use crate::types::{
+        MicrosoftGraphCloud, OneDriveAccountMode, StorageCredentialKind, StorageCredentialProvider,
+        StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
+    };
+    use migration::Migrator;
+    use sea_orm::ActiveValue::Set;
+    use std::sync::Arc;
+
+    async fn setup_state(encryption_key: &str) -> crate::runtime::PrimaryAppState {
+        let db = db::connect_with_metrics(
+            &DatabaseConfig {
+                url: "sqlite::memory:".to_string(),
+                pool_size: 1,
+                retry_count: 0,
+            },
+            crate::metrics_core::NoopMetrics::arc(),
+        )
+        .await
+        .expect("policy service test DB should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("policy service migrations should succeed");
+        let runtime_config = Arc::new(RuntimeConfig::new());
+        let cache = crate::cache::create_cache(&CacheConfig {
+            enabled: false,
+            backend: "memory".to_string(),
+            ..Default::default()
+        })
+        .await;
+        let mut config = Config::default();
+        config.auth.storage_credential_secret_key = encryption_key.to_string();
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
+        let share_download_rollback =
+            crate::services::share_service::spawn_detached_share_download_rollback_queue(
+                db.clone(),
+                crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
+            );
+
+        crate::runtime::PrimaryAppState {
+            db_handles: crate::db::DbHandles::single(db),
+            driver_registry: Arc::new(DriverRegistry::noop()),
+            runtime_config: runtime_config.clone(),
+            policy_snapshot: Arc::new(PolicySnapshot::new()),
+            config: Arc::new(config),
+            cache,
+            metrics: crate::metrics_core::NoopMetrics::arc(),
+            mail_sender: crate::services::mail_service::runtime_sender(runtime_config),
+            storage_change_tx,
+            share_download_rollback,
+            background_task_dispatch_wakeup:
+                crate::runtime::PrimaryAppState::new_background_task_dispatch_wakeup(),
+            remote_protocol: crate::runtime::PrimaryAppState::new_remote_protocol(),
+        }
+    }
+
+    fn onedrive_options() -> StoragePolicyOptions {
+        StoragePolicyOptions {
+            onedrive_cloud: Some(MicrosoftGraphCloud::Global),
+            onedrive_account_mode: Some(OneDriveAccountMode::WorkOrSchool),
+            onedrive_tenant: Some("common".to_string()),
+            onedrive_root_item_id: Some("root".to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn create_onedrive_policy_stores_app_config_outside_legacy_key_fields() {
+        let encryption_key = "storage-token-test-master-key-32bytes";
+        let state = setup_state(encryption_key).await;
+
+        let policy = create(
+            &state,
+            CreateStoragePolicyInput {
+                name: "OneDrive".to_string(),
+                connection: StoragePolicyConnectionInput {
+                    driver_type: DriverType::OneDrive,
+                    endpoint: String::new(),
+                    bucket: String::new(),
+                    access_key: "legacy-client-id".to_string(),
+                    secret_key: "legacy-client-secret".to_string(),
+                    base_path: String::new(),
+                    remote_node_id: None,
+                    options: StoragePolicyOptions::default(),
+                },
+                max_file_size: 0,
+                chunk_size: Some(5_242_880),
+                is_default: false,
+                allowed_types: None,
+                options: Some(onedrive_options()),
+                application_config: crate::storage::StorageConnectorApplicationConfigInput {
+                    microsoft_graph: Some(crate::storage::MicrosoftGraphApplicationConfigInput {
+                        client_id: Some("metadata-client-id".to_string()),
+                        client_secret: Some("metadata-client-secret".to_string()),
+                        ..Default::default()
+                    }),
+                },
+            },
+        )
+        .await
+        .expect("OneDrive policy should create");
+
+        let stored = policy_repo::find_by_id(state.writer_db(), policy.id)
+            .await
+            .expect("policy should load");
+        assert_eq!(stored.access_key, "");
+        assert_eq!(stored.secret_key, "");
+
+        let credential = storage_policy_credential_repo::find_by_policy_provider_kind(
+            state.writer_db(),
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph,
+            StorageCredentialKind::OauthDelegated,
+        )
+        .await
+        .expect("credential lookup should succeed")
+        .expect("credential config should exist");
+        let metadata: serde_json::Value =
+            serde_json::from_str(&credential.metadata).expect("metadata should parse");
+        assert_eq!(metadata["client_id"], "metadata-client-id");
+        assert_eq!(metadata["client_secret_configured"], true);
+    }
+
+    #[tokio::test]
+    async fn update_onedrive_policy_clears_legacy_keys_and_writes_app_config_metadata() {
+        let encryption_key = "storage-token-test-master-key-32bytes";
+        let state = setup_state(encryption_key).await;
+        let now = Utc::now();
+        let policy = policy_repo::create(
+            state.writer_db(),
+            storage_policy::ActiveModel {
+                name: Set("OneDrive".to_string()),
+                driver_type: Set(DriverType::OneDrive),
+                endpoint: Set(String::new()),
+                bucket: Set(String::new()),
+                access_key: Set("old-client-id".to_string()),
+                secret_key: Set("old-client-secret".to_string()),
+                base_path: Set(String::new()),
+                remote_node_id: Set(None),
+                max_file_size: Set(0),
+                allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
+                options: Set(
+                    crate::types::serialize_storage_policy_options(&onedrive_options())
+                        .expect("options should serialize"),
+                ),
+                is_default: Set(false),
+                chunk_size: Set(5_242_880),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("policy should insert");
+
+        update(
+            &state,
+            policy.id,
+            UpdateStoragePolicyInput {
+                access_key: Some("ignored-client-id".to_string()),
+                secret_key: Some("ignored-client-secret".to_string()),
+                application_config: crate::storage::StorageConnectorApplicationConfigInput {
+                    microsoft_graph: Some(crate::storage::MicrosoftGraphApplicationConfigInput {
+                        client_id: Some("metadata-client-id".to_string()),
+                        client_secret: Some("metadata-client-secret".to_string()),
+                        ..Default::default()
+                    }),
+                },
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("OneDrive policy should update");
+
+        let stored = policy_repo::find_by_id(state.writer_db(), policy.id)
+            .await
+            .expect("policy should load");
+        assert_eq!(stored.access_key, "");
+        assert_eq!(stored.secret_key, "");
+
+        let credential = storage_policy_credential_repo::find_by_policy_provider_kind(
+            state.writer_db(),
+            policy.id,
+            StorageCredentialProvider::MicrosoftGraph,
+            StorageCredentialKind::OauthDelegated,
+        )
+        .await
+        .expect("credential lookup should succeed")
+        .expect("credential config should exist");
+        let metadata: serde_json::Value =
+            serde_json::from_str(&credential.metadata).expect("metadata should parse");
+        assert_eq!(metadata["client_id"], "metadata-client-id");
+        assert_eq!(metadata["client_secret_configured"], true);
+    }
 }

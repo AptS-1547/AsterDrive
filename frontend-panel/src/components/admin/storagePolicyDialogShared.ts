@@ -17,6 +17,19 @@ import type {
 	StoragePolicyOptions,
 	UpdatePolicyRequest,
 } from "@/types/api";
+import {
+	buildStorageApplicationConfig,
+	parseMicrosoftGraphScopes,
+} from "./storage-policy-dialog/storagePolicyApplicationConfig";
+import {
+	buildPolicyOptions,
+	getEffectiveRemoteDownloadStrategy,
+	getEffectiveRemoteUploadStrategy,
+	getEffectiveS3DownloadStrategy,
+	getEffectiveS3PathStyle,
+	getEffectiveS3UploadStrategy,
+	normalizeThumbnailExtensions,
+} from "./storage-policy-dialog/storagePolicyOptions";
 
 export type {
 	RemoteDownloadStrategy,
@@ -244,22 +257,6 @@ export const DEFAULT_STORAGE_NATIVE_THUMBNAIL_EXTENSIONS = [
 	"gif",
 ];
 
-const SAFE_STORAGE_NATIVE_EXTENSION_PATTERN = /^[a-z0-9_-]{1,32}$/;
-
-export function normalizeThumbnailExtensions(values: string[]) {
-	const normalized: string[] = [];
-	for (const value of values) {
-		const extension = value.trim().replace(/^\.+/, "").toLowerCase();
-		if (
-			SAFE_STORAGE_NATIVE_EXTENSION_PATTERN.test(extension) &&
-			!normalized.includes(extension)
-		) {
-			normalized.push(extension);
-		}
-	}
-	return normalized;
-}
-
 export interface PolicyFormData {
 	name: string;
 	driver_type: DriverType;
@@ -304,101 +301,15 @@ function parseRemoteNodeId(value: string): number | undefined {
 	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-export function getEffectiveS3UploadStrategy(
-	options: StoragePolicyOptions,
-): S3UploadStrategy {
-	return options.s3_upload_strategy ?? "relay_stream";
-}
-
-export function getEffectiveS3DownloadStrategy(
-	options: StoragePolicyOptions,
-): S3DownloadStrategy {
-	return options.s3_download_strategy ?? "relay_stream";
-}
-
-export function getEffectiveS3PathStyle(options: StoragePolicyOptions) {
-	return options.s3_path_style ?? true;
-}
-
-export function getEffectiveRemoteDownloadStrategy(
-	options: StoragePolicyOptions,
-): RemoteDownloadStrategy {
-	return options.remote_download_strategy ?? "relay_stream";
-}
-
-export function getEffectiveRemoteUploadStrategy(
-	options: StoragePolicyOptions,
-): RemoteUploadStrategy {
-	return options.remote_upload_strategy ?? "relay_stream";
-}
-
-export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
-	const options: StoragePolicyOptions = {};
-
-	// Descriptor gates decide which UI sections are available. This serializer is
-	// still intentionally driver-shaped until #329/#330 introduce typed upload
-	// workflow and OneDrive application credential payloads.
-	if (form.driver_type === "local") {
-		if (form.content_dedup) {
-			options.content_dedup = true;
-		}
-	} else if (form.driver_type === "remote") {
-		Object.assign(options, {
-			remote_download_strategy: form.remote_download_strategy,
-			remote_upload_strategy: form.remote_upload_strategy,
-		});
-	} else if (isObjectStorageDriver(form.driver_type)) {
-		Object.assign(options, {
-			s3_upload_strategy: form.s3_upload_strategy,
-			s3_download_strategy: form.s3_download_strategy,
-		});
-		if (form.driver_type === "s3" && form.s3_path_style === false) {
-			options.s3_path_style = false;
-		}
-	} else if (isOneDriveDriver(form.driver_type)) {
-		options.onedrive_cloud = form.onedrive_cloud;
-		options.onedrive_account_mode = form.onedrive_account_mode;
-		const tenant = form.onedrive_tenant.trim();
-		const driveId = form.onedrive_drive_id.trim();
-		const rootItemId = form.onedrive_root_item_id.trim();
-		const siteId = form.onedrive_site_id.trim();
-		const groupId = form.onedrive_group_id.trim();
-		if (tenant) {
-			options.onedrive_tenant = tenant;
-		}
-		if (driveId) {
-			options.onedrive_drive_id = driveId;
-		}
-		options.onedrive_root_item_id = rootItemId || "root";
-		if (form.onedrive_account_mode === "sharepoint_site" && siteId) {
-			options.onedrive_site_id = siteId;
-		}
-		if (form.onedrive_account_mode === "group_drive" && groupId) {
-			options.onedrive_group_id = groupId;
-		}
-	}
-
-	if (form.storage_native_processing_enabled) {
-		options.storage_native_processing_enabled = true;
-		if (form.thumbnail_processor) {
-			options.thumbnail_processor = form.thumbnail_processor;
-			options.thumbnail_extensions = normalizeThumbnailExtensions(
-				form.thumbnail_extensions,
-			);
-		}
-		if (form.storage_native_media_metadata_enabled) {
-			options.storage_native_media_metadata_enabled = true;
-			const mediaMetadataExtensions = normalizeThumbnailExtensions(
-				form.media_metadata_extensions ?? [],
-			);
-			if (mediaMetadataExtensions.length > 0) {
-				options.media_metadata_extensions = mediaMetadataExtensions;
-			}
-		}
-	}
-
-	return options;
-}
+export {
+	buildPolicyOptions,
+	getEffectiveRemoteDownloadStrategy,
+	getEffectiveRemoteUploadStrategy,
+	getEffectiveS3DownloadStrategy,
+	getEffectiveS3PathStyle,
+	getEffectiveS3UploadStrategy,
+	normalizeThumbnailExtensions,
+};
 
 export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 	const options = policy.options;
@@ -557,24 +468,16 @@ export function buildCreatePolicyPayload(
 	form: PolicyFormData,
 ): CreatePolicyRequest {
 	const normalizedForm = normalizePolicyForm(form);
-	// #330 keeps this legacy mapping explicit: Microsoft Graph application
-	// settings still ride through policy access_key/secret_key for now.
-	const accessKey =
-		normalizedForm.driver_type === "one_drive"
-			? normalizedForm.onedrive_client_id
-			: normalizedForm.access_key;
-	const secretKey =
-		normalizedForm.driver_type === "one_drive"
-			? normalizedForm.onedrive_client_secret
-			: normalizedForm.secret_key;
+	const applicationConfig = buildStorageApplicationConfig(normalizedForm);
+	const usesApplicationConfig = applicationConfig !== undefined;
 
-	return {
+	const payload: CreatePolicyRequest = {
 		name: normalizedForm.name,
 		driver_type: normalizedForm.driver_type,
 		endpoint: normalizedForm.endpoint,
 		bucket: normalizedForm.bucket,
-		access_key: accessKey,
-		secret_key: secretKey,
+		access_key: usesApplicationConfig ? "" : normalizedForm.access_key,
+		secret_key: usesApplicationConfig ? "" : normalizedForm.secret_key,
 		base_path: normalizedForm.base_path,
 		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
 		max_file_size: normalizedForm.max_file_size
@@ -586,22 +489,17 @@ export function buildCreatePolicyPayload(
 		is_default: normalizedForm.is_default,
 		options: buildPolicyOptions(normalizedForm),
 	};
+	if (applicationConfig) {
+		payload.application_config = applicationConfig;
+	}
+	return payload;
 }
 
 export function buildUpdatePolicyPayload(
 	form: PolicyFormData,
 ): UpdatePolicyRequest {
 	const normalizedForm = normalizePolicyForm(form);
-	// #330 will replace this with provider-specific application credential
-	// payloads; empty values preserve saved legacy policy credentials today.
-	const accessKey =
-		normalizedForm.driver_type === "one_drive"
-			? normalizedForm.onedrive_client_id
-			: normalizedForm.access_key;
-	const secretKey =
-		normalizedForm.driver_type === "one_drive"
-			? normalizedForm.onedrive_client_secret
-			: normalizedForm.secret_key;
+	const applicationConfig = buildStorageApplicationConfig(normalizedForm);
 	const payload: UpdatePolicyRequest = {
 		name: normalizedForm.name,
 		endpoint: normalizedForm.endpoint,
@@ -618,15 +516,21 @@ export function buildUpdatePolicyPayload(
 		options: buildPolicyOptions(normalizedForm),
 	};
 
-	if (accessKey) {
-		payload.access_key = accessKey;
-	}
-	if (secretKey) {
-		payload.secret_key = secretKey;
+	if (applicationConfig) {
+		payload.application_config = applicationConfig;
+	} else {
+		if (normalizedForm.access_key) {
+			payload.access_key = normalizedForm.access_key;
+		}
+		if (normalizedForm.secret_key) {
+			payload.secret_key = normalizedForm.secret_key;
+		}
 	}
 
 	return payload;
 }
+
+export { parseMicrosoftGraphScopes };
 
 export function hasConnectionFieldChanges(
 	form: PolicyFormData,

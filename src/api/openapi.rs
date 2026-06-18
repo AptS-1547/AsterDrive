@@ -571,6 +571,8 @@ use utoipa::{Modify, OpenApi};
             crate::services::storage_credential_service::StoragePolicyCredentialInfo,
             crate::services::storage_credential_service::StoragePolicyCredentialValidationResult,
             crate::services::storage_credential_service::MicrosoftGraphAuthorizationInput,
+            crate::storage::MicrosoftGraphApplicationConfigInput,
+            crate::storage::StorageConnectorApplicationConfigInput,
             crate::services::storage_credential_service::MicrosoftGraphAuthorizationContext,
             crate::types::ExternalAuthProviderOptions,
             crate::types::MicrosoftExternalAuthProviderOptions,

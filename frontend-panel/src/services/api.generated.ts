@@ -5061,6 +5061,7 @@ export interface components {
             is_default?: boolean | null;
             /** Format: int64 */
             max_file_size?: number | null;
+            application_config?: null | components["schemas"]["StorageConnectorApplicationConfigInput"];
             name: string;
             options?: null | components["schemas"]["StoragePolicyOptions"];
             /** Format: int64 */
@@ -5856,6 +5857,13 @@ export interface components {
             scopes?: string[] | null;
             tenant?: string | null;
         };
+        MicrosoftGraphApplicationConfigInput: {
+            client_id?: string | null;
+            client_secret?: string | null;
+            cloud?: null | components["schemas"]["MicrosoftGraphCloud"];
+            scopes?: string[] | null;
+            tenant?: string | null;
+        };
         /**
          * @description Microsoft Graph cloud deployment for OneDrive / SharePoint storage backends.
          * @enum {string}
@@ -6507,6 +6515,7 @@ export interface components {
             is_default?: boolean | null;
             /** Format: int64 */
             max_file_size?: number | null;
+            application_config?: null | components["schemas"]["StorageConnectorApplicationConfigInput"];
             name?: string | null;
             options?: null | components["schemas"]["StoragePolicyOptions"];
             /** Format: int64 */
@@ -7139,6 +7148,9 @@ export interface components {
             action: components["schemas"]["StoragePolicyExecutableAction"];
             tencent_cos_cors?: null | components["schemas"]["TencentCosCorsConfigResult"];
         };
+        StorageConnectorApplicationConfigInput: {
+            microsoft_graph?: null | components["schemas"]["MicrosoftGraphApplicationConfigInput"];
+        };
         StorageConnectorCapabilities: {
             capacity: boolean;
             efficient_range: boolean;
@@ -7153,7 +7165,6 @@ export interface components {
         StorageConnectorCredentialMode: "none" | "static_secret" | "remote_node" | "oauth_delegated";
         StorageConnectorFieldDescriptor: {
             kind: components["schemas"]["StorageConnectorFieldKind"];
-            legacy_policy_field?: string | null;
             name: string;
             options?: string[];
             required: boolean;

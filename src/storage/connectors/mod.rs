@@ -40,7 +40,9 @@ pub use common::unsupported_multipart_error;
 use local::LocalConnector;
 pub use models::{
     ExecuteDraftStorageConnectorActionInput, ExecuteSavedStorageConnectorActionInput,
-    StorageConnectorActionResult, StorageConnectorConnectionInput, TencentCosCorsConfigResult,
+    MicrosoftGraphApplicationConfigInput, StorageConnectorActionResult,
+    StorageConnectorApplicationConfigInput, StorageConnectorConnectionInput,
+    TencentCosCorsConfigResult,
 };
 pub(crate) use models::{
     StoragePolicyCleanupDriverSnapshot, StoragePolicyCleanupOneDriveCredentialSnapshot,
@@ -60,6 +62,19 @@ trait StorageConnector: StorageConnectorDescriptorProvider + Send + Sync + Sized
 
     fn validate_connection_credentials(input: &StorageConnectorConnectionInput) -> Result<()>;
 
+    fn prepare_connection_for_storage(
+        input: StorageConnectorConnectionInput,
+        application_config: &StorageConnectorApplicationConfigInput,
+    ) -> Result<StorageConnectorConnectionInput> {
+        if !application_config.is_empty() {
+            return Err(crate::errors::AsterError::validation_error(format!(
+                "application credential config is not valid for {} storage policies",
+                Self::driver_type().as_str()
+            )));
+        }
+        Ok(input)
+    }
+
     async fn validate_connection_binding<C: ConnectionTrait + Sync>(
         _db: &C,
         input: &StorageConnectorConnectionInput,
@@ -78,6 +93,23 @@ trait StorageConnector: StorageConnectorDescriptorProvider + Send + Sync + Sized
             options,
         )?;
         common::ensure_onedrive_options_absent(options)
+    }
+
+    async fn persist_application_config<C: ConnectionTrait + Sync>(
+        db: &C,
+        encryption_key: &str,
+        policy_id: i64,
+        options: &crate::types::StoragePolicyOptions,
+        application_config: StorageConnectorApplicationConfigInput,
+    ) -> Result<()> {
+        let _ = (db, encryption_key, policy_id, options);
+        if !application_config.is_empty() {
+            return Err(crate::errors::AsterError::validation_error(format!(
+                "application credential config is not valid for {} storage policies",
+                Self::driver_type().as_str()
+            )));
+        }
+        Ok(())
     }
 
     async fn build_draft_driver<S: RemoteProtocolRuntimeState + Sync + ?Sized>(
@@ -207,6 +239,31 @@ impl BuiltinStorageConnector {
         }
     }
 
+    fn prepare_connection_for_storage(
+        self,
+        input: StorageConnectorConnectionInput,
+        application_config: &StorageConnectorApplicationConfigInput,
+    ) -> Result<StorageConnectorConnectionInput> {
+        match self {
+            Self::Local => {
+                LocalConnector::prepare_connection_for_storage(input, application_config)
+            }
+            Self::S3 => S3Connector::prepare_connection_for_storage(input, application_config),
+            Self::AzureBlob => {
+                AzureBlobConnector::prepare_connection_for_storage(input, application_config)
+            }
+            Self::TencentCos => {
+                TencentCosConnector::prepare_connection_for_storage(input, application_config)
+            }
+            Self::Remote => {
+                RemoteConnector::prepare_connection_for_storage(input, application_config)
+            }
+            Self::OneDrive => {
+                OneDriveConnector::prepare_connection_for_storage(input, application_config)
+            }
+        }
+    }
+
     async fn validate_policy_options<C: ConnectionTrait + Sync>(
         self,
         db: &C,
@@ -229,6 +286,78 @@ impl BuiltinStorageConnector {
             }
             Self::OneDrive => {
                 OneDriveConnector::validate_policy_options(db, remote_node_id, options).await
+            }
+        }
+    }
+
+    async fn persist_application_config<C: ConnectionTrait + Sync>(
+        self,
+        db: &C,
+        encryption_key: &str,
+        policy_id: i64,
+        options: &crate::types::StoragePolicyOptions,
+        application_config: StorageConnectorApplicationConfigInput,
+    ) -> Result<()> {
+        match self {
+            Self::Local => {
+                LocalConnector::persist_application_config(
+                    db,
+                    encryption_key,
+                    policy_id,
+                    options,
+                    application_config,
+                )
+                .await
+            }
+            Self::S3 => {
+                S3Connector::persist_application_config(
+                    db,
+                    encryption_key,
+                    policy_id,
+                    options,
+                    application_config,
+                )
+                .await
+            }
+            Self::AzureBlob => {
+                AzureBlobConnector::persist_application_config(
+                    db,
+                    encryption_key,
+                    policy_id,
+                    options,
+                    application_config,
+                )
+                .await
+            }
+            Self::TencentCos => {
+                TencentCosConnector::persist_application_config(
+                    db,
+                    encryption_key,
+                    policy_id,
+                    options,
+                    application_config,
+                )
+                .await
+            }
+            Self::Remote => {
+                RemoteConnector::persist_application_config(
+                    db,
+                    encryption_key,
+                    policy_id,
+                    options,
+                    application_config,
+                )
+                .await
+            }
+            Self::OneDrive => {
+                OneDriveConnector::persist_application_config(
+                    db,
+                    encryption_key,
+                    policy_id,
+                    options,
+                    application_config,
+                )
+                .await
             }
         }
     }
@@ -509,6 +638,15 @@ pub async fn normalize_policy_connection<C: ConnectionTrait + Sync>(
         .await
 }
 
+pub fn prepare_connection_for_storage(
+    input: StorageConnectorConnectionInput,
+    application_config: &StorageConnectorApplicationConfigInput,
+) -> Result<StorageConnectorConnectionInput> {
+    connector_for(input.driver_type)?
+        .connector
+        .prepare_connection_for_storage(input, application_config)
+}
+
 pub async fn validate_policy_options<C: ConnectionTrait + Sync>(
     db: &C,
     driver_type: DriverType,
@@ -518,6 +656,20 @@ pub async fn validate_policy_options<C: ConnectionTrait + Sync>(
     connector_for(driver_type)?
         .connector
         .validate_policy_options(db, remote_node_id, options)
+        .await
+}
+
+pub async fn persist_application_config<C: ConnectionTrait + Sync>(
+    db: &C,
+    driver_type: DriverType,
+    encryption_key: &str,
+    policy_id: i64,
+    options: &crate::types::StoragePolicyOptions,
+    application_config: StorageConnectorApplicationConfigInput,
+) -> Result<()> {
+    connector_for(driver_type)?
+        .connector
+        .persist_application_config(db, encryption_key, policy_id, options, application_config)
         .await
 }
 

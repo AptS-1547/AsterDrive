@@ -25,6 +25,7 @@ import {
 	hasConnectionFieldChanges,
 	normalizePolicyForm,
 	type PolicyFormData,
+	parseMicrosoftGraphScopes,
 	supportsApplicationCredentials,
 	supportsDraftConnectionTest,
 	supportsObjectStorageConnection,
@@ -633,7 +634,11 @@ function useAdminPoliciesPageContent() {
 
 	const loadStorageCredentials = useCallback(
 		(policyId: number, driverType: DriverType) => {
-			if (driverType !== "one_drive") {
+			const descriptor = getStorageDriverDescriptor(
+				storageDriverDescriptors,
+				driverType,
+			);
+			if (!supportsApplicationCredentials(descriptor)) {
 				setStorageCredentials([]);
 				setStorageCredentialsLoading(false);
 				return;
@@ -667,8 +672,15 @@ function useAdminPoliciesPageContent() {
 					}
 				});
 		},
-		[],
+		[storageDriverDescriptors],
 	);
+
+	useEffect(() => {
+		if (!editingPolicy) {
+			return;
+		}
+		loadStorageCredentials(editingPolicy.id, editingPolicy.driver_type);
+	}, [editingPolicy, loadStorageCredentials]);
 
 	const openEdit = useCallback(
 		(policy: StoragePolicy) => {
@@ -678,15 +690,9 @@ function useAdminPoliciesPageContent() {
 			setForm(getPolicyForm(policy));
 			void refreshRemoteNodeLookup();
 			loadPolicyCapacity(policy.id);
-			loadStorageCredentials(policy.id, policy.driver_type);
 			setDialogOpen(true);
 		},
-		[
-			loadPolicyCapacity,
-			loadStorageCredentials,
-			refreshRemoteNodeLookup,
-			resetDialogState,
-		],
+		[loadPolicyCapacity, refreshRemoteNodeLookup, resetDialogState],
 	);
 
 	const openPolicyById = useCallback(
@@ -978,7 +984,6 @@ function useAdminPoliciesPageContent() {
 				setEditingPolicy(updated);
 				setForm(getPolicyForm(updated));
 				setValidatedConnectionKey(null);
-				loadStorageCredentials(updated.id, updated.driver_type);
 				loadPolicyCapacity(updated.id);
 				setPolicies((prev) =>
 					prev.map((policy) => (policy.id === editingId ? updated : policy)),
@@ -1010,7 +1015,6 @@ function useAdminPoliciesPageContent() {
 					});
 					setTotal((current) => current + 1);
 					loadPolicyCapacity(created.id);
-					loadStorageCredentials(created.id, created.driver_type);
 					toast.success(t("policy_onedrive_created_authorize_next"));
 					return;
 				}
@@ -1209,6 +1213,7 @@ function useAdminPoliciesPageContent() {
 			return;
 		}
 		const currentForm = normalizePolicyForm(form);
+		const scopes = parseMicrosoftGraphScopes(currentForm.onedrive_scopes);
 
 		void runWithStorageAuthorization(async () => {
 			try {
@@ -1221,6 +1226,7 @@ function useAdminPoliciesPageContent() {
 							tenant: currentForm.onedrive_tenant || undefined,
 							client_id: currentForm.onedrive_client_id || undefined,
 							client_secret: currentForm.onedrive_client_secret || undefined,
+							scopes: scopes.length > 0 ? scopes : undefined,
 						},
 					},
 				);

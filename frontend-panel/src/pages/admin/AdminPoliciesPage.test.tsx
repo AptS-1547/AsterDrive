@@ -851,7 +851,6 @@ function createStorageDriverDescriptors() {
 			fields: [
 				{
 					kind: "text",
-					legacy_policy_field: "access_key",
 					name: "client_id",
 					required: true,
 					scope: "application_credential",
@@ -859,7 +858,6 @@ function createStorageDriverDescriptors() {
 				},
 				{
 					kind: "secret",
-					legacy_policy_field: "secret_key",
 					name: "client_secret",
 					required: true,
 					scope: "application_credential",
@@ -2068,7 +2066,7 @@ describe("AdminPoliciesPage", () => {
 
 			await waitFor(() => {
 				expect(mockState.create).toHaveBeenCalledWith({
-					access_key: "client-id",
+					access_key: "",
 					base_path: "",
 					bucket: "",
 					chunk_size: 5 * 1024 * 1024,
@@ -2076,6 +2074,15 @@ describe("AdminPoliciesPage", () => {
 					endpoint: "",
 					is_default: false,
 					max_file_size: undefined,
+					application_config: {
+						microsoft_graph: {
+							cloud: "global",
+							tenant: "common",
+							client_id: "client-id",
+							client_secret: "client-secret",
+							scopes: undefined,
+						},
+					},
 					name: "Team OneDrive",
 					options: {
 						onedrive_account_mode: "work_or_school",
@@ -2084,7 +2091,7 @@ describe("AdminPoliciesPage", () => {
 						onedrive_tenant: "common",
 					},
 					remote_node_id: undefined,
-					secret_key: "client-secret",
+					secret_key: "",
 				});
 			});
 			expect(mockState.toastSuccess).toHaveBeenCalledWith(
@@ -2103,6 +2110,7 @@ describe("AdminPoliciesPage", () => {
 						tenant: "common",
 						client_id: undefined,
 						client_secret: undefined,
+						scopes: undefined,
 					},
 				});
 			});
@@ -2968,6 +2976,7 @@ describe("AdminPoliciesPage", () => {
 						tenant: "common",
 						client_id: undefined,
 						client_secret: undefined,
+						scopes: undefined,
 					},
 				});
 			});
@@ -3163,7 +3172,7 @@ describe("AdminPoliciesPage", () => {
 		).not.toBeInTheDocument();
 	});
 
-	it("saves updated OneDrive application settings as policy connection credentials", async () => {
+	it("saves updated OneDrive application settings as generic application config", async () => {
 		mockState.items = [
 			createPolicy({
 				id: 12,
@@ -3195,8 +3204,15 @@ describe("AdminPoliciesPage", () => {
 			expect(mockState.update).toHaveBeenCalledWith(
 				12,
 				expect.objectContaining({
-					access_key: "new-client-id",
-					secret_key: "new-client-secret",
+					application_config: {
+						microsoft_graph: {
+							cloud: "global",
+							tenant: "common",
+							client_id: "new-client-id",
+							client_secret: "new-client-secret",
+							scopes: undefined,
+						},
+					},
 				}),
 			);
 		});

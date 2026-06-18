@@ -24,9 +24,11 @@ pub use oauth::{
     finish_authorization_callback, start_authorization,
 };
 
+pub use crate::storage::MicrosoftGraphApplicationConfigInput;
+
 pub(crate) use oauth::{
     MicrosoftGraphCleanupTokenSnapshot, build_microsoft_graph_cleanup_token_provider,
-    build_microsoft_graph_credential_token_provider,
+    build_microsoft_graph_credential_token_provider, upsert_microsoft_graph_application_config,
 };
 
 const FLOW_TTL_SECS: u64 = 300;
@@ -84,7 +86,7 @@ pub struct MicrosoftGraphAuthorizationContext {
     pub scopes: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
 pub struct MicrosoftGraphAuthorizationInput {
     pub cloud: Option<MicrosoftGraphCloud>,

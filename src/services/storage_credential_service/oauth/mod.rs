@@ -5,7 +5,7 @@ mod provider;
 mod tests;
 
 use chrono::{Duration, Utc};
-use sea_orm::{ActiveValue::Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue::Set, ConnectionTrait, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -24,9 +24,10 @@ use crate::types::{
 use crate::utils::id;
 
 use super::{
-    FLOW_TTL_SECS, MicrosoftGraphAuthorizationContext, MicrosoftGraphAuthorizationInput,
-    StoragePolicyCredentialInfo, crypto, normalize_optional_string, normalize_required_string,
-    normalize_scopes, resolve_onedrive_location, scopes_to_json,
+    FLOW_TTL_SECS, MicrosoftGraphApplicationConfigInput, MicrosoftGraphAuthorizationContext,
+    MicrosoftGraphAuthorizationInput, StoragePolicyCredentialInfo, crypto,
+    normalize_optional_string, normalize_required_string, normalize_scopes,
+    resolve_onedrive_location, scopes_to_json,
 };
 use audit::{
     OAUTH_AUDIT_EVENT_AUTHORIZATION_COMPLETED, OAUTH_AUDIT_EVENT_AUTHORIZATION_FAILED,
@@ -78,6 +79,147 @@ pub struct StorageAuthorizationCallbackQuery {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
 pub struct StorageAuthorizationCallbackOutcome {
     pub credential: StoragePolicyCredentialInfo,
+}
+
+pub(crate) async fn upsert_microsoft_graph_application_config<C: ConnectionTrait>(
+    db: &C,
+    encryption_key: &str,
+    policy_id: i64,
+    input: MicrosoftGraphApplicationConfigInput,
+) -> Result<Option<storage_policy_credential::Model>> {
+    let existing = storage_policy_credential_repo::find_by_policy_provider_kind(
+        db,
+        policy_id,
+        StorageCredentialProvider::MicrosoftGraph,
+        StorageCredentialKind::OauthDelegated,
+    )
+    .await?;
+    let existing_metadata = existing
+        .as_ref()
+        .and_then(|credential| parse_metadata(&credential.metadata));
+    if existing.is_none()
+        && input.cloud.is_none()
+        && normalize_optional_string(input.tenant.clone()).is_none()
+        && normalize_optional_string(input.client_id.clone()).is_none()
+        && normalize_optional_string(input.client_secret.clone()).is_none()
+        && input
+            .scopes
+            .as_ref()
+            .is_none_or(|scopes| scopes.iter().all(|scope| scope.trim().is_empty()))
+    {
+        return Ok(None);
+    }
+
+    let cloud = input
+        .cloud
+        .or_else(|| existing_metadata.as_ref().and_then(metadata_cloud))
+        .unwrap_or_default();
+    let tenant = normalize_optional_string(input.tenant)
+        .or_else(|| {
+            existing
+                .as_ref()
+                .and_then(|credential| credential.tenant_id.clone())
+        })
+        .unwrap_or_else(|| "common".to_string());
+    let client_id = normalize_optional_string(input.client_id).or_else(|| {
+        existing_metadata
+            .as_ref()
+            .and_then(|metadata| metadata_string(metadata, "client_id"))
+    });
+    let client_secret = normalize_optional_string(input.client_secret);
+    let existing_client_secret_ciphertext = existing_metadata
+        .as_ref()
+        .and_then(|metadata| metadata_string(metadata, "client_secret_ciphertext"));
+    let scopes = match input.scopes {
+        Some(scopes) => normalize_scopes(Some(scopes)),
+        None => existing
+            .as_ref()
+            .map(|credential| super::parse_scopes_json(&credential.scopes))
+            .filter(|scopes| !scopes.is_empty())
+            .unwrap_or_else(|| normalize_scopes(None)),
+    };
+    let metadata = microsoft_graph_application_metadata(
+        existing_metadata.as_ref(),
+        encryption_key,
+        policy_id,
+        cloud,
+        client_id.as_deref(),
+        client_secret.as_deref(),
+        existing_client_secret_ciphertext.as_deref(),
+    )?;
+    let now = Utc::now();
+
+    if let Some(credential) = existing {
+        let mut active: storage_policy_credential::ActiveModel = credential.into();
+        active.tenant_id = Set(Some(tenant));
+        active.scopes = Set(scopes_to_json(&scopes)?);
+        active.metadata = Set(metadata);
+        active.updated_at = Set(now);
+        return active.update(db).await.map(Some).map_err(AsterError::from);
+    }
+
+    storage_policy_credential_repo::upsert_by_policy_provider_kind(
+        db,
+        storage_policy_credential::ActiveModel {
+            policy_id: Set(policy_id),
+            provider: Set(StorageCredentialProvider::MicrosoftGraph),
+            credential_kind: Set(StorageCredentialKind::OauthDelegated),
+            account_label: Set(None),
+            subject: Set(None),
+            tenant_id: Set(Some(tenant)),
+            scopes: Set(scopes_to_json(&scopes)?),
+            access_token_ciphertext: Set(None),
+            refresh_token_ciphertext: Set(None),
+            metadata: Set(metadata),
+            status: Set(StorageCredentialStatus::Invalid),
+            status_reason: Set(Some("authorization_required".to_string())),
+            expires_at: Set(None),
+            authorized_at: Set(None),
+            last_refreshed_at: Set(None),
+            last_validated_at: Set(None),
+            ..Default::default()
+        },
+        now,
+    )
+    .await
+    .map(Some)
+}
+
+fn microsoft_graph_application_metadata(
+    existing_metadata: Option<&serde_json::Value>,
+    encryption_key: &str,
+    policy_id: i64,
+    cloud: crate::types::MicrosoftGraphCloud,
+    client_id: Option<&str>,
+    client_secret: Option<&str>,
+    existing_client_secret_ciphertext: Option<&str>,
+) -> Result<String> {
+    let mut metadata = existing_metadata
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    metadata["cloud"] = serde_json::json!(cloud);
+    metadata["graph_base_url"] = serde_json::Value::String(cloud.graph_base_url().to_string());
+    if let Some(client_id) = client_id {
+        metadata["client_id"] = serde_json::Value::String(client_id.to_string());
+    }
+    if let Some(client_secret) = client_secret {
+        let ciphertext =
+            microsoft::encrypt_stored_client_secret(encryption_key, policy_id, client_secret)?;
+        metadata["client_secret_configured"] = serde_json::Value::Bool(true);
+        metadata["client_secret_ciphertext"] = serde_json::Value::String(ciphertext);
+    } else if let Some(ciphertext) = existing_client_secret_ciphertext {
+        metadata["client_secret_configured"] = serde_json::Value::Bool(true);
+        metadata["client_secret_ciphertext"] = serde_json::Value::String(ciphertext.to_string());
+    } else {
+        metadata["client_secret_configured"] = serde_json::Value::Bool(false);
+        metadata
+            .as_object_mut()
+            .map(|object| object.remove("client_secret_ciphertext"));
+    }
+    serde_json::to_string(&metadata).map_aster_err_ctx(
+        "failed to serialize Microsoft Graph application metadata",
+        AsterError::internal_error,
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,9 +311,7 @@ async fn start_microsoft_graph_authorization(
     policy: crate::entities::storage_policy::Model,
     input: Option<MicrosoftGraphAuthorizationInput>,
 ) -> Result<StorageAuthorizationStartResponse> {
-    let input = input.ok_or_else(|| {
-        AsterError::validation_error("microsoft_graph authorization parameters are required")
-    })?;
+    let input = input.unwrap_or_default();
     let policy_id = policy.id;
     let existing_credential = storage_policy_credential_repo::find_by_policy_provider_kind(
         state.writer_db(),
@@ -183,9 +323,11 @@ async fn start_microsoft_graph_authorization(
     let existing_metadata = existing_credential
         .as_ref()
         .and_then(|credential| parse_metadata(&credential.metadata));
+    let options = parse_storage_policy_options(policy.options.as_ref());
     let cloud = input
         .cloud
         .or_else(|| existing_metadata.as_ref().and_then(metadata_cloud))
+        .or(options.onedrive_cloud)
         .unwrap_or_default();
     let tenant = normalize_optional_string(input.tenant)
         .or_else(|| {
@@ -193,33 +335,33 @@ async fn start_microsoft_graph_authorization(
                 .as_ref()
                 .and_then(|credential| credential.tenant_id.clone())
         })
+        .or_else(|| options.onedrive_tenant.clone())
         .unwrap_or_else(|| "common".to_string());
-    let client_id = match normalize_optional_string(input.client_id).or_else(|| {
-        normalize_optional_string(Some(policy.access_key.clone())).or_else(|| {
+    let client_id = match normalize_optional_string(input.client_id)
+        .or_else(|| {
             existing_metadata
                 .as_ref()
                 .and_then(|metadata| metadata_string(metadata, "client_id"))
         })
-    }) {
+        .or_else(|| normalize_optional_string(Some(policy.access_key.clone())))
+    {
         Some(client_id) => normalize_required_string(&client_id, "client_id", 512)?,
         None => return Err(AsterError::validation_error("client_id is required")),
     };
     let client_secret = match normalize_optional_string(input.client_secret) {
         Some(client_secret) => Some(client_secret),
-        None => match normalize_optional_string(Some(policy.secret_key.clone())) {
-            Some(client_secret) => Some(client_secret),
-            None => existing_metadata
-                .as_ref()
-                .and_then(|metadata| metadata_string(metadata, "client_secret_ciphertext"))
-                .map(|ciphertext| {
-                    decrypt_stored_client_secret(
-                        &state.config().auth.storage_credential_secret_key,
-                        policy_id,
-                        &ciphertext,
-                    )
-                })
-                .transpose()?,
-        },
+        None => existing_metadata
+            .as_ref()
+            .and_then(|metadata| metadata_string(metadata, "client_secret_ciphertext"))
+            .map(|ciphertext| {
+                decrypt_stored_client_secret(
+                    &state.config().auth.storage_credential_secret_key,
+                    policy_id,
+                    &ciphertext,
+                )
+            })
+            .transpose()?
+            .or_else(|| normalize_optional_string(Some(policy.secret_key.clone()))),
     };
     let client_secret = client_secret
         .map(|client_secret| normalize_required_string(&client_secret, "client_secret", 2048))
@@ -232,9 +374,15 @@ async fn start_microsoft_graph_authorization(
                 "client_secret is required for Microsoft Graph storage authorization",
             )
         })?;
-    let options = parse_storage_policy_options(policy.options.as_ref());
     let default_scopes = super::default_microsoft_graph_scopes_for_onedrive_options(&options);
-    let scopes = super::normalize_scopes_with_default(input.scopes, default_scopes);
+    let scopes = match input.scopes {
+        Some(scopes) => super::normalize_scopes_with_default(Some(scopes), default_scopes),
+        None => existing_credential
+            .as_ref()
+            .map(|credential| super::parse_scopes_json(&credential.scopes))
+            .filter(|scopes| !scopes.is_empty())
+            .unwrap_or_else(|| super::normalize_scopes_with_default(None, default_scopes)),
+    };
     let redirect_uri = callback_redirect_uri(state, req)?;
     let state_value = format!("storage_oauth_{}", id::new_short_token());
     let pkce_verifier = build_pkce_verifier();

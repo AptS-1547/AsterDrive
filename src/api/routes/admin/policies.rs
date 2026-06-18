@@ -67,6 +67,7 @@ impl From<CreatePolicyReq> for policy_service::CreateStoragePolicyInput {
             is_default: value.is_default.unwrap_or(false),
             allowed_types: value.allowed_types,
             options: value.options,
+            application_config: value.application_config.unwrap_or_default(),
         }
     }
 }
@@ -86,6 +87,7 @@ impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
             is_default: value.is_default,
             allowed_types: value.allowed_types,
             options: value.options,
+            application_config: value.application_config.unwrap_or_default(),
         }
     }
 }

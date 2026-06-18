@@ -138,6 +138,7 @@ pub struct CreateStoragePolicyInput {
     pub is_default: bool,
     pub allowed_types: Option<Vec<String>>,
     pub options: Option<StoragePolicyOptions>,
+    pub application_config: crate::storage::StorageConnectorApplicationConfigInput,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -154,6 +155,7 @@ pub struct UpdateStoragePolicyInput {
     pub is_default: Option<bool>,
     pub allowed_types: Option<Vec<String>>,
     pub options: Option<StoragePolicyOptions>,
+    pub application_config: crate::storage::StorageConnectorApplicationConfigInput,
 }
 
 #[derive(Debug, Clone)]

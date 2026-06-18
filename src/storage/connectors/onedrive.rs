@@ -12,8 +12,7 @@ use crate::storage::connector_descriptor::{
     StorageConnectorDescriptorProvider, StorageConnectorFieldKind, StorageConnectorFieldScope,
     StorageConnectorUploadWorkflows, saved_connection_test_action_descriptor,
     start_authorization_action_descriptor, storage_connector_field,
-    storage_connector_field_with_legacy, storage_connector_field_with_options,
-    validate_credential_action_descriptor,
+    storage_connector_field_with_options, validate_credential_action_descriptor,
 };
 use crate::storage::drivers::onedrive::{
     MicrosoftGraphClient, MicrosoftGraphClientConfig, OneDriveDriver,
@@ -27,9 +26,9 @@ use super::common::{
     validate_onedrive_options,
 };
 use super::{
-    StorageConnector, StorageConnectorConnectionInput, StorageConnectorUploadTransport,
-    StoragePolicyCleanupDriverSnapshot, StoragePolicyCleanupOneDriveCredentialSnapshot,
-    StoragePolicyCleanupSnapshots,
+    StorageConnector, StorageConnectorApplicationConfigInput, StorageConnectorConnectionInput,
+    StorageConnectorUploadTransport, StoragePolicyCleanupDriverSnapshot,
+    StoragePolicyCleanupOneDriveCredentialSnapshot, StoragePolicyCleanupSnapshots,
 };
 
 pub struct OneDriveConnector;
@@ -63,21 +62,19 @@ impl StorageConnectorDescriptorProvider for OneDriveConnector {
                 frontend_direct_provider_resumable_upload: false,
             },
             fields: vec![
-                storage_connector_field_with_legacy(
+                storage_connector_field(
                     "client_id",
                     StorageConnectorFieldScope::ApplicationCredential,
                     StorageConnectorFieldKind::Text,
                     true,
                     false,
-                    "access_key",
                 ),
-                storage_connector_field_with_legacy(
+                storage_connector_field(
                     "client_secret",
                     StorageConnectorFieldScope::ApplicationCredential,
                     StorageConnectorFieldKind::Secret,
                     true,
                     true,
-                    "secret_key",
                 ),
                 storage_connector_field_with_options(
                     "cloud",
@@ -162,6 +159,19 @@ impl StorageConnector for OneDriveConnector {
         Ok(())
     }
 
+    fn prepare_connection_for_storage(
+        mut input: StorageConnectorConnectionInput,
+        application_config: &StorageConnectorApplicationConfigInput,
+    ) -> Result<StorageConnectorConnectionInput> {
+        let _ = application_config;
+        // Microsoft Graph application credentials are connector-owned config,
+        // not S3-style policy access keys. Clear the legacy columns at the
+        // storage boundary so policy_service never has to know this rule.
+        input.access_key.clear();
+        input.secret_key.clear();
+        Ok(input)
+    }
+
     async fn validate_policy_options<C: ConnectionTrait + Sync>(
         db: &C,
         remote_node_id: Option<i64>,
@@ -170,6 +180,26 @@ impl StorageConnector for OneDriveConnector {
         let _ = (db, remote_node_id);
         ensure_storage_native_processing_supported(Self::storage_connector_descriptor(), options)?;
         validate_onedrive_options(options)
+    }
+
+    async fn persist_application_config<C: ConnectionTrait + Sync>(
+        db: &C,
+        encryption_key: &str,
+        policy_id: i64,
+        options: &crate::types::StoragePolicyOptions,
+        application_config: StorageConnectorApplicationConfigInput,
+    ) -> Result<()> {
+        let Some(microsoft_graph) = application_config.microsoft_graph else {
+            return Ok(());
+        };
+        crate::services::storage_credential_service::upsert_microsoft_graph_application_config(
+            db,
+            encryption_key,
+            policy_id,
+            microsoft_graph_config_with_policy_options(microsoft_graph, options),
+        )
+        .await?;
+        Ok(())
     }
 
     async fn build_draft_driver<S: RemoteProtocolRuntimeState + Sync + ?Sized>(
@@ -186,6 +216,24 @@ impl StorageConnector for OneDriveConnector {
         let _ = policy;
         StorageConnectorUploadTransport::OneDrive
     }
+}
+
+fn microsoft_graph_config_with_policy_options(
+    mut input: crate::storage::MicrosoftGraphApplicationConfigInput,
+    options: &crate::types::StoragePolicyOptions,
+) -> crate::storage::MicrosoftGraphApplicationConfigInput {
+    // OneDrive keeps cloud/tenant in policy options for driver behavior; the
+    // app-config row mirrors them so OAuth start can be driven by saved provider
+    // metadata without reading legacy policy key fields.
+    input.cloud = input.cloud.or(options.onedrive_cloud);
+    if input
+        .tenant
+        .as_ref()
+        .is_none_or(|tenant| tenant.trim().is_empty())
+    {
+        input.tenant = options.onedrive_tenant.clone();
+    }
+    input
 }
 
 impl OneDriveConnector {

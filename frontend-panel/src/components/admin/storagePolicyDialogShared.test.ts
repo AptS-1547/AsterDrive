@@ -379,7 +379,7 @@ describe("storagePolicyDialogShared", () => {
 		});
 	});
 
-	it("stores OneDrive Microsoft app settings as policy connection credentials", () => {
+	it("stores OneDrive Microsoft app settings under generic application config", () => {
 		const form = getPolicyForm({
 			id: 12,
 			name: "Graph Drive",
@@ -427,8 +427,17 @@ describe("storagePolicyDialogShared", () => {
 				onedrive_scopes: "Files.ReadWrite.All offline_access",
 			}),
 		).toMatchObject({
-			access_key: "client-id",
-			secret_key: "secret",
+			access_key: "",
+			secret_key: "",
+			application_config: {
+				microsoft_graph: {
+					cloud: "china",
+					tenant: "contoso.partner.onmschina.cn",
+					client_id: "client-id",
+					client_secret: "secret",
+					scopes: ["Files.ReadWrite.All", "offline_access"],
+				},
+			},
 			options: {
 				onedrive_cloud: "china",
 				onedrive_account_mode: "sharepoint_site",
@@ -446,8 +455,14 @@ describe("storagePolicyDialogShared", () => {
 				onedrive_client_secret: "new-secret",
 			}),
 		).toMatchObject({
-			access_key: "new-client-id",
-			secret_key: "new-secret",
+			application_config: {
+				microsoft_graph: {
+					cloud: "china",
+					tenant: "contoso.partner.onmschina.cn",
+					client_id: "new-client-id",
+					client_secret: "new-secret",
+				},
+			},
 		});
 
 		expect(

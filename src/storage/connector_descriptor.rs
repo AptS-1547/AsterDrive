@@ -196,8 +196,6 @@ pub struct StorageConnectorFieldDescriptor {
     pub kind: StorageConnectorFieldKind,
     pub required: bool,
     pub secret: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub legacy_policy_field: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<String>,
 }
@@ -374,22 +372,7 @@ pub(crate) fn storage_connector_field(
         kind,
         required,
         secret,
-        legacy_policy_field: None,
         options: Vec::new(),
-    }
-}
-
-pub(crate) fn storage_connector_field_with_legacy(
-    name: &str,
-    scope: StorageConnectorFieldScope,
-    kind: StorageConnectorFieldKind,
-    required: bool,
-    secret: bool,
-    legacy_policy_field: &str,
-) -> StorageConnectorFieldDescriptor {
-    StorageConnectorFieldDescriptor {
-        legacy_policy_field: Some(legacy_policy_field.to_string()),
-        ..storage_connector_field(name, scope, kind, required, secret)
     }
 }
 
