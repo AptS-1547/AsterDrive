@@ -1429,12 +1429,26 @@ describe("storagePolicyDialogShared", () => {
 			},
 		} as StoragePolicy;
 		const remoteForm = getPolicyForm(remotePolicy);
+		const remoteDescriptor = {
+			capabilities: {
+				remote_node_binding: true,
+			},
+			fields: [{ name: "remote_node_id", scope: "remote_node_binding" }],
+			upload_workflows: {},
+		} as never;
 
 		expect(hasConnectionFieldChanges(remoteForm, remotePolicy)).toBe(false);
 		expect(
 			hasConnectionFieldChanges(
 				{ ...remoteForm, remote_node_id: "10" },
 				remotePolicy,
+			),
+		).toBe(false);
+		expect(
+			hasConnectionFieldChanges(
+				{ ...remoteForm, remote_node_id: "10" },
+				remotePolicy,
+				remoteDescriptor,
 			),
 		).toBe(true);
 

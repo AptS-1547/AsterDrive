@@ -192,13 +192,7 @@ export function hasConnectionFieldChanges(
 		);
 	}
 
-	if (
-		shouldUseRemoteNodeBinding(
-			descriptor,
-			normalizedForm.remote_node_id,
-			editingPolicy.remote_node_id,
-		)
-	) {
+	if (shouldUseRemoteNodeBinding(descriptor)) {
 		return (
 			parseRemoteNodeId(normalizedForm.remote_node_id) !==
 				editingPolicy.remote_node_id ||
@@ -292,10 +286,6 @@ function shouldUseMicrosoftGraphConfig(
 
 function shouldUseRemoteNodeBinding(
 	descriptor: StorageConnectorDescriptor | null | undefined,
-	formRemoteNodeId: string,
-	policyRemoteNodeId: number | null | undefined,
 ) {
-	return descriptor
-		? supportsRemoteNodeBinding(descriptor)
-		: formRemoteNodeId.trim().length > 0 || policyRemoteNodeId != null;
+	return descriptor ? supportsRemoteNodeBinding(descriptor) : false;
 }
