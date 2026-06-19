@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::types::DriverType;
+use crate::types::{DriverType, OBJECT_MULTIPART_MIN_PART_SIZE};
 
 /// 为 connector 提供静态/半静态 descriptor。
 ///
@@ -202,10 +202,16 @@ pub struct StorageConnectorActionDescriptor {
 pub struct StorageConnectorUploadWorkflows {
     /// 后端/客户端可以用单请求写入小对象。
     pub simple_upload: bool,
+    /// 单请求上传的静态语义。实际是否走 direct 仍受 policy chunk_size 限制。
+    pub simple_upload_capabilities: StorageConnectorSimpleUploadCapabilities,
     /// 后端可以通过 `StreamUploadDriver` 把 reader 写入 provider。
     pub stream_upload: bool,
     /// 支持对象存储 multipart/block upload 语义。
     pub object_multipart_upload: bool,
+    /// 对象存储 multipart/block upload 的具体语义。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_multipart_upload_capabilities:
+        Option<StorageConnectorObjectMultipartUploadCapabilities>,
     /// 支持 provider-native resumable/session upload。
     pub provider_resumable_upload: bool,
     /// 支持浏览器/客户端使用 presigned URL 直传。
@@ -219,6 +225,42 @@ pub struct StorageConnectorUploadWorkflows {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_resumable_upload_capabilities:
         Option<StorageConnectorProviderResumableUploadCapabilities>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct StorageConnectorSimpleUploadCapabilities {
+    /// true 表示浏览器把对象发给 AsterDrive，由后端 relay 到 provider。
+    pub server_side_relay: bool,
+    /// true 表示单请求 direct/relay 上限由具体 policy chunk_size 决定。
+    pub policy_limited: bool,
+    /// Provider 自身单请求 API 的最大对象大小；None 表示当前 connector 不声明静态上限。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_provider_single_request_size: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct StorageConnectorObjectMultipartUploadCapabilities {
+    /// Provider 最小非 final part 大小。
+    pub min_part_size: i64,
+    /// true 表示实际 part size 由 policy chunk_size 决定，但会被 min_part_size 修正。
+    pub policy_limited_part_size: bool,
+    /// AsterDrive 服务端是否可以 relay 上传 part。
+    pub relay_part_upload: bool,
+    /// 浏览器是否可以通过 presigned URL 直传 part。
+    pub presigned_part_upload: bool,
+    /// 浏览器直传 part 后是否必须从响应读取 ETag。
+    ///
+    /// Azure block upload 通过 URL 中的 blockid 作为 completion token，因此不要求
+    /// 浏览器能读 ETag；S3-compatible multipart 通常需要 ETag。
+    pub presigned_part_etag_required: bool,
+    /// complete 阶段是否需要显式提交 part 列表。
+    pub explicit_complete_required: bool,
+    /// 是否支持清理未完成的 provider multipart/block upload。
+    pub abort_supported: bool,
+    /// 是否支持查询 provider 已接收的 part/block 列表。
+    pub list_parts_supported: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -240,6 +282,12 @@ pub struct StorageConnectorProviderResumableUploadCapabilities {
     pub max_simple_upload_size: Option<u64>,
     /// 是否允许浏览器直接拿 provider session 上传。
     pub frontend_direct_upload: bool,
+    /// Provider 是否在最后一个 range/fragment 接收后隐式完成 session。
+    pub implicit_completion: bool,
+    /// 当前实现是否向上层暴露 provider-native abort。
+    pub abort_supported: bool,
+    /// 当前实现是否向上层暴露 provider-native status/query。
+    pub status_query_supported: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -516,8 +564,12 @@ pub(crate) fn object_storage_connector_descriptor(
         },
         upload_workflows: StorageConnectorUploadWorkflows {
             simple_upload: true,
+            simple_upload_capabilities: server_relay_simple_upload_capabilities(None),
             stream_upload: true,
             object_multipart_upload: true,
+            object_multipart_upload_capabilities: Some(object_multipart_upload_capabilities(
+                driver_type,
+            )),
             provider_resumable_upload: false,
             presigned_upload: true,
             frontend_direct_provider_resumable_upload: false,
@@ -530,6 +582,31 @@ pub(crate) fn object_storage_connector_descriptor(
         ],
         driver_recommendations: Vec::new(),
         related_issues,
+    }
+}
+
+pub(crate) fn server_relay_simple_upload_capabilities(
+    max_provider_single_request_size: Option<u64>,
+) -> StorageConnectorSimpleUploadCapabilities {
+    StorageConnectorSimpleUploadCapabilities {
+        server_side_relay: true,
+        policy_limited: true,
+        max_provider_single_request_size,
+    }
+}
+
+pub(crate) fn object_multipart_upload_capabilities(
+    driver_type: DriverType,
+) -> StorageConnectorObjectMultipartUploadCapabilities {
+    StorageConnectorObjectMultipartUploadCapabilities {
+        min_part_size: OBJECT_MULTIPART_MIN_PART_SIZE,
+        policy_limited_part_size: true,
+        relay_part_upload: true,
+        presigned_part_upload: true,
+        presigned_part_etag_required: driver_type != DriverType::AzureBlob,
+        explicit_complete_required: true,
+        abort_supported: true,
+        list_parts_supported: true,
     }
 }
 

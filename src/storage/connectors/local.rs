@@ -8,8 +8,8 @@ use crate::storage::connector_descriptor::{
     StorageConnectorCapabilities, StorageConnectorCredentialMode, StorageConnectorDescriptor,
     StorageConnectorDescriptorProvider, StorageConnectorFieldKind, StorageConnectorFieldScope,
     StorageConnectorUploadWorkflows, draft_connection_test_action_descriptor,
-    saved_connection_test_action_descriptor, storage_connector_field,
-    storage_connector_ui_descriptor,
+    saved_connection_test_action_descriptor, server_relay_simple_upload_capabilities,
+    storage_connector_field, storage_connector_ui_descriptor,
 };
 use crate::storage::drivers::local::LocalDriver;
 use crate::types::DriverType;
@@ -52,8 +52,10 @@ impl StorageConnectorDescriptorProvider for LocalConnector {
             },
             upload_workflows: StorageConnectorUploadWorkflows {
                 simple_upload: true,
+                simple_upload_capabilities: server_relay_simple_upload_capabilities(None),
                 stream_upload: true,
                 object_multipart_upload: false,
+                object_multipart_upload_capabilities: None,
                 provider_resumable_upload: false,
                 presigned_upload: false,
                 frontend_direct_provider_resumable_upload: false,

@@ -58,6 +58,12 @@ pub struct ProviderResumableUploadCapabilities {
     pub max_simple_upload_size: Option<u64>,
     /// 是否允许浏览器直接拿 provider session 上传。false 表示 session 留在后端内部。
     pub frontend_direct_upload: bool,
+    /// Provider 是否在最后一个 range/fragment 接收后隐式完成 upload session。
+    pub implicit_completion: bool,
+    /// 当前 driver 是否暴露 provider-native session abort 能力给上层。
+    pub abort_supported: bool,
+    /// 当前 driver 是否暴露 provider-native session status/query 能力给上层。
+    pub status_query_supported: bool,
 }
 
 /// Provider-native resumable upload support.

@@ -286,6 +286,9 @@ fn onedrive_descriptor_requires_saved_authorized_connection_test() {
         Some(250_000_000)
     );
     assert!(!upload_capabilities.frontend_direct_upload);
+    assert!(upload_capabilities.implicit_completion);
+    assert!(!upload_capabilities.abort_supported);
+    assert!(!upload_capabilities.status_query_supported);
 }
 
 #[test]
@@ -1109,6 +1112,19 @@ fn assert_upload_workflow_alignment(
         workflows.simple_upload,
         "{driver_type:?} should expose simple upload because every built-in connector accepts small direct uploads"
     );
+    assert!(workflows.simple_upload_capabilities.server_side_relay);
+    assert!(workflows.simple_upload_capabilities.policy_limited);
+    assert_eq!(
+        workflows
+            .simple_upload_capabilities
+            .max_provider_single_request_size,
+        if driver_type == DriverType::OneDrive {
+            Some(250_000_000)
+        } else {
+            None
+        },
+        "{driver_type:?} descriptor simple upload provider limit drifted"
+    );
     assert!(
         workflows.stream_upload,
         "{driver_type:?} should expose server-mediated stream upload"
@@ -1117,6 +1133,28 @@ fn assert_upload_workflow_alignment(
         workflows.object_multipart_upload, expected.object_multipart,
         "{driver_type:?} descriptor object multipart workflow drifted from upload transport"
     );
+    assert_eq!(
+        workflows.object_multipart_upload_capabilities.is_some(),
+        expected.object_multipart,
+        "{driver_type:?} descriptor object multipart detail drifted from workflow flag"
+    );
+    if let Some(capabilities) = workflows.object_multipart_upload_capabilities.as_ref() {
+        assert_eq!(
+            capabilities.min_part_size,
+            crate::types::OBJECT_MULTIPART_MIN_PART_SIZE
+        );
+        assert!(capabilities.policy_limited_part_size);
+        assert!(capabilities.relay_part_upload);
+        assert!(capabilities.presigned_part_upload);
+        assert!(capabilities.explicit_complete_required);
+        assert!(capabilities.abort_supported);
+        assert!(capabilities.list_parts_supported);
+        assert_eq!(
+            capabilities.presigned_part_etag_required,
+            driver_type != DriverType::AzureBlob,
+            "{driver_type:?} descriptor presigned part ETag requirement drifted"
+        );
+    }
     assert_eq!(
         workflows.provider_resumable_upload, expected.provider_resumable,
         "{driver_type:?} descriptor provider resumable workflow drifted from upload transport"

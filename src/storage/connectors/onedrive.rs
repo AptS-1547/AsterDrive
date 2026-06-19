@@ -14,8 +14,9 @@ use crate::storage::connector_descriptor::{
     StorageConnectorCapabilities, StorageConnectorCredentialMode, StorageConnectorDescriptor,
     StorageConnectorDescriptorProvider, StorageConnectorFieldKind, StorageConnectorFieldScope,
     StorageConnectorProviderResumableUploadCapabilities, StorageConnectorUploadWorkflows,
-    saved_connection_test_action_descriptor, start_authorization_action_descriptor,
-    storage_connector_field, storage_connector_field_with_options, storage_connector_ui_descriptor,
+    saved_connection_test_action_descriptor, server_relay_simple_upload_capabilities,
+    start_authorization_action_descriptor, storage_connector_field,
+    storage_connector_field_with_options, storage_connector_ui_descriptor,
     validate_credential_action_descriptor,
 };
 use crate::storage::drivers::onedrive::{
@@ -84,8 +85,12 @@ impl StorageConnectorDescriptorProvider for OneDriveConnector {
             },
             upload_workflows: StorageConnectorUploadWorkflows {
                 simple_upload: true,
+                simple_upload_capabilities: server_relay_simple_upload_capabilities(
+                    upload_capabilities.max_simple_upload_size,
+                ),
                 stream_upload: true,
                 object_multipart_upload: false,
+                object_multipart_upload_capabilities: None,
                 provider_resumable_upload: true,
                 presigned_upload: false,
                 frontend_direct_provider_resumable_upload: false,
@@ -99,6 +104,9 @@ impl StorageConnectorDescriptorProvider for OneDriveConnector {
                         fragment_alignment: upload_capabilities.fragment_alignment,
                         max_simple_upload_size: upload_capabilities.max_simple_upload_size,
                         frontend_direct_upload: upload_capabilities.frontend_direct_upload,
+                        implicit_completion: upload_capabilities.implicit_completion,
+                        abort_supported: upload_capabilities.abort_supported,
+                        status_query_supported: upload_capabilities.status_query_supported,
                     },
                 ),
             },

@@ -138,12 +138,40 @@ async fn test_admin_storage_driver_descriptors_expose_capability_matrix() {
     assert_eq!(onedrive_resumable["max_fragment_size"], 50 * 1024 * 1024);
     assert_eq!(onedrive_resumable["max_simple_upload_size"], 250_000_000);
     assert_eq!(onedrive_resumable["frontend_direct_upload"], false);
+    assert_eq!(onedrive_resumable["implicit_completion"], true);
+    assert_eq!(onedrive_resumable["abort_supported"], false);
+    assert_eq!(onedrive_resumable["status_query_supported"], false);
+    assert_eq!(
+        onedrive["upload_workflows"]["simple_upload_capabilities"]["max_provider_single_request_size"],
+        250_000_000
+    );
+    assert_eq!(
+        onedrive["upload_workflows"]["object_multipart_upload_capabilities"].is_null(),
+        true
+    );
+
     let s3 = descriptor("s3");
     assert!(s3["actions"].as_array().expect("s3 actions").iter().any(
         |action| action["affordance_action"] == "test_draft_connection"
             && action["kind"] == "connection_test"
     ));
     assert_eq!(s3["upload_workflows"]["object_multipart_upload"], true);
+    assert_eq!(
+        s3["upload_workflows"]["object_multipart_upload_capabilities"]["min_part_size"],
+        5 * 1024 * 1024
+    );
+    assert_eq!(
+        s3["upload_workflows"]["object_multipart_upload_capabilities"]["presigned_part_upload"],
+        true
+    );
+    assert_eq!(
+        s3["upload_workflows"]["object_multipart_upload_capabilities"]["presigned_part_etag_required"],
+        true
+    );
+    assert_eq!(
+        s3["upload_workflows"]["object_multipart_upload_capabilities"]["explicit_complete_required"],
+        true
+    );
     assert!(
         s3["upload_workflows"]["provider_resumable_upload_capabilities"].is_null(),
         "S3 object multipart should not advertise provider-native resumable semantics"
@@ -154,6 +182,10 @@ async fn test_admin_storage_driver_descriptors_expose_capability_matrix() {
     assert_eq!(
         azure_blob["upload_workflows"]["object_multipart_upload"],
         true
+    );
+    assert_eq!(
+        azure_blob["upload_workflows"]["object_multipart_upload_capabilities"]["presigned_part_etag_required"],
+        false
     );
 
     let tencent_cos = descriptor("tencent_cos");

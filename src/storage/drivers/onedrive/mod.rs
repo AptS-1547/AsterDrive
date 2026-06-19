@@ -86,6 +86,9 @@ pub fn microsoft_graph_upload_capabilities() -> ProviderResumableUploadCapabilit
         fragment_alignment: GRAPH_UPLOAD_FRAGMENT_ALIGNMENT,
         max_simple_upload_size: Some(GRAPH_SIMPLE_UPLOAD_MAX_BYTES as u64),
         frontend_direct_upload: false,
+        implicit_completion: true,
+        abort_supported: false,
+        status_query_supported: false,
     }
 }
 
@@ -411,5 +414,8 @@ mod tests {
             Some(GRAPH_SIMPLE_UPLOAD_MAX_BYTES as u64)
         );
         assert!(!capabilities.frontend_direct_upload);
+        assert!(capabilities.implicit_completion);
+        assert!(!capabilities.abort_supported);
+        assert!(!capabilities.status_query_supported);
     }
 }

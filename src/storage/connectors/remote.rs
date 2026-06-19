@@ -13,7 +13,8 @@ use crate::storage::connector_descriptor::{
     StorageConnectorCapabilities, StorageConnectorCredentialMode, StorageConnectorDescriptor,
     StorageConnectorDescriptorProvider, StorageConnectorFieldKind, StorageConnectorFieldScope,
     StorageConnectorUploadWorkflows, draft_connection_test_action_descriptor,
-    saved_connection_test_action_descriptor, storage_connector_field,
+    object_multipart_upload_capabilities, saved_connection_test_action_descriptor,
+    server_relay_simple_upload_capabilities, storage_connector_field,
     storage_connector_field_with_options, storage_connector_ui_descriptor,
 };
 use crate::types::{DriverType, RemoteNodeTransportMode, parse_storage_policy_options};
@@ -61,8 +62,12 @@ impl StorageConnectorDescriptorProvider for RemoteConnector {
             },
             upload_workflows: StorageConnectorUploadWorkflows {
                 simple_upload: true,
+                simple_upload_capabilities: server_relay_simple_upload_capabilities(None),
                 stream_upload: true,
                 object_multipart_upload: true,
+                object_multipart_upload_capabilities: Some(object_multipart_upload_capabilities(
+                    DriverType::Remote,
+                )),
                 provider_resumable_upload: false,
                 presigned_upload: true,
                 frontend_direct_provider_resumable_upload: false,

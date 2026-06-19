@@ -7226,13 +7226,43 @@ export interface components {
         StorageConnectorFieldKind: "text" | "secret" | "select" | "boolean" | "number";
         /** @enum {string} */
         StorageConnectorFieldScope: "connection" | "policy_options" | "application_credential" | "remote_node_binding";
+        StorageConnectorObjectMultipartUploadCapabilities: {
+            /** @description 是否支持清理未完成的 provider multipart/block upload。 */
+            abort_supported: boolean;
+            /** @description complete 阶段是否需要显式提交 part 列表。 */
+            explicit_complete_required: boolean;
+            /** @description 是否支持查询 provider 已接收的 part/block 列表。 */
+            list_parts_supported: boolean;
+            /**
+             * Format: int64
+             * @description Provider 最小非 final part 大小。
+             */
+            min_part_size: number;
+            /** @description true 表示实际 part size 由 policy chunk_size 决定，但会被 min_part_size 修正。 */
+            policy_limited_part_size: boolean;
+            /**
+             * @description 浏览器直传 part 后是否必须从响应读取 ETag。
+             *
+             *     Azure block upload 通过 URL 中的 blockid 作为 completion token，因此不要求
+             *     浏览器能读 ETag；S3-compatible multipart 通常需要 ETag。
+             */
+            presigned_part_etag_required: boolean;
+            /** @description 浏览器是否可以通过 presigned URL 直传 part。 */
+            presigned_part_upload: boolean;
+            /** @description AsterDrive 服务端是否可以 relay 上传 part。 */
+            relay_part_upload: boolean;
+        };
         StorageConnectorProviderResumableUploadCapabilities: {
+            /** @description 当前实现是否向上层暴露 provider-native abort。 */
+            abort_supported: boolean;
             /** @description 后端默认使用的分片大小。 */
             default_fragment_size: number;
             /** @description 分片边界对齐要求。 */
             fragment_alignment: number;
             /** @description 是否允许浏览器直接拿 provider session 上传。 */
             frontend_direct_upload: boolean;
+            /** @description Provider 是否在最后一个 range/fragment 接收后隐式完成 session。 */
+            implicit_completion: boolean;
             /** @description Provider 或当前实现允许的最大分片大小。 */
             max_fragment_size: number;
             /**
@@ -7246,6 +7276,19 @@ export interface components {
             provider: string;
             /** @description 面向 UI/诊断的 session 名称，例如 `Microsoft Graph upload session`。 */
             session_label: string;
+            /** @description 当前实现是否向上层暴露 provider-native status/query。 */
+            status_query_supported: boolean;
+        };
+        StorageConnectorSimpleUploadCapabilities: {
+            /**
+             * Format: int64
+             * @description Provider 自身单请求 API 的最大对象大小；None 表示当前 connector 不声明静态上限。
+             */
+            max_provider_single_request_size?: number | null;
+            /** @description true 表示单请求 direct/relay 上限由具体 policy chunk_size 决定。 */
+            policy_limited: boolean;
+            /** @description true 表示浏览器把对象发给 AsterDrive，由后端 relay 到 provider。 */
+            server_side_relay: boolean;
         };
         StorageConnectorUiDescriptor: {
             /** @description base_path 为空时展示的 fallback 文案。 */
@@ -7274,6 +7317,7 @@ export interface components {
             frontend_direct_provider_resumable_upload: boolean;
             /** @description 支持对象存储 multipart/block upload 语义。 */
             object_multipart_upload: boolean;
+            object_multipart_upload_capabilities?: null | components["schemas"]["StorageConnectorObjectMultipartUploadCapabilities"];
             /** @description 支持浏览器/客户端使用 presigned URL 直传。 */
             presigned_upload: boolean;
             /** @description 支持 provider-native resumable/session upload。 */
@@ -7281,6 +7325,8 @@ export interface components {
             provider_resumable_upload_capabilities?: null | components["schemas"]["StorageConnectorProviderResumableUploadCapabilities"];
             /** @description 后端/客户端可以用单请求写入小对象。 */
             simple_upload: boolean;
+            /** @description 单请求上传的静态语义。实际是否走 direct 仍受 policy chunk_size 限制。 */
+            simple_upload_capabilities: components["schemas"]["StorageConnectorSimpleUploadCapabilities"];
             /** @description 后端可以通过 `StreamUploadDriver` 把 reader 写入 provider。 */
             stream_upload: boolean;
         };
