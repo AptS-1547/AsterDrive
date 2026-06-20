@@ -217,7 +217,6 @@ async fn store_ticket(
     }
 
     tracing::warn!(
-        key = %cache_key,
         "stream ticket cache backend did not persist entry; falling back to local cache"
     );
     FALLBACK_STREAM_TICKETS
