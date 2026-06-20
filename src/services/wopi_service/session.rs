@@ -8,7 +8,6 @@ use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 
 use crate::api::api_error_code::ApiErrorCode;
-use crate::cache::CacheExt;
 use crate::config::site_url;
 use crate::db::repository::wopi_session_repo;
 use crate::entities::{file, wopi_session};
@@ -24,8 +23,6 @@ use super::discovery::{
     resolve_action_url,
 };
 use super::types::{WopiLaunchSession, WopiRequestSource};
-
-const WOPI_SESSION_CACHE_TTL: u64 = 300;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedWopiSession {
@@ -72,45 +69,14 @@ fn wopi_session_cache_key(token_hash: &str) -> String {
     format!("wopi_session:{token_hash}")
 }
 
-fn wopi_session_cache_ttl(session: &wopi_session::Model) -> Option<u64> {
-    let ttl = (session.expires_at - Utc::now()).num_seconds();
-    if ttl <= 0 {
-        None
-    } else {
-        let ttl = u64::try_from(ttl).ok()?;
-        Some(std::cmp::min(ttl, WOPI_SESSION_CACHE_TTL))
-    }
-}
-
-async fn cache_wopi_session(state: &impl SharedRuntimeState, session: &wopi_session::Model) {
-    let Some(ttl) = wopi_session_cache_ttl(session) else {
-        return;
-    };
-    state
-        .cache()
-        .set(
-            &wopi_session_cache_key(&session.token_hash),
-            &CachedWopiSession::from(session),
-            Some(ttl),
-        )
-        .await;
-}
-
 async fn load_wopi_session_by_hash(
     state: &impl SharedRuntimeState,
     token_hash: &str,
 ) -> Result<Option<CachedWopiSession>> {
-    let cache_key = wopi_session_cache_key(token_hash);
-    if let Some(cached) = state.cache().get::<CachedWopiSession>(&cache_key).await {
-        tracing::debug!(token_hash = %token_hash, "wopi session cache hit");
-        return Ok(Some(cached));
-    }
-
+    // The database row is the revocation source of truth. Do not short-circuit this
+    // lookup with a runtime cache, or an updated/deleted WOPI session can remain
+    // usable until the cache TTL expires.
     let session = wopi_session_repo::find_by_token_hash(state.writer_db(), token_hash).await?;
-    if let Some(session) = &session {
-        cache_wopi_session(state, session).await;
-    }
-    tracing::debug!(token_hash = %token_hash, "wopi session cache miss");
     Ok(session.as_ref().map(CachedWopiSession::from))
 }
 
@@ -348,7 +314,7 @@ async fn create_access_token_session(
     let expires_at = DateTime::from_timestamp(payload.exp, 0)
         .ok_or_else(|| AsterError::internal_error("invalid WOPI access token expiry"))?;
     let now = Utc::now();
-    let session = wopi_session_repo::create(
+    wopi_session_repo::create(
         state.writer_db(),
         wopi_session::ActiveModel {
             token_hash: Set(token_hash),
@@ -363,7 +329,6 @@ async fn create_access_token_session(
         },
     )
     .await?;
-    cache_wopi_session(state, &session).await;
     Ok(token)
 }
 
