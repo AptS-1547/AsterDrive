@@ -30,6 +30,7 @@ struct RedisCacheInner<R> {
 #[async_trait]
 trait RedisClient: Send + Sync {
     async fn get(&self, key: &str) -> redis::RedisResult<Option<Vec<u8>>>;
+    async fn take(&self, key: &str) -> redis::RedisResult<Option<Vec<u8>>>;
     async fn set_ex(&self, key: &str, value: Vec<u8>, ttl: u64) -> redis::RedisResult<()>;
     async fn set_nx_ex(
         &self,
@@ -62,6 +63,22 @@ impl RedisClient for RedisConnectionManager {
     async fn get(&self, key: &str) -> redis::RedisResult<Option<Vec<u8>>> {
         let mut conn = self.conn.clone();
         conn.get::<_, Option<Vec<u8>>>(key).await
+    }
+
+    async fn take(&self, key: &str) -> redis::RedisResult<Option<Vec<u8>>> {
+        let mut conn = self.conn.clone();
+        redis::Script::new(
+            r#"
+            local value = redis.call("GET", KEYS[1])
+            if value then
+                redis.call("DEL", KEYS[1])
+            end
+            return value
+            "#,
+        )
+        .key(key)
+        .invoke_async::<Option<Vec<u8>>>(&mut conn)
+        .await
     }
 
     async fn set_ex(&self, key: &str, value: Vec<u8>, ttl: u64) -> redis::RedisResult<()> {
@@ -303,6 +320,16 @@ where
         }
     }
 
+    async fn take_bytes(&self, key: &str) -> Option<Vec<u8>> {
+        match self.redis_operation("take", self.redis.take(key)).await {
+            Some(value) => {
+                self.delete_local(key).await;
+                value
+            }
+            None => self.local.take_bytes(key).await,
+        }
+    }
+
     async fn set_bytes(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>) {
         let ttl = ttl_secs.unwrap_or(self.default_ttl);
         if self
@@ -340,6 +367,17 @@ where
     async fn delete(&self, key: &str) {
         self.delete_local(key).await;
         let _: Option<()> = self.redis_operation("delete", self.redis.delete(key)).await;
+    }
+
+    async fn delete_many(&self, keys: &[String]) {
+        for key in keys {
+            self.delete_local(key).await;
+        }
+        if !keys.is_empty() {
+            let _: Option<()> = self
+                .redis_operation("delete_many", self.redis.delete_keys(keys))
+                .await;
+        }
     }
 
     async fn invalidate_prefix(&self, prefix: &str) {
@@ -387,6 +425,10 @@ impl CacheBackend for RedisCache {
         self.inner.get_bytes(key).await
     }
 
+    async fn take_bytes(&self, key: &str) -> Option<Vec<u8>> {
+        self.inner.take_bytes(key).await
+    }
+
     async fn set_bytes(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>) {
         self.inner.set_bytes(key, value, ttl_secs).await;
     }
@@ -397,6 +439,10 @@ impl CacheBackend for RedisCache {
 
     async fn delete(&self, key: &str) {
         self.inner.delete(key).await;
+    }
+
+    async fn delete_many(&self, keys: &[String]) {
+        self.inner.delete_many(keys).await;
     }
 
     async fn invalidate_prefix(&self, prefix: &str) {
@@ -450,7 +496,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     };
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
@@ -458,8 +504,11 @@ mod tests {
     #[derive(Default)]
     struct FakeRedisClient {
         entries: Mutex<HashMap<String, Vec<u8>>>,
+        scan_pages: Mutex<HashMap<u64, Vec<String>>>,
         fail_operations: AtomicBool,
+        next_scan_cursor: AtomicU64,
         get_calls: AtomicUsize,
+        take_calls: AtomicUsize,
         set_calls: AtomicUsize,
         set_nx_calls: AtomicUsize,
         delete_calls: AtomicUsize,
@@ -489,6 +538,10 @@ mod tests {
 
         fn get_call_count(&self) -> usize {
             self.get_calls.load(Ordering::SeqCst)
+        }
+
+        fn take_call_count(&self) -> usize {
+            self.take_calls.load(Ordering::SeqCst)
         }
 
         fn set_call_count(&self) -> usize {
@@ -540,6 +593,16 @@ mod tests {
                 .cloned())
         }
 
+        async fn take(&self, key: &str) -> redis::RedisResult<Option<Vec<u8>>> {
+            self.take_calls.fetch_add(1, Ordering::SeqCst);
+            self.maybe_fail()?;
+            Ok(self
+                .entries
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(key))
+        }
+
         async fn set_ex(&self, key: &str, value: Vec<u8>, _ttl: u64) -> redis::RedisResult<()> {
             self.set_calls.fetch_add(1, Ordering::SeqCst);
             self.maybe_fail()?;
@@ -587,19 +650,45 @@ mod tests {
         ) -> redis::RedisResult<(u64, Vec<String>)> {
             self.scan_calls.fetch_add(1, Ordering::SeqCst);
             self.maybe_fail()?;
-            assert_eq!(cursor, 0, "fake scan only supports one page");
             let prefix = pattern
                 .strip_suffix('*')
                 .expect("prefix invalidation should scan a trailing-star pattern");
-            let keys = self
-                .entries
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .keys()
-                .filter(|key| key.starts_with(prefix))
-                .cloned()
-                .collect();
-            Ok((0, keys))
+            const PAGE_SIZE: usize = 2;
+            let mut keys = if cursor == 0 {
+                let mut keys: Vec<String> = self
+                    .entries
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .keys()
+                    .filter(|key| key.starts_with(prefix))
+                    .cloned()
+                    .collect();
+                keys.sort();
+                keys
+            } else {
+                self.scan_pages
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .remove(&cursor)
+                    .unwrap_or_default()
+            };
+            if keys.is_empty() {
+                return Ok((0, Vec::new()));
+            }
+            let page_len = PAGE_SIZE.min(keys.len());
+            let remaining = keys.split_off(page_len);
+            let page = keys;
+            let next_cursor = if remaining.is_empty() {
+                0
+            } else {
+                let next_cursor = self.next_scan_cursor.fetch_add(1, Ordering::SeqCst) + 1;
+                self.scan_pages
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .insert(next_cursor, remaining);
+                next_cursor
+            };
+            Ok((next_cursor, page))
         }
 
         async fn delete_keys(&self, keys: &[String]) -> redis::RedisResult<()> {
@@ -749,6 +838,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn take_bytes_consumes_redis_entry_atomically() {
+        let (cache, redis) = cache_with_fake_redis(60);
+        redis.insert("challenge", b"value");
+
+        assert_eq!(cache.take_bytes("challenge").await, Some(b"value".to_vec()));
+        assert_eq!(cache.take_bytes("challenge").await, None);
+        assert!(!redis.contains_key("challenge"));
+        assert_eq!(redis.take_call_count(), 2);
+        assert_eq!(
+            redis.get_call_count(),
+            0,
+            "take should not read through a separate GET"
+        );
+    }
+
+    #[tokio::test]
+    async fn take_bytes_consumes_local_fallback_when_circuit_is_open() {
+        let (cache, redis) = cache_with_fake_redis(60);
+        open_fallback_circuit(&cache);
+        cache
+            .set_bytes("challenge", b"local".to_vec(), Some(60))
+            .await;
+
+        assert_eq!(cache.take_bytes("challenge").await, Some(b"local".to_vec()));
+        assert_eq!(cache.take_bytes("challenge").await, None);
+        assert_eq!(
+            redis.take_call_count(),
+            0,
+            "circuit-open take should skip Redis"
+        );
+    }
+
+    #[tokio::test]
+    async fn take_bytes_falls_back_to_local_without_dropping_value_on_redis_failure() {
+        let (cache, redis) = cache_with_fake_redis(60);
+        open_fallback_circuit(&cache);
+        cache
+            .set_bytes("challenge", b"local".to_vec(), Some(60))
+            .await;
+        cache.availability.mark_success();
+        redis.set_fail_operations(true);
+
+        assert_eq!(cache.take_bytes("challenge").await, Some(b"local".to_vec()));
+        assert_eq!(cache.take_bytes("challenge").await, None);
+        assert_eq!(redis.take_call_count(), 1);
+    }
+
+    #[tokio::test]
     async fn fallback_set_if_absent_stores_value_and_rejects_second_insert() {
         let (cache, redis) = cache_with_fake_redis(60);
         open_fallback_circuit(&cache);
@@ -858,6 +995,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_many_removes_requested_redis_and_local_entries_in_one_batch() {
+        let (cache, redis) = cache_with_fake_redis(60);
+        redis.insert("remove:1", b"one");
+        redis.insert("remove:2", b"two");
+        redis.insert("keep", b"keep");
+        open_fallback_circuit(&cache);
+        cache
+            .set_bytes("remove:local", b"local".to_vec(), Some(60))
+            .await;
+        cache.availability.mark_success();
+
+        cache
+            .delete_many(&[
+                "remove:1".to_string(),
+                "remove:2".to_string(),
+                "remove:local".to_string(),
+                "missing".to_string(),
+            ])
+            .await;
+        cache.delete_many(&[]).await;
+
+        assert!(!redis.contains_key("remove:1"));
+        assert!(!redis.contains_key("remove:2"));
+        assert!(redis.contains_key("keep"));
+        assert_eq!(cache.local.get_bytes("remove:local").await, None);
+        assert_eq!(redis.delete_keys_call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn delete_many_clears_local_only_when_circuit_is_open() {
+        let (cache, redis) = cache_with_fake_redis(60);
+        open_fallback_circuit(&cache);
+        cache
+            .set_bytes("remove:local", b"local".to_vec(), Some(60))
+            .await;
+
+        cache.delete_many(&["remove:local".to_string()]).await;
+
+        assert_eq!(cache.get_bytes("remove:local").await, None);
+        assert_eq!(
+            redis.delete_keys_call_count(),
+            0,
+            "circuit-open batch delete should skip Redis"
+        );
+    }
+
+    #[tokio::test]
     async fn invalidate_prefix_clears_local_fallback_even_when_redis_is_unavailable() {
         let (cache, redis) = cache_with_fake_redis(60);
         open_fallback_circuit(&cache);
@@ -897,6 +1081,24 @@ mod tests {
         assert_eq!(cache.local.get_bytes("folder:local").await, None);
         assert_eq!(redis.scan_call_count(), 1);
         assert_eq!(redis.delete_keys_call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn invalidate_prefix_scans_and_deletes_multiple_redis_pages() {
+        let (cache, redis) = cache_with_fake_redis(60);
+        for index in 0..5 {
+            redis.insert(&format!("folder:{index}"), b"value");
+        }
+        redis.insert("other:1", b"keep");
+
+        cache.invalidate_prefix("folder:").await;
+
+        for index in 0..5 {
+            assert!(!redis.contains_key(&format!("folder:{index}")));
+        }
+        assert!(redis.contains_key("other:1"));
+        assert_eq!(redis.scan_call_count(), 3);
+        assert_eq!(redis.delete_keys_call_count(), 3);
     }
 
     #[tokio::test]

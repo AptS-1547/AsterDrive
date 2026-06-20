@@ -18,7 +18,7 @@ AsterDrive 是面向小团队的 Rust 自托管文件基础设施项目。它关
 src/                         Rust 后端
 src/api/                     primary/follower 路由、DTO、OpenAPI、中间件、响应封装
 src/api/routes/              REST API、公开分享、内部存储、远端隧道路由
-src/cache/                   cache trait 以及 memory/noop/Redis 实现
+src/cache/                   cache trait 以及 memory/Redis 实现
 src/cli/                     doctor、config、database-migrate、node enroll 等运维 CLI
 src/config/                  静态配置、运行时配置定义、配置规范化、模板
 src/db/                      数据库连接、reader/writer 句柄、repository
@@ -41,7 +41,7 @@ tests/                       集成测试、迁移测试、OpenAPI 导出测试
 
 - 后端: Rust 2024, actix-web 4, SeaORM 2.0-rc, tokio, jsonwebtoken, argon2
 - 数据库: SQLite 默认，兼容 MySQL/PostgreSQL
-- 缓存: memory/noop/Redis 后端
+- 缓存: memory/Redis 后端；不再支持 noop cache，也不要新增 `cache.enabled` 这类禁用缓存分支
 - 存储: local filesystem、S3-compatible object storage、Azure Blob、OneDrive、remote AsterDrive follower node
 - 协议: REST API、WebDAV/DeltaV、WOPI、remote internal storage protocol
 - 前端: React 19, Vite, TypeScript native-preview/tsgo, Tailwind CSS 4, shadcn/ui(Base UI), Biome, Vitest, Playwright

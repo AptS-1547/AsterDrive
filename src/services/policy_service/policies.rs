@@ -706,7 +706,6 @@ mod tests {
             .expect("policy service migrations should succeed");
         let runtime_config = Arc::new(RuntimeConfig::new());
         let cache = crate::cache::create_cache(&CacheConfig {
-            enabled: false,
             backend: "memory".to_string(),
             ..Default::default()
         })

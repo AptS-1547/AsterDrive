@@ -153,6 +153,7 @@ async fn json_text_columns_are_not_null_in_current_schema() {
 
     let db = setup_current_schema().await;
     for (table, column) in [
+        ("external_auth_providers", "options"),
         ("storage_policy_credentials", "metadata"),
         ("storage_policy_authorization_flows", "context"),
         ("storage_connector_application_configs", "metadata"),
