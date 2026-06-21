@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -76,14 +76,21 @@ function RenameDialogForm({
 	const { t } = useTranslation("files");
 	const refresh = useFileStore((s) => s.refresh);
 	const [name, setName] = useState(currentName);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const submittingRef = useRef(false);
 
 	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
+		if (submittingRef.current) {
+			return;
+		}
 		const trimmed = name.trim();
 		if (!trimmed || trimmed === currentName) {
 			onOpenChange(false);
 			return;
 		}
+		submittingRef.current = true;
+		setIsSubmitting(true);
 		try {
 			if (type === "file") {
 				await fileService.renameFile(id, trimmed);
@@ -99,6 +106,8 @@ function RenameDialogForm({
 			}
 		} catch (error) {
 			handleApiError(error);
+			submittingRef.current = false;
+			setIsSubmitting(false);
 		}
 	};
 
@@ -119,7 +128,7 @@ function RenameDialogForm({
 					}
 				}}
 			/>
-			<Button type="submit" className="w-full">
+			<Button type="submit" className="w-full" disabled={isSubmitting}>
 				{t("rename")}
 			</Button>
 		</form>

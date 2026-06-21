@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0-rc.1] - 2026-06-22
+
+### Release Highlights
+
+**AsterDrive `0.3.0-rc.1` 是 0.3.0 系列的发布候选版本，主线是存储策略术语统一与凭据安全加固。** 将面向 S3 命名的策略字段统一为通用对象存储术语（`s3_upload_strategy` → `object_storage_upload_strategy` 等，serde alias 保留旧名向后兼容），Microsoft Graph 的 client secret / token 用 `secrecy::SecretString` 包装并在所有持有凭据的类型上手动实现 `Debug` 确保日志脱敏；reverse tunnel stream lane 在离线 / 关闭 / 超时时自动回退 poll 模式而非直接失败。
+
+- **存储策略术语统一（Object Storage，向后兼容）** — S3 专属字段名改为通用对象存储命名，旧名通过 serde alias 与前端 legacy fallback 继续可用
+- **凭据安全加固** — Microsoft Graph client secret / token 用 `SecretString` 包装，相关 entity 与 provider 手动实现 `Debug` 保证日志脱敏
+- **Reverse tunnel 可靠性** — stream lane 离线 / 关闭 / 超时自动回退 poll 请求
+- **OneDrive / Azure Blob 文档补完** — admin API 与存储后端文档补齐新驱动说明
+
+### Changed
+
+- **存储策略术语统一（Breaking，向后兼容）**
+  - `StoragePolicyOptions` JSON 字段 `s3_upload_strategy` / `s3_download_strategy` → `object_storage_upload_strategy` / `object_storage_download_strategy`，旧名通过 `#[serde(alias = "...")]` 与前端 legacy fallback 继续可用
+  - enum 类型 `S3UploadStrategy` / `S3DownloadStrategy` → `ObjectStorageUploadStrategy` / `ObjectStorageDownloadStrategy`（Rust + OpenAPI + 前端 types），枚举值 `relay_stream` / `presigned` 不变
+  - connector capability `s3_transfer_strategy` → `object_storage_transfer_strategy`
+  - 前端管理面板文案从"S3 上传 / 下载方式"改为"对象存储上传 / 下载方式"
+
+- **OneDrive 授权请求体收紧**
+  - `POST /admin/policies/{id}/storage-authorization/start` 仅接受 `{ "provider": "microsoft_graph" }`，Client ID / Secret / tenant / scopes 必须先保存到 `application_config.microsoft_graph`
+
+### Security
+
+- 新增 `secrecy = "0.10"` 依赖，Microsoft Graph `client_secret` / `refresh_token` / `access_token` 用 `SecretString` 包装，仅在调用 Microsoft Graph 时通过 `expose_secret()` 取出
+- `storage_policy` / `managed_follower` / `master_binding` / `managed_ingress_profile` entity 与所有 Microsoft Graph token provider / request 类型手动实现 `Debug`，日志中 `access_key` / `secret_key` 显示为 `***REDACTED***`，每个类型带单元测试断言不泄露明文
+
+### Fixed
+
+- reverse tunnel stream lane 在 `reverse tunnel is offline` / `lane closed` / `response channel closed` / 流式等待超时时自动回退 poll 请求，此前直接失败
+- RenameDialog 重命名提交期间禁用按钮并用 ref 守卫，防止用户快速重复点击触发多次重命名请求
+
+### Statistics
+
+- 109 files changed, 1808 insertions(+), 691 deletions(-)
+- 3 commits
+
 ## [v0.3.0-beta.2] - 2026-06-21
 
 ### Release Highlights
@@ -5098,7 +5135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.2...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-rc.1...HEAD
+[v0.3.0-rc.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.2...v0.3.0-rc.1
 [v0.3.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.1...v0.3.0-beta.2
 [v0.3.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.5...v0.3.0-beta.1
 [v0.3.0-alpha.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.4...v0.3.0-alpha.5

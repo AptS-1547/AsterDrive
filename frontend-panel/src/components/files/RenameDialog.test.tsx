@@ -28,13 +28,20 @@ vi.mock("@/components/ui/button", () => ({
 		type,
 		onClick,
 		className,
+		disabled,
 	}: {
 		children: React.ReactNode;
 		type?: "button" | "submit";
 		onClick?: () => void;
 		className?: string;
+		disabled?: boolean;
 	}) => (
-		<button type={type ?? "button"} onClick={onClick} className={className}>
+		<button
+			type={type ?? "button"}
+			onClick={onClick}
+			className={className}
+			disabled={disabled}
+		>
 			{children}
 		</button>
 	),
@@ -194,6 +201,43 @@ describe("RenameDialog", () => {
 		expect(onOpenChange).toHaveBeenCalledWith(false);
 		expect(onRenamed).toHaveBeenCalledTimes(1);
 		expect(mockState.refresh).not.toHaveBeenCalled();
+	});
+
+	it("regression smoke: prevents repeated rename clicks while the request is pending", async () => {
+		const onOpenChange = vi.fn();
+		let resolveRename: (() => void) | undefined;
+		mockState.renameFile.mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveRename = resolve;
+				}),
+		);
+
+		render(
+			<RenameDialog
+				open
+				onOpenChange={onOpenChange}
+				type="file"
+				id={7}
+				currentName="draft.md"
+			/>,
+		);
+
+		fireEvent.change(screen.getByDisplayValue("draft.md"), {
+			target: { value: "draft-final.md" },
+		});
+		const submitButton = screen.getByRole("button", { name: "rename" });
+
+		fireEvent.click(submitButton);
+
+		await waitFor(() => expect(submitButton).toBeDisabled());
+		fireEvent.click(submitButton);
+		expect(mockState.renameFile).toHaveBeenCalledTimes(1);
+
+		resolveRename?.();
+		await waitFor(() => {
+			expect(onOpenChange).toHaveBeenCalledWith(false);
+		});
 	});
 
 	it("renames folders and reports service failures without closing the dialog", async () => {
