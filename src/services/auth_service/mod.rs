@@ -1,5 +1,6 @@
 //! 认证服务聚合入口。
 
+mod cache;
 mod contact_verification;
 mod password;
 mod registration;
@@ -40,7 +41,6 @@ pub use tokens::{
 };
 pub(crate) use validation::{validate_email, validate_password, validate_username};
 
-pub const AUTH_SNAPSHOT_TTL: u64 = 30; // 秒
 const INITIAL_SESSION_VERSION: i64 = 1;
 const ACTIVE_VERIFICATION_REQUEST_MESSAGE: &str = "a verification request is already active";
 

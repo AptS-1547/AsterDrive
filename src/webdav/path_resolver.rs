@@ -1,9 +1,10 @@
 //! WebDAV 子模块：`path_resolver`。
 
+mod cache;
+
 use sea_orm::{ConnectionTrait, DatabaseConnection};
 use serde::{Deserialize, Serialize};
 
-use crate::cache::CacheExt;
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::AsterError;
@@ -12,9 +13,7 @@ use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::utils::hash;
 use crate::webdav::dav::{DavPath, FsError};
 
-const WEBDAV_PATH_CACHE_TTL: u64 = 30;
-pub(crate) const WEBDAV_PATH_CACHE_PREFIX: &str = "webdav_path:";
-pub(crate) const WEBDAV_PARENT_CACHE_PREFIX: &str = "webdav_parent:";
+pub(crate) use cache::{WEBDAV_PARENT_CACHE_PREFIX, WEBDAV_PATH_CACHE_PREFIX};
 
 /// 路径解析结果
 #[derive(Debug, Clone)]
@@ -79,7 +78,7 @@ fn scope_cache_part(scope: WorkspaceStorageScope) -> String {
     }
 }
 
-fn resolve_path_cache_key(
+pub(super) fn resolve_path_cache_key(
     scope: WorkspaceStorageScope,
     path: &DavPath,
     root_folder_id: Option<i64>,
@@ -92,7 +91,7 @@ fn resolve_path_cache_key(
     )
 }
 
-fn resolve_parent_cache_key(
+pub(super) fn resolve_parent_cache_key(
     scope: WorkspaceStorageScope,
     path: &DavPath,
     root_folder_id: Option<i64>,
@@ -213,7 +212,7 @@ async fn load_cached_resolved_node(
             if segments.is_empty() {
                 Ok(Some(ResolvedNode::Root))
             } else {
-                state.cache().delete(cache_key).await;
+                cache::delete_by_key(state, cache_key).await;
                 Ok(None)
             }
         }
@@ -225,7 +224,7 @@ async fn load_cached_resolved_node(
             let folder = match folder_repo::find_by_id(state.writer_db(), id).await {
                 Ok(folder) => folder,
                 Err(error) if is_missing_entity(&error) => {
-                    state.cache().delete(cache_key).await;
+                    cache::delete_by_key(state, cache_key).await;
                     return Ok(None);
                 }
                 Err(_) => return Err(FsError::GeneralFailure),
@@ -234,18 +233,18 @@ async fn load_cached_resolved_node(
                 || crate::services::workspace_storage_service::ensure_folder_scope(&folder, scope)
                     .is_err()
             {
-                state.cache().delete(cache_key).await;
+                cache::delete_by_key(state, cache_key).await;
                 return Ok(None);
             }
             if segments.last().map(String::as_str) != Some(name.as_str())
                 || folder.name != name
                 || folder.parent_id != parent_id
             {
-                state.cache().delete(cache_key).await;
+                cache::delete_by_key(state, cache_key).await;
                 return Ok(None);
             }
             if !validate_cached_folder_path(state, scope, root_folder_id, id, &segments).await? {
-                state.cache().delete(cache_key).await;
+                cache::delete_by_key(state, cache_key).await;
                 return Ok(None);
             }
             Ok(Some(ResolvedNode::Folder(folder)))
@@ -258,7 +257,7 @@ async fn load_cached_resolved_node(
             let file = match file_repo::find_by_id(state.writer_db(), id).await {
                 Ok(file) => file,
                 Err(error) if is_missing_entity(&error) => {
-                    state.cache().delete(cache_key).await;
+                    cache::delete_by_key(state, cache_key).await;
                     return Ok(None);
                 }
                 Err(_) => return Err(FsError::GeneralFailure),
@@ -267,18 +266,18 @@ async fn load_cached_resolved_node(
                 || crate::services::workspace_storage_service::ensure_file_scope(&file, scope)
                     .is_err()
             {
-                state.cache().delete(cache_key).await;
+                cache::delete_by_key(state, cache_key).await;
                 return Ok(None);
             }
             if segments.last().map(String::as_str) != Some(name.as_str())
                 || file.name != name
                 || file.folder_id != folder_id
             {
-                state.cache().delete(cache_key).await;
+                cache::delete_by_key(state, cache_key).await;
                 return Ok(None);
             }
             let Some(parent_segments) = segments.get(..segments.len().saturating_sub(1)) else {
-                state.cache().delete(cache_key).await;
+                cache::delete_by_key(state, cache_key).await;
                 return Ok(None);
             };
             if !validate_cached_parent(
@@ -290,7 +289,7 @@ async fn load_cached_resolved_node(
             )
             .await?
             {
-                state.cache().delete(cache_key).await;
+                cache::delete_by_key(state, cache_key).await;
                 return Ok(None);
             }
             Ok(Some(ResolvedNode::File(file)))
@@ -419,7 +418,7 @@ pub(crate) async fn resolve_path_cached_in_scope(
     root_folder_id: Option<i64>,
 ) -> Result<ResolvedNode, FsError> {
     let cache_key = resolve_path_cache_key(scope, path, root_folder_id);
-    if let Some(cached) = state.cache().get::<CachedResolvedNode>(&cache_key).await
+    if let Some(cached) = cache::load_resolved_node_by_key(state, &cache_key).await
         && let Some(node) =
             load_cached_resolved_node(state, scope, path, root_folder_id, &cache_key, cached)
                 .await?
@@ -429,14 +428,7 @@ pub(crate) async fn resolve_path_cached_in_scope(
     }
 
     let node = resolve_path_in_scope(state.writer_db(), scope, path, root_folder_id).await?;
-    state
-        .cache()
-        .set(
-            &cache_key,
-            &cacheable_node(&node),
-            Some(WEBDAV_PATH_CACHE_TTL),
-        )
-        .await;
+    cache::store_resolved_node_by_key(state, &cache_key, &cacheable_node(&node)).await;
     tracing::debug!(?scope, root_folder_id, "webdav path cache miss");
     Ok(node)
 }
@@ -528,7 +520,7 @@ pub(crate) async fn resolve_parent_cached_in_scope(
 
     let parent_segments = &segments[..segments.len() - 1];
     let cache_key = resolve_parent_cache_key(scope, path, root_folder_id);
-    if let Some(cached) = state.cache().get::<CachedResolvedParent>(&cache_key).await {
+    if let Some(cached) = cache::load_resolved_parent_by_key(state, &cache_key).await {
         if validate_cached_parent(
             state,
             scope,
@@ -541,19 +533,12 @@ pub(crate) async fn resolve_parent_cached_in_scope(
             tracing::debug!(?scope, root_folder_id, "webdav parent path cache hit");
             return Ok((cached.parent_id, segments[segments.len() - 1].clone()));
         }
-        state.cache().delete(&cache_key).await;
+        cache::delete_by_key(state, &cache_key).await;
     }
 
     let (parent_id, name) =
         resolve_parent_in_scope(state.writer_db(), scope, path, root_folder_id).await?;
-    state
-        .cache()
-        .set(
-            &cache_key,
-            &CachedResolvedParent { parent_id },
-            Some(WEBDAV_PATH_CACHE_TTL),
-        )
-        .await;
+    cache::store_resolved_parent_by_key(state, &cache_key, parent_id).await;
     tracing::debug!(?scope, root_folder_id, "webdav parent path cache miss");
     Ok((parent_id, name))
 }

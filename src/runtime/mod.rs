@@ -226,6 +226,67 @@ impl SharedRuntimeState for FollowerAppState {
 impl FollowerRuntimeState for FollowerAppState {}
 
 #[cfg(test)]
+pub(crate) mod test_support {
+    use super::SharedRuntimeState;
+    use crate::cache::CacheBackend;
+    use crate::config::{CacheConfig, Config, RuntimeConfig};
+    use crate::metrics_core::SharedMetricsRecorder;
+    use crate::storage::{DriverRegistry, PolicySnapshot};
+    use sea_orm::DatabaseConnection;
+    use std::sync::Arc;
+
+    pub(crate) struct CacheOnlyState {
+        cache: Arc<dyn CacheBackend>,
+    }
+
+    impl CacheOnlyState {
+        pub(crate) async fn new() -> Self {
+            Self {
+                cache: crate::cache::create_cache(&CacheConfig {
+                    backend: "memory".to_string(),
+                    ..Default::default()
+                })
+                .await,
+            }
+        }
+    }
+
+    impl SharedRuntimeState for CacheOnlyState {
+        fn writer_db(&self) -> &DatabaseConnection {
+            panic!("cache-only test state must not access writer_db")
+        }
+
+        fn reader_db(&self) -> &DatabaseConnection {
+            panic!("cache-only test state must not access reader_db")
+        }
+
+        fn driver_registry(&self) -> &Arc<DriverRegistry> {
+            panic!("cache-only test state must not access driver_registry")
+        }
+
+        fn runtime_config(&self) -> &Arc<RuntimeConfig> {
+            panic!("cache-only test state must not access runtime_config")
+        }
+
+        fn policy_snapshot(&self) -> &Arc<PolicySnapshot> {
+            panic!("cache-only test state must not access policy_snapshot")
+        }
+
+        fn config(&self) -> &Arc<Config> {
+            panic!("cache-only test state must not access config")
+        }
+
+        fn cache(&self) -> &Arc<dyn CacheBackend> {
+            &self.cache
+        }
+
+        fn metrics(&self) -> &SharedMetricsRecorder {
+            panic!("cache-only test state must not access metrics")
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::{PrimaryAppState, SharedRuntimeState, TaskRuntimeState};
     use crate::config::{CacheConfig, Config, RuntimeConfig};

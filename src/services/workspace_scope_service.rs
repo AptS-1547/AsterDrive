@@ -4,17 +4,16 @@
 //! 这里负责把 scope 相关规则收口，避免每个上层 service 都自己拼一套
 //! `user_id` / `team_id` / `actor_user_id` 判断。
 
+mod cache;
+
 use crate::api::api_error_code::ApiErrorCode;
 use crate::db::repository::{file_repo, folder_repo, team_member_repo, team_repo, user_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
-use crate::{cache::CacheExt, types::TeamMemberRole};
+use crate::types::TeamMemberRole;
 use sea_orm::ConnectionTrait;
 use serde::{Deserialize, Serialize};
-
-const TEAM_ACCESS_CACHE_TTL: u64 = 60;
-const ACTOR_USERNAME_CACHE_TTL: u64 = 60;
 
 /// scope 同时表达“资源属于哪个空间”和“是谁在操作”。
 ///
@@ -78,26 +77,11 @@ impl From<team_member_repo::ActiveTeamAccessSnapshot> for CachedTeamAccess {
     }
 }
 
-fn team_access_cache_prefix(team_id: i64) -> String {
-    format!("team_access:{team_id}:")
-}
-
-fn team_access_cache_key(team_id: i64, user_id: i64) -> String {
-    format!("{}{}", team_access_cache_prefix(team_id), user_id)
-}
-
-fn actor_username_cache_key(user_id: i64) -> String {
-    format!("actor_username:{user_id}")
-}
-
 pub(crate) async fn invalidate_team_access_cache_for_team(
     state: &impl SharedRuntimeState,
     team_id: i64,
 ) {
-    state
-        .cache()
-        .invalidate_prefix(&team_access_cache_prefix(team_id))
-        .await;
+    cache::invalidate_team_access_for_team(state, team_id).await;
 }
 
 pub(crate) async fn invalidate_team_access_cache_for_member(
@@ -105,10 +89,7 @@ pub(crate) async fn invalidate_team_access_cache_for_member(
     team_id: i64,
     user_id: i64,
 ) {
-    state
-        .cache()
-        .delete(&team_access_cache_key(team_id, user_id))
-        .await;
+    cache::invalidate_team_access_for_member(state, team_id, user_id).await;
 }
 
 impl WorkspaceStorageScope {
@@ -140,12 +121,11 @@ async fn load_team_access<C: ConnectionTrait>(
     team_id: i64,
     user_id: i64,
 ) -> Result<CachedTeamAccess> {
-    let cache_key = team_access_cache_key(team_id, user_id);
-    if let Some(cached) = state.cache().get::<CachedTeamAccess>(&cache_key).await {
+    if let Some(cached) = cache::load_team_access(state, team_id, user_id).await {
         let access = match load_team_access_from_database(db, team_id, user_id).await {
             Ok(access) => access,
             Err(error @ (AsterError::RecordNotFound(_) | AsterError::AuthForbidden(_))) => {
-                state.cache().delete(&cache_key).await;
+                cache::invalidate_team_access_for_member(state, team_id, user_id).await;
                 return Err(error);
             }
             Err(error) => return Err(error),
@@ -153,10 +133,7 @@ async fn load_team_access<C: ConnectionTrait>(
         if access == cached {
             tracing::debug!(team_id, user_id, "team access cache hit");
         } else {
-            state
-                .cache()
-                .set(&cache_key, &access, Some(TEAM_ACCESS_CACHE_TTL))
-                .await;
+            cache::store_team_access(state, team_id, user_id, &access).await;
             tracing::debug!(
                 team_id,
                 user_id,
@@ -167,10 +144,7 @@ async fn load_team_access<C: ConnectionTrait>(
     }
 
     let access = load_team_access_from_database(db, team_id, user_id).await?;
-    state
-        .cache()
-        .set(&cache_key, &access, Some(TEAM_ACCESS_CACHE_TTL))
-        .await;
+    cache::store_team_access(state, team_id, user_id, &access).await;
     tracing::debug!(team_id, user_id, "team access cache miss");
     Ok(access)
 }
@@ -230,17 +204,13 @@ pub(crate) async fn load_scope_actor_username_cached(
     scope: WorkspaceStorageScope,
 ) -> Result<String> {
     let user_id = scope.actor_user_id();
-    let cache_key = actor_username_cache_key(user_id);
-    if let Some(username) = state.cache().get::<String>(&cache_key).await {
+    if let Some(username) = cache::load_actor_username(state, user_id).await {
         tracing::debug!(user_id, "actor username cache hit");
         return Ok(username);
     }
 
     let username = load_scope_actor_username(state.reader_db(), scope).await?;
-    state
-        .cache()
-        .set(&cache_key, &username, Some(ACTOR_USERNAME_CACHE_TTL))
-        .await;
+    cache::store_actor_username(state, user_id, &username).await;
     tracing::debug!(user_id, "actor username cache miss");
     Ok(username)
 }

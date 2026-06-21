@@ -1,5 +1,7 @@
 //! Passkey / WebAuthn 业务逻辑。
 
+mod cache;
+
 use base64::Engine as _;
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection, DbErr, SqlErr};
@@ -12,7 +14,6 @@ use webauthn_rs::prelude::{
 use webauthn_rs_proto::{ResidentKeyRequirement, UserVerificationPolicy};
 
 use crate::api::api_error_code::ApiErrorCode;
-use crate::cache::CacheExt;
 use crate::config::{auth_runtime::RuntimeAuthPolicy, branding, site_url};
 use crate::db::repository::{passkey_repo, user_repo};
 use crate::entities::{passkey, user};
@@ -28,7 +29,6 @@ use crate::utils::{
     numbers::{u32_to_i64, u64_to_i64},
 };
 
-const PASSKEY_CHALLENGE_TTL_SECS: u64 = 300;
 const PASSKEY_NAME_MAX_LEN: usize = 128;
 
 #[derive(Debug, Clone, Serialize)]
@@ -81,14 +81,6 @@ struct PasskeyRegistrationChallenge {
 struct PasskeyAuthenticationChallenge {
     identifier: Option<String>,
     state: DiscoverableAuthentication,
-}
-
-fn registration_cache_key(flow_id: &str) -> String {
-    format!("external_auth:passkey:registration:{flow_id}")
-}
-
-fn login_cache_key(flow_id: &str) -> String {
-    format!("external_auth:passkey:login:{flow_id}")
 }
 
 fn new_flow_id() -> String {
@@ -310,26 +302,16 @@ async fn store_registration_challenge(
     flow_id: &str,
     challenge: &PasskeyRegistrationChallenge,
 ) {
-    state
-        .cache()
-        .set(
-            &registration_cache_key(flow_id),
-            challenge,
-            Some(PASSKEY_CHALLENGE_TTL_SECS),
-        )
-        .await;
+    cache::store_registration_challenge(state, flow_id, challenge).await;
 }
 
 async fn take_registration_challenge(
     state: &impl SharedRuntimeState,
     flow_id: &str,
 ) -> Result<PasskeyRegistrationChallenge> {
-    let key = registration_cache_key(flow_id);
-    let challenge =
-        state.cache().take(&key).await.ok_or_else(|| {
-            AsterError::auth_token_invalid("passkey registration challenge expired")
-        })?;
-    Ok(challenge)
+    cache::take_registration_challenge(state, flow_id)
+        .await
+        .ok_or_else(|| AsterError::auth_token_invalid("passkey registration challenge expired"))
 }
 
 async fn store_login_challenge(
@@ -337,27 +319,16 @@ async fn store_login_challenge(
     flow_id: &str,
     challenge: &PasskeyAuthenticationChallenge,
 ) {
-    state
-        .cache()
-        .set(
-            &login_cache_key(flow_id),
-            challenge,
-            Some(PASSKEY_CHALLENGE_TTL_SECS),
-        )
-        .await;
+    cache::store_login_challenge(state, flow_id, challenge).await;
 }
 
 async fn take_login_challenge(
     state: &impl SharedRuntimeState,
     flow_id: &str,
 ) -> Result<PasskeyAuthenticationChallenge> {
-    let key = login_cache_key(flow_id);
-    let challenge = state
-        .cache()
-        .take(&key)
+    cache::take_login_challenge(state, flow_id)
         .await
-        .ok_or_else(|| AsterError::auth_token_invalid("passkey login challenge expired"))?;
-    Ok(challenge)
+        .ok_or_else(|| AsterError::auth_token_invalid("passkey login challenge expired"))
 }
 
 fn serialize_registration_options(

@@ -4,42 +4,30 @@ use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel, Set};
 
 use crate::api::api_error_code::ApiErrorCode;
-use crate::cache::CacheExt;
 use crate::db::repository::{auth_session_repo, user_repo};
 use crate::errors::{AsterError, MapAsterErr, Result, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 
-use super::{AUTH_SNAPSHOT_TTL, AuthSessionInfo, AuthSnapshot, UserAuditInfo, user_audit_info};
-
-fn auth_snapshot_cache_key(user_id: i64) -> String {
-    format!("auth_snapshot:{user_id}")
-}
+use super::{AuthSessionInfo, AuthSnapshot, UserAuditInfo, cache, user_audit_info};
 
 pub async fn get_auth_snapshot(
     state: &impl SharedRuntimeState,
     user_id: i64,
 ) -> Result<AuthSnapshot> {
-    let cache_key = auth_snapshot_cache_key(user_id);
-    if let Some(snapshot) = state.cache().get(&cache_key).await {
+    if let Some(snapshot) = cache::load_auth_snapshot(state, user_id).await {
         tracing::debug!(user_id, "auth snapshot cache hit");
         return Ok(snapshot);
     }
 
     let user = user_repo::find_by_id(state.reader_db(), user_id).await?;
     let snapshot = AuthSnapshot::from_user(&user);
-    state
-        .cache()
-        .set(&cache_key, &snapshot, Some(AUTH_SNAPSHOT_TTL))
-        .await;
+    cache::store_auth_snapshot(state, user_id, &snapshot).await;
     tracing::debug!(user_id, "auth snapshot cache miss");
     Ok(snapshot)
 }
 
 pub async fn invalidate_auth_snapshot_cache(state: &impl SharedRuntimeState, user_id: i64) {
-    state
-        .cache()
-        .delete(&auth_snapshot_cache_key(user_id))
-        .await;
+    cache::invalidate_auth_snapshot(state, user_id).await;
 }
 
 pub(crate) async fn purge_all_auth_sessions_in_connection<C: ConnectionTrait>(

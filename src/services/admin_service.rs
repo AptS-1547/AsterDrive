@@ -1,5 +1,7 @@
 //! 服务模块：`admin_service`。
 
+mod cache;
+
 use chrono::{DateTime, Duration, LocalResult, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
@@ -7,7 +9,6 @@ use std::collections::HashMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
-use crate::cache::CacheExt;
 use crate::db::repository::{
     audit_log_repo, background_task_repo, file_repo, share_repo, user_repo,
 };
@@ -28,7 +29,6 @@ const MAX_DAYS: u32 = 90;
 const DEFAULT_EVENT_LIMIT: u64 = 8;
 const MAX_EVENT_LIMIT: u64 = 50;
 const DEFAULT_TIMEZONE: &str = "UTC";
-const ADMIN_OVERVIEW_CACHE_TTL: u64 = 15;
 const ADMIN_OVERVIEW_AUDIT_ACTION_BATCH_SIZE: u64 = 1_000;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -161,7 +161,7 @@ pub struct AdminOverview {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct CachedAdminOverviewCore {
+pub(crate) struct AdminOverviewCore {
     generated_at: DateTimeUtc,
     timezone: String,
     days: u32,
@@ -170,7 +170,7 @@ struct CachedAdminOverviewCore {
     daily_reports: Vec<AdminOverviewDailyReport>,
 }
 
-impl CachedAdminOverviewCore {
+impl AdminOverviewCore {
     fn into_overview(
         self,
         recent_events: Vec<audit_service::AuditLogEntry>,
@@ -189,10 +189,6 @@ impl CachedAdminOverviewCore {
     }
 }
 
-fn admin_overview_cache_key(days: u32, timezone_name: &str) -> String {
-    format!("admin_overview_core:{days}:{timezone_name}")
-}
-
 pub async fn get_overview(
     state: &impl SharedRuntimeState,
     days: u32,
@@ -201,14 +197,9 @@ pub async fn get_overview(
 ) -> Result<AdminOverview> {
     let generated_at = Utc::now();
     let timezone = parse_timezone(timezone_name)?;
-    let cache_key = admin_overview_cache_key(days, timezone.name());
     let (recent_events, recent_background_tasks) =
         load_recent_overview_events(state, event_limit).await?;
-    if let Some(core) = state
-        .cache()
-        .get::<CachedAdminOverviewCore>(&cache_key)
-        .await
-    {
+    if let Some(core) = cache::load_overview_core(state, days, timezone.name()).await {
         tracing::debug!(
             days,
             timezone = timezone.name(),
@@ -260,7 +251,7 @@ pub async fn get_overview(
         });
     let system_health = build_system_health_summary(latest_health_task);
 
-    let core = CachedAdminOverviewCore {
+    let core = AdminOverviewCore {
         generated_at,
         timezone: timezone.name().to_string(),
         days,
@@ -281,10 +272,7 @@ pub async fn get_overview(
         system_health,
         daily_reports,
     };
-    state
-        .cache()
-        .set(&cache_key, &core, Some(ADMIN_OVERVIEW_CACHE_TTL))
-        .await;
+    cache::store_overview_core(state, days, timezone.name(), &core).await;
     tracing::debug!(
         days,
         timezone = timezone.name(),

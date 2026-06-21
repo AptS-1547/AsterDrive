@@ -1,17 +1,17 @@
 //! WebDAV 子模块：`auth`。
 
+#[path = "auth/cache.rs"]
+mod cache;
+
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 use crate::api::api_error_code::ApiErrorCode;
-use crate::cache::CacheExt;
 use crate::db::repository::{user_repo, webdav_account_repo};
 use crate::errors::{AsterError, MapAsterErr, auth_forbidden_with_code};
 use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::utils::hash;
-
-const WEBDAV_AUTH_CACHE_TTL: u64 = 60;
 
 /// WebDAV 认证结果
 #[derive(Debug)]
@@ -43,34 +43,11 @@ impl CachedWebdavAuth {
     }
 }
 
-fn username_cache_component(username: &str) -> String {
-    hash::sha256_hex(username.as_bytes())
-}
-
-fn password_cache_component(password: &str) -> String {
-    hash::sha256_hex(password.as_bytes())
-}
-
-fn webdav_auth_cache_prefix(username: &str) -> String {
-    format!("webdav_auth:{}:", username_cache_component(username))
-}
-
-fn webdav_auth_cache_key(username: &str, password: &str) -> String {
-    format!(
-        "{}{}",
-        webdav_auth_cache_prefix(username),
-        password_cache_component(password)
-    )
-}
-
 pub(crate) async fn invalidate_webdav_auth_for_username(
     state: &impl SharedRuntimeState,
     username: &str,
 ) {
-    state
-        .cache()
-        .invalidate_prefix(&webdav_auth_cache_prefix(username))
-        .await;
+    cache::invalidate_for_username(state, username).await;
 }
 
 pub(crate) async fn invalidate_webdav_auth_for_user(
@@ -120,10 +97,9 @@ async fn authenticate_basic(
         .split_once(':')
         .ok_or_else(|| AsterError::auth_invalid_credentials("invalid basic auth format"))?;
 
-    let cache_key = webdav_auth_cache_key(username, password);
-    if let Some(cached) = state.cache().get::<CachedWebdavAuth>(&cache_key).await {
+    if let Some(cached) = cache::load_auth(state, username, password).await {
         validate_cached_account(state, username, password, &cached).await?;
-        tracing::debug!(username_hash = %username_cache_component(username), "webdav auth cache hit");
+        tracing::debug!(username_hash = %cache::username_cache_component(username), "webdav auth cache hit");
         return Ok(WebdavAuthResult {
             scope: cached.scope(),
             root_folder_id: cached.root_folder_id,
@@ -173,20 +149,19 @@ async fn authenticate_basic(
         },
     };
 
-    state
-        .cache()
-        .set(
-            &cache_key,
-            &CachedWebdavAuth {
-                account_id: account.id,
-                user_id: account.user_id,
-                team_id: account.team_id,
-                root_folder_id: account.root_folder_id,
-            },
-            Some(WEBDAV_AUTH_CACHE_TTL),
-        )
-        .await;
-    tracing::debug!(username_hash = %username_cache_component(username), "webdav auth cache miss");
+    cache::store_auth(
+        state,
+        username,
+        password,
+        &CachedWebdavAuth {
+            account_id: account.id,
+            user_id: account.user_id,
+            team_id: account.team_id,
+            root_folder_id: account.root_folder_id,
+        },
+    )
+    .await;
+    tracing::debug!(username_hash = %cache::username_cache_component(username), "webdav auth cache miss");
     Ok(WebdavAuthResult {
         scope,
         root_folder_id: account.root_folder_id,

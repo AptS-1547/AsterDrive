@@ -1,15 +1,14 @@
 //! 服务模块：`share_stream_service`。
 
+mod cache;
+
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
-use moka::future::Cache;
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 use std::time::Duration as StdDuration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::cache::CacheExt;
 use crate::config::{operations, site_url};
 use crate::db::repository::{file_repo, share_repo};
 use crate::entities::{file, share};
@@ -19,16 +18,6 @@ use crate::services::{
     direct_link_service, file_service, file_service::ResolvedDownloadRange, share_service,
 };
 use crate::utils::numbers::u64_to_i64;
-
-const SHARE_STREAM_COUNTED_CACHE_PREFIX: &str = "share_stream_session_counted:";
-static FALLBACK_COUNTED_SESSIONS: LazyLock<Cache<String, CountMarkerState>> = LazyLock::new(|| {
-    Cache::builder()
-        .max_capacity(10_000)
-        .time_to_live(StdDuration::from_secs(
-            operations::MAX_SHARE_STREAM_SESSION_TTL_SECS,
-        ))
-        .build()
-});
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -430,10 +419,9 @@ async fn ensure_counted_once(
     session_token: &str,
     payload: &ShareStreamSessionPayload,
 ) -> Result<CountReservation> {
-    let key = counted_cache_key(session_token);
     let ttl_secs = ttl_seconds(payload)?;
     for _ in 0..20 {
-        match count_marker_state_by_key(state, &key).await {
+        match cache::load_count_marker(state, session_token).await {
             Some(CountMarkerState::Counted) => return Ok(CountReservation::AlreadyCounted),
             Some(CountMarkerState::Pending) => {
                 tokio::time::sleep(StdDuration::from_millis(25)).await;
@@ -443,14 +431,7 @@ async fn ensure_counted_once(
         }
 
         let pending = encode_marker_state(CountMarkerState::Pending)?;
-        if state
-            .cache()
-            .set_bytes_if_absent(&key, pending, Some(ttl_secs))
-            .await
-        {
-            FALLBACK_COUNTED_SESSIONS
-                .insert(key.clone(), CountMarkerState::Pending)
-                .await;
+        if cache::reserve_count_marker(state, session_token, pending, ttl_secs).await {
             return Ok(CountReservation::Reserved);
         }
 
@@ -467,14 +448,16 @@ async fn mark_counted(
     session_token: &str,
     payload: &ShareStreamSessionPayload,
 ) -> Result<()> {
-    let key = counted_cache_key(session_token);
     let ttl_secs = ttl_seconds(payload)?;
     let counted = CountMarkerState::Counted;
-    FALLBACK_COUNTED_SESSIONS.insert(key.clone(), counted).await;
-    state
-        .cache()
-        .set_bytes(&key, encode_marker_state(counted)?, Some(ttl_secs))
-        .await;
+    cache::store_count_marker(
+        state,
+        session_token,
+        counted,
+        encode_marker_state(counted)?,
+        ttl_secs,
+    )
+    .await;
     Ok(())
 }
 
@@ -482,31 +465,11 @@ async fn count_marker_state(
     state: &impl SharedRuntimeState,
     session_token: &str,
 ) -> Option<CountMarkerState> {
-    count_marker_state_by_key(state, &counted_cache_key(session_token)).await
-}
-
-async fn count_marker_state_by_key(
-    state: &impl SharedRuntimeState,
-    key: &str,
-) -> Option<CountMarkerState> {
-    let primary = state.cache().get::<CountMarkerState>(key).await;
-    let fallback = FALLBACK_COUNTED_SESSIONS.get(key).await;
-
-    match (primary, fallback) {
-        (Some(CountMarkerState::Counted), _) | (_, Some(CountMarkerState::Counted)) => {
-            Some(CountMarkerState::Counted)
-        }
-        (Some(CountMarkerState::Pending), _) | (_, Some(CountMarkerState::Pending)) => {
-            Some(CountMarkerState::Pending)
-        }
-        (None, None) => None,
-    }
+    cache::load_count_marker(state, session_token).await
 }
 
 async fn release_counted_marker(state: &impl SharedRuntimeState, session_token: &str) {
-    let key = counted_cache_key(session_token);
-    state.cache().delete(&key).await;
-    FALLBACK_COUNTED_SESSIONS.remove(&key).await;
+    cache::delete_count_marker(state, session_token).await;
 }
 
 fn ttl_seconds(payload: &ShareStreamSessionPayload) -> Result<u64> {
@@ -518,10 +481,6 @@ fn ttl_seconds(payload: &ShareStreamSessionPayload) -> Result<u64> {
         "share stream session ttl conversion failed",
         AsterError::internal_error,
     )
-}
-
-fn counted_cache_key(session_token: &str) -> String {
-    format!("{SHARE_STREAM_COUNTED_CACHE_PREFIX}{session_token}")
 }
 
 fn encode_marker_state(state: CountMarkerState) -> Result<Vec<u8>> {

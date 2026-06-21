@@ -3,39 +3,22 @@
 use std::collections::{HashMap, HashSet};
 
 use sea_orm::ConnectionTrait;
-use serde::{Deserialize, Serialize};
 
-use crate::cache::CacheExt;
 use crate::db::repository::folder_repo;
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
 use crate::runtime::SharedRuntimeState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
-use super::{FolderAncestorItem, ensure_folder_model_in_scope};
-
-const FOLDER_PATH_CACHE_TTL: u64 = 300;
-pub(crate) const FOLDER_PATH_CACHE_PREFIX: &str = "folder_path:";
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CachedFolderPathChain {
-    chain_ids: Vec<i64>,
-}
+use super::{FolderAncestorItem, cache, ensure_folder_model_in_scope};
 
 struct FolderPathEntry {
     path: String,
     chain_ids: Vec<i64>,
 }
 
-fn folder_path_cache_key(folder_id: i64) -> String {
-    format!("{FOLDER_PATH_CACHE_PREFIX}{folder_id}")
-}
-
 pub(crate) async fn invalidate_folder_path_cache(state: &impl SharedRuntimeState) {
-    state
-        .cache()
-        .invalidate_prefix(FOLDER_PATH_CACHE_PREFIX)
-        .await;
+    cache::invalidate_all_folder_path_chains(state).await;
 }
 
 pub(super) async fn load_folder_chain_map<C: ConnectionTrait>(
@@ -140,8 +123,7 @@ pub async fn build_folder_paths_cached(
     let mut misses = Vec::new();
 
     for &id in &ids {
-        let cache_key = folder_path_cache_key(id);
-        if let Some(cached) = state.cache().get::<CachedFolderPathChain>(&cache_key).await {
+        if let Some(cached) = cache::load_folder_path_chain(state, id).await {
             if cached.chain_ids.is_empty() {
                 misses.push(id);
             } else {
@@ -175,21 +157,12 @@ pub async fn build_folder_paths_cached(
             ) {
                 Ok(entry) => {
                     if entry.chain_ids != cached.chain_ids {
-                        state
-                            .cache()
-                            .set(
-                                &folder_path_cache_key(id),
-                                &CachedFolderPathChain {
-                                    chain_ids: entry.chain_ids,
-                                },
-                                Some(FOLDER_PATH_CACHE_TTL),
-                            )
-                            .await;
+                        cache::store_folder_path_chain(state, id, entry.chain_ids).await;
                     }
                     paths.insert(id, entry.path);
                 }
                 Err(_) => {
-                    state.cache().delete(&folder_path_cache_key(id)).await;
+                    cache::invalidate_folder_path_chain(state, id).await;
                     misses.push(id);
                 }
             }
@@ -204,16 +177,7 @@ pub async fn build_folder_paths_cached(
     misses.dedup();
     let loaded = build_folder_path_entries(state.reader_db(), &misses).await?;
     for (&id, entry) in &loaded {
-        state
-            .cache()
-            .set(
-                &folder_path_cache_key(id),
-                &CachedFolderPathChain {
-                    chain_ids: entry.chain_ids.clone(),
-                },
-                Some(FOLDER_PATH_CACHE_TTL),
-            )
-            .await;
+        cache::store_folder_path_chain(state, id, entry.chain_ids.clone()).await;
     }
     paths.extend(
         loaded

@@ -1,5 +1,7 @@
 //! 服务模块：`preview_link_service`。
 
+mod cache;
+
 use base64::Engine;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -19,7 +21,6 @@ use crate::services::{
 
 const PREVIEW_LINK_TTL_SECS: i64 = 5 * 60;
 const PREVIEW_LINK_MAX_USES: u32 = 5;
-const PREVIEW_LINK_CACHE_PREFIX: &str = "preview_link:";
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -48,7 +49,8 @@ struct PreviewTokenPayload {
 }
 
 struct ReservedUse {
-    cache_key: String,
+    token: String,
+    slot: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -474,13 +476,11 @@ async fn reserve_usage(
     let ttl_secs = ttl_seconds(payload)?;
     let marker = Vec::new();
     for slot in 0..payload.max_uses {
-        let cache_key = preview_usage_slot_key(token, slot);
-        if state
-            .cache()
-            .set_bytes_if_absent(&cache_key, marker.clone(), Some(ttl_secs))
-            .await
-        {
-            return Ok(ReservedUse { cache_key });
+        if cache::reserve_usage_slot(state, token, slot, marker.clone(), ttl_secs).await {
+            return Ok(ReservedUse {
+                token: token.to_string(),
+                slot,
+            });
         }
     }
 
@@ -490,7 +490,7 @@ async fn reserve_usage(
 }
 
 async fn rollback_usage(state: &impl SharedRuntimeState, reserved: &ReservedUse) {
-    state.cache().delete(&reserved.cache_key).await;
+    cache::release_usage_slot(state, &reserved.token, reserved.slot).await;
 }
 
 fn ttl_seconds(payload: &PreviewTokenPayload) -> Result<u64> {
@@ -502,10 +502,6 @@ fn ttl_seconds(payload: &PreviewTokenPayload) -> Result<u64> {
         "preview link ttl conversion failed",
         AsterError::internal_error,
     )
-}
-
-fn preview_usage_slot_key(token: &str, slot: u32) -> String {
-    format!("{PREVIEW_LINK_CACHE_PREFIX}{token}:use:{slot}")
 }
 
 #[cfg(test)]

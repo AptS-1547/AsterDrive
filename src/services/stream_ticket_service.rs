@@ -1,14 +1,12 @@
 //! 服务模块：`stream_ticket_service`。
 
+mod cache;
+
 use chrono::{DateTime, Duration, Utc};
-use moka::future::Cache;
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
-use std::time::Duration as StdDuration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::cache::CacheExt;
 use crate::config::site_url;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::SharedRuntimeState;
@@ -18,16 +16,6 @@ use crate::services::{
 };
 
 const STREAM_TICKET_TTL_SECS: i64 = 5 * 60;
-const STREAM_TICKET_CACHE_PREFIX: &str = "stream_ticket:";
-static FALLBACK_STREAM_TICKETS: LazyLock<Cache<String, StreamTicketPayload>> =
-    LazyLock::new(|| {
-        Cache::builder()
-            .max_capacity(10_000)
-            .time_to_live(StdDuration::from_secs(
-                u64::try_from(STREAM_TICKET_TTL_SECS).unwrap_or(300),
-            ))
-            .build()
-    });
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -82,8 +70,7 @@ pub(crate) async fn create_archive_download_ticket_in_scope(
         },
     };
 
-    let cache_key = cache_key(&token);
-    store_ticket(state, &cache_key, &payload, ttl_secs_until(expires_at)?).await?;
+    cache::store_ticket(state, &token, &payload, ttl_secs_until(expires_at)?).await?;
 
     Ok(StreamTicketInfo {
         download_path: stream_download_path(state.runtime_config(), scope, &token),
@@ -113,8 +100,7 @@ pub(crate) async fn create_shared_archive_download_ticket(
         },
     };
 
-    let cache_key = cache_key(&token);
-    store_ticket(state, &cache_key, &payload, ttl_secs_until(expires_at)?).await?;
+    cache::store_ticket(state, &token, &payload, ttl_secs_until(expires_at)?).await?;
 
     Ok(StreamTicketInfo {
         download_path: shared_stream_download_path(state.runtime_config(), share_token, &token),
@@ -128,14 +114,13 @@ pub(crate) async fn resolve_archive_download_ticket_in_scope(
     scope: WorkspaceStorageScope,
     token: &str,
 ) -> Result<task_service::types::CreateArchiveTaskParams> {
-    let cache_key = cache_key(token);
-    let payload = load_ticket(state, &cache_key)
+    let payload = cache::load_ticket(state, token)
         .await
         .ok_or_else(|| AsterError::validation_error("stream ticket not found or expired"))?;
 
     let expires_at = decode_expiry(payload.exp)?;
     if expires_at < Utc::now() {
-        delete_ticket(state, &cache_key).await;
+        cache::delete_ticket(state, token).await;
         return Err(AsterError::validation_error("stream ticket expired"));
     }
 
@@ -163,14 +148,13 @@ pub(crate) async fn resolve_shared_archive_download_ticket(
     share_token: &str,
     token: &str,
 ) -> Result<task_service::types::CreateArchiveTaskParams> {
-    let cache_key = cache_key(token);
-    let payload = load_ticket(state, &cache_key)
+    let payload = cache::load_ticket(state, token)
         .await
         .ok_or_else(|| AsterError::validation_error("stream ticket not found or expired"))?;
 
     let expires_at = decode_expiry(payload.exp)?;
     if expires_at < Utc::now() {
-        delete_ticket(state, &cache_key).await;
+        cache::delete_ticket(state, token).await;
         return Err(AsterError::validation_error("stream ticket expired"));
     }
 
@@ -194,51 +178,6 @@ pub(crate) async fn resolve_shared_archive_download_ticket(
             "stream ticket belongs to a workspace archive download",
         )),
     }
-}
-
-fn cache_key(token: &str) -> String {
-    format!("{STREAM_TICKET_CACHE_PREFIX}{token}")
-}
-
-async fn store_ticket(
-    state: &impl SharedRuntimeState,
-    cache_key: &str,
-    payload: &StreamTicketPayload,
-    ttl_secs: u64,
-) -> Result<()> {
-    state.cache().set(cache_key, payload, Some(ttl_secs)).await;
-    if state
-        .cache()
-        .get::<StreamTicketPayload>(cache_key)
-        .await
-        .is_some()
-    {
-        return Ok(());
-    }
-
-    tracing::warn!(
-        "stream ticket cache backend did not persist entry; falling back to local cache"
-    );
-    FALLBACK_STREAM_TICKETS
-        .insert(cache_key.to_string(), payload.clone())
-        .await;
-    Ok(())
-}
-
-async fn load_ticket(
-    state: &impl SharedRuntimeState,
-    cache_key: &str,
-) -> Option<StreamTicketPayload> {
-    if let Some(payload) = state.cache().get::<StreamTicketPayload>(cache_key).await {
-        return Some(payload);
-    }
-
-    FALLBACK_STREAM_TICKETS.get(cache_key).await
-}
-
-async fn delete_ticket(state: &impl SharedRuntimeState, cache_key: &str) {
-    state.cache().delete(cache_key).await;
-    FALLBACK_STREAM_TICKETS.remove(cache_key).await;
 }
 
 fn ttl_secs_until(expires_at: DateTime<Utc>) -> Result<u64> {
