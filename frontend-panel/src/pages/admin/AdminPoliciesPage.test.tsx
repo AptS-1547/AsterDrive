@@ -1912,16 +1912,20 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");
 	});
 
-	it("shows admin diagnostic details when a connection probe returns ok false", async () => {
-		mockState.testParams.mockResolvedValueOnce({
-			diagnostic: {
-				api_code: "storage.misconfigured",
-				kind: "misconfigured",
-				message: "connection test failed: /tmp/private/secret.txt",
-				retryable: false,
+	it("shows admin diagnostic details when a connection test returns an API diagnostic", async () => {
+		const error = new ApiError(
+			ApiErrorCode.StorageMisconfigured,
+			"Storage Driver Error",
+			{
+				diagnostic: {
+					api_code: "storage.misconfigured",
+					kind: "misconfigured",
+					message: "connection test failed: /tmp/private/secret.txt",
+					retryable: false,
+				},
 			},
-			ok: false,
-		});
+		);
+		mockState.testParams.mockRejectedValueOnce(error);
 		render(<AdminPoliciesPage />);
 
 		openCreateWizard();
@@ -1948,18 +1952,18 @@ describe("AdminPoliciesPage", () => {
 				secret_key: undefined,
 			});
 		});
-		expect(mockState.toastError).toHaveBeenCalledWith(
-			"connection test failed: /tmp/private/secret.txt",
-		);
+		expect(mockState.handleApiError).toHaveBeenCalledWith(error);
 		expect(mockState.toastSuccess).not.toHaveBeenCalledWith(
 			"connection_success",
 		);
 	});
 
-	it("falls back to a generic connection failure message without diagnostics", async () => {
-		mockState.testParams.mockResolvedValueOnce({
-			ok: false,
-		});
+	it("falls back to the API error message without diagnostics", async () => {
+		const error = new ApiError(
+			ApiErrorCode.StorageMisconfigured,
+			"Storage Driver Error",
+		);
+		mockState.testParams.mockRejectedValueOnce(error);
 		render(<AdminPoliciesPage />);
 
 		openCreateWizard();
@@ -1977,32 +1981,7 @@ describe("AdminPoliciesPage", () => {
 		await waitFor(() => {
 			expect(mockState.testParams).toHaveBeenCalled();
 		});
-		expect(mockState.toastError).toHaveBeenCalledWith("connection_failed");
-		expect(mockState.toastSuccess).not.toHaveBeenCalledWith(
-			"connection_success",
-		);
-	});
-
-	it("treats empty connection probe responses as failures", async () => {
-		mockState.testParams.mockResolvedValueOnce(null);
-		render(<AdminPoliciesPage />);
-
-		openCreateWizard();
-
-		fireEvent.change(screen.getByLabelText("core:name"), {
-			target: { value: "Empty Probe Local" },
-		});
-		fireEvent.change(screen.getByLabelText("base_path"), {
-			target: { value: "/tmp/private" },
-		});
-		advanceCreateWizardToRulesStep();
-
-		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
-
-		await waitFor(() => {
-			expect(mockState.testParams).toHaveBeenCalled();
-		});
-		expect(mockState.toastError).toHaveBeenCalledWith("connection_failed");
+		expect(mockState.handleApiError).toHaveBeenCalledWith(error);
 		expect(mockState.toastSuccess).not.toHaveBeenCalledWith(
 			"connection_success",
 		);

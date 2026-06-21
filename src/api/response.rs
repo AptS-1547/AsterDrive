@@ -11,7 +11,22 @@ use super::api_error_code::ApiErrorCode;
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ApiErrorInfo {
     pub retryable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<ApiErrorDiagnostic>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ApiErrorDiagnostic {
+    pub api_code: ApiErrorCode,
+    pub kind: String,
+    pub message: String,
+    pub retryable: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ApiEmptyData {}
 
 /// 统一 API 响应格式
 ///
@@ -47,8 +62,24 @@ impl<T: Serialize> ApiResponse<T> {
         }
     }
 
+    pub fn ok_empty_data() -> ApiResponse<ApiEmptyData> {
+        ApiResponse {
+            code: ApiErrorCode::Success,
+            msg: String::new(),
+            data: Some(ApiEmptyData::default()),
+            error: None,
+        }
+    }
+
     pub fn error(code: ApiErrorCode, msg: &str) -> ApiResponse<()> {
-        Self::error_with_details(code, msg, Some(ApiErrorInfo { retryable: false }))
+        Self::error_with_details(
+            code,
+            msg,
+            Some(ApiErrorInfo {
+                retryable: false,
+                diagnostic: None,
+            }),
+        )
     }
 
     pub fn error_with_details(

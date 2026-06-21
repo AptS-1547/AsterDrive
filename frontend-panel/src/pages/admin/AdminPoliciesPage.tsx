@@ -1012,18 +1012,12 @@ function useAdminPoliciesPageContent() {
 		}
 
 		try {
-			const result = shouldUseParamTest
-				? await adminPolicyService.testParams(
-						buildPolicyTestPayload(currentForm, descriptor),
-					)
-				: await adminPolicyService.testConnection(editingId);
-
-			if (result == null || result.ok === false) {
-				setValidatedConnectionKey(null);
-				if (showFailureError) {
-					toast.error(result?.diagnostic?.message ?? t("connection_failed"));
-				}
-				return false;
+			if (shouldUseParamTest) {
+				await adminPolicyService.testParams(
+					buildPolicyTestPayload(currentForm, descriptor),
+				);
+			} else {
+				await adminPolicyService.testConnection(editingId);
 			}
 
 			if (

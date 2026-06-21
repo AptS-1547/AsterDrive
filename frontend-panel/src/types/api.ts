@@ -370,7 +370,8 @@ export type ExecuteSavedStoragePolicyActionRequest =
 	components["schemas"]["ExecuteSavedStoragePolicyActionReq"];
 export type StoragePolicyActionResult =
 	OperationData<"execute_draft_storage_policy_action">;
-export type StoragePolicyProbeResult = OperationData<"test_policy_params">;
+export type StoragePolicyConnectionTestResult =
+	OperationData<"test_policy_params">;
 export type StoragePolicyExecutableAction =
 	components["schemas"]["StoragePolicyExecutableAction"];
 export type PromoteS3CompatiblePolicyDriverRequest =

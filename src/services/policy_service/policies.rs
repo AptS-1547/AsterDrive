@@ -15,7 +15,7 @@ use super::models::{
     CreateStoragePolicyInput, ExecuteDraftStoragePolicyActionInput,
     ExecuteSavedStoragePolicyActionInput, PromoteS3CompatiblePolicyDriverInput, StoragePolicy,
     StoragePolicyActionResult, StoragePolicyCapacityInfo, StoragePolicyConnectionInput,
-    StoragePolicyDiagnostic, StoragePolicyProbeResult, UpdateStoragePolicyInput,
+    StoragePolicyDiagnostic, UpdateStoragePolicyInput,
 };
 use super::shared::{
     SYSTEM_STORAGE_POLICY_ID, ensure_singleton_group_for_policy, lock_default_group_assignment,
@@ -606,45 +606,11 @@ pub async fn test_connection<S: SharedRuntimeState + Sync>(state: &S, id: i64) -
     crate::storage::connectors::test_saved_connection(state, &policy).await
 }
 
-pub async fn probe_connection<S: SharedRuntimeState + Sync>(
-    state: &S,
-    id: i64,
-) -> Result<StoragePolicyProbeResult> {
-    match test_connection(state, id).await {
-        Ok(()) => Ok(StoragePolicyProbeResult {
-            ok: true,
-            diagnostic: None,
-        }),
-        Err(error) if error.storage_error_kind().is_some() => Ok(StoragePolicyProbeResult {
-            ok: false,
-            diagnostic: StoragePolicyDiagnostic::from_error(&error),
-        }),
-        Err(error) => Err(error),
-    }
-}
-
 pub async fn test_connection_params<S: RemoteProtocolRuntimeState + Sync>(
     state: &S,
     input: StoragePolicyConnectionInput,
 ) -> Result<()> {
     crate::storage::connectors::test_draft_connection(state, input).await
-}
-
-pub async fn probe_connection_params<S: RemoteProtocolRuntimeState + Sync>(
-    state: &S,
-    input: StoragePolicyConnectionInput,
-) -> Result<StoragePolicyProbeResult> {
-    match test_connection_params(state, input).await {
-        Ok(()) => Ok(StoragePolicyProbeResult {
-            ok: true,
-            diagnostic: None,
-        }),
-        Err(error) if error.storage_error_kind().is_some() => Ok(StoragePolicyProbeResult {
-            ok: false,
-            diagnostic: StoragePolicyDiagnostic::from_error(&error),
-        }),
-        Err(error) => Err(error),
-    }
 }
 
 pub async fn execute_saved_action<S: SharedRuntimeState + Sync>(

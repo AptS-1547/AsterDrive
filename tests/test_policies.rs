@@ -3004,8 +3004,8 @@ async fn test_policy_connection_endpoints_for_local_driver() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["ok"], true);
-    assert!(body["data"].get("diagnostic").is_none());
+    assert_eq!(body["code"], ApiErrorCode::Success.as_str());
+    assert_eq!(body["data"], serde_json::json!({}));
     assert!(!std::path::Path::new(&format!("{stored_base_path}/_aster_connection_test")).exists());
 
     let temp_base_path = format!("/tmp/test-policy-params-{}", uuid::Uuid::new_v4());
@@ -3021,8 +3021,8 @@ async fn test_policy_connection_endpoints_for_local_driver() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["ok"], true);
-    assert!(body["data"].get("diagnostic").is_none());
+    assert_eq!(body["code"], ApiErrorCode::Success.as_str());
+    assert_eq!(body["data"], serde_json::json!({}));
     assert!(!std::path::Path::new(&format!("{temp_base_path}/_aster_connection_test")).exists());
 }
 
@@ -3047,16 +3047,16 @@ async fn test_policy_connection_failures_return_admin_diagnostic_payload() {
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 500);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], ApiErrorCode::Success.as_str());
-    assert_eq!(body["msg"], "");
-    assert_eq!(body["data"]["ok"], false);
-    assert!(body["data"]["diagnostic"]["api_code"].as_str().is_some());
-    assert!(body["data"]["diagnostic"]["kind"].as_str().is_some());
-    assert!(body["data"]["diagnostic"]["retryable"].as_bool().is_some());
-    assert!(body.get("error").is_none());
-    let diagnostic_message = body["data"]["diagnostic"]["message"]
+    assert_eq!(body["code"], ApiErrorCode::StorageMisconfigured.as_str());
+    assert_eq!(body["msg"], "Storage Driver Error");
+    assert!(body.get("data").is_none());
+    assert!(body["error"]["retryable"].as_bool().is_some());
+    assert!(body["error"]["diagnostic"]["api_code"].as_str().is_some());
+    assert!(body["error"]["diagnostic"]["kind"].as_str().is_some());
+    assert!(body["error"]["diagnostic"]["retryable"].as_bool().is_some());
+    let diagnostic_message = body["error"]["diagnostic"]["message"]
         .as_str()
         .expect("storage probe diagnostic should include the driver message");
     assert!(diagnostic_message.contains("connection test failed"));
@@ -3085,19 +3085,18 @@ async fn test_policy_connection_failures_return_admin_diagnostic_payload() {
         .insert_header(common::csrf_header_for(&token))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 500);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], ApiErrorCode::Success.as_str());
-    assert_eq!(body["msg"], "");
-    assert_eq!(body["data"]["ok"], false);
-    assert_eq!(body["data"]["diagnostic"]["kind"], "misconfigured");
+    assert_eq!(body["code"], ApiErrorCode::StorageMisconfigured.as_str());
+    assert_eq!(body["msg"], "Storage Driver Error");
+    assert!(body.get("data").is_none());
+    assert_eq!(body["error"]["diagnostic"]["kind"], "misconfigured");
     assert_eq!(
-        body["data"]["diagnostic"]["api_code"],
+        body["error"]["diagnostic"]["api_code"],
         ApiErrorCode::StorageMisconfigured.as_str()
     );
-    assert_eq!(body["data"]["diagnostic"]["retryable"], false);
-    assert!(body.get("error").is_none());
-    let diagnostic_message = body["data"]["diagnostic"]["message"]
+    assert_eq!(body["error"]["diagnostic"]["retryable"], false);
+    let diagnostic_message = body["error"]["diagnostic"]["message"]
         .as_str()
         .expect("saved storage probe diagnostic should include the driver message");
     assert!(diagnostic_message.contains("write test failed"));

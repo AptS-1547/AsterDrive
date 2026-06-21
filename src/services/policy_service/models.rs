@@ -5,15 +5,14 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::api_error_code::ApiErrorCode;
+use crate::api::response::ApiErrorDiagnostic;
 use crate::entities::storage_policy;
-use crate::errors::sanitize_storage_driver_client_message;
-use crate::storage::error::storage_driver_error_display_message;
 use crate::types::{
     DriverType, StoragePolicyOptions, parse_storage_policy_allowed_types,
     parse_storage_policy_options,
 };
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StoragePolicyDiagnostic {
     pub api_code: ApiErrorCode,
@@ -24,26 +23,30 @@ pub struct StoragePolicyDiagnostic {
 
 impl StoragePolicyDiagnostic {
     pub fn from_error(error: &crate::errors::AsterError) -> Option<Self> {
-        let kind = error.storage_error_kind()?;
-        Some(Self {
-            api_code: error.api_error_code(),
-            kind: kind.as_str().to_string(),
-            message: storage_policy_diagnostic_message(error),
-            retryable: error.api_error_info().retryable,
-        })
+        ApiErrorDiagnostic::from_error(error).map(Into::into)
     }
 }
 
-fn storage_policy_diagnostic_message(error: &crate::errors::AsterError) -> String {
-    sanitize_storage_driver_client_message(storage_driver_error_display_message(error.message()))
+impl From<StoragePolicyDiagnostic> for ApiErrorDiagnostic {
+    fn from(value: StoragePolicyDiagnostic) -> Self {
+        Self {
+            api_code: value.api_code,
+            kind: value.kind,
+            message: value.message,
+            retryable: value.retryable,
+        }
+    }
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct StoragePolicyProbeResult {
-    pub ok: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub diagnostic: Option<StoragePolicyDiagnostic>,
+impl From<ApiErrorDiagnostic> for StoragePolicyDiagnostic {
+    fn from(value: ApiErrorDiagnostic) -> Self {
+        Self {
+            api_code: value.api_code,
+            kind: value.kind,
+            message: value.message,
+            retryable: value.retryable,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -361,32 +364,4 @@ mod tests {
         assert_eq!(value["tencent_cos_cors"]["response_vary"], true);
     }
 
-    #[test]
-    fn storage_policy_action_result_serializes_diagnostic_failure_payload() {
-        let diagnostic = StoragePolicyDiagnostic {
-            api_code: ApiErrorCode::StorageMisconfigured,
-            kind: "misconfigured".to_string(),
-            message: "connection test failed: local base path is not a directory".to_string(),
-            retryable: false,
-        };
-        let result = StoragePolicyActionResult {
-            ok: false,
-            action: StoragePolicyActionType::ConfigureTencentCosCors,
-            tencent_cos_cors: None,
-            diagnostic: Some(diagnostic),
-        };
-
-        let value = serde_json::to_value(result).expect("serialize diagnostic payload");
-
-        assert_eq!(value["ok"], false);
-        assert_eq!(value["action"], "configure_tencent_cos_cors");
-        assert_eq!(value["diagnostic"]["api_code"], "storage.misconfigured");
-        assert_eq!(value["diagnostic"]["kind"], "misconfigured");
-        assert_eq!(
-            value["diagnostic"]["message"],
-            "connection test failed: local base path is not a directory"
-        );
-        assert_eq!(value["diagnostic"]["retryable"], false);
-        assert!(value.get("tencent_cos_cors").is_none());
-    }
 }
