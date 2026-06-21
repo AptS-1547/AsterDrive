@@ -3,12 +3,13 @@
 use sea_orm::Set;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::types::RemoteNodeTransportMode;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(table_name = "managed_followers")]
 pub struct Model {
@@ -34,12 +35,65 @@ pub struct Model {
     pub updated_at: DateTimeUtc,
 }
 
+impl fmt::Debug for Model {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Model")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("base_url", &self.base_url)
+            .field("access_key", &"***REDACTED***")
+            .field("secret_key", &"***REDACTED***")
+            .field("is_enabled", &self.is_enabled)
+            .field("transport_mode", &self.transport_mode)
+            .field("last_capabilities", &self.last_capabilities)
+            .field("last_error", &self.last_error)
+            .field("last_checked_at", &self.last_checked_at)
+            .field("tunnel_last_error", &self.tunnel_last_error)
+            .field("tunnel_last_seen_at", &self.tunnel_last_seen_at)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
+}
+
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::follower_enrollment_session::Entity")]
     FollowerEnrollmentSessions,
     #[sea_orm(has_many = "super::storage_policy::Entity")]
     StoragePolicies,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_managed_follower_credentials() {
+        let now = chrono::Utc::now();
+        let model = Model {
+            id: 1,
+            name: "follower".to_string(),
+            base_url: "https://follower.example.test".to_string(),
+            access_key: "plain-access-key".to_string(),
+            secret_key: "plain-secret-key".to_string(),
+            is_enabled: true,
+            transport_mode: RemoteNodeTransportMode::Direct,
+            last_capabilities: "{}".to_string(),
+            last_error: String::new(),
+            last_checked_at: None,
+            tunnel_last_error: String::new(),
+            tunnel_last_seen_at: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let debug = format!("{model:?}");
+        assert!(debug.contains(r#"access_key: "***REDACTED***""#));
+        assert!(debug.contains(r#"secret_key: "***REDACTED***""#));
+        assert!(!debug.contains("plain-access-key"));
+        assert!(!debug.contains("plain-secret-key"));
+    }
 }
 
 impl Related<super::follower_enrollment_session::Entity> for Entity {

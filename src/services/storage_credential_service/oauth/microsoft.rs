@@ -1,5 +1,6 @@
 use base64::Engine as _;
 use rand::RngExt;
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -96,12 +97,13 @@ pub(super) fn decrypt_application_client_secret(
     encryption_key: &str,
     policy_id: i64,
     ciphertext: &str,
-) -> Result<String> {
+) -> Result<SecretString> {
     crypto::decrypt_token(
         encryption_key,
         application_client_secret_aad(policy_id).as_bytes(),
         ciphertext,
     )
+    .map(SecretString::from)
 }
 
 pub(super) fn parse_metadata(value: &str) -> Option<serde_json::Value> {
@@ -136,7 +138,7 @@ pub(super) fn microsoft_graph_flow_tenant(
 
 pub(super) async fn exchange_microsoft_graph_code(
     context: &MicrosoftGraphFlowContext,
-    client_secret: Option<&str>,
+    client_secret: Option<&SecretString>,
     code: &str,
     redirect_uri: &str,
     pkce_verifier: &str,
@@ -158,7 +160,7 @@ pub(super) async fn exchange_microsoft_graph_code(
     form.append_pair("redirect_uri", redirect_uri);
     form.append_pair("code_verifier", pkce_verifier);
     if let Some(client_secret) = client_secret {
-        form.append_pair("client_secret", client_secret);
+        form.append_pair("client_secret", client_secret.expose_secret());
     }
     let body = form.finish();
     let response = client
@@ -192,7 +194,7 @@ pub(super) async fn refresh_microsoft_graph_token(
     cloud: MicrosoftGraphCloud,
     tenant: &str,
     client_id: &str,
-    client_secret: Option<&str>,
+    client_secret: Option<&SecretString>,
     refresh_token: &str,
 ) -> Result<MicrosoftTokenResponse> {
     let client = reqwest::ClientBuilder::new()
@@ -211,7 +213,7 @@ pub(super) async fn refresh_microsoft_graph_token(
         form.append_pair("client_id", client_id);
         form.append_pair("refresh_token", refresh_token);
         if let Some(client_secret) = client_secret {
-            form.append_pair("client_secret", client_secret);
+            form.append_pair("client_secret", client_secret.expose_secret());
         }
         form.finish()
     };

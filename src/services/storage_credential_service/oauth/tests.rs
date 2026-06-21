@@ -29,8 +29,33 @@ use crate::types::{
 };
 use migration::Migrator;
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
+use secrecy::ExposeSecret;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex as StdMutex};
+
+fn request_client_secret(request: &MicrosoftGraphTokenRefreshRequest) -> Option<&str> {
+    request
+        .client_secret
+        .as_ref()
+        .map(secrecy::ExposeSecret::expose_secret)
+}
+
+#[test]
+fn microsoft_graph_token_refresh_request_debug_redacts_secrets() {
+    let request = MicrosoftGraphTokenRefreshRequest {
+        cloud: MicrosoftGraphCloud::Global,
+        tenant: "tenant-id".to_string(),
+        client_id: "client-id".to_string(),
+        client_secret: Some("plain-client-secret".into()),
+        refresh_token: "plain-refresh-token".into(),
+    };
+
+    let debug = format!("{request:?}");
+    assert!(debug.contains(r#"client_secret: Some("***REDACTED***")"#));
+    assert!(debug.contains(r#"refresh_token: "***REDACTED***""#));
+    assert!(!debug.contains("plain-client-secret"));
+    assert!(!debug.contains("plain-refresh-token"));
+}
 
 #[derive(Debug)]
 struct TestMicrosoftGraphTokenRefresher {
@@ -682,7 +707,7 @@ async fn microsoft_graph_app_config_is_stored_in_connector_app_config_not_policy
             .expect("client secret ciphertext"),
     )
     .expect("client secret should decrypt");
-    assert_eq!(decrypted, "client-secret");
+    assert_eq!(decrypted.expose_secret(), "client-secret");
 
     let credential = storage_policy_credential_repo::find_by_policy_provider_kind(
         &db,
@@ -760,7 +785,7 @@ async fn microsoft_graph_app_config_update_preserves_authorization_tokens_and_sa
             .expect("client secret ciphertext"),
     )
     .expect("client secret should decrypt");
-    assert_eq!(decrypted, "old-client-secret");
+    assert_eq!(decrypted.expose_secret(), "old-client-secret");
 
     let updated_credential = storage_policy_credential_repo::find_by_policy_provider_kind(
         &db,
@@ -1394,8 +1419,11 @@ async fn cleanup_token_provider_refreshes_from_snapshot_without_database_writes(
     assert_eq!(request.cloud, MicrosoftGraphCloud::Global);
     assert_eq!(request.tenant, "tenant-id");
     assert_eq!(request.client_id, "client-id");
-    assert_eq!(request.client_secret.as_deref(), Some("client-secret"));
-    assert_eq!(request.refresh_token, "snapshot-refresh-token");
+    assert_eq!(request_client_secret(request), Some("client-secret"));
+    assert_eq!(
+        request.refresh_token.expose_secret(),
+        "snapshot-refresh-token"
+    );
 }
 
 #[tokio::test]
@@ -1455,7 +1483,7 @@ async fn cleanup_token_provider_uses_snapshot_client_credentials() {
     let request = &requests[0];
     assert_eq!(request.client_id, "snapshot-client-id");
     assert_eq!(
-        request.client_secret.as_deref(),
+        request_client_secret(request),
         Some("snapshot-client-secret")
     );
 }
@@ -1652,8 +1680,8 @@ async fn credential_token_provider_refresh_success_writes_new_access_and_refresh
     assert_eq!(request.cloud, MicrosoftGraphCloud::Global);
     assert_eq!(request.tenant, "common");
     assert_eq!(request.client_id, "client-id");
-    assert_eq!(request.client_secret.as_deref(), Some("client-secret"));
-    assert_eq!(request.refresh_token, "old-refresh-token");
+    assert_eq!(request_client_secret(&request), Some("client-secret"));
+    assert_eq!(request.refresh_token.expose_secret(), "old-refresh-token");
 
     let stored = storage_policy_credential_repo::find_by_policy_provider_kind(
         &db,
@@ -1824,7 +1852,7 @@ async fn credential_token_provider_refresh_success_cas_recovers_newer_rotated_db
         .into_iter()
         .next()
         .expect("refresh request should be logged");
-    assert_eq!(request.refresh_token, "old-refresh-token");
+    assert_eq!(request.refresh_token.expose_secret(), "old-refresh-token");
     let stored = storage_policy_credential_repo::find_by_policy_provider_kind(
         &db,
         policy.id,
@@ -2044,7 +2072,7 @@ async fn credential_token_provider_refresh_failure_uses_newer_rotated_db_token()
         .into_iter()
         .next()
         .expect("refresh request should be logged");
-    assert_eq!(request.refresh_token, "old-refresh-token");
+    assert_eq!(request.refresh_token.expose_secret(), "old-refresh-token");
     let stored = storage_policy_credential_repo::find_by_policy_provider_kind(
         &db,
         policy.id,

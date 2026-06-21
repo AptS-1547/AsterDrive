@@ -6,6 +6,7 @@ mod tests;
 
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveValue::Set, ConnectionTrait, TransactionTrait};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -130,7 +131,7 @@ pub(crate) async fn upsert_microsoft_graph_application_config<C: ConnectionTrait
             .as_ref()
             .and_then(|config| config.client_id.clone())
     });
-    let client_secret = normalize_optional_string(input.client_secret);
+    let client_secret = normalize_optional_string(input.client_secret).map(SecretString::from);
     let existing_client_secret_ciphertext = existing
         .as_ref()
         .and_then(|config| config.client_secret_ciphertext.clone());
@@ -142,11 +143,11 @@ pub(crate) async fn upsert_microsoft_graph_application_config<C: ConnectionTrait
             .filter(|scopes| !scopes.is_empty())
             .unwrap_or_else(|| normalize_scopes(None)),
     };
-    let client_secret_ciphertext = match client_secret.as_deref() {
+    let client_secret_ciphertext = match client_secret.as_ref() {
         Some(client_secret) => Some(encrypt_application_client_secret(
             encryption_key,
             policy_id,
-            client_secret,
+            client_secret.expose_secret(),
         )?),
         None => existing_client_secret_ciphertext,
     };
@@ -317,7 +318,7 @@ async fn start_microsoft_graph_authorization(
         None => return Err(AsterError::validation_error("client_id is required")),
     };
     let client_secret = match normalize_optional_string(input.client_secret) {
-        Some(client_secret) => Some(client_secret),
+        Some(client_secret) => Some(SecretString::from(client_secret)),
         None => existing_app_config
             .as_ref()
             .and_then(|config| config.client_secret_ciphertext.as_deref())
@@ -331,7 +332,10 @@ async fn start_microsoft_graph_authorization(
             .transpose()?,
     };
     let client_secret = client_secret
-        .map(|client_secret| normalize_required_string(&client_secret, "client_secret", 2048))
+        .map(|client_secret| {
+            normalize_required_string(client_secret.expose_secret(), "client_secret", 2048)
+                .map(SecretString::from)
+        })
         .transpose()?
         .ok_or_else(|| {
             // AsterDrive stores OneDrive as a server-side backend. Treat the Microsoft app
@@ -373,7 +377,7 @@ async fn start_microsoft_graph_authorization(
     let client_secret_ciphertext = Some(crypto::encrypt_token(
         &state.config().auth.storage_credential_secret_key,
         flow_client_secret_aad(policy_id, &state_hash).as_bytes(),
-        &client_secret,
+        client_secret.expose_secret(),
     )?);
     let context = MicrosoftGraphFlowContext {
         cloud,
@@ -741,6 +745,7 @@ async fn finish_microsoft_graph_callback(
             flow_client_secret_aad(policy_id, &flow.state_hash).as_bytes(),
             ciphertext,
         )
+        .map(SecretString::from)
         .map_err(storage_authorization_callback_server_error)?,
         None => {
             return Err(StorageAuthorizationCallbackError::new(
@@ -753,7 +758,7 @@ async fn finish_microsoft_graph_callback(
     };
     let token = exchange_microsoft_graph_code(
         &context,
-        Some(client_secret.as_str()),
+        Some(&client_secret),
         code,
         &flow.redirect_uri,
         pkce_verifier,

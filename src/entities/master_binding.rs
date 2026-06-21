@@ -2,10 +2,11 @@
 
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(table_name = "master_bindings")]
 pub struct Model {
@@ -24,6 +25,22 @@ pub struct Model {
     pub updated_at: DateTimeUtc,
 }
 
+impl fmt::Debug for Model {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Model")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("master_url", &self.master_url)
+            .field("access_key", &"***REDACTED***")
+            .field("secret_key", &"***REDACTED***")
+            .field("storage_namespace", &self.storage_namespace)
+            .field("is_enabled", &self.is_enabled)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
+}
+
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::managed_ingress_profile::Entity")]
@@ -37,3 +54,30 @@ impl Related<super::managed_ingress_profile::Entity> for Entity {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_master_binding_credentials() {
+        let now = chrono::Utc::now();
+        let model = Model {
+            id: 1,
+            name: "master".to_string(),
+            master_url: "https://master.example.test".to_string(),
+            access_key: "plain-access-key".to_string(),
+            secret_key: "plain-secret-key".to_string(),
+            storage_namespace: "namespace".to_string(),
+            is_enabled: true,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let debug = format!("{model:?}");
+        assert!(debug.contains(r#"access_key: "***REDACTED***""#));
+        assert!(debug.contains(r#"secret_key: "***REDACTED***""#));
+        assert!(!debug.contains("plain-access-key"));
+        assert!(!debug.contains("plain-secret-key"));
+    }
+}

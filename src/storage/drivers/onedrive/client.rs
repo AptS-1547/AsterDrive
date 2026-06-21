@@ -3,7 +3,9 @@ use chrono::Utc;
 use futures::TryStreamExt;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, LOCATION, RANGE};
+use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::sync::Arc;
 use tokio::io::AsyncRead;
 use tokio_util::io::StreamReader;
@@ -38,9 +40,9 @@ pub trait MicrosoftGraphAccessTokenProvider: Send + Sync + std::fmt::Debug {
     async fn refresh_access_token(&self) -> Result<String>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct StaticMicrosoftGraphAccessTokenProvider {
-    access_token: String,
+    access_token: SecretString,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -113,7 +115,7 @@ impl MicrosoftGraphClientConfig {
         Self {
             graph_base_url: graph_base_url.into(),
             token_provider: Arc::new(StaticMicrosoftGraphAccessTokenProvider {
-                access_token: access_token.into(),
+                access_token: SecretString::from(access_token.into()),
             }),
         }
     }
@@ -132,11 +134,11 @@ impl MicrosoftGraphClientConfig {
 #[async_trait]
 impl MicrosoftGraphAccessTokenProvider for StaticMicrosoftGraphAccessTokenProvider {
     fn is_configured(&self) -> bool {
-        !self.access_token.trim().is_empty()
+        !self.access_token.expose_secret().trim().is_empty()
     }
 
     async fn access_token(&self) -> Result<String> {
-        Ok(self.access_token.clone())
+        Ok(self.access_token.expose_secret().to_string())
     }
 
     async fn refresh_access_token(&self) -> Result<String> {
@@ -144,6 +146,14 @@ impl MicrosoftGraphAccessTokenProvider for StaticMicrosoftGraphAccessTokenProvid
             StorageErrorKind::Auth,
             "Microsoft Graph access token cannot be refreshed",
         ))
+    }
+}
+
+impl fmt::Debug for StaticMicrosoftGraphAccessTokenProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StaticMicrosoftGraphAccessTokenProvider")
+            .field("access_token", &"***REDACTED***")
+            .finish()
     }
 }
 

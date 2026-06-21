@@ -1,5 +1,6 @@
 use chrono::{Duration, Utc};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
+use secrecy::{ExposeSecret, SecretString};
 use std::{fmt, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -24,7 +25,6 @@ use super::microsoft::{
 };
 use super::{crypto, normalize_optional_string, normalize_scopes, scopes_to_json};
 
-#[derive(Debug)]
 pub(crate) struct MicrosoftGraphCredentialTokenProvider {
     db: sea_orm::DatabaseConnection,
     encryption_key: String,
@@ -32,19 +32,18 @@ pub(crate) struct MicrosoftGraphCredentialTokenProvider {
     cloud: MicrosoftGraphCloud,
     tenant: String,
     client_id: String,
-    client_secret: Option<String>,
+    client_secret: Option<SecretString>,
     cache: Mutex<MicrosoftGraphCredentialTokenCache>,
     token_refresher: Arc<dyn MicrosoftGraphTokenRefresher>,
 }
 
-#[derive(Debug)]
 pub(crate) struct MicrosoftGraphCleanupTokenProvider {
     encryption_key: String,
     policy_id: i64,
     cloud: MicrosoftGraphCloud,
     tenant: String,
     client_id: String,
-    client_secret: Option<String>,
+    client_secret: Option<SecretString>,
     cache: Mutex<MicrosoftGraphCredentialTokenCache>,
     token_refresher: Arc<dyn MicrosoftGraphTokenRefresher>,
 }
@@ -67,13 +66,71 @@ struct MicrosoftGraphCredentialTokenCache {
     refresh_token_ciphertext: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(super) struct MicrosoftGraphTokenRefreshRequest {
     pub(super) cloud: MicrosoftGraphCloud,
     pub(super) tenant: String,
     pub(super) client_id: String,
-    pub(super) client_secret: Option<String>,
-    pub(super) refresh_token: String,
+    pub(super) client_secret: Option<SecretString>,
+    pub(super) refresh_token: SecretString,
+}
+
+impl fmt::Debug for MicrosoftGraphCredentialTokenProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MicrosoftGraphCredentialTokenProvider")
+            .field("policy_id", &self.policy_id)
+            .field("cloud", &self.cloud)
+            .field("tenant", &self.tenant)
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self
+                    .client_secret
+                    .as_ref()
+                    .map(|_| super::super::REDACTED_SECRET),
+            )
+            .field("cache", &"***REDACTED***")
+            .field("token_refresher", &self.token_refresher)
+            .finish()
+    }
+}
+
+impl fmt::Debug for MicrosoftGraphCleanupTokenProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MicrosoftGraphCleanupTokenProvider")
+            .field("policy_id", &self.policy_id)
+            .field("cloud", &self.cloud)
+            .field("tenant", &self.tenant)
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self
+                    .client_secret
+                    .as_ref()
+                    .map(|_| super::super::REDACTED_SECRET),
+            )
+            .field("cache", &"***REDACTED***")
+            .field("token_refresher", &self.token_refresher)
+            .finish()
+    }
+}
+
+impl fmt::Debug for MicrosoftGraphTokenRefreshRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MicrosoftGraphTokenRefreshRequest")
+            .field("cloud", &self.cloud)
+            .field("tenant", &self.tenant)
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self
+                    .client_secret
+                    .as_ref()
+                    .map(|_| super::super::REDACTED_SECRET),
+            )
+            .field("refresh_token", &super::super::REDACTED_SECRET)
+            .finish()
+    }
 }
 
 #[async_trait::async_trait]
@@ -97,8 +154,8 @@ impl MicrosoftGraphTokenRefresher for DefaultMicrosoftGraphTokenRefresher {
             request.cloud,
             &request.tenant,
             &request.client_id,
-            request.client_secret.as_deref(),
-            &request.refresh_token,
+            request.client_secret.as_ref(),
+            request.refresh_token.expose_secret(),
         )
         .await
     }
@@ -326,7 +383,7 @@ impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCredentialTokenProvider
                 tenant: self.tenant.clone(),
                 client_id: self.client_id.clone(),
                 client_secret: self.client_secret.clone(),
-                refresh_token,
+                refresh_token: SecretString::from(refresh_token),
             })
             .await
         {
@@ -512,7 +569,7 @@ impl MicrosoftGraphAccessTokenProvider for MicrosoftGraphCleanupTokenProvider {
                 tenant: self.tenant.clone(),
                 client_id: self.client_id.clone(),
                 client_secret: self.client_secret.clone(),
-                refresh_token,
+                refresh_token: SecretString::from(refresh_token),
             })
             .await
             .map_err(|error| {
