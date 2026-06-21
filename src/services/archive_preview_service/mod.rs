@@ -306,7 +306,9 @@ where
             biased;
             shutdown = context.shutdown_requested() => {
                 shutdown?;
-                return Ok(copied);
+                return Err(AsterError::storage_driver_error(
+                    "archive preview copy interrupted by shutdown",
+                ));
             }
             read = reader.read(&mut buffer) => read.map_aster_err_ctx(
                 "read archive preview source stream chunk",

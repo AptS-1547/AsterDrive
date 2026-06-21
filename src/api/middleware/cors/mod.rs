@@ -221,11 +221,17 @@ fn apply_origin_headers(
 fn apply_preflight_headers(headers: &mut HeaderMap, policy: &RuntimeCorsPolicy) {
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static(ALLOWED_METHODS_VALUE),
+        HeaderValue::from_str(ALLOWED_METHODS_VALUE.as_str()).unwrap_or_else(|error| {
+            tracing::warn!(%error, "failed to serialize CORS allow methods header");
+            HeaderValue::from_static("")
+        }),
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static(ALLOWED_HEADERS_VALUE),
+        HeaderValue::from_str(ALLOWED_HEADERS_VALUE.as_str()).unwrap_or_else(|error| {
+            tracing::warn!(%error, "failed to serialize CORS allow headers header");
+            HeaderValue::from_static("")
+        }),
     );
     headers.insert(
         header::ACCESS_CONTROL_MAX_AGE,
@@ -234,14 +240,27 @@ fn apply_preflight_headers(headers: &mut HeaderMap, policy: &RuntimeCorsPolicy) 
             HeaderValue::from_static("0")
         }),
     );
-    ensure_vary(headers, "Access-Control-Request-Method").ok();
-    ensure_vary(headers, "Access-Control-Request-Headers").ok();
+    if let Err(error) = ensure_vary(headers, "Access-Control-Request-Method") {
+        tracing::warn!(
+            error = error.message(),
+            "failed to add CORS preflight method Vary header"
+        );
+    }
+    if let Err(error) = ensure_vary(headers, "Access-Control-Request-Headers") {
+        tracing::warn!(
+            error = error.message(),
+            "failed to add CORS preflight headers Vary header"
+        );
+    }
 }
 
 fn apply_actual_headers(headers: &mut HeaderMap, _policy: &RuntimeCorsPolicy) {
     headers.insert(
         header::ACCESS_CONTROL_EXPOSE_HEADERS,
-        HeaderValue::from_static(EXPOSE_HEADERS_VALUE),
+        HeaderValue::from_str(EXPOSE_HEADERS_VALUE.as_str()).unwrap_or_else(|error| {
+            tracing::warn!(%error, "failed to serialize CORS expose headers header");
+            HeaderValue::from_static("")
+        }),
     );
 }
 

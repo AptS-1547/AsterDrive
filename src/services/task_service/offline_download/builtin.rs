@@ -103,7 +103,9 @@ impl OfflineDownloadEngine for BuiltinHttpOfflineDownloadEngine {
                 biased;
                 shutdown = context.shutdown_requested() => {
                     shutdown?;
-                    break;
+                    return Err(AsterError::storage_driver_error(
+                        "transient: offline download interrupted during shutdown",
+                    ));
                 }
                 chunk = stream.next() => chunk,
             };

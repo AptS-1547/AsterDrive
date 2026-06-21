@@ -43,7 +43,14 @@ pub fn default_offline_download_engine_registry_json() -> String {
     serde_json::to_string_pretty(&default_offline_download_engine_registry()).unwrap_or_else(
         |error| {
             tracing::warn!(%error, "failed to serialize default offline download engine registry");
-            String::new()
+            serde_json::to_string(&OfflineDownloadEngineRegistryConfig {
+                version: OFFLINE_DOWNLOAD_ENGINE_REGISTRY_VERSION,
+                engines: Vec::new(),
+            })
+            .unwrap_or_else(|fallback_error| {
+                tracing::error!(%fallback_error, "failed to serialize fallback offline download engine registry");
+                "{}".to_string()
+            })
         },
     )
 }

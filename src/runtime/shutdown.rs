@@ -18,6 +18,7 @@ async fn wait_for_termination_signal() {
         Ok(signal) => signal,
         Err(error) => {
             tracing::error!(%error, "failed to install SIGINT handler");
+            wait_forever_after_signal_install_failure().await;
             return;
         }
     };
@@ -25,6 +26,7 @@ async fn wait_for_termination_signal() {
         Ok(signal) => signal,
         Err(error) => {
             tracing::error!(%error, "failed to install SIGTERM handler");
+            wait_forever_after_signal_install_failure().await;
             return;
         }
     };
@@ -39,9 +41,14 @@ async fn wait_for_termination_signal() {
 async fn wait_for_termination_signal() {
     if let Err(error) = tokio::signal::ctrl_c().await {
         tracing::error!(%error, "failed to install Ctrl+C handler");
+        wait_forever_after_signal_install_failure().await;
         return;
     }
     tracing::info!("received Ctrl+C, shutting down gracefully...");
+}
+
+async fn wait_forever_after_signal_install_failure() {
+    std::future::pending::<()>().await;
 }
 
 /// 执行关闭收尾：确认后台任务停止，再关闭审计和数据库连接。

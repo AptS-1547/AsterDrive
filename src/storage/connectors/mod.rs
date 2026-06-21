@@ -736,16 +736,20 @@ fn connector_for(driver_type: DriverType) -> Result<&'static StorageConnectorReg
         })
 }
 
-fn connector_or_local(driver_type: DriverType) -> &'static StorageConnectorRegistration {
+#[allow(clippy::panic)]
+fn connector_or_registered(driver_type: DriverType) -> &'static StorageConnectorRegistration {
     match connector_for(driver_type) {
         Ok(connector) => connector,
         Err(error) => {
-            tracing::warn!(
+            tracing::error!(
                 driver_type = %driver_type.as_str(),
                 error = error.message(),
-                "falling back to local storage connector for missing registration"
+                "storage connector registration is missing"
             );
-            &CONNECTOR_REGISTRATIONS[0]
+            panic!(
+                "storage connector '{}' is not registered",
+                driver_type.as_str()
+            );
         }
     }
 }
@@ -758,7 +762,7 @@ pub fn list_storage_driver_descriptors() -> Vec<StorageConnectorDescriptor> {
 }
 
 pub fn storage_driver_descriptor(driver_type: DriverType) -> StorageConnectorDescriptor {
-    connector_or_local(driver_type).connector.descriptor()
+    connector_or_registered(driver_type).connector.descriptor()
 }
 
 pub fn storage_connector_supports_native_thumbnail(driver_type: DriverType) -> bool {
@@ -955,13 +959,13 @@ pub fn validate_driver_promotion_candidate(policy: &storage_policy::Model) -> Re
 pub fn resolve_policy_upload_transport(
     policy: &storage_policy::Model,
 ) -> StorageConnectorUploadTransport {
-    connector_or_local(policy.driver_type)
+    connector_or_registered(policy.driver_type)
         .connector
         .upload_transport(policy)
 }
 
 pub fn presigned_download_enabled(policy: &storage_policy::Model) -> bool {
-    connector_or_local(policy.driver_type)
+    connector_or_registered(policy.driver_type)
         .connector
         .presigned_download_enabled(policy)
 }
@@ -969,7 +973,7 @@ pub fn presigned_download_enabled(policy: &storage_policy::Model) -> bool {
 pub(crate) fn runtime_credential_requirement(
     driver_type: DriverType,
 ) -> Option<StorageConnectorCredentialRequirement> {
-    connector_or_local(driver_type)
+    connector_or_registered(driver_type)
         .connector
         .runtime_credential_requirement()
 }
