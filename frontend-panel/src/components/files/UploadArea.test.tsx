@@ -20,6 +20,11 @@ const saveSession = vi.fn();
 const uploadChunk = vi.fn();
 const uploadPanelSpy = vi.fn();
 const apiClientPost = vi.fn();
+const mockAuthUser = {
+	preferences: {
+		storage_event_stream_enabled: true,
+	},
+};
 
 interface MockFileStoreState {
 	breadcrumb: Array<{ id: number | null; name: string }>;
@@ -30,6 +35,11 @@ interface MockFileStoreState {
 interface MockAuthStoreState {
 	refreshToken: () => Promise<void>;
 	refreshUser: (options?: { fields?: MeField[] }) => Promise<void>;
+	user: {
+		preferences?: {
+			storage_event_stream_enabled?: boolean;
+		};
+	} | null;
 }
 
 class MockApiError extends Error {
@@ -130,11 +140,13 @@ vi.mock("@/stores/authStore", () => ({
 			selector({
 				refreshToken,
 				refreshUser,
+				user: mockAuthUser,
 			}),
 		{
 			getState: () => ({
 				refreshToken,
 				refreshUser,
+				user: mockAuthUser,
 			}),
 		},
 	),
@@ -280,6 +292,7 @@ describe("UploadArea", () => {
 		refreshToken.mockResolvedValue(undefined);
 		refreshUser.mockReset();
 		refreshUser.mockResolvedValue(undefined);
+		mockAuthUser.preferences.storage_event_stream_enabled = true;
 		removeSession.mockReset();
 		saveSession.mockReset();
 		uploadChunk.mockReset();
@@ -382,8 +395,26 @@ describe("UploadArea", () => {
 
 		await waitFor(() => {
 			expect(refresh).toHaveBeenCalledTimes(1);
+		});
+		expect(refreshUser).not.toHaveBeenCalled();
+	});
+
+	it("refreshes quota locally after upload queue settles when storage events are disabled", async () => {
+		mockAuthUser.preferences.storage_event_stream_enabled = false;
+		const file = new File(["hello"], "hello.txt", { type: "text/plain" });
+
+		initUpload.mockResolvedValue({ mode: "direct" });
+		apiClientPost.mockResolvedValue({});
+
+		await renderUploadAreaWithFiles([file]);
+
+		await screen.findByText("hello.txt:Direct:files:upload_success");
+
+		await waitFor(() => {
+			expect(refresh).toHaveBeenCalledTimes(1);
 			expect(refreshUser).toHaveBeenCalledTimes(1);
 		});
+		expect(refreshUser).toHaveBeenCalledWith({ fields: ["quota"] });
 	});
 
 	it("keeps active uploads when the file browser route unmounts", async () => {
@@ -429,8 +460,8 @@ describe("UploadArea", () => {
 		await screen.findByText("route-switch.txt:Direct:files:upload_success");
 		await waitFor(() => {
 			expect(refresh).toHaveBeenCalledTimes(1);
-			expect(refreshUser).toHaveBeenCalledTimes(1);
 		});
+		expect(refreshUser).not.toHaveBeenCalled();
 	});
 
 	it("does not refresh after an all-failed upload queue", async () => {
@@ -525,8 +556,8 @@ describe("UploadArea", () => {
 		);
 		await waitFor(() => {
 			expect(refresh).toHaveBeenCalledTimes(1);
-			expect(refreshUser).toHaveBeenCalledTimes(1);
 		});
+		expect(refreshUser).not.toHaveBeenCalled();
 	});
 
 	it("restores recoverable sessions listed by the backend", async () => {

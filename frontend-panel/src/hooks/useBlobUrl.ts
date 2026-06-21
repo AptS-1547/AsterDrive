@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { config } from "@/config/app";
+import { shouldSendResourceCredentials } from "@/lib/apiUrl";
 import { logger } from "@/lib/logger";
 import { api } from "@/services/http";
 
@@ -311,6 +312,7 @@ async function fetchBlobUrlFromNetwork({
 			api.client.get(path, {
 				headers,
 				responseType: "blob",
+				withCredentials: shouldSendResourceCredentials(path),
 				validateStatus: (status) =>
 					status === 200 ||
 					status === 304 ||

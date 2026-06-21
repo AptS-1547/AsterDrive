@@ -13,6 +13,13 @@ vi.mock("@/services/http", () => ({
 	},
 }));
 
+vi.mock("@/lib/apiUrl", async () => {
+	const actual = await vi.importActual<typeof import("@/lib/apiUrl")>(
+		"@/lib/apiUrl",
+	);
+	return actual;
+});
+
 async function loadHookModule() {
 	vi.resetModules();
 	return await import("@/hooks/useTextContent");
@@ -80,6 +87,7 @@ describe("useTextContent", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/files/1/content", {
 			headers: { "If-None-Match": '"etag-2"' },
 			responseType: "text",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 		expect(second.result.current.etag).toBe('"etag-2"');
@@ -129,6 +137,7 @@ describe("useTextContent", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/files/1/content", {
 			headers: {},
 			responseType: "text",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 		clearTextContentCache();
@@ -159,8 +168,47 @@ describe("useTextContent", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/files/1/content", {
 			headers: { "If-None-Match": '"etag-3"' },
 			responseType: "text",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
+		clearTextContentCache();
+	});
+
+	it("omits credentials for preview-link and external text resources", async () => {
+		mockState.get.mockResolvedValue({
+			status: 200,
+			data: "preview",
+			headers: { etag: '"etag-pv"' },
+		});
+		const { clearTextContentCache, useTextContent } = await loadHookModule();
+
+		const preview = renderHook(() => useTextContent("/pv/token/file.txt"));
+		await waitFor(() => {
+			expect(preview.result.current.content).toBe("preview");
+		});
+		expect(mockState.get).toHaveBeenLastCalledWith("/pv/token/file.txt", {
+			headers: {},
+			responseType: "text",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+
+		mockState.get.mockClear();
+		const external = renderHook(() =>
+			useTextContent("https://objects.example.test/file.txt"),
+		);
+		await waitFor(() => {
+			expect(external.result.current.content).toBe("preview");
+		});
+		expect(mockState.get).toHaveBeenLastCalledWith(
+			"https://objects.example.test/file.txt",
+			{
+				headers: {},
+				responseType: "text",
+				withCredentials: false,
+				validateStatus: expect.any(Function),
+			},
+		);
 		clearTextContentCache();
 	});
 

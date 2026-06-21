@@ -19,7 +19,7 @@ interface BlobImagePreviewProps {
 	imageStyle?: CSSProperties;
 	onImageLoad?: (source: ImagePreviewSource) => void;
 	onImageRenderError?: (source: ImagePreviewSource) => void;
-	path: string;
+	path: string | null;
 	source?: ImagePreviewSource;
 	showOriginalButtonPlacement?: "inline" | "none";
 	viewportClassName?: string;
@@ -84,6 +84,7 @@ export function BlobImagePreview({
 			: "original");
 	const isControlledSource = source != null;
 	const shouldLoadOriginal =
+		path != null &&
 		!isControlledSource &&
 		canShowOriginal &&
 		baseSource === "backend_preview" &&
@@ -99,11 +100,13 @@ export function BlobImagePreview({
 	const originalReady =
 		shouldLoadOriginal && originalBlobUrl && !originalLoading && !originalError;
 	const shouldFallbackOriginalRenderToPreview =
+		path != null &&
 		!isControlledSource &&
 		baseSource === "original" &&
 		originalRenderFailed &&
 		hasBackendPreview;
 	const shouldPromoteReadyOriginal =
+		path != null &&
 		!isControlledSource &&
 		baseSource === "backend_preview" &&
 		originalReady &&
@@ -115,7 +118,11 @@ export function BlobImagePreview({
 				? "original"
 				: baseSource;
 	const displayPath: string | null =
-		displaySource === "backend_preview" ? (fallbackPath ?? null) : path;
+		path == null
+			? null
+			: displaySource === "backend_preview"
+				? (fallbackPath ?? null)
+				: path;
 	const { blobUrl, error, loading, retry } = useBlobUrl(displayPath, {
 		lane: displaySource === "backend_preview" ? "preview" : "default",
 	});
@@ -125,6 +132,7 @@ export function BlobImagePreview({
 	const imageRenderKey = `${previewKey}\u0000${displaySource}`;
 	const imageRenderFailed = imageRenderFailedKey === imageRenderKey;
 	const canRequestOriginal =
+		path != null &&
 		!isControlledSource &&
 		canShowOriginal &&
 		baseSource === "backend_preview" &&

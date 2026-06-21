@@ -268,6 +268,44 @@ describe("useBlobUrl", () => {
 		clearBlobUrlCache();
 	});
 
+	it("omits credentials for preview-link and external blob resources", async () => {
+		mockState.get.mockResolvedValue({
+			status: 200,
+			data: new Blob(["preview"]),
+			headers: { etag: '"etag-pv"' },
+		});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const preview = renderHook(() => useBlobUrl("/pv/token/image.webp"));
+		await waitFor(() => {
+			expect(preview.result.current.blobUrl).toBe("blob:1");
+		});
+		expect(mockState.get).toHaveBeenLastCalledWith("/pv/token/image.webp", {
+			headers: {},
+			responseType: "blob",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+
+		mockState.get.mockClear();
+		const external = renderHook(() =>
+			useBlobUrl("https://objects.example.test/image.webp"),
+		);
+		await waitFor(() => {
+			expect(external.result.current.blobUrl).toBe("blob:2");
+		});
+		expect(mockState.get).toHaveBeenLastCalledWith(
+			"https://objects.example.test/image.webp",
+			{
+				headers: {},
+				responseType: "blob",
+				withCredentials: false,
+				validateStatus: expect.any(Function),
+			},
+		);
+		clearBlobUrlCache();
+	});
+
 	it("revalidates cached blobs with etags and keeps the same object url on 304", async () => {
 		const imageBlob = new Blob(["image"]);
 		mockState.get
@@ -298,6 +336,7 @@ describe("useBlobUrl", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/thumb", {
 			headers: { "If-None-Match": '"etag-4"' },
 			responseType: "blob",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 		expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
@@ -372,6 +411,7 @@ describe("useBlobUrl", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/thumb", {
 			headers: { "If-None-Match": '"etag-persisted"' },
 			responseType: "blob",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 
@@ -563,6 +603,7 @@ describe("useBlobUrl", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(1, "/thumb-1", {
 			headers: {},
 			responseType: "blob",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 
@@ -581,6 +622,7 @@ describe("useBlobUrl", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/thumb-2", {
 			headers: {},
 			responseType: "blob",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 
@@ -639,11 +681,13 @@ describe("useBlobUrl", () => {
 		expect(mockState.get).toHaveBeenCalledWith("/thumb-1", {
 			headers: {},
 			responseType: "blob",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 		expect(mockState.get).toHaveBeenCalledWith("/image-preview", {
 			headers: {},
 			responseType: "blob",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 		expect(mockState.get).not.toHaveBeenCalledWith(
@@ -674,6 +718,7 @@ describe("useBlobUrl", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(3, "/thumb-2", {
 			headers: {},
 			responseType: "blob",
+			withCredentials: true,
 			validateStatus: expect.any(Function),
 		});
 

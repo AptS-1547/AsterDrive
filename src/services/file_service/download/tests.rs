@@ -2,6 +2,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+use std::time::Duration;
 
 use actix_web::body;
 use async_trait::async_trait;
@@ -18,12 +19,17 @@ use crate::runtime::PrimaryAppState;
 use crate::services::file_service::DownloadDisposition;
 use crate::services::{mail_service, policy_service};
 use crate::storage::BlobMetadata;
+use crate::storage::traits::driver::PresignedDownloadOptions;
+use crate::storage::traits::extensions::PresignedStorageDriver;
 use crate::storage::{DriverRegistry, PolicySnapshot, StorageDriver};
-use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, UserRole, UserStatus};
+use crate::types::{
+    DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, UserRole, UserStatus,
+};
 
-use super::build::build_stream_outcome_with_disposition;
+use super::build::build_download_outcome_with_disposition_and_range;
 use super::response::outcome_to_response;
 use super::streaming::AbortAwareStream;
+use super::types::DownloadOutcome;
 
 #[tokio::test]
 async fn abort_aware_stream_disarms_hook_on_clean_eof() {
@@ -139,15 +145,115 @@ impl StorageDriver for CountingStreamDriver {
     }
 }
 
+impl CountingStreamDriver {
+    fn with_presigned(self) -> PresignedCountingStreamDriver {
+        PresignedCountingStreamDriver(self)
+    }
+}
+
+#[derive(Clone)]
+struct PresignedCountingStreamDriver(CountingStreamDriver);
+
+#[async_trait]
+impl StorageDriver for PresignedCountingStreamDriver {
+    async fn put(&self, path: &str, data: &[u8]) -> crate::errors::Result<String> {
+        self.0.put(path, data).await
+    }
+
+    async fn get(&self, path: &str) -> crate::errors::Result<Vec<u8>> {
+        self.0.get(path).await
+    }
+
+    async fn get_stream(
+        &self,
+        path: &str,
+    ) -> crate::errors::Result<Box<dyn AsyncRead + Unpin + Send>> {
+        self.0.get_stream(path).await
+    }
+
+    async fn delete(&self, path: &str) -> crate::errors::Result<()> {
+        self.0.delete(path).await
+    }
+
+    async fn exists(&self, path: &str) -> crate::errors::Result<bool> {
+        self.0.exists(path).await
+    }
+
+    async fn metadata(&self, path: &str) -> crate::errors::Result<BlobMetadata> {
+        self.0.metadata(path).await
+    }
+
+    fn as_presigned(&self) -> Option<&dyn PresignedStorageDriver> {
+        Some(self)
+    }
+}
+
+#[async_trait]
+impl PresignedStorageDriver for PresignedCountingStreamDriver {
+    async fn presigned_url(
+        &self,
+        path: &str,
+        _expires: Duration,
+        options: PresignedDownloadOptions,
+    ) -> crate::errors::Result<Option<String>> {
+        let mut url = reqwest::Url::parse("https://objects.example.test/download")
+            .expect("mock presigned base URL should parse");
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("path", path);
+            if let Some(value) = options.response_cache_control {
+                query.append_pair("response-cache-control", &value);
+            }
+            if let Some(value) = options.response_content_disposition {
+                query.append_pair("response-content-disposition", &value);
+            }
+            if let Some(value) = options.response_content_type {
+                query.append_pair("response-content-type", &value);
+            }
+        }
+        Ok(Some(url.to_string()))
+    }
+
+    async fn presigned_put_url(
+        &self,
+        path: &str,
+        _expires: Duration,
+    ) -> crate::errors::Result<Option<String>> {
+        Ok(Some(format!(
+            "https://objects.example.test/upload?path={path}"
+        )))
+    }
+}
+
 async fn build_download_test_state(
-    driver: CountingStreamDriver,
+    driver: impl StorageDriver + Clone + 'static,
     payload_size: i64,
 ) -> (
     PrimaryAppState,
     file::Model,
     file_blob::Model,
-    CountingStreamDriver,
+    impl StorageDriver + Clone + 'static,
 ) {
+    build_download_test_state_with_policy(
+        driver,
+        payload_size,
+        DriverType::Local,
+        StoredStoragePolicyOptions::empty(),
+        "text/plain",
+    )
+    .await
+}
+
+async fn build_download_test_state_with_policy<D>(
+    driver: D,
+    payload_size: i64,
+    driver_type: DriverType,
+    options: StoredStoragePolicyOptions,
+    mime_type: &str,
+) -> (PrimaryAppState, file::Model, file_blob::Model, D)
+where
+    D: StorageDriver + Clone + 'static,
+{
     let temp_root = std::env::temp_dir().join(format!(
         "asterdrive-download-stream-test-{}",
         uuid::Uuid::new_v4()
@@ -171,7 +277,7 @@ async fn build_download_test_state(
     let now = Utc::now();
     let policy = storage_policy::ActiveModel {
         name: Set("Download Stream Policy".to_string()),
-        driver_type: Set(DriverType::Local),
+        driver_type: Set(driver_type),
         endpoint: Set(String::new()),
         bucket: Set(String::new()),
         access_key: Set(String::new()),
@@ -179,7 +285,7 @@ async fn build_download_test_state(
         base_path: Set(temp_root.to_string_lossy().into_owned()),
         max_file_size: Set(0),
         allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
-        options: Set(crate::types::StoredStoragePolicyOptions::empty()),
+        options: Set(options),
         is_default: Set(true),
         chunk_size: Set(5_242_880),
         created_at: Set(now),
@@ -286,7 +392,7 @@ async fn build_download_test_state(
             owner_user_id: Set(Some(user.id)),
             created_by_user_id: Set(Some(user.id)),
             created_by_username: Set(user.username.clone()),
-            mime_type: Set("text/plain".to_string()),
+            mime_type: Set(mime_type.to_string()),
             created_at: Set(now),
             updated_at: Set(now),
             deleted_at: Set(None),
@@ -308,11 +414,12 @@ async fn build_stream_response_uses_get_stream_instead_of_get() {
     let get_stream_calls = driver.get_stream_calls.clone();
     let (state, file, blob, _) = build_download_test_state(driver, payload.len() as i64).await;
 
-    let outcome = build_stream_outcome_with_disposition(
+    let outcome = build_download_outcome_with_disposition_and_range(
         &state,
         &file,
         &blob,
         DownloadDisposition::Attachment,
+        None,
         None,
     )
     .await
@@ -332,5 +439,151 @@ async fn build_stream_response_uses_get_stream_instead_of_get() {
         get_stream_calls.load(Ordering::SeqCst),
         1,
         "download response should open exactly one streaming reader"
+    );
+}
+
+fn presigned_download_options() -> StoredStoragePolicyOptions {
+    StoredStoragePolicyOptions::from(
+        r#"{"object_storage_download_strategy":"presigned"}"#.to_string(),
+    )
+}
+
+#[actix_web::test]
+async fn attachment_download_redirects_to_presigned_url_with_attachment_disposition() {
+    let payload = b"presigned attachment".to_vec();
+    let base_driver = CountingStreamDriver::new(payload.clone());
+    let get_stream_calls = base_driver.get_stream_calls.clone();
+    let (state, file, blob, _) = build_download_test_state_with_policy(
+        base_driver.with_presigned(),
+        payload.len() as i64,
+        DriverType::S3,
+        presigned_download_options(),
+        "text/plain",
+    )
+    .await;
+
+    let outcome = build_download_outcome_with_disposition_and_range(
+        &state,
+        &file,
+        &blob,
+        DownloadDisposition::Attachment,
+        None,
+        None,
+    )
+    .await
+    .expect("attachment presigned outcome should build");
+
+    let DownloadOutcome::PresignedRedirect { url } = outcome else {
+        panic!("attachment downloads should redirect to presigned storage URL");
+    };
+    let parsed = reqwest::Url::parse(&url).expect("presigned URL should parse");
+    let query = parsed
+        .query_pairs()
+        .into_owned()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(
+        query
+            .get("response-content-disposition")
+            .map(String::as_str),
+        Some("attachment; filename*=UTF-8''download.txt")
+    );
+    assert_eq!(
+        query.get("response-content-type").map(String::as_str),
+        Some("text/plain")
+    );
+    assert_eq!(
+        get_stream_calls.load(Ordering::SeqCst),
+        0,
+        "presigned redirect must not open a backend stream"
+    );
+}
+
+#[actix_web::test]
+async fn safe_inline_preview_redirects_to_presigned_url_with_inline_disposition() {
+    let payload = b"presigned inline".to_vec();
+    let base_driver = CountingStreamDriver::new(payload.clone());
+    let get_stream_calls = base_driver.get_stream_calls.clone();
+    let (state, file, blob, _) = build_download_test_state_with_policy(
+        base_driver.with_presigned(),
+        payload.len() as i64,
+        DriverType::S3,
+        presigned_download_options(),
+        "image/webp",
+    )
+    .await;
+
+    let outcome = build_download_outcome_with_disposition_and_range(
+        &state,
+        &file,
+        &blob,
+        DownloadDisposition::Inline,
+        None,
+        None,
+    )
+    .await
+    .expect("safe inline presigned outcome should build");
+
+    let DownloadOutcome::PresignedRedirect { url } = outcome else {
+        panic!("safe inline previews should redirect to presigned storage URL");
+    };
+    let parsed = reqwest::Url::parse(&url).expect("presigned URL should parse");
+    let query = parsed
+        .query_pairs()
+        .into_owned()
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(
+        query
+            .get("response-content-disposition")
+            .map(String::as_str),
+        Some("inline; filename*=UTF-8''download.txt")
+    );
+    assert_eq!(
+        query.get("response-content-type").map(String::as_str),
+        Some("image/webp")
+    );
+    assert_eq!(
+        get_stream_calls.load(Ordering::SeqCst),
+        0,
+        "presigned inline redirect must not open a backend stream"
+    );
+}
+
+#[actix_web::test]
+async fn sandboxed_inline_preview_does_not_redirect_to_presigned_storage() {
+    let payload = b"<script>alert(1)</script>".to_vec();
+    let base_driver = CountingStreamDriver::new(payload.clone());
+    let get_stream_calls = base_driver.get_stream_calls.clone();
+    let (state, file, blob, _) = build_download_test_state_with_policy(
+        base_driver.with_presigned(),
+        payload.len() as i64,
+        DriverType::S3,
+        presigned_download_options(),
+        "text/html",
+    )
+    .await;
+
+    let outcome = build_download_outcome_with_disposition_and_range(
+        &state,
+        &file,
+        &blob,
+        DownloadDisposition::Inline,
+        None,
+        None,
+    )
+    .await
+    .expect("sandboxed inline outcome should build");
+
+    let response = outcome_to_response(outcome);
+    assert_eq!(response.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(
+        response.headers().get("Content-Security-Policy"),
+        Some(&actix_web::http::header::HeaderValue::from_static(
+            "sandbox"
+        ))
+    );
+    assert_eq!(
+        get_stream_calls.load(Ordering::SeqCst),
+        1,
+        "sandboxed inline preview should stream through backend to apply CSP"
     );
 }

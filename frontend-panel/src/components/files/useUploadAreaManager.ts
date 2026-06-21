@@ -51,6 +51,7 @@ interface UseUploadAreaManagerOptions {
 	refresh: () => Promise<void>;
 	refreshUser: (options?: { fields?: MeField[] }) => Promise<void>;
 	resumeFileInputRef: RefObject<HTMLInputElement | null>;
+	storageEventStreamEnabled: boolean;
 	workspace: Workspace;
 }
 
@@ -60,6 +61,7 @@ export function useUploadAreaManager({
 	refresh,
 	refreshUser,
 	resumeFileInputRef,
+	storageEventStreamEnabled,
 	workspace,
 }: UseUploadAreaManagerOptions) {
 	const { t } = useTranslation(["core", "files"]);
@@ -218,13 +220,13 @@ export function useUploadAreaManager({
 			pendingRefreshFolderIds.has(currentFolderIdRef.current);
 		pendingRefreshFolderIdsRef.current = new Set();
 
-		if (pendingRefreshFolderIds.size > 0) {
+		if (pendingRefreshFolderIds.size > 0 && !storageEventStreamEnabled) {
 			void refreshUser({ fields: ["quota"] });
 		}
 		if (shouldRefreshCurrentFolder) {
 			void refresh();
 		}
-	}, [refresh, refreshUser, tasks]);
+	}, [refresh, refreshUser, storageEventStreamEnabled, tasks]);
 
 	const clearCompletedTasks = useCallback(() => {
 		setTasks((prev) => prev.filter((task) => task.status !== "completed"));

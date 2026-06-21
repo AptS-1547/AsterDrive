@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { shouldSendResourceCredentials } from "@/lib/apiUrl";
 import { api } from "@/services/http";
 
 interface TextCacheValue {
@@ -67,6 +68,7 @@ async function fetchTextContent(
 		.get(path, {
 			headers,
 			responseType: "text",
+			withCredentials: shouldSendResourceCredentials(path),
 			validateStatus: (status) => status === 200 || status === 304,
 		})
 		.then((response) => {

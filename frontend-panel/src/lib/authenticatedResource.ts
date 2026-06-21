@@ -1,8 +1,4 @@
-import {
-	isExternalResourceUrl,
-	isPublicResourcePath,
-	resolveApiResourceUrl,
-} from "@/lib/apiUrl";
+import { resolveApiResourceUrl, shouldSendResourceCredentials } from "@/lib/apiUrl";
 import { isSessionAuthFailure } from "@/lib/authErrors";
 import { logger } from "@/lib/logger";
 import { useAuthStore } from "@/stores/authStore";
@@ -21,7 +17,7 @@ type PrepareAuthenticatedResourceOptions = {
 const probeCache = new Map<string, ProbeCacheEntry>();
 
 function shouldProbeAuthenticatedResource(path: string) {
-	return !isExternalResourceUrl(path) && !isPublicResourcePath(path);
+	return shouldSendResourceCredentials(path);
 }
 
 function probeCacheKey(path: string) {

@@ -5,6 +5,7 @@ import {
 	isPublicResourcePath,
 	normalizeApiResourcePath,
 	resolveApiResourceUrl,
+	shouldSendResourceCredentials,
 } from "@/lib/apiUrl";
 
 const appConfig = await import("@/config/app");
@@ -69,6 +70,17 @@ describe("resolveApiResourceUrl", () => {
 		expect(isPublicResourcePath("/api/v1/s/token/download")).toBe(true);
 		expect(isPublicResourcePath("/s/token/download")).toBe(true);
 		expect(isPublicResourcePath("/files/7/download")).toBe(false);
+		expect(shouldSendResourceCredentials("/files/7/download")).toBe(true);
+		expect(shouldSendResourceCredentials("/api/v1/files/7/download")).toBe(
+			true,
+		);
+		expect(shouldSendResourceCredentials("/pv/token/file.pdf")).toBe(false);
+		expect(shouldSendResourceCredentials("/api/v1/s/token/download")).toBe(
+			false,
+		);
+		expect(
+			shouldSendResourceCredentials("https://cdn.example.com/file.pdf"),
+		).toBe(false);
 
 		expect(isBrowserAddressableResourcePath("/api/v1/files/7/download")).toBe(
 			true,

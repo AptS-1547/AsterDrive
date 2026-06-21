@@ -36,6 +36,19 @@ const PREVIEW_DIALOG_OPEN_ANIMATION_MS = 120;
 // Matches Tailwind's md breakpoint boundary.
 const MOBILE_PREVIEW_MEDIA_QUERY = "(max-width: 767px)";
 
+type PreviewLinkState = {
+	fileId: number;
+	path: string | null;
+	status: "idle" | "loading" | "ready" | "failed";
+};
+
+type ContentPreviewResourceInput = {
+	downloadPath: string;
+	fileId: number;
+	open: boolean;
+	previewLinkFactory?: FilePreviewDialogProps["previewLinkFactory"];
+};
+
 export interface FilePreviewDialogProps {
 	open: boolean;
 	file: FileInfo | FileListItem;
@@ -220,6 +233,108 @@ function useMediaQuery(query: string) {
 	return matches;
 }
 
+function useContentPreviewResourcePath({
+	downloadPath,
+	fileId,
+	open,
+	previewLinkFactory,
+}: ContentPreviewResourceInput) {
+	const previewLinkFactoryRef = useRef(previewLinkFactory);
+	const hasPreviewLinkFactory = Boolean(previewLinkFactory);
+	const [previewLinkState, setPreviewLinkState] = useState<PreviewLinkState>(
+		() => ({
+			fileId,
+			path: null,
+			status: "idle",
+		}),
+	);
+	const previewLinkRequestRef = useRef<{
+		fileId: number;
+		promise: Promise<PreviewLinkInfo>;
+	} | null>(null);
+
+	useEffect(() => {
+		previewLinkFactoryRef.current = previewLinkFactory;
+	}, [previewLinkFactory]);
+
+	useEffect(() => {
+		if (!open || !hasPreviewLinkFactory) {
+			previewLinkRequestRef.current = null;
+			setPreviewLinkState((current) =>
+				current.fileId === fileId &&
+				current.status === "idle" &&
+				current.path === null
+					? current
+					: {
+							fileId,
+							path: null,
+							status: "idle",
+						},
+			);
+			return;
+		}
+
+		let cancelled = false;
+		const factory = previewLinkFactoryRef.current;
+		if (!factory) return;
+
+		setPreviewLinkState((current) => {
+			if (
+				current.fileId === fileId &&
+				(current.status === "ready" || current.status === "failed")
+			) {
+				return current;
+			}
+			if (current.fileId === fileId && current.status === "loading") {
+				return current;
+			}
+			return {
+				fileId,
+				path: null,
+				status: "loading",
+			};
+		});
+
+		let request = previewLinkRequestRef.current;
+		if (!request || request.fileId !== fileId) {
+			request = {
+				fileId,
+				promise: factory(),
+			};
+			previewLinkRequestRef.current = request;
+		}
+
+		request.promise
+			.then((previewLink) => {
+				if (cancelled || previewLinkRequestRef.current !== request) return;
+				setPreviewLinkState({
+					fileId,
+					path: previewLink.path,
+					status: "ready",
+				});
+			})
+			.catch(() => {
+				if (cancelled || previewLinkRequestRef.current !== request) return;
+				setPreviewLinkState({
+					fileId,
+					path: null,
+					status: "failed",
+				});
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [fileId, hasPreviewLinkFactory, open]);
+
+	if (!open) return null;
+	if (!hasPreviewLinkFactory) return downloadPath;
+	if (previewLinkState.fileId !== fileId) return null;
+	if (previewLinkState.status === "ready") return previewLinkState.path;
+	if (previewLinkState.status === "failed") return downloadPath;
+	return null;
+}
+
 export function useFilePreviewDialogModel({
 	open,
 	file,
@@ -272,6 +387,12 @@ export function useFilePreviewDialogModel({
 								),
 					)
 			: undefined);
+	const resolvedContentPreviewPath = useContentPreviewResourcePath({
+		downloadPath: resolvedDownloadPath,
+		fileId: file.id,
+		open,
+		previewLinkFactory,
+	});
 
 	useEffect(() => {
 		if (!mediaDataSupportLoaded) {
@@ -605,6 +726,7 @@ export function useFilePreviewDialogModel({
 		isImagePreview,
 		previewAppsLoaded,
 		profile,
+		resolvedContentPreviewPath,
 		resolvedDownloadPath,
 		resolvedImagePreviewPath,
 		resolvedLoadMusicBackendMetadata,

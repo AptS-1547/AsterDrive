@@ -141,13 +141,15 @@ pub(crate) async fn build_download_outcome_with_disposition_and_range(
     }
 
     let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
-    let should_presign = disposition == DownloadDisposition::Attachment
-        && crate::storage::connectors::presigned_download_enabled(&policy)?;
+    let requires_sandbox =
+        disposition == DownloadDisposition::Inline && requires_inline_sandbox(&file.mime_type);
+    let should_presign =
+        !requires_sandbox && crate::storage::connectors::presigned_download_enabled(&policy)?;
 
     if should_presign {
-        // 只有"附件下载 + 存储驱动支持 + 策略允许"才走 presigned redirect。
-        // inline 预览仍由服务端统一加 CSP 和缓存头，避免把浏览器安全策略交给外部存储。
-        return build_presigned_redirect_outcome(state, &policy, file, blob).await;
+        // Inline previews may redirect to presigned storage only for types that do
+        // not require same-origin CSP sandboxing.
+        return build_presigned_redirect_outcome(state, &policy, file, blob, disposition).await;
     }
 
     build_stream_outcome_with_disposition_and_range(state, file, blob, disposition, None, range)
@@ -159,6 +161,7 @@ async fn build_presigned_redirect_outcome(
     policy: &crate::entities::storage_policy::Model,
     file: &file::Model,
     blob: &file_blob::Model,
+    disposition: DownloadDisposition,
 ) -> Result<DownloadOutcome> {
     let driver = state.driver_registry().get_driver(policy)?;
     let presigned = driver.as_presigned().ok_or_else(|| {
@@ -171,9 +174,7 @@ async fn build_presigned_redirect_outcome(
             Duration::from_secs(PRESIGNED_DOWNLOAD_TTL_SECS),
             PresignedDownloadOptions {
                 response_cache_control: Some("private, max-age=0, must-revalidate".to_string()),
-                response_content_disposition: Some(
-                    DownloadDisposition::Attachment.header_value(&file.name),
-                ),
+                response_content_disposition: Some(disposition.header_value(&file.name)),
                 response_content_type: Some(file.mime_type.clone()),
             },
         )

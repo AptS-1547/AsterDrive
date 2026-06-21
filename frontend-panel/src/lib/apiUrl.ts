@@ -24,6 +24,10 @@ export function isPublicResourcePath(path: string) {
 	);
 }
 
+export function shouldSendResourceCredentials(path: string) {
+	return !isExternalResourceUrl(path) && !isPublicResourcePath(path);
+}
+
 export function isBrowserAddressableResourcePath(path: string) {
 	return (
 		isExternalResourceUrl(path) ||

@@ -18,7 +18,7 @@ const VIDEO_CONTENT_CLASS = "flex items-center justify-center bg-zinc-950";
 interface VideoPreviewProps {
 	file: PreviewableFileLike;
 	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
-	path: string;
+	path: string | null;
 }
 
 interface VideoStatus {
@@ -103,6 +103,11 @@ export function VideoPreview({
 	);
 
 	useEffect(() => {
+		if (!path) {
+			setResolvedResource(null);
+			return;
+		}
+
 		let cancelled = false;
 
 		const resolveDirectPath = async () => {
