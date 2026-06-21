@@ -438,12 +438,30 @@ pub struct StorageConnectorUiDescriptor {
     pub base_path_placeholder: String,
 }
 
+pub(crate) struct ObjectStorageConnectorDescriptorInput {
+    pub(crate) driver_type: DriverType,
+    pub(crate) label: &'static str,
+    pub(crate) description: &'static str,
+    pub(crate) ui: StorageConnectorUiDescriptorInput,
+    pub(crate) fields: ObjectStorageFieldDescriptorInput,
+    pub(crate) include_s3_path_style: bool,
+    pub(crate) presigned_part_etag_required: bool,
+    pub(crate) storage_native_processing: bool,
+    pub(crate) related_issues: Vec<u16>,
+}
+
+pub(crate) struct ObjectStorageFieldDescriptorInput {
+    pub(crate) endpoint_placeholder: &'static str,
+    pub(crate) endpoint_help_key: &'static str,
+    pub(crate) endpoint_protocol_error_key: &'static str,
+    pub(crate) bucket_required_message_key: &'static str,
+    pub(crate) access_key_label_key: &'static str,
+    pub(crate) secret_key_label_key: &'static str,
+    pub(crate) access_key_trim_on_blur: bool,
+}
+
 pub(crate) fn object_storage_connector_descriptor(
-    driver_type: DriverType,
-    label: &str,
-    description: &str,
-    storage_native_processing: bool,
-    related_issues: Vec<u16>,
+    input: ObjectStorageConnectorDescriptorInput,
 ) -> StorageConnectorDescriptor {
     let mut fields = vec![
         storage_connector_field_with_display(
@@ -452,11 +470,11 @@ pub(crate) fn object_storage_connector_descriptor(
             StorageConnectorFieldKind::Text,
             true,
             false,
-            object_storage_endpoint_label_key(driver_type),
-            Some(object_storage_endpoint_placeholder(driver_type)),
-            Some(object_storage_endpoint_help_key(driver_type)),
+            "endpoint",
+            Some(input.fields.endpoint_placeholder),
+            Some(input.fields.endpoint_help_key),
             None,
-            Some(object_storage_endpoint_protocol_error_key(driver_type)),
+            Some(input.fields.endpoint_protocol_error_key),
             false,
             Vec::new(),
         ),
@@ -469,7 +487,7 @@ pub(crate) fn object_storage_connector_descriptor(
             "bucket",
             None,
             None,
-            Some(object_storage_bucket_required_message_key(driver_type)),
+            Some(input.fields.bucket_required_message_key),
             None,
             false,
             Vec::new(),
@@ -480,12 +498,12 @@ pub(crate) fn object_storage_connector_descriptor(
             StorageConnectorFieldKind::Text,
             true,
             false,
-            object_storage_access_key_label_key(driver_type),
+            input.fields.access_key_label_key,
             None,
             None,
             None,
             None,
-            object_storage_access_key_trim_on_blur(driver_type),
+            input.fields.access_key_trim_on_blur,
             Vec::new(),
         ),
         storage_connector_field_with_display(
@@ -494,7 +512,7 @@ pub(crate) fn object_storage_connector_descriptor(
             StorageConnectorFieldKind::Secret,
             true,
             true,
-            object_storage_secret_key_label_key(driver_type),
+            input.fields.secret_key_label_key,
             None,
             None,
             None,
@@ -526,7 +544,7 @@ pub(crate) fn object_storage_connector_descriptor(
             vec!["relay_stream", "presigned"],
         ),
     ];
-    if driver_type == DriverType::S3 {
+    if input.include_s3_path_style {
         fields.push(storage_connector_field_with_display(
             "s3_path_style",
             StorageConnectorFieldScope::PolicyOptions,
@@ -544,11 +562,11 @@ pub(crate) fn object_storage_connector_descriptor(
     }
 
     StorageConnectorDescriptor {
-        driver_type,
+        driver_type: input.driver_type,
         enabled: true,
-        label: label.to_string(),
-        description: description.to_string(),
-        ui: object_storage_ui_descriptor(driver_type),
+        label: input.label.to_string(),
+        description: input.description.to_string(),
+        ui: storage_connector_ui_descriptor(input.ui),
         credential_mode: StorageConnectorCredentialMode::StaticSecret,
         requires_authorization: false,
         authorization_provider: None,
@@ -557,8 +575,8 @@ pub(crate) fn object_storage_connector_descriptor(
             capacity: true,
             list: true,
             presigned_download: true,
-            storage_native_thumbnail: storage_native_processing,
-            storage_native_media_metadata: storage_native_processing,
+            storage_native_thumbnail: input.storage_native_processing,
+            storage_native_media_metadata: input.storage_native_processing,
             remote_node_binding: false,
             s3_transfer_strategy: true,
         },
@@ -568,7 +586,9 @@ pub(crate) fn object_storage_connector_descriptor(
             stream_upload: true,
             object_multipart_upload: true,
             object_multipart_upload_capabilities: Some(object_multipart_upload_capabilities(
-                driver_type,
+                ObjectMultipartUploadCapabilitiesInput {
+                    presigned_part_etag_required: input.presigned_part_etag_required,
+                },
             )),
             provider_resumable_upload: false,
             presigned_upload: true,
@@ -581,7 +601,7 @@ pub(crate) fn object_storage_connector_descriptor(
             saved_connection_test_action_descriptor(false),
         ],
         driver_recommendations: Vec::new(),
-        related_issues,
+        related_issues: input.related_issues,
     }
 }
 
@@ -595,15 +615,19 @@ pub(crate) fn server_relay_simple_upload_capabilities(
     }
 }
 
+pub(crate) struct ObjectMultipartUploadCapabilitiesInput {
+    pub(crate) presigned_part_etag_required: bool,
+}
+
 pub(crate) fn object_multipart_upload_capabilities(
-    driver_type: DriverType,
+    input: ObjectMultipartUploadCapabilitiesInput,
 ) -> StorageConnectorObjectMultipartUploadCapabilities {
     StorageConnectorObjectMultipartUploadCapabilities {
         min_part_size: OBJECT_MULTIPART_MIN_PART_SIZE,
         policy_limited_part_size: true,
         relay_part_upload: true,
         presigned_part_upload: true,
-        presigned_part_etag_required: driver_type != DriverType::AzureBlob,
+        presigned_part_etag_required: input.presigned_part_etag_required,
         explicit_complete_required: true,
         abort_supported: true,
         list_parts_supported: true,
@@ -766,58 +790,6 @@ pub(crate) fn storage_connector_field_with_options(
     }
 }
 
-const fn object_storage_endpoint_label_key(_driver_type: DriverType) -> &'static str {
-    "endpoint"
-}
-
-const fn object_storage_endpoint_placeholder(driver_type: DriverType) -> &'static str {
-    match driver_type {
-        DriverType::TencentCos => "https://<bucket-appid>.cos.<region>.myqcloud.com",
-        DriverType::AzureBlob => "https://<account>.blob.core.windows.net",
-        _ => "https://s3.amazonaws.com",
-    }
-}
-
-const fn object_storage_endpoint_help_key(driver_type: DriverType) -> &'static str {
-    match driver_type {
-        DriverType::TencentCos => "cos_endpoint_hint",
-        DriverType::AzureBlob => "azure_blob_endpoint_hint",
-        _ => "s3_endpoint_hint",
-    }
-}
-
-const fn object_storage_endpoint_protocol_error_key(driver_type: DriverType) -> &'static str {
-    match driver_type {
-        DriverType::AzureBlob => "azure_blob_endpoint_protocol_required_error",
-        _ => "s3_endpoint_protocol_required_error",
-    }
-}
-
-const fn object_storage_bucket_required_message_key(driver_type: DriverType) -> &'static str {
-    match driver_type {
-        DriverType::AzureBlob => "policy_wizard_container_required",
-        _ => "policy_wizard_bucket_required",
-    }
-}
-
-const fn object_storage_access_key_label_key(driver_type: DriverType) -> &'static str {
-    match driver_type {
-        DriverType::AzureBlob => "azure_blob_account_name",
-        _ => "access_key",
-    }
-}
-
-const fn object_storage_secret_key_label_key(driver_type: DriverType) -> &'static str {
-    match driver_type {
-        DriverType::AzureBlob => "azure_blob_account_key",
-        _ => "secret_key",
-    }
-}
-
-const fn object_storage_access_key_trim_on_blur(driver_type: DriverType) -> bool {
-    matches!(driver_type, DriverType::AzureBlob)
-}
-
 pub(crate) struct StorageConnectorUiDescriptorInput {
     pub(crate) label_key: &'static str,
     pub(crate) description_key: &'static str,
@@ -845,50 +817,5 @@ pub(crate) fn storage_connector_ui_descriptor(
         edit_context_key: input.edit_context_key.to_string(),
         base_path_empty_display: input.base_path_empty_display.to_string(),
         base_path_placeholder: input.base_path_placeholder.to_string(),
-    }
-}
-
-fn object_storage_ui_descriptor(driver_type: DriverType) -> StorageConnectorUiDescriptor {
-    match driver_type {
-        DriverType::TencentCos => {
-            storage_connector_ui_descriptor(StorageConnectorUiDescriptorInput {
-                label_key: "driver_type_tencent_cos",
-                description_key: "policy_wizard_tencent_cos_storage_desc",
-                icon_src: Some("/static/storage/tencent-cloud-cos.webp"),
-                icon_name: None,
-                helper_key: "policy_wizard_tencent_cos_helper",
-                config_step_title_key: "policy_wizard_step_connection_title",
-                config_step_description_key: "policy_wizard_step_tencent_cos_connection_desc",
-                edit_context_key: "policy_edit_context_s3_desc",
-                base_path_empty_display: "core:root",
-                base_path_placeholder: "tenant/prefix",
-            })
-        }
-        DriverType::AzureBlob => {
-            storage_connector_ui_descriptor(StorageConnectorUiDescriptorInput {
-                label_key: "driver_type_azure_blob",
-                description_key: "policy_wizard_azure_blob_storage_desc",
-                icon_src: Some("/static/storage/azure-blob.svg"),
-                icon_name: None,
-                helper_key: "policy_wizard_azure_blob_helper",
-                config_step_title_key: "policy_wizard_step_connection_title",
-                config_step_description_key: "policy_wizard_step_azure_blob_connection_desc",
-                edit_context_key: "policy_edit_context_azure_blob_desc",
-                base_path_empty_display: "core:root",
-                base_path_placeholder: "tenant/prefix",
-            })
-        }
-        _ => storage_connector_ui_descriptor(StorageConnectorUiDescriptorInput {
-            label_key: "driver_type_s3",
-            description_key: "policy_wizard_s3_storage_desc",
-            icon_src: Some("/static/storage/amazon-s3.svg"),
-            icon_name: None,
-            helper_key: "policy_wizard_s3_helper",
-            config_step_title_key: "policy_wizard_step_connection_title",
-            config_step_description_key: "policy_wizard_step_connection_desc",
-            edit_context_key: "policy_edit_context_s3_desc",
-            base_path_empty_display: "core:root",
-            base_path_placeholder: "tenant/prefix",
-        }),
     }
 }

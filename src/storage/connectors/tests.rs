@@ -285,6 +285,15 @@ fn transfer_strategy_policy_options_are_declared_by_descriptors() {
 #[test]
 fn object_storage_connection_field_display_metadata_is_connector_owned() {
     let s3 = storage_driver_descriptor(DriverType::S3);
+    assert_eq!(s3.ui.label_key, "driver_type_s3");
+    assert_eq!(s3.ui.helper_key, "policy_wizard_s3_helper");
+    assert_eq!(
+        s3.ui.config_step_description_key,
+        "policy_wizard_step_connection_desc"
+    );
+    assert_eq!(s3.ui.edit_context_key, "policy_edit_context_s3_desc");
+    assert_eq!(s3.ui.base_path_empty_display, "core:root");
+    assert_eq!(s3.ui.base_path_placeholder, "tenant/prefix");
     let s3_endpoint = field(&s3, "endpoint");
     assert_eq!(s3_endpoint.label_key, "endpoint");
     assert_eq!(
@@ -292,6 +301,17 @@ fn object_storage_connection_field_display_metadata_is_connector_owned() {
         Some("https://s3.amazonaws.com")
     );
     assert_eq!(s3_endpoint.help_key.as_deref(), Some("s3_endpoint_hint"));
+    assert_eq!(
+        s3_endpoint.invalid_protocol_message_key.as_deref(),
+        Some("s3_endpoint_protocol_required_error")
+    );
+    assert_eq!(
+        field(&s3, "bucket").required_message_key.as_deref(),
+        Some("policy_wizard_bucket_required")
+    );
+    assert_eq!(field(&s3, "access_key").label_key, "access_key");
+    assert!(!field(&s3, "access_key").trim_on_blur);
+    assert_eq!(field(&s3, "secret_key").label_key, "secret_key");
     let s3_path_style = field(&s3, "s3_path_style");
     assert_eq!(s3_path_style.label_key, "s3_path_style");
     assert_eq!(
@@ -333,6 +353,19 @@ fn object_storage_connection_field_display_metadata_is_connector_owned() {
     );
 
     let tencent_cos = storage_driver_descriptor(DriverType::TencentCos);
+    assert_eq!(tencent_cos.ui.label_key, "driver_type_tencent_cos");
+    assert_eq!(
+        tencent_cos.ui.helper_key,
+        "policy_wizard_tencent_cos_helper"
+    );
+    assert_eq!(
+        tencent_cos.ui.config_step_description_key,
+        "policy_wizard_step_tencent_cos_connection_desc"
+    );
+    assert_eq!(
+        tencent_cos.ui.edit_context_key,
+        "policy_edit_context_s3_desc"
+    );
     assert_eq!(
         field(&tencent_cos, "endpoint").placeholder.as_deref(),
         Some("https://<bucket-appid>.cos.<region>.myqcloud.com")
@@ -341,7 +374,45 @@ fn object_storage_connection_field_display_metadata_is_connector_owned() {
         field(&tencent_cos, "endpoint").help_key.as_deref(),
         Some("cos_endpoint_hint")
     );
+    assert_eq!(
+        field(&tencent_cos, "endpoint")
+            .invalid_protocol_message_key
+            .as_deref(),
+        Some("s3_endpoint_protocol_required_error")
+    );
+    assert_eq!(
+        field(&tencent_cos, "bucket")
+            .required_message_key
+            .as_deref(),
+        Some("policy_wizard_bucket_required")
+    );
+    assert_eq!(field(&tencent_cos, "access_key").label_key, "access_key");
+    assert!(!field(&tencent_cos, "access_key").trim_on_blur);
+    assert_eq!(field(&tencent_cos, "secret_key").label_key, "secret_key");
     assert!(!has_policy_option(&tencent_cos, "s3_path_style"));
+}
+
+#[test]
+fn object_storage_multipart_etag_requirements_are_connector_owned() {
+    for (driver_type, expected_etag_required) in [
+        (DriverType::S3, true),
+        (DriverType::TencentCos, true),
+        (DriverType::Remote, true),
+        (DriverType::AzureBlob, false),
+    ] {
+        let descriptor = storage_driver_descriptor(driver_type);
+        let capabilities = descriptor
+            .upload_workflows
+            .object_multipart_upload_capabilities
+            .as_ref()
+            .unwrap_or_else(|| {
+                panic!("{driver_type:?} should declare object multipart capabilities")
+            });
+        assert_eq!(
+            capabilities.presigned_part_etag_required, expected_etag_required,
+            "{driver_type:?} presigned part ETag requirement should be declared by its connector"
+        );
+    }
 }
 
 #[test]

@@ -11,12 +11,13 @@ use crate::runtime::{RemoteProtocolRuntimeState, SharedRuntimeState};
 use crate::services::storage_credential_service::crypto;
 use crate::storage::StorageDriver;
 use crate::storage::connector_descriptor::{
-    StorageConnectorCapabilities, StorageConnectorCredentialMode, StorageConnectorDescriptor,
-    StorageConnectorDescriptorProvider, StorageConnectorFieldKind, StorageConnectorFieldScope,
-    StorageConnectorUiDescriptorInput, StorageConnectorUploadWorkflows,
-    draft_connection_test_action_descriptor, object_multipart_upload_capabilities,
-    saved_connection_test_action_descriptor, server_relay_simple_upload_capabilities,
-    storage_connector_field, storage_connector_field_with_options, storage_connector_ui_descriptor,
+    ObjectMultipartUploadCapabilitiesInput, StorageConnectorCapabilities,
+    StorageConnectorCredentialMode, StorageConnectorDescriptor, StorageConnectorDescriptorProvider,
+    StorageConnectorFieldKind, StorageConnectorFieldScope, StorageConnectorUiDescriptorInput,
+    StorageConnectorUploadWorkflows, draft_connection_test_action_descriptor,
+    object_multipart_upload_capabilities, saved_connection_test_action_descriptor,
+    server_relay_simple_upload_capabilities, storage_connector_field,
+    storage_connector_field_with_options, storage_connector_ui_descriptor,
 };
 use crate::types::{DriverType, RemoteNodeTransportMode, parse_storage_policy_options};
 
@@ -67,7 +68,9 @@ impl StorageConnectorDescriptorProvider for RemoteConnector {
                 stream_upload: true,
                 object_multipart_upload: true,
                 object_multipart_upload_capabilities: Some(object_multipart_upload_capabilities(
-                    DriverType::Remote,
+                    ObjectMultipartUploadCapabilitiesInput {
+                        presigned_part_etag_required: true,
+                    },
                 )),
                 provider_resumable_upload: false,
                 presigned_upload: true,
