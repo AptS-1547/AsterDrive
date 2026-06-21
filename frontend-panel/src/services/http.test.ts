@@ -312,6 +312,34 @@ describe("http api helpers", () => {
 		);
 	});
 
+	it("preserves backend diagnostic details on ApiError", async () => {
+		const diagnostic = {
+			kind: "misconfigured",
+			message: "connection test failed",
+		};
+		mockState.client.get.mockResolvedValue({
+			data: {
+				code: ApiErrorCode.StorageMisconfigured,
+				msg: "Storage Driver Error",
+				error: {
+					diagnostic,
+					retryable: false,
+				},
+			},
+		});
+
+		const { api } = await loadHttpModule();
+
+		await expect(api.get("/admin/policies/test")).rejects.toEqual(
+			expect.objectContaining({
+				code: ApiErrorCode.StorageMisconfigured,
+				diagnostic,
+				message: "Storage Driver Error",
+				retryable: false,
+			}),
+		);
+	});
+
 	it("preserves specific auth error codes on ApiError", async () => {
 		mockState.client.get.mockResolvedValue({
 			data: {

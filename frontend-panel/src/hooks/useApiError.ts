@@ -54,6 +54,10 @@ function getTransportErrorMessageKey(error: unknown): string | null {
 
 export function getApiErrorMessage(error: unknown) {
 	if (error instanceof ApiError) {
+		const diagnosticMessage = error.diagnostic?.message?.trim();
+		if (diagnosticMessage) {
+			return diagnosticMessage;
+		}
 		const key = errorCodeToMessageKey(error.code);
 		if (i18n.exists(key)) {
 			return i18n.t(key);

@@ -10,7 +10,7 @@ use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
-use crate::api::response::ApiResponse;
+use crate::api::response::{ApiEmptyData, ApiResponse};
 use crate::config::site_url;
 use crate::errors::Result;
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
@@ -92,19 +92,22 @@ impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
     }
 }
 
-impl From<TestPolicyParamsReq> for policy_service::StoragePolicyConnectionInput {
+impl From<TestPolicyParamsReq> for policy_service::TestDraftStoragePolicyConnectionInput {
     fn from(value: TestPolicyParamsReq) -> Self {
-        PolicyConnectionInputParts {
-            driver_type: value.driver_type,
-            endpoint: value.endpoint,
-            bucket: value.bucket,
-            access_key: value.access_key,
-            secret_key: value.secret_key,
-            base_path: value.base_path,
-            remote_node_id: value.remote_node_id,
-            options: value.options.unwrap_or_default(),
+        Self {
+            policy_id: value.policy_id,
+            connection: PolicyConnectionInputParts {
+                driver_type: value.driver_type,
+                endpoint: value.endpoint,
+                bucket: value.bucket,
+                access_key: value.access_key,
+                secret_key: value.secret_key,
+                base_path: value.base_path,
+                remote_node_id: value.remote_node_id,
+                options: value.options.unwrap_or_default(),
+            }
+            .into(),
         }
-        .into()
     }
 }
 
@@ -321,10 +324,6 @@ pub async fn get_policy_capacity(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(capacity)))
 }
 
-fn storage_policy_probe_response(result: policy_service::StoragePolicyProbeResult) -> HttpResponse {
-    HttpResponse::Ok().json(ApiResponse::ok(result))
-}
-
 fn storage_policy_action_response(
     result: policy_service::StoragePolicyActionResult,
 ) -> HttpResponse {
@@ -429,7 +428,7 @@ pub async fn delete_policy(
     operation_id = "test_policy_connection",
     params(("id" = i64, Path, description = "Policy ID")),
     responses(
-        (status = 200, description = "Connection probe completed", body = inline(ApiResponse<policy_service::StoragePolicyProbeResult>)),
+        (status = 200, description = "Connection successful", body = inline(ApiResponse<ApiEmptyData>)),
         (status = 400, description = "Connection request rejected"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
@@ -439,8 +438,8 @@ pub async fn test_policy_connection(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let result = policy_service::probe_connection(state.get_ref(), *path).await?;
-    Ok(storage_policy_probe_response(result))
+    policy_service::test_connection(state.get_ref(), *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<ApiEmptyData>::ok_empty_data()))
 }
 
 #[api_docs_macros::path(
@@ -450,7 +449,7 @@ pub async fn test_policy_connection(
     operation_id = "test_policy_params",
     request_body = TestPolicyParamsReq,
     responses(
-        (status = 200, description = "Connection probe completed", body = inline(ApiResponse<policy_service::StoragePolicyProbeResult>)),
+        (status = 200, description = "Connection successful", body = inline(ApiResponse<ApiEmptyData>)),
         (status = 400, description = "Connection request rejected"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
     ),
@@ -461,9 +460,8 @@ pub async fn test_policy_params(
     body: web::Json<TestPolicyParamsReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let result =
-        policy_service::probe_connection_params(state.get_ref(), body.into_inner().into()).await?;
-    Ok(storage_policy_probe_response(result))
+    policy_service::test_connection_params(state.get_ref(), body.into_inner().into()).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<ApiEmptyData>::ok_empty_data()))
 }
 
 #[api_docs_macros::path(

@@ -76,13 +76,13 @@ import type {
 	StoragePolicy,
 	StoragePolicyActionResult,
 	StoragePolicyCapacityInfo,
+	StoragePolicyConnectionTestResult,
 	StoragePolicyCredentialInfo,
 	StoragePolicyCredentialValidationResult,
 	StoragePolicyGroup,
 	StoragePolicyGroupPage,
 	StoragePolicyMigrationDryRun,
 	StoragePolicyPage,
-	StoragePolicyProbeResult,
 	SystemConfig,
 	SystemConfigPage,
 	SystemConfigVisibility,
@@ -334,10 +334,10 @@ export const adminPolicyService = {
 		),
 
 	testConnection: (id: number) =>
-		api.post<StoragePolicyProbeResult>(`/admin/policies/${id}/test`),
+		api.post<StoragePolicyConnectionTestResult>(`/admin/policies/${id}/test`),
 
 	testParams: (data: TestPolicyParamsRequest) =>
-		api.post<StoragePolicyProbeResult>("/admin/policies/test", data),
+		api.post<StoragePolicyConnectionTestResult>("/admin/policies/test", data),
 
 	executeDraftPolicyAction: (data: ExecuteDraftStoragePolicyActionRequest) =>
 		api.post<StoragePolicyActionResult>("/admin/policies/action", data),

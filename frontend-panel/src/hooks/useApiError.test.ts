@@ -4,15 +4,17 @@ import { ApiErrorCode } from "@/types/api-helpers";
 const mockState = vi.hoisted(() => {
 	class MockApiError extends Error {
 		code: string;
+		diagnostic?: { message?: string };
 		retryable?: boolean;
 
 		constructor(
 			code: string,
 			message: string,
-			details: { retryable?: boolean } = {},
+			details: { diagnostic?: { message?: string }; retryable?: boolean } = {},
 		) {
 			super(message);
 			this.code = code;
+			this.diagnostic = details.diagnostic;
 			this.retryable = details.retryable;
 		}
 	}
@@ -134,6 +136,25 @@ describe("handleApiError", () => {
 		expect(mockState.toastError).toHaveBeenCalledWith(
 			"remote enrollment is required",
 		);
+	});
+
+	it("prefers diagnostic messages from ApiError details", async () => {
+		const { handleApiError } = await import("@/hooks/useApiError");
+		const diagnosticMessage = "connection test failed";
+
+		handleApiError(
+			new mockState.ApiError(
+				ApiErrorCode.StorageMisconfigured,
+				"Storage Driver Error",
+				{
+					diagnostic: {
+						message: diagnosticMessage,
+					},
+				},
+			),
+		);
+
+		expect(mockState.toastError).toHaveBeenCalledWith(diagnosticMessage);
 	});
 
 	it("falls back to unexpected error text for blank ApiError messages", async () => {

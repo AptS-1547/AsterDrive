@@ -4,7 +4,7 @@ use actix_web::http::StatusCode;
 use std::any::Any;
 
 use crate::api::api_error_code::ApiErrorCode;
-use crate::api::response::ApiErrorInfo;
+use crate::api::response::{ApiErrorDiagnostic, ApiErrorInfo};
 use crate::storage::error::{
     StorageErrorKind, storage_driver_error_display_message, storage_driver_error_kind_from_message,
 };
@@ -219,6 +219,7 @@ impl AsterError {
     pub fn api_error_info(&self) -> ApiErrorInfo {
         ApiErrorInfo {
             retryable: self.api_error_retryable(),
+            diagnostic: ApiErrorDiagnostic::from_error(self),
         }
     }
 
@@ -273,7 +274,7 @@ impl AsterError {
         }
     }
 
-    fn api_error_retryable(&self) -> bool {
+    pub(crate) fn api_error_retryable(&self) -> bool {
         match self {
             Self::RateLimited(_) | Self::UploadAssembling(_) => true,
             Self::StorageDriverError(_) => matches!(
@@ -392,6 +393,18 @@ impl AsterError {
             ResponseLogLevel::Error => self.error_type().to_string(),
             ResponseLogLevel::Warn | ResponseLogLevel::Skip => self.message().to_string(),
         }
+    }
+}
+
+impl ApiErrorDiagnostic {
+    pub fn from_error(error: &AsterError) -> Option<Self> {
+        let kind = error.storage_error_kind()?;
+        Some(Self {
+            kind: kind.as_str().to_string(),
+            message: sanitize_storage_driver_client_message(storage_driver_error_display_message(
+                error.message(),
+            )),
+        })
     }
 }
 
@@ -825,7 +838,10 @@ mod tests {
 
     #[test]
     fn api_error_info_serializes_retryable_only() {
-        let info = ApiErrorInfo { retryable: true };
+        let info = ApiErrorInfo {
+            retryable: true,
+            diagnostic: None,
+        };
 
         let payload = serde_json::to_value(&info).expect("ApiErrorInfo should serialize");
 
@@ -848,6 +864,7 @@ mod tests {
             serde_json::from_value::<ApiErrorInfo>(payload).expect("ApiErrorInfo should parse");
 
         assert!(!info.retryable);
+        assert!(info.diagnostic.is_none());
     }
 
     #[test]
@@ -1055,6 +1072,10 @@ mod tests {
         assert_eq!(payload["code"], "storage.transient");
         assert_eq!(payload["msg"], "Storage Driver Error");
         assert_eq!(payload["error"]["retryable"], true);
+        assert_eq!(payload["error"]["diagnostic"]["kind"], "transient");
+        assert_eq!(payload["error"]["diagnostic"]["message"], "remote timeout");
+        assert!(payload["error"]["diagnostic"].get("api_code").is_none());
+        assert!(payload["error"]["diagnostic"].get("retryable").is_none());
         assert!(payload["error"].get("code").is_none());
         assert!(payload["error"].get("internal_code").is_none());
         assert!(payload["error"].get("subcode").is_none());
@@ -1075,6 +1096,10 @@ mod tests {
         assert_eq!(payload["code"], "storage.permission");
         assert_eq!(payload["msg"], "Storage Driver Error");
         assert_eq!(payload["error"]["retryable"], false);
+        assert_eq!(payload["error"]["diagnostic"]["kind"], "permission");
+        assert_eq!(payload["error"]["diagnostic"]["message"], "access denied");
+        assert!(payload["error"]["diagnostic"].get("api_code").is_none());
+        assert!(payload["error"]["diagnostic"].get("retryable").is_none());
         assert!(payload["error"].get("code").is_none());
         assert!(payload["error"].get("internal_code").is_none());
         assert!(payload["error"].get("subcode").is_none());

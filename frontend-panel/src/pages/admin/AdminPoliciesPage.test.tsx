@@ -1912,16 +1912,18 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");
 	});
 
-	it("shows admin diagnostic details when a connection probe returns ok false", async () => {
-		mockState.testParams.mockResolvedValueOnce({
-			diagnostic: {
-				api_code: "storage.misconfigured",
-				kind: "misconfigured",
-				message: "connection test failed: /tmp/private/secret.txt",
-				retryable: false,
+	it("shows admin diagnostic details when a connection test returns an API diagnostic", async () => {
+		const error = new ApiError(
+			ApiErrorCode.StorageMisconfigured,
+			"Storage Driver Error",
+			{
+				diagnostic: {
+					kind: "misconfigured",
+					message: "connection test failed",
+				},
 			},
-			ok: false,
-		});
+		);
+		mockState.testParams.mockRejectedValueOnce(error);
 		render(<AdminPoliciesPage />);
 
 		openCreateWizard();
@@ -1948,18 +1950,18 @@ describe("AdminPoliciesPage", () => {
 				secret_key: undefined,
 			});
 		});
-		expect(mockState.toastError).toHaveBeenCalledWith(
-			"connection test failed: /tmp/private/secret.txt",
-		);
+		expect(mockState.handleApiError).toHaveBeenCalledWith(error);
 		expect(mockState.toastSuccess).not.toHaveBeenCalledWith(
 			"connection_success",
 		);
 	});
 
-	it("falls back to a generic connection failure message without diagnostics", async () => {
-		mockState.testParams.mockResolvedValueOnce({
-			ok: false,
-		});
+	it("calls handleApiError when connection test fails without diagnostics", async () => {
+		const error = new ApiError(
+			ApiErrorCode.StorageMisconfigured,
+			"Storage Driver Error",
+		);
+		mockState.testParams.mockRejectedValueOnce(error);
 		render(<AdminPoliciesPage />);
 
 		openCreateWizard();
@@ -1977,32 +1979,7 @@ describe("AdminPoliciesPage", () => {
 		await waitFor(() => {
 			expect(mockState.testParams).toHaveBeenCalled();
 		});
-		expect(mockState.toastError).toHaveBeenCalledWith("connection_failed");
-		expect(mockState.toastSuccess).not.toHaveBeenCalledWith(
-			"connection_success",
-		);
-	});
-
-	it("treats empty connection probe responses as failures", async () => {
-		mockState.testParams.mockResolvedValueOnce(null);
-		render(<AdminPoliciesPage />);
-
-		openCreateWizard();
-
-		fireEvent.change(screen.getByLabelText("core:name"), {
-			target: { value: "Empty Probe Local" },
-		});
-		fireEvent.change(screen.getByLabelText("base_path"), {
-			target: { value: "/tmp/private" },
-		});
-		advanceCreateWizardToRulesStep();
-
-		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
-
-		await waitFor(() => {
-			expect(mockState.testParams).toHaveBeenCalled();
-		});
-		expect(mockState.toastError).toHaveBeenCalledWith("connection_failed");
+		expect(mockState.handleApiError).toHaveBeenCalledWith(error);
 		expect(mockState.toastSuccess).not.toHaveBeenCalledWith(
 			"connection_success",
 		);
@@ -3506,6 +3483,7 @@ describe("AdminPoliciesPage", () => {
 					s3_download_strategy: "relay_stream",
 					s3_upload_strategy: "relay_stream",
 				},
+				policy_id: 7,
 				remote_node_id: undefined,
 				secret_key: "NEWSECRET",
 			});
@@ -3545,6 +3523,48 @@ describe("AdminPoliciesPage", () => {
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
 		expect(payload).toHaveProperty("secret_key", "NEWSECRET");
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
+	it("tests changed s3 params with saved credentials when credential fields stay blank", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 8,
+				name: "Saved Credential S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "archive",
+				base_path: "tenant-a",
+				max_file_size: 4096,
+				options: { s3_upload_strategy: "presigned" },
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Saved Credential S3");
+
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "https://s3-alt.example.com" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: undefined,
+				base_path: "tenant-a",
+				bucket: "archive",
+				driver_type: "s3",
+				endpoint: "https://s3-alt.example.com",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "presigned",
+				},
+				policy_id: 8,
+				remote_node_id: undefined,
+				secret_key: undefined,
+			});
+		});
+		expect(mockState.testConnection).not.toHaveBeenCalled();
 	});
 
 	it("configures Tencent COS CORS from a saved policy when connection fields are unchanged", async () => {
@@ -4166,6 +4186,7 @@ describe("AdminPoliciesPage", () => {
 					s3_download_strategy: "relay_stream",
 					s3_upload_strategy: "relay_stream",
 				},
+				policy_id: 9,
 				remote_node_id: undefined,
 				secret_key: "NEWSECRET",
 			});

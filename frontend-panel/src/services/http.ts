@@ -109,6 +109,7 @@ export type ApiRequestConfig = Pick<
 >;
 
 type ApiErrorDetails = {
+	diagnostic?: ApiErrorInfoPayload["diagnostic"];
 	retryable?: boolean;
 	status?: number;
 };
@@ -201,6 +202,7 @@ function isRefreshableAuthError(error: unknown): boolean {
 
 export class ApiError extends Error {
 	code: ApiErrorCode;
+	diagnostic?: ApiErrorInfoPayload["diagnostic"];
 	retryable?: boolean;
 	status?: number;
 
@@ -211,6 +213,7 @@ export class ApiError extends Error {
 	) {
 		super(message);
 		this.code = code;
+		this.diagnostic = details.diagnostic;
 		this.retryable = details.retryable;
 		this.status = details.status;
 	}
@@ -241,6 +244,7 @@ function normalizeApiErrorInfo(
 	}
 
 	return {
+		diagnostic: "diagnostic" in value ? value.diagnostic : undefined,
 		retryable:
 			typeof value.retryable === "boolean" ? value.retryable : undefined,
 	};
