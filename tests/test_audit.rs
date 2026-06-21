@@ -6,7 +6,7 @@ mod common;
 use actix_web::test;
 use aster_drive::runtime::SharedRuntimeState;
 use aster_drive::{entities::audit_log, services::audit_service, types::AuditAction};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 use serde_json::Value;
 
 macro_rules! fetch_audit_items {
@@ -278,6 +278,41 @@ async fn test_audit_log_recorded_on_admin_task_cleanup() {
     let details: Value = serde_json::from_str(cleanup_entry["details"].as_str().unwrap()).unwrap();
     assert_eq!(details["removed"], 0);
     assert!(details["finished_before"].is_string());
+}
+
+#[actix_web::test]
+async fn test_audit_cleanup_retention_zero_keeps_logs() {
+    let state = common::setup().await;
+    state
+        .runtime_config
+        .apply(common::system_config_model("audit_log_retention_days", "0"));
+
+    let old_created_at = chrono::Utc::now() - chrono::Duration::days(365);
+    audit_log::ActiveModel {
+        id: Default::default(),
+        user_id: Set(0),
+        action: Set(AuditAction::FileUpload),
+        entity_type: Set("file".to_string()),
+        entity_id: Set(Some(1)),
+        entity_name: Set(Some("retained-audit-entry.txt".to_string())),
+        details: Set(None),
+        ip_address: Set(None),
+        user_agent: Set(None),
+        created_at: Set(old_created_at),
+    }
+    .insert(state.writer_db())
+    .await
+    .unwrap();
+
+    let deleted = audit_service::cleanup_expired(&state).await.unwrap();
+    assert_eq!(deleted, 0);
+
+    let remaining = audit_log::Entity::find()
+        .filter(audit_log::Column::Action.eq(AuditAction::FileUpload))
+        .count(state.writer_db())
+        .await
+        .unwrap();
+    assert_eq!(remaining, 1);
 }
 
 #[actix_web::test]

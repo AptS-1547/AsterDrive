@@ -28,6 +28,7 @@
 	"audit_action_admin_create_policy": "Admin created storage policy",
 	"audit_action_admin_update_policy": "Admin updated storage policy",
 	"audit_action_admin_delete_policy": "Admin deleted storage policy",
+	"audit_action_admin_trigger_storage_action": "Admin triggered storage action",
 	"audit_action_admin_delete_config": "Admin deleted config",
 	"audit_action_admin_delete_share": "Admin deleted share",
 	"audit_action_admin_force_unlock": "Admin forced unlock",

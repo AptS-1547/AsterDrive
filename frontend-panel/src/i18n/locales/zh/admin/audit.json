@@ -28,6 +28,7 @@
 	"audit_action_admin_create_policy": "管理员创建存储策略",
 	"audit_action_admin_update_policy": "管理员更新存储策略",
 	"audit_action_admin_delete_policy": "管理员删除存储策略",
+	"audit_action_admin_trigger_storage_action": "管理员触发存储操作",
 	"audit_action_admin_delete_config": "管理员删除配置",
 	"audit_action_admin_delete_share": "管理员删除分享",
 	"audit_action_admin_force_unlock": "管理员强制解锁",

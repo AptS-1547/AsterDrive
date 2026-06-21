@@ -235,6 +235,10 @@ pub async fn cleanup_expired(state: &impl SharedRuntimeState) -> Result<u64> {
             }
             DEFAULT_RETENTION_DAYS
         });
+    if retention_days <= 0 {
+        tracing::debug!("audit log cleanup skipped because retention is disabled");
+        return Ok(0);
+    }
 
     let cutoff = Utc::now() - Duration::days(retention_days);
     let deleted = audit_log_repo::delete_before(state.writer_db(), cutoff).await?;
