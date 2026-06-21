@@ -815,8 +815,7 @@ function fallbackStorageConnectorUi(): StorageConnectorUiDescriptor {
 		description_key: "policy_wizard_step_storage_desc",
 		helper_key: "policy_wizard_step_storage_desc",
 		config_step_title_key: "policy_wizard_step_connection_title",
-		config_step_description_key:
-			"policy_wizard_step_object_storage_connection_desc",
+		config_step_description_key: "policy_wizard_step_connection_desc",
 		edit_context_key: "policy_edit_context_local_desc",
 		base_path_empty_display: "core:root",
 		base_path_placeholder: "tenant/prefix",

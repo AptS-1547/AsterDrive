@@ -116,6 +116,14 @@ impl RemoteRequestBody {
             }
         }
     }
+
+    fn clone_for_stream_attempt(&self) -> Option<Self> {
+        match self {
+            Self::Empty => Some(Self::Empty),
+            Self::Bytes(body) => Some(Self::Bytes(body.clone())),
+            Self::Reader { .. } => None,
+        }
+    }
 }
 
 pub struct RemoteTransportRequest {
@@ -290,26 +298,32 @@ impl RemoteTransport for ReverseTunnelTransport {
                 )
             })?;
         let path_and_query = request.path_and_query;
+        let extra_headers = request
+            .content_type
+            .map(|value| (reqwest::header::CONTENT_TYPE.to_string(), value.to_string()))
+            .into_iter()
+            .collect::<Vec<_>>();
 
-        if self.broker.has_tunnel_stream_lane(&self.remote_node) {
-            let body = request.body.into_reader()?;
-            return self
+        if self.broker.has_tunnel_stream_lane(&self.remote_node)
+            && let Some(stream_body) = request.body.clone_for_stream_attempt()
+        {
+            match self
                 .broker
                 .clone()
                 .send_tunnel_stream(
                     &self.remote_node,
-                    method,
-                    path_and_query,
+                    method.clone(),
+                    path_and_query.clone(),
                     content_length,
-                    request
-                        .content_type
-                        .map(|value| (reqwest::header::CONTENT_TYPE.to_string(), value.to_string()))
-                        .into_iter()
-                        .collect(),
-                    body,
+                    extra_headers.clone(),
+                    stream_body.into_reader()?,
                 )
                 .await
-                .map(RemoteTransportResponse::TunnelStream);
+            {
+                Ok(response) => return Ok(RemoteTransportResponse::TunnelStream(response)),
+                Err(error) if should_fallback_stream_error_to_poll(error.message()) => {}
+                Err(error) => return Err(error),
+            }
         }
 
         let body = request.body.into_buffered_bytes().await?;
@@ -320,16 +334,20 @@ impl RemoteTransport for ReverseTunnelTransport {
                 method,
                 path_and_query,
                 content_length,
-                request
-                    .content_type
-                    .map(|value| (reqwest::header::CONTENT_TYPE.to_string(), value.to_string()))
-                    .into_iter()
-                    .collect(),
+                extra_headers,
                 body,
             )
             .await
             .map(RemoteTransportResponse::Tunnel)
     }
+}
+
+fn should_fallback_stream_error_to_poll(message: &str) -> bool {
+    message.contains("reverse tunnel is offline")
+        || message.contains("reverse tunnel streaming lane closed")
+        || message.contains("reverse tunnel streaming response channel closed")
+        || message
+            .contains("reverse tunnel streaming request timed out waiting for follower response")
 }
 
 pub async fn ensure_success(response: RemoteTransportResponse, context: &str) -> Result<Vec<u8>> {
@@ -533,6 +551,7 @@ mod tests {
 
     struct TestTunnelBroker {
         stream_available: AtomicBool,
+        fail_stream_with_lane_closed: AtomicBool,
         request_calls: AtomicUsize,
         stream_calls: AtomicUsize,
         request_body: Mutex<Vec<u8>>,
@@ -545,6 +564,7 @@ mod tests {
         fn new(stream_available: bool) -> Self {
             Self {
                 stream_available: AtomicBool::new(stream_available),
+                fail_stream_with_lane_closed: AtomicBool::new(false),
                 request_calls: AtomicUsize::new(0),
                 stream_calls: AtomicUsize::new(0),
                 request_body: Mutex::new(Vec::new()),
@@ -595,6 +615,12 @@ mod tests {
             mut body: Box<dyn AsyncRead + Unpin + Send>,
         ) -> Result<RemoteTunnelStreamHttpResponse> {
             self.stream_calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail_stream_with_lane_closed.load(Ordering::SeqCst) {
+                return Err(storage_driver_error(
+                    StorageErrorKind::Transient,
+                    "reverse tunnel streaming lane closed",
+                ));
+            }
             assert_eq!(method, HttpMethod::PUT);
             assert_eq!(
                 path_and_query,
@@ -733,6 +759,42 @@ mod tests {
                 .expect("stream header lock should not be poisoned")
                 .iter()
                 .any(|(name, value)| name == "content-type" && value == "application/octet-stream")
+        );
+    }
+
+    #[tokio::test]
+    async fn reverse_tunnel_transport_falls_back_to_poll_when_stream_lane_closes() {
+        let broker = Arc::new(TestTunnelBroker::new(true));
+        broker
+            .fail_stream_with_lane_closed
+            .store(true, Ordering::SeqCst);
+        let transport = ReverseTunnelTransport::new(&build_remote_node(), broker.clone());
+
+        let response = transport
+            .send(RemoteTransportRequest {
+                method: Method::PUT,
+                path_and_query: "/api/v1/internal/storage/objects/poll.bin".to_string(),
+                content_type: Some("application/octet-stream"),
+                body: RemoteRequestBody::Bytes(Bytes::from_static(b"poll-body")),
+            })
+            .await
+            .expect("closed stream lane should fall back to poll request");
+
+        match response {
+            RemoteTransportResponse::Tunnel(response) => {
+                assert_eq!(response.status, StatusCode::OK);
+                assert_eq!(response.body, Bytes::from_static(b"poll-response"));
+            }
+            _ => panic!("closed stream lane should use poll fallback"),
+        }
+        assert_eq!(broker.stream_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(broker.request_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *broker
+                .request_body
+                .lock()
+                .expect("request body lock should not be poisoned"),
+            b"poll-body".to_vec()
         );
     }
 

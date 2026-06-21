@@ -175,6 +175,7 @@
 	"policy_wizard_step_storage_title": "Choose Storage",
 	"policy_wizard_step_storage_desc": "Pick the storage backend for this policy.",
 	"policy_wizard_step_connection_title": "Configure Connection",
+	"policy_wizard_step_connection_desc": "Review the connection settings required by this storage backend.",
 	"policy_wizard_step_object_storage_connection_desc": "Set the object-storage endpoint, bucket, and credentials.",
 	"policy_wizard_step_tencent_cos_connection_desc": "Set the Tencent COS bucket domain, bucket, and credentials.",
 	"policy_wizard_step_azure_blob_connection_desc": "Set the Azure Blob endpoint, container name, storage account name, and key.",

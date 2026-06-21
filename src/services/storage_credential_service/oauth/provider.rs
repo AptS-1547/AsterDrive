@@ -89,7 +89,7 @@ impl fmt::Debug for MicrosoftGraphCredentialTokenProvider {
                     .as_ref()
                     .map(|_| super::super::REDACTED_SECRET),
             )
-            .field("cache", &"***REDACTED***")
+            .field("cache", &super::super::REDACTED_SECRET)
             .field("token_refresher", &self.token_refresher)
             .finish()
     }
@@ -109,7 +109,7 @@ impl fmt::Debug for MicrosoftGraphCleanupTokenProvider {
                     .as_ref()
                     .map(|_| super::super::REDACTED_SECRET),
             )
-            .field("cache", &"***REDACTED***")
+            .field("cache", &super::super::REDACTED_SECRET)
             .field("token_refresher", &self.token_refresher)
             .finish()
     }

@@ -175,6 +175,7 @@
 	"policy_wizard_step_storage_title": "选择存储类型",
 	"policy_wizard_step_storage_desc": "先确定这个策略的存储后端。",
 	"policy_wizard_step_connection_title": "配置连接",
+	"policy_wizard_step_connection_desc": "检查当前存储后端需要的连接配置。",
 	"policy_wizard_step_object_storage_connection_desc": "填写对象存储 endpoint、bucket 和访问凭证。",
 	"policy_wizard_step_tencent_cos_connection_desc": "填写腾讯云 COS bucket 域名、bucket 和访问凭证。",
 	"policy_wizard_step_azure_blob_connection_desc": "填写 Azure Blob endpoint、容器名称、存储账户名和密钥。",

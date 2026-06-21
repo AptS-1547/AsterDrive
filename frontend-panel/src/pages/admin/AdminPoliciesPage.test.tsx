@@ -2025,6 +2025,56 @@ describe("AdminPoliciesPage", () => {
 		});
 	});
 
+	it("drops object storage transfer options when switching the create wizard back to local storage", async () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("s3");
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Switched Local" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "https://s3.example.com" },
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "archive" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "select-item:presigned" })[0],
+		);
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "select-item:presigned" })[1],
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "core:back" }));
+		fireEvent.click(screen.getByRole("button", { name: "core:back" }));
+		fireEvent.click(screen.getByRole("button", { name: /^Local\b/ }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+
+		await waitFor(() => {
+			expect(mockState.create).toHaveBeenCalledWith({
+				access_key: "",
+				base_path: "",
+				bucket: "",
+				chunk_size: 5 * 1024 * 1024,
+				driver_type: "local",
+				endpoint: "",
+				is_default: false,
+				max_file_size: undefined,
+				name: "Switched Local",
+				options: {},
+				remote_node_id: undefined,
+				secret_key: "",
+			});
+		});
+	});
+
 	it("uses storage driver descriptors to suppress unsupported OneDrive draft tests", async () => {
 		render(<AdminPoliciesPage />);
 
@@ -2092,6 +2142,35 @@ describe("AdminPoliciesPage", () => {
 			screen.queryByLabelText("object_storage_upload_strategy"),
 		).not.toBeInTheDocument();
 		expect(screen.queryByLabelText("content_dedup")).not.toBeInTheDocument();
+	});
+
+	it("renders object storage transfer controls and summary labels in the create wizard", async () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("azure_blob");
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Azure Archive" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "https://acct.blob.core.windows.net" },
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "archive" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+
+		expect(screen.getAllByText("object_storage_upload_strategy")).toHaveLength(
+			2,
+		);
+		expect(
+			screen.getAllByText("object_storage_download_strategy"),
+		).toHaveLength(2);
+		expect(
+			screen.getAllByRole("button", { name: "select-item:presigned" }),
+		).toHaveLength(2);
 	});
 
 	it("uses descriptor application credential fields instead of OneDrive driver type for create validation", async () => {
@@ -4240,6 +4319,39 @@ describe("AdminPoliciesPage", () => {
 		expect(payload).not.toHaveProperty("access_key");
 		expect(payload).not.toHaveProperty("secret_key");
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
+	it("renders object storage transfer controls in the edit form", () => {
+		mockState.items = [
+			createPolicy({
+				id: 11,
+				name: "Azure Archive",
+				driver_type: "azure_blob",
+				endpoint: "https://acct.blob.core.windows.net",
+				bucket: "archive",
+				options: {
+					object_storage_download_strategy: "presigned",
+					object_storage_upload_strategy: "presigned",
+				},
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Azure Archive");
+
+		expect(
+			screen.getByText("object_storage_upload_strategy"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("object_storage_download_strategy"),
+		).toBeInTheDocument();
+		expect(
+			screen.getAllByRole("button", { name: "select-item:presigned" }),
+		).toHaveLength(2);
+		expect(
+			screen.getByText("policy_edit_context_object_storage_desc"),
+		).toBeInTheDocument();
 	});
 
 	it("tests relay_stream params and updates s3 policy without blank secrets", async () => {

@@ -653,16 +653,22 @@ async fn wait_for_stream_lane(
     state: &aster_drive::runtime::PrimaryAppState,
     node: &aster_drive::entities::managed_follower::Model,
 ) {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(7);
-    while tokio::time::Instant::now() < deadline {
-        if state
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let wait = state
             .remote_protocol
             .tunnel_registry()
-            .has_stream_lane(node)
+            .wait_for_stream_lane(node);
+        if tokio::time::timeout(remaining, wait)
+            .await
+            .is_ok_and(|result| result.is_ok())
         {
             return;
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
     }
     panic!(
         "expected reverse tunnel stream lane for remote node #{} to become available",

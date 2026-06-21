@@ -317,17 +317,34 @@ impl RemoteTunnelRegistry {
         self: &Arc<Self>,
         remote_node: &managed_follower::Model,
     ) -> Result<Arc<StreamingTunnelLane>> {
+        self.wait_for_stream_lane_matching(remote_node, |lane| {
+            lane.busy
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        })
+        .await
+    }
+
+    pub async fn wait_for_stream_lane(
+        self: &Arc<Self>,
+        remote_node: &managed_follower::Model,
+    ) -> Result<()> {
+        self.wait_for_stream_lane_matching(remote_node, |_| true)
+            .await
+            .map(|_| ())
+    }
+
+    async fn wait_for_stream_lane_matching(
+        self: &Arc<Self>,
+        remote_node: &managed_follower::Model,
+        accepts_lane: impl Fn(&StreamingTunnelLane) -> bool,
+    ) -> Result<Arc<StreamingTunnelLane>> {
         tokio::time::timeout(REMOTE_TUNNEL_CONNECT_WAIT_TIMEOUT, async {
             loop {
                 let notified = self.connection_notify.notified();
                 if let Some(lanes) = self.stream_lanes.get(&remote_node.access_key) {
                     for lane in lanes.iter() {
-                        if lane.remote_node_id == remote_node.id
-                            && lane
-                                .busy
-                                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                                .is_ok()
-                        {
+                        if lane.remote_node_id == remote_node.id && accepts_lane(lane) {
                             return lane.clone();
                         }
                     }

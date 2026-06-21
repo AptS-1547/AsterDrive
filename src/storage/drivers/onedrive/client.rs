@@ -157,6 +157,22 @@ impl fmt::Debug for StaticMicrosoftGraphAccessTokenProvider {
     }
 }
 
+#[cfg(test)]
+mod static_provider_tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_static_access_token() {
+        let provider = StaticMicrosoftGraphAccessTokenProvider {
+            access_token: SecretString::from("plain-access-token"),
+        };
+
+        let debug = format!("{provider:?}");
+        assert!(debug.contains(r#"access_token: "***REDACTED***""#));
+        assert!(!debug.contains("plain-access-token"));
+    }
+}
+
 impl MicrosoftGraphClient {
     pub fn new(config: MicrosoftGraphClientConfig) -> Result<Self> {
         if config.graph_base_url.trim().is_empty() {
