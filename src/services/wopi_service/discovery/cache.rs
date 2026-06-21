@@ -22,7 +22,10 @@ fn build_discovery_client() -> reqwest::Client {
         .timeout(StdDuration::from_secs(5))
         .user_agent(OUTBOUND_HTTP_USER_AGENT)
         .build()
-        .expect("wopi discovery client should initialize")
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "failed to build WOPI discovery client with defaults");
+            reqwest::Client::new()
+        })
 }
 
 pub(super) async fn load_discovery(

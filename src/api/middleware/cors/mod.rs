@@ -19,7 +19,10 @@ use futures::future::{LocalBoxFuture, Ready, ok};
 use std::collections::BTreeSet;
 use std::rc::Rc;
 
-use self::constants::{ALLOWED_HEADERS, ALLOWED_METHODS, EXPOSE_HEADERS};
+use self::constants::{
+    ALLOWED_HEADERS, ALLOWED_HEADERS_VALUE, ALLOWED_METHODS, ALLOWED_METHODS_VALUE,
+    EXPOSE_HEADERS_VALUE,
+};
 use crate::config::cors::RuntimeCorsPolicy;
 use crate::errors::{AsterError, MapAsterErr};
 use crate::runtime::{PrimaryAppState, SharedRuntimeState};
@@ -216,34 +219,29 @@ fn apply_origin_headers(
 }
 
 fn apply_preflight_headers(headers: &mut HeaderMap, policy: &RuntimeCorsPolicy) {
-    let allow_methods = ALLOWED_METHODS.join(", ");
-    let allow_headers = ALLOWED_HEADERS.join(", ");
-
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_str(&allow_methods)
-            .expect("CORS allow methods should always be a valid header value"),
+        HeaderValue::from_static(ALLOWED_METHODS_VALUE),
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_str(&allow_headers)
-            .expect("CORS allow headers should always be a valid header value"),
+        HeaderValue::from_static(ALLOWED_HEADERS_VALUE),
     );
     headers.insert(
         header::ACCESS_CONTROL_MAX_AGE,
-        HeaderValue::from_str(&policy.max_age_secs.to_string())
-            .expect("CORS max age should always be a valid header value"),
+        HeaderValue::from_str(&policy.max_age_secs.to_string()).unwrap_or_else(|error| {
+            tracing::warn!(%error, "failed to serialize CORS max-age header");
+            HeaderValue::from_static("0")
+        }),
     );
     ensure_vary(headers, "Access-Control-Request-Method").ok();
     ensure_vary(headers, "Access-Control-Request-Headers").ok();
 }
 
 fn apply_actual_headers(headers: &mut HeaderMap, _policy: &RuntimeCorsPolicy) {
-    let expose_headers = EXPOSE_HEADERS.join(", ");
     headers.insert(
         header::ACCESS_CONTROL_EXPOSE_HEADERS,
-        HeaderValue::from_str(&expose_headers)
-            .expect("CORS expose headers should always be a valid header value"),
+        HeaderValue::from_static(EXPOSE_HEADERS_VALUE),
     );
 }
 

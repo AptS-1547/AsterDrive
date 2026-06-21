@@ -818,69 +818,77 @@ const fn object_storage_access_key_trim_on_blur(driver_type: DriverType) -> bool
     matches!(driver_type, DriverType::AzureBlob)
 }
 
+pub(crate) struct StorageConnectorUiDescriptorInput {
+    pub(crate) label_key: &'static str,
+    pub(crate) description_key: &'static str,
+    pub(crate) icon_src: Option<&'static str>,
+    pub(crate) icon_name: Option<&'static str>,
+    pub(crate) helper_key: &'static str,
+    pub(crate) config_step_title_key: &'static str,
+    pub(crate) config_step_description_key: &'static str,
+    pub(crate) edit_context_key: &'static str,
+    pub(crate) base_path_empty_display: &'static str,
+    pub(crate) base_path_placeholder: &'static str,
+}
+
 pub(crate) fn storage_connector_ui_descriptor(
-    label_key: &str,
-    description_key: &str,
-    icon_src: Option<&str>,
-    icon_name: Option<&str>,
-    helper_key: &str,
-    config_step_title_key: &str,
-    config_step_description_key: &str,
-    edit_context_key: &str,
-    base_path_empty_display: &str,
-    base_path_placeholder: &str,
+    input: StorageConnectorUiDescriptorInput,
 ) -> StorageConnectorUiDescriptor {
     StorageConnectorUiDescriptor {
-        label_key: label_key.to_string(),
-        description_key: description_key.to_string(),
-        icon_src: icon_src.map(ToOwned::to_owned),
-        icon_name: icon_name.map(ToOwned::to_owned),
-        helper_key: helper_key.to_string(),
-        config_step_title_key: config_step_title_key.to_string(),
-        config_step_description_key: config_step_description_key.to_string(),
-        edit_context_key: edit_context_key.to_string(),
-        base_path_empty_display: base_path_empty_display.to_string(),
-        base_path_placeholder: base_path_placeholder.to_string(),
+        label_key: input.label_key.to_string(),
+        description_key: input.description_key.to_string(),
+        icon_src: input.icon_src.map(ToOwned::to_owned),
+        icon_name: input.icon_name.map(ToOwned::to_owned),
+        helper_key: input.helper_key.to_string(),
+        config_step_title_key: input.config_step_title_key.to_string(),
+        config_step_description_key: input.config_step_description_key.to_string(),
+        edit_context_key: input.edit_context_key.to_string(),
+        base_path_empty_display: input.base_path_empty_display.to_string(),
+        base_path_placeholder: input.base_path_placeholder.to_string(),
     }
 }
 
 fn object_storage_ui_descriptor(driver_type: DriverType) -> StorageConnectorUiDescriptor {
     match driver_type {
-        DriverType::TencentCos => storage_connector_ui_descriptor(
-            "driver_type_tencent_cos",
-            "policy_wizard_tencent_cos_storage_desc",
-            Some("/static/storage/tencent-cloud-cos.webp"),
-            None,
-            "policy_wizard_tencent_cos_helper",
-            "policy_wizard_step_connection_title",
-            "policy_wizard_step_tencent_cos_connection_desc",
-            "policy_edit_context_s3_desc",
-            "core:root",
-            "tenant/prefix",
-        ),
-        DriverType::AzureBlob => storage_connector_ui_descriptor(
-            "driver_type_azure_blob",
-            "policy_wizard_azure_blob_storage_desc",
-            Some("/static/storage/azure-blob.svg"),
-            None,
-            "policy_wizard_azure_blob_helper",
-            "policy_wizard_step_connection_title",
-            "policy_wizard_step_azure_blob_connection_desc",
-            "policy_edit_context_azure_blob_desc",
-            "core:root",
-            "tenant/prefix",
-        ),
-        _ => storage_connector_ui_descriptor(
-            "driver_type_s3",
-            "policy_wizard_s3_storage_desc",
-            Some("/static/storage/amazon-s3.svg"),
-            None,
-            "policy_wizard_s3_helper",
-            "policy_wizard_step_connection_title",
-            "policy_wizard_step_connection_desc",
-            "policy_edit_context_s3_desc",
-            "core:root",
-            "tenant/prefix",
-        ),
+        DriverType::TencentCos => {
+            storage_connector_ui_descriptor(StorageConnectorUiDescriptorInput {
+                label_key: "driver_type_tencent_cos",
+                description_key: "policy_wizard_tencent_cos_storage_desc",
+                icon_src: Some("/static/storage/tencent-cloud-cos.webp"),
+                icon_name: None,
+                helper_key: "policy_wizard_tencent_cos_helper",
+                config_step_title_key: "policy_wizard_step_connection_title",
+                config_step_description_key: "policy_wizard_step_tencent_cos_connection_desc",
+                edit_context_key: "policy_edit_context_s3_desc",
+                base_path_empty_display: "core:root",
+                base_path_placeholder: "tenant/prefix",
+            })
+        }
+        DriverType::AzureBlob => {
+            storage_connector_ui_descriptor(StorageConnectorUiDescriptorInput {
+                label_key: "driver_type_azure_blob",
+                description_key: "policy_wizard_azure_blob_storage_desc",
+                icon_src: Some("/static/storage/azure-blob.svg"),
+                icon_name: None,
+                helper_key: "policy_wizard_azure_blob_helper",
+                config_step_title_key: "policy_wizard_step_connection_title",
+                config_step_description_key: "policy_wizard_step_azure_blob_connection_desc",
+                edit_context_key: "policy_edit_context_azure_blob_desc",
+                base_path_empty_display: "core:root",
+                base_path_placeholder: "tenant/prefix",
+            })
+        }
+        _ => storage_connector_ui_descriptor(StorageConnectorUiDescriptorInput {
+            label_key: "driver_type_s3",
+            description_key: "policy_wizard_s3_storage_desc",
+            icon_src: Some("/static/storage/amazon-s3.svg"),
+            icon_name: None,
+            helper_key: "policy_wizard_s3_helper",
+            config_step_title_key: "policy_wizard_step_connection_title",
+            config_step_description_key: "policy_wizard_step_connection_desc",
+            edit_context_key: "policy_edit_context_s3_desc",
+            base_path_empty_display: "core:root",
+            base_path_placeholder: "tenant/prefix",
+        }),
     }
 }

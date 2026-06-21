@@ -40,8 +40,12 @@ pub fn default_offline_download_engine_registry() -> OfflineDownloadEngineRegist
 }
 
 pub fn default_offline_download_engine_registry_json() -> String {
-    serde_json::to_string_pretty(&default_offline_download_engine_registry())
-        .expect("serialize default offline download engine registry")
+    serde_json::to_string_pretty(&default_offline_download_engine_registry()).unwrap_or_else(
+        |error| {
+            tracing::warn!(%error, "failed to serialize default offline download engine registry");
+            String::new()
+        },
+    )
 }
 
 pub fn normalize_offline_download_engine_registry_config_value(value: &str) -> Result<String> {

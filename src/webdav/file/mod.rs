@@ -189,9 +189,11 @@ impl AsterDavFile {
                 let storage_path_clone = storage_path.clone();
                 let size_clone = size_hint;
                 let upload_task = tokio::spawn(async move {
-                    let stream_driver = driver_for_task
-                        .as_stream_upload()
-                        .expect("stream driver should be available");
+                    let Some(stream_driver) = driver_for_task.as_stream_upload() else {
+                        return Err(crate::errors::AsterError::storage_driver_error(
+                            "stream upload driver is not available",
+                        ));
+                    };
                     stream_driver
                         .put_reader(&storage_path_clone, Box::new(reader), size_clone)
                         .await

@@ -14,8 +14,20 @@ pub async fn wait_for_signal() {
 async fn wait_for_termination_signal() {
     use tokio::signal::unix::{SignalKind, signal};
 
-    let mut sigint = signal(SignalKind::interrupt()).expect("failed to install SIGINT handler");
-    let mut sigterm = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+    let mut sigint = match signal(SignalKind::interrupt()) {
+        Ok(signal) => signal,
+        Err(error) => {
+            tracing::error!(%error, "failed to install SIGINT handler");
+            return;
+        }
+    };
+    let mut sigterm = match signal(SignalKind::terminate()) {
+        Ok(signal) => signal,
+        Err(error) => {
+            tracing::error!(%error, "failed to install SIGTERM handler");
+            return;
+        }
+    };
 
     tokio::select! {
         _ = sigint.recv() => tracing::info!("received SIGINT, shutting down gracefully..."),
@@ -25,9 +37,10 @@ async fn wait_for_termination_signal() {
 
 #[cfg(not(unix))]
 async fn wait_for_termination_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("failed to install Ctrl+C handler");
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        tracing::error!(%error, "failed to install Ctrl+C handler");
+        return;
+    }
     tracing::info!("received Ctrl+C, shutting down gracefully...");
 }
 

@@ -325,8 +325,10 @@ pub fn default_media_processing_registry() -> MediaProcessingRegistryConfig {
 }
 
 pub fn default_media_processing_registry_json() -> String {
-    serde_json::to_string_pretty(&default_media_processing_registry())
-        .expect("default media processing registry should serialize")
+    serde_json::to_string_pretty(&default_media_processing_registry()).unwrap_or_else(|error| {
+        tracing::warn!(%error, "failed to serialize default media processing registry");
+        String::new()
+    })
 }
 
 pub fn normalize_media_processing_registry_config_value(value: &str) -> Result<String> {
