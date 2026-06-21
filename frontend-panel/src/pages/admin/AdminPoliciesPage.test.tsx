@@ -1918,10 +1918,8 @@ describe("AdminPoliciesPage", () => {
 			"Storage Driver Error",
 			{
 				diagnostic: {
-					api_code: "storage.misconfigured",
 					kind: "misconfigured",
-					message: "connection test failed: /tmp/private/secret.txt",
-					retryable: false,
+					message: "connection test failed",
 				},
 			},
 		);
@@ -3525,6 +3523,48 @@ describe("AdminPoliciesPage", () => {
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
 		expect(payload).toHaveProperty("secret_key", "NEWSECRET");
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
+	it("tests changed s3 params with saved credentials when credential fields stay blank", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 8,
+				name: "Saved Credential S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "archive",
+				base_path: "tenant-a",
+				max_file_size: 4096,
+				options: { s3_upload_strategy: "presigned" },
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Saved Credential S3");
+
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "https://s3-alt.example.com" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: undefined,
+				base_path: "tenant-a",
+				bucket: "archive",
+				driver_type: "s3",
+				endpoint: "https://s3-alt.example.com",
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "presigned",
+				},
+				policy_id: 8,
+				remote_node_id: undefined,
+				secret_key: undefined,
+			});
+		});
+		expect(mockState.testConnection).not.toHaveBeenCalled();
 	});
 
 	it("configures Tencent COS CORS from a saved policy when connection fields are unchanged", async () => {
