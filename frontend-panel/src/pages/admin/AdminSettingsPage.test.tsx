@@ -405,7 +405,7 @@ vi.mock("@/components/ui/select", async () => {
 	};
 });
 
-vi.mock("@/components/files/preview/CodePreviewEditor", () => ({
+vi.mock("@/components/files/preview/viewers/text/CodePreviewEditor", () => ({
 	CodePreviewEditor: ({
 		options,
 		onChange,

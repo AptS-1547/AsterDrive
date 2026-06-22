@@ -10,7 +10,7 @@ const mockState = vi.hoisted(() => ({
 	},
 }));
 
-vi.mock("@/components/files/preview/file-capabilities", () => ({
+vi.mock("@/components/files/preview/capabilities/file-capabilities", () => ({
 	getFileTypeInfo: vi.fn(() => mockState.fileTypeInfo),
 }));
 

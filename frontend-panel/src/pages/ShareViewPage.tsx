@@ -1,11 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
-import type { FilePreviewResources } from "@/components/files/preview/filePreviewResources";
 import {
 	getImagePreviewNavigation,
 	type ImagePreviewNavigation,
-} from "@/components/files/preview/imagePreviewNavigation";
+} from "@/components/files/preview/navigation/imagePreviewNavigation";
+import type { FilePreviewResources } from "@/components/files/preview/resources/filePreviewResources";
 import type { ResolveFileResourceHandle } from "@/hooks/useFileResource";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";

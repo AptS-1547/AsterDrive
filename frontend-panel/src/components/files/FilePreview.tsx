@@ -1,5 +1,5 @@
-import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog";
-import type { FilePreviewResources } from "@/components/files/preview/filePreviewResources";
+import { FilePreviewDialog } from "@/components/files/preview/dialog/FilePreviewDialog";
+import type { FilePreviewResources } from "@/components/files/preview/resources/filePreviewResources";
 import type { FileInfo, FileListItem } from "@/types/api";
 
 export interface FilePreviewImageNavigation {

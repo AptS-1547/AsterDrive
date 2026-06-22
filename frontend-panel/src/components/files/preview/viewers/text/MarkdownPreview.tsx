@@ -1,0 +1,55 @@
+import { useTranslation } from "react-i18next";
+import Markdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import remarkGfm from "remark-gfm";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useTextContent } from "@/hooks/useTextContent";
+import type { ResourcePath } from "@/lib/resourceRequest";
+import { PreviewError } from "../../shared/PreviewError";
+import { PreviewLoadingState } from "../../shared/PreviewLoadingState";
+import {
+	PreviewSurface,
+	PreviewSurfaceContent,
+	PreviewSurfaceToolbar,
+} from "../../shared/PreviewSurface";
+
+interface MarkdownPreviewProps {
+	resource: ResourcePath;
+}
+
+export function MarkdownPreview({ resource }: MarkdownPreviewProps) {
+	const { t } = useTranslation("files");
+	const { content, loading, error, reload } = useTextContent(resource);
+
+	if (loading) {
+		return (
+			<PreviewLoadingState text={t("loading_preview")} className="h-full" />
+		);
+	}
+
+	if (error || content === null) {
+		return <PreviewError onRetry={() => void reload()} />;
+	}
+
+	return (
+		<PreviewSurface>
+			<PreviewSurfaceToolbar
+				icon="FileText"
+				label={t("preview_mode_markdown")}
+				meta={t("preview_mode_rendered")}
+			/>
+			<PreviewSurfaceContent>
+				<ScrollArea className="h-full bg-background/80 dark:bg-background/25">
+					<div className="prose prose-sm dark:prose-invert max-w-none px-6 py-5">
+						<Markdown
+							remarkPlugins={[remarkGfm]}
+							rehypePlugins={[rehypeSanitize]}
+						>
+							{content}
+						</Markdown>
+					</div>
+				</ScrollArea>
+			</PreviewSurfaceContent>
+		</PreviewSurface>
+	);
+}

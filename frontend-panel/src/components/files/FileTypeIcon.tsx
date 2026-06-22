@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getFileTypeInfo } from "@/components/files/preview/file-capabilities";
+import { getFileTypeInfo } from "@/components/files/preview/capabilities/file-capabilities";
 import { Icon } from "@/components/ui/icon";
 import {
 	hasLanguageIcon,
@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/language-icon";
 import { cn } from "@/lib/utils";
 import type { FileCategory } from "@/types/api";
-import type { FileTypeInfo } from "./preview/types";
+import type { FileTypeInfo } from "./preview/capabilities/types";
 
 interface FileTypeIconProps {
 	mimeType: string;

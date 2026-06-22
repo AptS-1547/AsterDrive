@@ -99,22 +99,22 @@ vi.mock("@/components/files/CreateFileDialog", () => ({
 vi.mock("@/components/files/CreateFolderDialog", () => ({
 	CreateFolderDialog: "CreateFolderDialog",
 }));
-vi.mock("@/components/files/preview/TextCodePreview", () => ({
+vi.mock("@/components/files/preview/viewers/text/TextCodePreview", () => ({
 	TextCodePreview: "TextCodePreview",
 }));
-vi.mock("@/components/files/preview/JsonPreview", () => ({
+vi.mock("@/components/files/preview/viewers/text/JsonPreview", () => ({
 	JsonPreview: "JsonPreview",
 }));
-vi.mock("@/components/files/preview/XmlPreview", () => ({
+vi.mock("@/components/files/preview/viewers/text/XmlPreview", () => ({
 	XmlPreview: "XmlPreview",
 }));
-vi.mock("@/components/files/preview/CsvTablePreview", () => ({
+vi.mock("@/components/files/preview/viewers/text/CsvTablePreview", () => ({
 	CsvTablePreview: "CsvTablePreview",
 }));
-vi.mock("@/components/files/preview/MarkdownPreview", () => ({
+vi.mock("@/components/files/preview/viewers/text/MarkdownPreview", () => ({
 	MarkdownPreview: "MarkdownPreview",
 }));
-vi.mock("@/components/files/preview/PdfPreview", () => ({
+vi.mock("@/components/files/preview/viewers/pdf/PdfPreview", () => ({
 	PdfPreview: "PdfPreview",
 }));
 

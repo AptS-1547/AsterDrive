@@ -247,31 +247,34 @@ export const filePreviewWarmupLoaders = [
 	{
 		key: "preview:text-code",
 		label: "TextCodePreview",
-		load: () => import("@/components/files/preview/TextCodePreview"),
+		load: () =>
+			import("@/components/files/preview/viewers/text/TextCodePreview"),
 	},
 	{
 		key: "preview:json",
 		label: "JsonPreview",
-		load: () => import("@/components/files/preview/JsonPreview"),
+		load: () => import("@/components/files/preview/viewers/text/JsonPreview"),
 	},
 	{
 		key: "preview:xml",
 		label: "XmlPreview",
-		load: () => import("@/components/files/preview/XmlPreview"),
+		load: () => import("@/components/files/preview/viewers/text/XmlPreview"),
 	},
 	{
 		key: "preview:csv",
 		label: "CsvTablePreview",
-		load: () => import("@/components/files/preview/CsvTablePreview"),
+		load: () =>
+			import("@/components/files/preview/viewers/text/CsvTablePreview"),
 	},
 	{
 		key: "preview:markdown",
 		label: "MarkdownPreview",
-		load: () => import("@/components/files/preview/MarkdownPreview"),
+		load: () =>
+			import("@/components/files/preview/viewers/text/MarkdownPreview"),
 	},
 	{
 		key: "preview:pdf",
 		label: "PdfPreview",
-		load: () => import("@/components/files/preview/PdfPreview"),
+		load: () => import("@/components/files/preview/viewers/pdf/PdfPreview"),
 	},
 ] satisfies WarmupLoaderEntry[];

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { getImagePreviewNavigation } from "@/components/files/preview/imagePreviewNavigation";
+import { getImagePreviewNavigation } from "@/components/files/preview/navigation/imagePreviewNavigation";
 import { TagLibraryManagerDialog } from "@/components/files/TagLibraryManagerDialog";
 import { TagManagerDialog } from "@/components/files/TagManagerDialog";
 import {

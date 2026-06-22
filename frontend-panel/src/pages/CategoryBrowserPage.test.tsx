@@ -264,7 +264,7 @@ vi.mock("@/pages/file-browser/FileBrowserDialogs", () => ({
 	),
 }));
 
-vi.mock("@/components/files/preview/imagePreviewNavigation", () => ({
+vi.mock("@/components/files/preview/navigation/imagePreviewNavigation", () => ({
 	getImagePreviewNavigation: () => ({}),
 }));
 

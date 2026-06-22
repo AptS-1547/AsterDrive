@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { CodePreviewEditor } from "@/components/files/preview/CodePreviewEditor";
+import { CodePreviewEditor } from "@/components/files/preview/viewers/text/CodePreviewEditor";
 import { Icon } from "@/components/ui/icon";
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";

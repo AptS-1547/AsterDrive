@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { FilePreview } from "@/components/files/FilePreview";
 
-vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
+vi.mock("@/components/files/preview/dialog/FilePreviewDialog", () => ({
 	FilePreviewDialog: ({
 		open,
 		file,
