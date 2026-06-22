@@ -2,8 +2,10 @@ import type { OpenWithMode } from "./types";
 
 export type FilePreviewDialogUiState = {
 	mode: OpenWithMode | null;
+	fileId: number | null;
 	isDialogAnimationEnabled: boolean;
 	isExpanded: boolean;
+	hasManualExpanded: boolean;
 	hasConfirmedInitialMode: boolean;
 	forceOpenMethodChooser: boolean;
 	isDirty: boolean;
@@ -13,8 +15,8 @@ export type FilePreviewDialogUiState = {
 export type FilePreviewDialogUiAction =
 	| {
 			type: "syncMode";
+			fileId: number;
 			preferredMode: OpenWithMode | null;
-			resetForFile: boolean;
 	  }
 	| { type: "syncShowAllOpenMethods"; showAllOpenMethods: boolean }
 	| { type: "selectOpenMethod"; mode: OpenWithMode }
@@ -22,14 +24,16 @@ export type FilePreviewDialogUiAction =
 	| { type: "setConfirmOpen"; confirmOpen: boolean }
 	| { type: "setDirty"; isDirty: boolean }
 	| { type: "discardChanges" }
-	| { type: "toggleExpanded" }
+	| { type: "setExpanded"; expanded: boolean }
 	| { type: "disableAnimation" }
 	| { type: "showAllOpenMethods" };
 
 export const initialFilePreviewDialogUiState: FilePreviewDialogUiState = {
 	mode: null,
+	fileId: null,
 	isDialogAnimationEnabled: true,
 	isExpanded: false,
+	hasManualExpanded: false,
 	hasConfirmedInitialMode: false,
 	forceOpenMethodChooser: false,
 	isDirty: false,
@@ -42,18 +46,22 @@ export function filePreviewDialogUiReducer(
 	action: FilePreviewDialogUiAction,
 ): FilePreviewDialogUiState {
 	switch (action.type) {
-		case "syncMode":
+		case "syncMode": {
+			const resetForFile = state.fileId !== action.fileId;
 			return {
 				...state,
+				fileId: action.fileId,
 				mode: action.preferredMode,
-				hasConfirmedInitialMode: action.resetForFile
+				hasConfirmedInitialMode: resetForFile
 					? false
 					: state.hasConfirmedInitialMode,
-				isExpanded: action.resetForFile ? false : state.isExpanded,
-				forceOpenMethodChooser: action.resetForFile
+				hasManualExpanded: resetForFile ? false : state.hasManualExpanded,
+				isExpanded: resetForFile ? false : state.isExpanded,
+				forceOpenMethodChooser: resetForFile
 					? false
 					: state.forceOpenMethodChooser,
 			};
+		}
 		case "syncShowAllOpenMethods":
 			if (state.showAllOpenMethods === action.showAllOpenMethods) {
 				return state;
@@ -100,11 +108,15 @@ export function filePreviewDialogUiReducer(
 				confirmOpen: false,
 				isDirty: false,
 			};
-		case "toggleExpanded":
+		case "setExpanded":
+			if (state.isExpanded === action.expanded && state.hasManualExpanded) {
+				return state;
+			}
 			return {
 				...state,
+				hasManualExpanded: true,
 				isDialogAnimationEnabled: false,
-				isExpanded: !state.isExpanded,
+				isExpanded: action.expanded,
 			};
 		case "disableAnimation":
 			if (!state.isDialogAnimationEnabled) {

@@ -11,17 +11,19 @@ describe("filePreviewDialogUiReducer", () => {
 			{ type: "selectOpenMethod", mode: "builtin.markdown" },
 		);
 		const expanded = filePreviewDialogUiReducer(selected, {
-			type: "toggleExpanded",
+			type: "setExpanded",
+			expanded: true,
 		});
 		const reset = filePreviewDialogUiReducer(expanded, {
 			type: "syncMode",
+			fileId: 7,
 			preferredMode: "builtin.code",
-			resetForFile: true,
 		});
 
 		expect(reset).toMatchObject({
 			forceOpenMethodChooser: false,
 			hasConfirmedInitialMode: false,
+			hasManualExpanded: false,
 			isExpanded: false,
 			mode: "builtin.code",
 		});
@@ -34,8 +36,8 @@ describe("filePreviewDialogUiReducer", () => {
 		);
 		const synced = filePreviewDialogUiReducer(confirmed, {
 			type: "syncMode",
+			fileId: null,
 			preferredMode: "builtin.code",
-			resetForFile: false,
 		});
 
 		expect(synced).toMatchObject({
@@ -78,5 +80,26 @@ describe("filePreviewDialogUiReducer", () => {
 			confirmOpen: false,
 			isDirty: false,
 		});
+	});
+
+	it("marks expansion as manual and ignores identical repeated expansion actions", () => {
+		const expanded = filePreviewDialogUiReducer(
+			initialFilePreviewDialogUiState,
+			{
+				type: "setExpanded",
+				expanded: true,
+			},
+		);
+		const repeated = filePreviewDialogUiReducer(expanded, {
+			type: "setExpanded",
+			expanded: true,
+		});
+
+		expect(expanded).toMatchObject({
+			hasManualExpanded: true,
+			isDialogAnimationEnabled: false,
+			isExpanded: true,
+		});
+		expect(repeated).toBe(expanded);
 	});
 });
