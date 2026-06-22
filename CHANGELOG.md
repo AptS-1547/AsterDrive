@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0-rc.2] - 2026-06-22
+
+### Release Highlights
+
+**AsterDrive `0.3.0-rc.2` 是 0.3.0 发布候选线的预览体验与审计保留补强版本，主线是内联预览走对象存储预签名直链与审计日志无限期保留。** Inline 预览（图片 / 视频 / 音频 / PDF / Markdown / 代码 / 表格 / JSON / XML 等）在策略允许且 MIME 不需要 same-origin CSP sandbox 时直接 302 到对象存储预签名 URL，不再由服务端统一加 CSP 与缓存头转流，降低服务端带宽与转发延迟；公开分享预览（preview link）下载路径切换到统一下载出口以同样享受预签名。前端 `apiUrl` 把后端 API origin 的 URL 从「外部资源」中排除并新增 `shouldSendResourceCredentials`——预签名 URL 落在对象存储 origin 时不会携带会话凭据，避免 CORS 预检失败与凭据外泄；各预览组件 `path` 改为可空，加载期间显示 loading 占位。审计日志保留期 `audit_log_retention_days` 设为 `0` 时跳过自动清理，实现永久保留。
+
+- **Inline 预览走预签名直链** — 策略允许且 MIME 不需 same-origin sandbox 时 inline 预览直接 302 到对象存储预签名 URL，preview link 同步切换到统一下载出口
+- **CORS 安全的凭据处理** — 后端 API origin 的 URL 不再被前端误判为外部资源，新增 `shouldSendResourceCredentials` 集中判断；预签名 URL 属于对象存储 origin 时不携带会话凭据
+- **审计日志无限期保留** — `audit_log_retention_days = 0` 跳过自动清理，i18n 文案补充「设为 0 表示永久保留」
+- **存储操作审计文案补全** — 新增「管理员触发存储操作」i18n 文案（en / zh）
+
+### Added
+
+- **审计日志无限期保留**
+  - `audit_service::cleanup_expired` 在 `retention_days <= 0` 时跳过清理并返回 0，管理员可将 `audit_log_retention_days` 设为 `0` 实现永久保留
+  - `settings-operations` i18n 文案补充「设为 0 表示永久保留，不自动清理」
+  - 新增 `audit_action_admin_trigger_storage_action` i18n 文案（en / zh）覆盖存储操作审计
+  - 新增 `test_audit_cleanup_retention_zero_keeps_logs` 集成测试断言 365 天前的记录在 retention=0 时仍被保留
+
+### Changed
+
+- **Inline 预览走预签名直链**
+  - `file_service::download::build` 中 `should_presign` 从「仅 Attachment」改为「除需 same-origin CSP sandbox 的 inline MIME 类型外均走 presigned redirect」；`build_presigned_redirect_outcome` 接受 `disposition` 参数，content-disposition 不再硬编码 Attachment
+  - `preview_link_service::download_file` 由直接调用 `build_stream_outcome_with_disposition_and_range` 改为 `build_download_outcome_with_disposition_and_range`，公开分享预览同样享受预签名
+  - 前端新增 `useContentPreviewResourcePath` hook：存在 `previewLinkFactory` 时优先解析 preview link 路径，否则回落 downloadPath
+  - 前端各预览组件（`PdfPreview` / `BlobImagePreview` / `MusicPreview` / `VideoPreview` / `MarkdownPreview` / `CsvTablePreview` / `XmlPreview` / `JsonPreview` / `TextCodePreview`）从 `downloadPath` 切换到 `contentPreviewPath`，`path` 改为可空并在加载期间显示 loading
+  - `tests/test_upload.rs` 中 direct-link inline presigned 测试断言改为 302 redirect + `Cache-Control: no-store` + `Location` 携带 `response-content-disposition`
+
+- **前端资源凭据判断收紧**
+  - `apiUrl.ts` 新增 `isConfiguredApiUrl` 判断 URL 是否属于后端 API origin；`isExternalResourceUrl` 不再把后端 API URL 当作外部资源
+  - 新增 `shouldSendResourceCredentials(path)`：仅在「非外部资源且非公开资源」时携带会话凭据，`authenticatedResource` 改用该判断
+  - 预签名 URL 落在对象存储 origin（与 API origin 不同）时不会被携带凭据，避免 CORS 预检失败与凭据泄露
+
+- **S3 / MinIO / R2 文档补全**
+  - `docs/storage/s3-minio-r2.md` 与 `docs/en/storage/s3-minio-r2.md` 补全内联预览走预签名直链所需的 CORS 与凭据配置说明
+
+### Statistics
+
+- 35 files changed, 1641 insertions(+), 116 deletions(-)
+- 3 commits
+
 ## [v0.3.0-rc.1] - 2026-06-22
 
 ### Release Highlights
@@ -5135,7 +5176,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-rc.1...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-rc.2...HEAD
+[v0.3.0-rc.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-rc.1...v0.3.0-rc.2
 [v0.3.0-rc.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.2...v0.3.0-rc.1
 [v0.3.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.1...v0.3.0-beta.2
 [v0.3.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-alpha.5...v0.3.0-beta.1

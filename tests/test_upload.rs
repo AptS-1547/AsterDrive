@@ -1609,13 +1609,38 @@ async fn test_s3_presigned_download_redirects_and_share_counts() {
         .uri(&format!("/d/{direct_token}/presigned%20report.txt"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 302);
     assert_eq!(
-        resp.headers().get("Content-Disposition").unwrap(),
+        resp.headers().get("Cache-Control").unwrap(),
+        "no-store",
+        "direct-link inline presigned redirect should not be cached"
+    );
+    let direct_inline_location = resp
+        .headers()
+        .get("Location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        direct_inline_location.contains("response-content-disposition="),
+        "direct-link inline presigned URL should preserve inline filename"
+    );
+    let direct_inline_response = reqwest::get(&direct_inline_location).await.unwrap();
+    assert!(direct_inline_response.status().is_success());
+    assert_eq!(
+        direct_inline_response
+            .headers()
+            .get(reqwest::header::CONTENT_DISPOSITION)
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "inline; filename*=UTF-8''presigned%20report.txt"
     );
-    let body = test::read_body(resp).await;
-    assert_eq!(body.as_ref(), file_data);
+    assert_eq!(
+        direct_inline_response.bytes().await.unwrap().as_ref(),
+        file_data
+    );
 
     let req = test::TestRequest::get()
         .uri(&format!(
