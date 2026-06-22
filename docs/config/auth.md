@@ -15,6 +15,7 @@ jwt_secret = "<首次生成的一串随机密钥>"
 share_cookie_secret = "<首次生成的一串随机密钥>"
 direct_link_secret = "<首次生成的一串随机密钥>"
 mfa_secret_key = "<首次生成的一串随机密钥>"
+storage_credential_secret_key = "<首次生成的一串随机密钥>"
 bootstrap_insecure_cookies = false
 ```
 
@@ -44,6 +45,24 @@ bootstrap_insecure_cookies = false
 如果你已经有用户启用了 MFA，不要在迁移、恢复或重建 `config.toml` 时随手换掉它。
 
 一旦修改，已有认证器密钥无法解密，启用了 MFA 的用户会无法通过原来的认证器完成二次验证。管理员只能到 `管理 -> 用户 -> 用户详情 -> 安全操作` 里重置对应用户的 MFA，让用户重新绑定认证器并保存新的恢复码。
+:::
+
+### `storage_credential_secret_key`
+
+这是 OneDrive 存储策略的 Microsoft Graph 凭据（Client Secret、access token、refresh token）的服务端加密主密钥。首次生成配置时，服务会自动写入一段随机值；派生出的密钥用 AES-256-GCM 把凭据加密后落库，API 与审计只暴露 `client_secret_configured` 这类布尔状态。
+
+::: tip 这把密钥目前只覆盖 OneDrive
+它保护的是 `storage_connector_application_configs.client_secret_ciphertext` 和 `storage_policy_credentials` 表里的 access / refresh token 密文。
+
+S3、Azure Blob、腾讯云 COS 的 `access_key` / `secret_key`，以及 Remote follower 节点凭据，**目前是明文落库**，不依赖这把密钥——换掉它不会影响这些驱动。
+:::
+
+::: warning 备份和迁移时必须保留
+只要有一条 OneDrive 策略完成过 Microsoft Graph 授权，就不要在迁移、恢复或重建 `config.toml` 时换掉它。
+
+一旦修改或丢失，已加密落库的 Client Secret 和 OAuth token 都无法解密，所有 OneDrive 策略会进入需要重新授权状态。旧 refresh token 无法恢复，管理员只能逐条回到 `管理 -> 存储策略 -> 目标 OneDrive 策略 -> 授权` 重新走一遍授权流程。
+
+升级或换机前，把整个 `[auth]` 段连同这把密钥一起备份。
 :::
 
 ### `bootstrap_insecure_cookies`
@@ -261,6 +280,7 @@ jwt_secret = "replace-with-your-own-secret"
 share_cookie_secret = "replace-with-share-cookie-secret"
 direct_link_secret = "replace-with-direct-link-secret"
 mfa_secret_key = "replace-with-another-stable-secret"
+storage_credential_secret_key = "replace-with-storage-credential-secret"
 bootstrap_insecure_cookies = false
 ```
 
@@ -271,6 +291,7 @@ ASTER__AUTH__JWT_SECRET="replace-with-your-own-secret"
 ASTER__AUTH__SHARE_COOKIE_SECRET="replace-with-share-cookie-secret"
 ASTER__AUTH__DIRECT_LINK_SECRET="replace-with-direct-link-secret"
 ASTER__AUTH__MFA_SECRET_KEY="replace-with-another-stable-secret"
+ASTER__AUTH__STORAGE_CREDENTIAL_SECRET_KEY="replace-with-storage-credential-secret"
 ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=false
 ```
 

@@ -15,6 +15,7 @@ jwt_secret = "<random secret generated on first startup>"
 share_cookie_secret = "<random secret generated on first startup>"
 direct_link_secret = "<random secret generated on first startup>"
 mfa_secret_key = "<random secret generated on first startup>"
+storage_credential_secret_key = "<random secret generated on first startup>"
 bootstrap_insecure_cookies = false
 ```
 
@@ -44,6 +45,24 @@ This is the server-side encryption key for MFA/TOTP secrets. When the configurat
 If users have already enabled MFA, do not casually replace it while migrating, restoring, or rebuilding `config.toml`.
 
 Once changed, existing authenticator secrets can no longer be decrypted, and users with MFA enabled cannot complete two-step verification with their old authenticator. An administrator can only reset that user's MFA from `Admin -> Users -> User Details -> Security Actions`, then ask the user to bind an authenticator again and save new recovery codes.
+:::
+
+### `storage_credential_secret_key`
+
+This is the server-side encryption master key for the Microsoft Graph credentials (Client Secret, access token, refresh token) used by OneDrive storage policies. When the configuration is generated for the first time, the service automatically writes a random value; a key derived from it encrypts the credentials at rest with AES-256-GCM, and API responses and audit logs expose only boolean state such as `client_secret_configured`.
+
+::: tip This key currently only covers OneDrive
+It protects `storage_connector_application_configs.client_secret_ciphertext` and the access / refresh token ciphertext in the `storage_policy_credentials` table.
+
+The `access_key` / `secret_key` for S3, Azure Blob, and Tencent COS, as well as Remote follower node credentials, **are currently stored in plaintext** and do not depend on this key — rotating it does not affect those drivers.
+:::
+
+::: warning Preserve it during backup and migration
+As long as any OneDrive policy has completed Microsoft Graph authorization, do not casually replace it while migrating, restoring, or rebuilding `config.toml`.
+
+Once changed or lost, the encrypted Client Secret and OAuth tokens can no longer be decrypted, and every OneDrive policy enters a requires-reauthorization state. Old refresh tokens cannot be recovered; an administrator must re-run the authorization flow for each policy from `Admin -> Storage Policies -> target OneDrive policy -> Authorize`.
+
+Back up the entire `[auth]` section together with this key before upgrading or moving hosts.
 :::
 
 ### `bootstrap_insecure_cookies`
@@ -261,6 +280,7 @@ jwt_secret = "replace-with-your-own-secret"
 share_cookie_secret = "replace-with-share-cookie-secret"
 direct_link_secret = "replace-with-direct-link-secret"
 mfa_secret_key = "replace-with-another-stable-secret"
+storage_credential_secret_key = "replace-with-storage-credential-secret"
 bootstrap_insecure_cookies = false
 ```
 
@@ -271,6 +291,7 @@ ASTER__AUTH__JWT_SECRET="replace-with-your-own-secret"
 ASTER__AUTH__SHARE_COOKIE_SECRET="replace-with-share-cookie-secret"
 ASTER__AUTH__DIRECT_LINK_SECRET="replace-with-direct-link-secret"
 ASTER__AUTH__MFA_SECRET_KEY="replace-with-another-stable-secret"
+ASTER__AUTH__STORAGE_CREDENTIAL_SECRET_KEY="replace-with-storage-credential-secret"
 ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=false
 ```
 

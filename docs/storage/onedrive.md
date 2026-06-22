@@ -253,7 +253,7 @@ AsterDrive 把 OneDrive 的 Microsoft Graph 应用配置存放在独立的 conne
 | `storage_connector_application_configs.tenant_id` | Microsoft tenant，例如 `common` 或租户 ID |
 | `storage_connector_application_configs.scopes` | Microsoft Graph delegated scopes |
 
-Client Secret 使用 `auth.storage_credential_secret_key` 派生的加密密钥加密后落库。管理员在前端输入的明文 secret 只用于首次保存或主动覆盖；发起授权时，后端会读取已保存并加密保存的 secret。如果编辑策略时留空，AsterDrive 会保留已有的 `client_secret_ciphertext`。API 响应和审计日志只暴露 `client_secret_configured` 这类布尔状态，不回显明文。
+Client Secret 使用 `auth.storage_credential_secret_key` 派生的加密密钥加密后落库。管理员在前端输入的明文 secret 只用于首次保存或主动覆盖；发起授权时，后端会读取已保存并加密保存的 secret。如果编辑策略时留空，AsterDrive 会保留已有的 `client_secret_ciphertext`。API 响应和审计日志只暴露 `client_secret_configured` 这类布尔状态，不回显明文。这把主密钥的备份与迁移注意事项见 [登录与会话 — `storage_credential_secret_key`](/config/auth#storage-credential-secret-key)。
 
 创建或更新 OneDrive 策略时，AsterDrive 会在存储连接边界清空 legacy `storage_policies.access_key` / `storage_policies.secret_key` 字段。它们不作为 OneDrive Microsoft 应用凭据的长期存储位置。
 

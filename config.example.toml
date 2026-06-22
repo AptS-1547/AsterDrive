@@ -16,6 +16,7 @@ jwt_secret = "change-me-in-production"
 share_cookie_secret = "change-me-in-production-share-cookie"
 direct_link_secret = "change-me-in-production-direct-link"
 mfa_secret_key = "change-me-in-production-mfa"
+storage_credential_secret_key = "change-me-in-production-storage-credential"
 bootstrap_insecure_cookies = false  # 仅首次初始化 auth_cookie_secure 时生效；纯 HTTP 首启可临时设为 true
 
 [cache]
