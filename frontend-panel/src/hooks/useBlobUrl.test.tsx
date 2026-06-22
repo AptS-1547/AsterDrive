@@ -434,6 +434,96 @@ describe("useBlobUrl", () => {
 		clearBlobUrlCache();
 	});
 
+	it("falls back to request path as cache key for resource objects without cacheKey", async () => {
+		const imageBlob = new Blob(["preview"]);
+		mockState.get.mockResolvedValue({
+			status: 200,
+			data: imageBlob,
+			headers: { etag: '"storage-etag"' },
+		});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useBlobUrl({
+				etag: '"canonical-etag"',
+				requestPath: "/pv/token-a/image.webp",
+			}),
+		);
+		await waitFor(() => {
+			expect(first.result.current.blobUrl).toBe("blob:1");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useBlobUrl({
+				etag: '"canonical-etag"',
+				requestPath: "/pv/token-a/image.webp",
+			}),
+		);
+		await waitFor(() => {
+			expect(second.result.current.blobUrl).toBe("blob:1");
+			expect(second.result.current.blob).toBe(imageBlob);
+		});
+
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+		expect(mockState.get).toHaveBeenCalledWith("/pv/token-a/image.webp", {
+			headers: {},
+			responseType: "blob",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+		second.unmount();
+		clearBlobUrlCache();
+	});
+
+	it("revalidates resource objects without canonical etags", async () => {
+		const imageBlob = new Blob(["preview-a"]);
+		mockState.get
+			.mockResolvedValueOnce({
+				status: 200,
+				data: imageBlob,
+				headers: { etag: '"storage-etag"' },
+			})
+			.mockResolvedValueOnce({
+				status: 304,
+				data: new Blob([]),
+				headers: {},
+			});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useBlobUrl({
+				cacheKey: "/files/7/download",
+				requestPath: "/pv/token-a/image.webp",
+			}),
+		);
+		await waitFor(() => {
+			expect(first.result.current.blobUrl).toBe("blob:1");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useBlobUrl({
+				cacheKey: "/files/7/download",
+				requestPath: "/pv/token-b/image.webp",
+			}),
+		);
+		await waitFor(() => {
+			expect(second.result.current.blobUrl).toBe("blob:1");
+			expect(second.result.current.blob).toBe(imageBlob);
+		});
+
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/pv/token-b/image.webp", {
+			headers: { "If-None-Match": '"storage-etag"' },
+			responseType: "blob",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+		expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+		second.unmount();
+		clearBlobUrlCache();
+	});
+
 	it("keeps thumbnail blob urls for the whole session after the first successful fetch", async () => {
 		mockState.get.mockResolvedValue({
 			status: 200,

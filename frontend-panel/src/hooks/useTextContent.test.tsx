@@ -298,6 +298,102 @@ describe("useTextContent", () => {
 		clearTextContentCache();
 	});
 
+	it("falls back to request path as cache key for resource objects without cacheKey", async () => {
+		mockState.get.mockResolvedValue({
+			status: 200,
+			data: "preview",
+			headers: { etag: '"storage-etag"' },
+		});
+		const { clearTextContentCache, useTextContent } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useTextContent({
+				etag: '"canonical-etag"',
+				requestPath: "/pv/token-a/file.txt",
+			}),
+		);
+		await waitFor(() => {
+			expect(first.result.current.content).toBe("preview");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useTextContent({
+				etag: '"canonical-etag"',
+				requestPath: "/pv/token-a/file.txt",
+			}),
+		);
+		await waitFor(() => {
+			expect(second.result.current.content).toBe("preview");
+		});
+
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+		expect(mockState.get).toHaveBeenCalledWith("/pv/token-a/file.txt", {
+			headers: {},
+			responseType: "text",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+		clearTextContentCache();
+	});
+
+	it("revalidates resource objects without canonical etags", async () => {
+		mockState.get
+			.mockResolvedValueOnce({
+				status: 200,
+				data: "preview-a",
+				headers: { etag: '"storage-etag"' },
+			})
+			.mockResolvedValueOnce({
+				status: 304,
+				data: "",
+				headers: {},
+			});
+		const { clearTextContentCache, useTextContent } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useTextContent({
+				cacheKey: "/files/7/content",
+				requestPath: "/pv/token-a/file.txt",
+			}),
+		);
+		await waitFor(() => {
+			expect(first.result.current.content).toBe("preview-a");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useTextContent({
+				cacheKey: "/files/7/content",
+				requestPath: "/pv/token-b/file.txt",
+			}),
+		);
+		await waitFor(() => {
+			expect(second.result.current.content).toBe("preview-a");
+		});
+
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/pv/token-b/file.txt", {
+			headers: { "If-None-Match": '"storage-etag"' },
+			responseType: "text",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+		clearTextContentCache();
+	});
+
+	it("stays idle when no text resource is provided", async () => {
+		const { clearTextContentCache, useTextContent } = await loadHookModule();
+
+		const { result } = renderHook(() => useTextContent(null));
+
+		expect(result.current.content).toBeNull();
+		expect(result.current.etag).toBeNull();
+		expect(result.current.error).toBe(false);
+		expect(result.current.loading).toBe(false);
+		expect(mockState.get).not.toHaveBeenCalled();
+		clearTextContentCache();
+	});
+
 	it("re-fetches active consumers after invalidation", async () => {
 		mockState.get
 			.mockResolvedValueOnce({
