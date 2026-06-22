@@ -90,7 +90,7 @@ function isImagePreviewInteractiveTarget(target: EventTarget | null) {
 interface ImagePreviewPanelProps {
 	file: FileInfo | FileListItem;
 	allOptionsCount: number;
-	downloadPath: string;
+	downloadPath: string | null;
 	imagePreviewPath?: string;
 	nextImageFile?: FileInfo | FileListItem;
 	onChooseOpenMethod: () => void;
@@ -398,7 +398,7 @@ function ImagePreviewTransformLayer({
 	onImageLoad,
 	onImageRenderError,
 }: {
-	downloadPath: string;
+	downloadPath: string | null;
 	effectiveShowOriginalState: ShowOriginalState;
 	effectiveSource: ImagePreviewSource;
 	file: FileInfo | FileListItem;

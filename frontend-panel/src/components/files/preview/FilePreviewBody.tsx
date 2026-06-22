@@ -63,6 +63,7 @@ interface FilePreviewBodyProps {
 	activeOption: OpenWithOption | null;
 	profile: PreviewProfile | null;
 	previewAppsLoaded: boolean;
+	contentPreviewPath: string | null;
 	downloadPath: string;
 	imagePreviewPath?: string;
 	thumbnailPath?: string;
@@ -87,6 +88,7 @@ export function FilePreviewBody({
 	activeOption,
 	profile,
 	previewAppsLoaded,
+	contentPreviewPath,
 	downloadPath,
 	imagePreviewPath,
 	thumbnailPath,
@@ -118,9 +120,10 @@ export function FilePreviewBody({
 	}
 
 	if (activeOption.mode === "pdf") {
+		if (!contentPreviewPath) return previewLoadingState;
 		return (
 			<Suspense fallback={previewLoadingState}>
-				<PdfPreview path={downloadPath} fileName={file.name} />
+				<PdfPreview path={contentPreviewPath} fileName={file.name} />
 			</Suspense>
 		);
 	}
@@ -130,7 +133,7 @@ export function FilePreviewBody({
 			<BlobImagePreview
 				file={file}
 				fillContainer={isExpanded}
-				path={downloadPath}
+				path={contentPreviewPath}
 				fallbackPath={imagePreviewPath}
 			/>
 		);
@@ -141,7 +144,7 @@ export function FilePreviewBody({
 			<MusicPreview
 				file={file}
 				loadBackendMetadata={loadMusicBackendMetadata}
-				path={downloadPath}
+				path={contentPreviewPath}
 				thumbnailPath={thumbnailPath}
 				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>
@@ -152,7 +155,7 @@ export function FilePreviewBody({
 		return (
 			<VideoPreview
 				file={file}
-				path={downloadPath}
+				path={contentPreviewPath}
 				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>
 		);
@@ -185,48 +188,52 @@ export function FilePreviewBody({
 	}
 
 	if (activeOption.mode === "markdown") {
+		if (!contentPreviewPath) return previewLoadingState;
 		return (
 			<Suspense fallback={previewLoadingState}>
-				<MarkdownPreview path={downloadPath} />
+				<MarkdownPreview path={contentPreviewPath} />
 			</Suspense>
 		);
 	}
 
 	if (activeOption.mode === "table") {
+		if (!contentPreviewPath) return previewLoadingState;
 		const delimiter = normalizeTablePreviewDelimiter(
 			activeOption.config?.delimiter,
 		);
 
 		return (
 			<Suspense fallback={previewLoadingState}>
-				<CsvTablePreview path={downloadPath} delimiter={delimiter} />
+				<CsvTablePreview path={contentPreviewPath} delimiter={delimiter} />
 			</Suspense>
 		);
 	}
 
 	if (activeOption.mode === "formatted") {
+		if (!contentPreviewPath) return previewLoadingState;
 		if (formattedCategory === "xml") {
 			return (
 				<Suspense fallback={previewLoadingState}>
-					<XmlPreview path={downloadPath} mode="formatted" />
+					<XmlPreview path={contentPreviewPath} mode="formatted" />
 				</Suspense>
 			);
 		}
 
 		return (
 			<Suspense fallback={previewLoadingState}>
-				<JsonPreview path={downloadPath} />
+				<JsonPreview path={contentPreviewPath} />
 			</Suspense>
 		);
 	}
 
 	if (activeOption.mode === "code") {
+		if (!contentPreviewPath) return previewLoadingState;
 		return (
 			<Suspense fallback={previewLoadingState}>
 				<TextCodePreview
 					file={file}
 					modeLabel={getOptionLabel(activeOption)}
-					path={downloadPath}
+					path={contentPreviewPath}
 					onFileUpdated={onFileUpdated}
 					onDirtyChange={onDirtyChange}
 					editable={editable}

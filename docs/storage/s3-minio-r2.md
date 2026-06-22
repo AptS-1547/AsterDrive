@@ -171,7 +171,7 @@ http://minio:9000
 | 上传方式 | 初次建议 `relay_stream` |
 | 下载方式 | 初次建议 `relay_stream` |
 
-R2 的自定义域名、缓存和公开访问策略在 Cloudflare 侧单独配置。AsterDrive 只需要能通过 S3 API 操作私有对象。
+R2 的自定义域名、缓存和公开访问策略在 Cloudflare 侧单独配置。AsterDrive 只需要能通过 S3 API 操作私有对象。如果后续要把上传或下载切换到 `presigned`，需要先给 bucket 配好 CORS。
 
 ### AWS S3 常见写法
 
@@ -332,31 +332,142 @@ flowchart TD
 - CORS 不好配置
 - 希望所有下载都保持同源响应
 
-## 12. 给 `presigned` 上传配置 CORS
+## 12. 给 `presigned` 配置 CORS
 
-使用 `presigned` 上传时，浏览器会直接对对象存储发 `PUT` 请求。对象存储必须允许 AsterDrive 的公开来源。
+使用 `presigned` 时，浏览器会直接访问 S3-compatible 对象存储。对象存储必须允许 AsterDrive 站点的跨域请求，否则上传、下载、图片预览、PDF / 视频 Range 请求都可能失败。
 
-最少需要：
-
-- Allowed Origin：你的 `公开站点地址`
-- Allowed Method：`PUT`
-- Allowed Header：覆盖浏览器上传请求头
-- Expose Header：`ETag`
-
-示意：
+`AllowedOrigins` 必须填写浏览器访问 AsterDrive 的站点 origin，例如：
 
 ```text
-AllowedOrigins:
-  - https://drive.example.com
-AllowedMethods:
-  - PUT
-AllowedHeaders:
-  - *
-ExposeHeaders:
-  - ETag
+https://drive.example.com
 ```
 
-不同服务商界面不一样，但核心都是这几项。
+不要带路径，也不要写成 `https://drive.example.com/` 或 `https://drive.example.com/api`。
+
+### 只启用 Presigned 上传
+
+只启用 `presigned` 上传时，可以使用这份配置：
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://drive.example.com"
+    ],
+    "AllowedMethods": [
+      "PUT"
+    ],
+    "AllowedHeaders": [
+      "Content-Type",
+      "Content-Length",
+      "x-amz-content-sha256",
+      "x-amz-date",
+      "x-amz-security-token"
+    ],
+    "ExposeHeaders": [
+      "ETag"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+如果浏览器或反向代理实际发送了额外请求头，需要把对应请求头加入 `AllowedHeaders`。不同 S3-compatible 服务商界面不一样，但核心都是 origin、method、request headers、exposed response headers 这几项。
+
+### 只启用 Presigned 下载和预览
+
+只启用 `presigned` 下载或预览时，可以使用这份配置：
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://drive.example.com"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "Range",
+      "If-None-Match"
+    ],
+    "ExposeHeaders": [
+      "Accept-Ranges",
+      "Content-Disposition",
+      "Content-Length",
+      "Content-Range",
+      "Content-Type",
+      "ETag",
+      "Range"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+`Range`、`Content-Range` 和 `Accept-Ranges` 对视频、音频、PDF 这类预览很重要。缺少这些配置时，小图片可能能打开，但视频 seek、PDF 分段加载或大文件预览会失败。
+
+### 上传和下载都启用 Presigned
+
+同一个 bucket 同时启用 `presigned` 上传和下载时，可以合并成一份配置：
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://drive.example.com"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "HEAD",
+      "PUT"
+    ],
+    "AllowedHeaders": [
+      "Content-Length",
+      "Content-Type",
+      "If-None-Match",
+      "Range",
+      "x-amz-content-sha256",
+      "x-amz-date",
+      "x-amz-security-token"
+    ],
+    "ExposeHeaders": [
+      "Accept-Ranges",
+      "Content-Disposition",
+      "Content-Length",
+      "Content-Range",
+      "Content-Type",
+      "ETag",
+      "Range"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+### 预览里的 credentials 问题
+
+R2 的 CORS 配置支持 `AllowedOrigins`、`AllowedMethods`、`AllowedHeaders`、`ExposeHeaders` 和 `MaxAgeSeconds`，Cloudflare R2 文档没有提供 `AllowedCredentials` 字段。其他 S3-compatible 服务商也不一定会返回 credentialed CORS 所需的响应头。
+
+因此，浏览器请求对象存储 presigned URL 时不应该带 cookie credentials。AsterDrive 的预览链路会先通过登录态 API 创建短时效 `preview-link`，再用这个临时链接读取对象内容。读取对象内容时不依赖 cookie，避免浏览器要求对象存储返回：
+
+```http
+Access-Control-Allow-Credentials: true
+```
+
+如果浏览器控制台出现类似错误：
+
+```text
+The value of the 'Access-Control-Allow-Credentials' header in the response is '' which must be 'true' when the request's credentials mode is 'include'.
+```
+
+优先检查：
+
+1. 前端是否在用旧版本 AsterDrive。
+2. 预览请求是否仍通过 XHR 直接读取 `/api/v1/files/{id}/download` 并追随 302 到对象存储。
+3. 对象存储响应是否至少包含 `Access-Control-Allow-Origin: https://你的站点域名`。
+4. `AllowedOrigins` 是否和浏览器地址栏里的 origin 完全一致。
 
 ::: tip 判断是不是 CORS 问题
 `relay_stream` 成功，`presigned` 失败，浏览器控制台又出现跨域错误时，基本就该看对象存储 CORS。

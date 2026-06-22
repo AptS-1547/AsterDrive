@@ -20,6 +20,9 @@ export function UploadAreaHost({ workspace }: UploadAreaHostProps) {
 	const currentFolderId = useFileStore((state) => state.currentFolderId);
 	const breadcrumb = useFileStore((state) => state.breadcrumb);
 	const refreshUser = useAuthStore((state) => state.refreshUser);
+	const storageEventStreamEnabled = useAuthStore(
+		(state) => state.user?.preferences?.storage_event_stream_enabled !== false,
+	);
 	const setControls = useUploadAreaControlsStore((state) => state.setControls);
 	const setUploadPanelPresence = useUploadAreaControlsStore(
 		(state) => state.setUploadPanelPresence,
@@ -57,6 +60,7 @@ export function UploadAreaHost({ workspace }: UploadAreaHostProps) {
 		refresh,
 		refreshUser,
 		resumeFileInputRef,
+		storageEventStreamEnabled,
 		workspace,
 	});
 	const showUploadPanel = hasUploadActivity || uploadTasks.length > 0;

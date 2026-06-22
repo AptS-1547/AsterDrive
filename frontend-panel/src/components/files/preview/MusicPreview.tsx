@@ -11,6 +11,7 @@ import {
 } from "@/stores/musicPlayerStore";
 import type { ShareStreamSessionInfo } from "@/types/api";
 import { PreviewError } from "./PreviewError";
+import { PreviewLoadingState } from "./PreviewLoadingState";
 import {
 	PreviewSurface,
 	PreviewSurfaceContent,
@@ -22,7 +23,7 @@ interface MusicPreviewProps {
 	file: PreviewableFileLike;
 	loadBackendMetadata?: MusicPlayerTrack["loadBackendMetadata"];
 	mediaStreamLinkFactory?: () => Promise<ShareStreamSessionInfo>;
-	path: string;
+	path: string | null;
 	thumbnailPath?: string;
 }
 
@@ -74,6 +75,7 @@ export function MusicPreview({
 	}, []);
 
 	const startPlayback = useCallback(() => {
+		if (!path) return;
 		const requestId = startRequestIdRef.current + 1;
 		startRequestIdRef.current = requestId;
 		startAbortControllerRef.current?.abort();
@@ -160,6 +162,16 @@ export function MusicPreview({
 		thumbnailPath,
 		trackId,
 	]);
+
+	if (!path) {
+		return (
+			<PreviewSurface className="min-h-[50vh]">
+				<PreviewSurfaceContent>
+					<PreviewLoadingState text={t("loading_preview")} className="h-full" />
+				</PreviewSurfaceContent>
+			</PreviewSurface>
+		);
+	}
 
 	if (streamLinkFailed) {
 		return <PreviewError />;

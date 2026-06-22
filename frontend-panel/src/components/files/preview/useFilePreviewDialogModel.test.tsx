@@ -273,6 +273,7 @@ describe("useFilePreviewDialogModel", () => {
 		const { result } = renderModel({ file: audioFile, openMode: "direct" });
 
 		expect(result.current.resolvedDownloadPath).toBe("/files/7/download");
+		expect(result.current.resolvedContentPreviewPath).toBe("/files/7/download");
 		expect(result.current.resolvedImagePreviewPath).toBe(
 			"/files/7/image-preview",
 		);
@@ -289,6 +290,257 @@ describe("useFilePreviewDialogModel", () => {
 			signal: expect.any(AbortSignal),
 		});
 		expect(metadata).toEqual({ title: "Backend Song" });
+	});
+
+	it("uses preview-link paths for read-only content previews", async () => {
+		const previewLinkFactory = vi.fn(async () => ({
+			expires_at: "2026-06-21T22:30:00Z",
+			max_uses: 5,
+			path: "/pv/token/manual.pdf",
+		}));
+		mockState.detectFilePreviewProfile.mockReturnValue(
+			profile({
+				category: "pdf",
+				defaultMode: "builtin.pdf",
+				isBlobPreview: true,
+				isEditableText: false,
+				isTextBased: false,
+				options: [pdfOption],
+			}),
+		);
+
+		const { result } = renderModel({
+			file: file({
+				extension: "pdf",
+				file_category: "document",
+				mime_type: "application/pdf",
+				name: "manual.pdf",
+			}),
+			openMode: "direct",
+			previewLinkFactory,
+		});
+
+		expect(result.current.resolvedContentPreviewPath).toBeNull();
+		await waitFor(() => {
+			expect(result.current.resolvedContentPreviewPath).toBe(
+				"/pv/token/manual.pdf",
+			);
+		});
+		expect(result.current.resolvedDownloadPath).toBe("/files/7/download");
+		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
+	});
+
+	it("reuses the in-flight preview-link request when parent callbacks change", async () => {
+		let resolvePreviewLink!: (value: {
+			expires_at: string;
+			max_uses: number;
+			path: string;
+		}) => void;
+		const previewLinkPromise = new Promise<{
+			expires_at: string;
+			max_uses: number;
+			path: string;
+		}>((resolve) => {
+			resolvePreviewLink = resolve;
+		});
+		const firstPreviewLinkFactory = vi.fn(() => previewLinkPromise);
+		const secondPreviewLinkFactory = vi.fn(() => previewLinkPromise);
+
+		const { rerender, result } = renderModel({
+			openMode: "direct",
+			previewLinkFactory: firstPreviewLinkFactory,
+		});
+
+		rerender({
+			open: true,
+			file: file(),
+			onClose: vi.fn(),
+			openMode: "direct",
+			previewLinkFactory: secondPreviewLinkFactory,
+			translateFileLabel: (key: string) => `files:${key}`,
+		});
+
+		expect(result.current.resolvedContentPreviewPath).toBeNull();
+		expect(firstPreviewLinkFactory).toHaveBeenCalledTimes(1);
+		expect(secondPreviewLinkFactory).not.toHaveBeenCalled();
+
+		resolvePreviewLink({
+			expires_at: "2026-06-21T22:30:00Z",
+			max_uses: 5,
+			path: "/pv/token/notes.md",
+		});
+
+		await waitFor(() => {
+			expect(result.current.resolvedContentPreviewPath).toBe(
+				"/pv/token/notes.md",
+			);
+		});
+		expect(firstPreviewLinkFactory).toHaveBeenCalledTimes(1);
+		expect(secondPreviewLinkFactory).not.toHaveBeenCalled();
+	});
+
+	it("clears content preview paths while the kept-mounted dialog is closing", async () => {
+		const previewLinkFactory = vi.fn(async () => ({
+			expires_at: "2026-06-21T22:30:00Z",
+			max_uses: 5,
+			path: "/pv/token/notes.md",
+		}));
+		const { rerender, result } = renderModel({
+			openMode: "direct",
+			previewLinkFactory,
+		});
+
+		await waitFor(() => {
+			expect(result.current.resolvedContentPreviewPath).toBe(
+				"/pv/token/notes.md",
+			);
+		});
+
+		rerender({
+			open: false,
+			file: file(),
+			onClose: vi.fn(),
+			openMode: "direct",
+			previewLinkFactory,
+			translateFileLabel: (key: string) => `files:${key}`,
+		});
+
+		expect(result.current.resolvedContentPreviewPath).toBeNull();
+		expect(result.current.resolvedDownloadPath).toBe("/files/7/download");
+		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
+	});
+
+	it("falls back to authenticated download paths when preview-link creation fails", async () => {
+		const previewLinkFactory = vi.fn(async () => {
+			throw new Error("preview link failed");
+		});
+
+		const { result } = renderModel({
+			openMode: "direct",
+			previewLinkFactory,
+		});
+
+		await waitFor(() => {
+			expect(previewLinkFactory).toHaveBeenCalledTimes(1);
+			expect(result.current.resolvedContentPreviewPath).toBe(
+				"/files/7/download",
+			);
+		});
+	});
+
+	it("does not retry preview-link creation after a failed request while the file stays open", async () => {
+		const previewLinkFactory = vi.fn(async () => {
+			throw new Error("preview link failed");
+		});
+
+		const { rerender, result } = renderModel({
+			openMode: "direct",
+			previewLinkFactory,
+		});
+
+		await waitFor(() => {
+			expect(result.current.resolvedContentPreviewPath).toBe(
+				"/files/7/download",
+			);
+		});
+
+		rerender({
+			open: true,
+			file: file(),
+			onClose: vi.fn(),
+			openMode: "direct",
+			previewLinkFactory,
+			translateFileLabel: (key: string) => `files:${key}`,
+		});
+
+		expect(result.current.resolvedContentPreviewPath).toBe("/files/7/download");
+		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not retry preview-link creation after a ready link while the file stays open", async () => {
+		const previewLinkFactory = vi.fn(async () => ({
+			expires_at: "2026-06-21T22:30:00Z",
+			max_uses: 5,
+			path: "/pv/token/manual.pdf",
+		}));
+
+		const { rerender, result } = renderModel({
+			openMode: "direct",
+			previewLinkFactory,
+		});
+
+		await waitFor(() => {
+			expect(result.current.resolvedContentPreviewPath).toBe(
+				"/pv/token/manual.pdf",
+			);
+		});
+
+		rerender({
+			open: true,
+			file: file(),
+			onClose: vi.fn(),
+			openMode: "direct",
+			previewLinkFactory,
+			translateFileLabel: (key: string) => `files:${key}`,
+		});
+
+		expect(result.current.resolvedContentPreviewPath).toBe(
+			"/pv/token/manual.pdf",
+		);
+		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
+	});
+
+	it("ignores stale preview-link results after file changes", async () => {
+		let resolveFirst!: (value: {
+			expires_at: string;
+			max_uses: number;
+			path: string;
+		}) => void;
+		const firstPromise = new Promise<{
+			expires_at: string;
+			max_uses: number;
+			path: string;
+		}>((resolve) => {
+			resolveFirst = resolve;
+		});
+		const previewLinkFactory = vi
+			.fn()
+			.mockReturnValueOnce(firstPromise)
+			.mockResolvedValueOnce({
+				expires_at: "2026-06-21T22:31:00Z",
+				max_uses: 5,
+				path: "/pv/token-2/next.pdf",
+			});
+
+		const { rerender, result } = renderModel({
+			file: file({ id: 7, name: "manual.pdf" }),
+			openMode: "direct",
+			previewLinkFactory,
+		});
+
+		rerender({
+			open: true,
+			file: file({ id: 8, name: "next.pdf" }),
+			onClose: vi.fn(),
+			openMode: "direct",
+			previewLinkFactory,
+			translateFileLabel: (key: string) => `files:${key}`,
+		});
+
+		resolveFirst({
+			expires_at: "2026-06-21T22:30:00Z",
+			max_uses: 5,
+			path: "/pv/token-1/manual.pdf",
+		});
+
+		await waitFor(() => {
+			expect(result.current.resolvedContentPreviewPath).toBe(
+				"/pv/token-2/next.pdf",
+			);
+		});
+		expect(result.current.resolvedContentPreviewPath).not.toBe(
+			"/pv/token-1/manual.pdf",
+		);
 	});
 
 	it("prefers explicit metadata loaders over generated audio metadata loaders", async () => {

@@ -171,7 +171,7 @@ Then it is usually only suitable for `relay_stream`. To use `presigned`, browser
 | Upload mode | Use `relay_stream` for the first setup |
 | Download mode | Use `relay_stream` for the first setup |
 
-R2 custom domains, caching, and public access policies are configured separately on the Cloudflare side. AsterDrive only needs to operate private objects through the S3 API.
+R2 custom domains, caching, and public access policies are configured separately on the Cloudflare side. AsterDrive only needs to operate private objects through the S3 API. If you later switch upload or download to `presigned`, configure bucket CORS first.
 
 ### Common AWS S3 Configuration
 
@@ -332,31 +332,142 @@ Scenarios where it is not suitable:
 - CORS is hard to configure
 - You want all downloads to remain same-origin responses
 
-## 12. Configure CORS for `presigned` Uploads
+## 12. Configure CORS for `presigned`
 
-When using `presigned` uploads, the browser sends `PUT` requests directly to object storage. Object storage must allow AsterDrive's public origin.
+When using `presigned`, the browser accesses S3-compatible object storage directly. Object storage must allow cross-origin requests from the AsterDrive site, otherwise uploads, downloads, image previews, and PDF/video range requests may fail.
 
-Minimum requirements:
-
-- Allowed Origin: your `public site URL`
-- Allowed Method: `PUT`
-- Allowed Header: cover browser upload request headers
-- Expose Header: `ETag`
-
-Example:
+`AllowedOrigins` must contain the origin users use to open AsterDrive, for example:
 
 ```text
-AllowedOrigins:
-  - https://drive.example.com
-AllowedMethods:
-  - PUT
-AllowedHeaders:
-  - *
-ExposeHeaders:
-  - ETag
+https://drive.example.com
 ```
 
-Provider interfaces differ, but these are the core items.
+Do not include a path, and do not write `https://drive.example.com/` or `https://drive.example.com/api`.
+
+### Presigned Upload Only
+
+If you only enable `presigned` upload, use this configuration:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://drive.example.com"
+    ],
+    "AllowedMethods": [
+      "PUT"
+    ],
+    "AllowedHeaders": [
+      "Content-Type",
+      "Content-Length",
+      "x-amz-content-sha256",
+      "x-amz-date",
+      "x-amz-security-token"
+    ],
+    "ExposeHeaders": [
+      "ETag"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+If your browser or reverse proxy sends additional request headers, add those headers to `AllowedHeaders`. Provider interfaces differ, but the core items are origin, methods, request headers, and exposed response headers.
+
+### Presigned Download and Preview Only
+
+If you only enable `presigned` download or preview, use this configuration:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://drive.example.com"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "Range",
+      "If-None-Match"
+    ],
+    "ExposeHeaders": [
+      "Accept-Ranges",
+      "Content-Disposition",
+      "Content-Length",
+      "Content-Range",
+      "Content-Type",
+      "ETag",
+      "Range"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+`Range`, `Content-Range`, and `Accept-Ranges` matter for video, audio, and PDF previews. Without them, small images may still open while seeking, segmented loading, or larger previews fail.
+
+### Presigned Upload and Download
+
+If the same bucket enables both `presigned` upload and download, use a combined rule:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://drive.example.com"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "HEAD",
+      "PUT"
+    ],
+    "AllowedHeaders": [
+      "Content-Length",
+      "Content-Type",
+      "If-None-Match",
+      "Range",
+      "x-amz-content-sha256",
+      "x-amz-date",
+      "x-amz-security-token"
+    ],
+    "ExposeHeaders": [
+      "Accept-Ranges",
+      "Content-Disposition",
+      "Content-Length",
+      "Content-Range",
+      "Content-Type",
+      "ETag",
+      "Range"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+### Credentials During Preview
+
+R2 CORS supports `AllowedOrigins`, `AllowedMethods`, `AllowedHeaders`, `ExposeHeaders`, and `MaxAgeSeconds`; Cloudflare R2 documentation does not define an `AllowedCredentials` field. Other S3-compatible providers may also not return the headers required for credentialed CORS.
+
+For that reason, browser requests to object-storage presigned URLs should not include cookie credentials. AsterDrive preview first creates a short-lived `preview-link` through the authenticated API, then reads object content through that temporary link. The content request does not depend on cookies, so the browser does not require object storage to return:
+
+```http
+Access-Control-Allow-Credentials: true
+```
+
+If the browser console shows an error like:
+
+```text
+The value of the 'Access-Control-Allow-Credentials' header in the response is '' which must be 'true' when the request's credentials mode is 'include'.
+```
+
+Check:
+
+1. Whether the frontend is an old AsterDrive version.
+2. Whether preview still reads `/api/v1/files/{id}/download` through XHR and follows a 302 redirect to object storage.
+3. Whether the object storage response includes `Access-Control-Allow-Origin: https://your-site-origin`.
+4. Whether `AllowedOrigins` exactly matches the origin shown in the browser address bar.
 
 ::: tip How to tell whether it is a CORS issue
 If `relay_stream` succeeds, `presigned` fails, and the browser console shows a cross-origin error, object storage CORS is usually the place to check.

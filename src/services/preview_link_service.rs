@@ -152,7 +152,7 @@ pub(crate) async fn download_file(
     if let Some(if_none_match) = if_none_match
         && file_service::if_none_match_matches(if_none_match, &blob.hash)
     {
-        return file_service::build_stream_outcome_with_disposition_and_range(
+        return file_service::build_download_outcome_with_disposition_and_range(
             state,
             file,
             &blob,
@@ -164,7 +164,7 @@ pub(crate) async fn download_file(
     }
 
     let reserved = reserve_usage(state, token, payload).await?;
-    match file_service::build_stream_outcome_with_disposition_and_range(
+    match file_service::build_download_outcome_with_disposition_and_range(
         state,
         file,
         &blob,

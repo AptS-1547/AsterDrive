@@ -91,7 +91,7 @@ export function FilePreviewDialog({
 						<ImagePreviewPanel
 							file={file}
 							allOptionsCount={model.allOptions.length}
-							downloadPath={model.resolvedDownloadPath}
+							downloadPath={model.resolvedContentPreviewPath}
 							imagePreviewPath={model.resolvedImagePreviewPath}
 							onChooseOpenMethod={model.handleOpenMethodPickerOpen}
 							onClose={model.closeWithGuard}
@@ -118,6 +118,7 @@ export function FilePreviewDialog({
 									activeOption={model.activeOption}
 									profile={model.profile}
 									previewAppsLoaded={model.previewAppsLoaded}
+									contentPreviewPath={model.resolvedContentPreviewPath}
 									downloadPath={model.resolvedDownloadPath}
 									imagePreviewPath={model.resolvedImagePreviewPath}
 									thumbnailPath={model.resolvedThumbnailPath}

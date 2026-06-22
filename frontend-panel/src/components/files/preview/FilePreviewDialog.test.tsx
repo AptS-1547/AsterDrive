@@ -225,13 +225,14 @@ vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 		file: { name: string };
 		fallbackPath?: string;
 		fillContainer?: boolean;
-		path: string;
+		path: string | null;
 	}) => (
 		<img
 			alt={file.name}
 			data-fallback-path={fallbackPath ?? ""}
 			data-fill-container={String(Boolean(fillContainer))}
-			src={`blob:${path}`}
+			data-preview-path={path ?? ""}
+			src={path ? `blob:${path}` : "blob:loading"}
 		/>
 	),
 }));
@@ -915,6 +916,71 @@ describe("FilePreviewDialog", () => {
 		expect(screen.getByTestId("dialog-overlay").className).toContain(
 			"bg-zinc-950/88",
 		);
+	});
+
+	it("waits for preview-link before loading image preview content", async () => {
+		mockState.profile = {
+			category: "image",
+			defaultMode: "builtin.image",
+			isBlobPreview: true,
+			isEditableText: false,
+			isTextBased: false,
+			options: [
+				{
+					icon: "Eye",
+					key: "builtin.image",
+					labelKey: "open_with_image",
+					mode: "image",
+				},
+			],
+		};
+		let resolvePreviewLink!: (value: {
+			expires_at: string;
+			max_uses: number;
+			path: string;
+		}) => void;
+		const previewLinkFactory = vi.fn(
+			() =>
+				new Promise<{
+					expires_at: string;
+					max_uses: number;
+					path: string;
+				}>((resolve) => {
+					resolvePreviewLink = resolve;
+				}),
+		);
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type: "image/png",
+				name: "r2-image.png",
+				size: 2048,
+			} as never,
+			previewLinkFactory,
+		});
+
+		expect(
+			await screen.findByRole("img", { name: "r2-image.png" }),
+		).toHaveAttribute("data-preview-path", "");
+		expect(
+			screen.getByRole("img", { name: "r2-image.png" }),
+		).not.toHaveAttribute("data-preview-path", "/files/7/download");
+		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
+
+		resolvePreviewLink({
+			expires_at: "2026-06-21T22:30:00Z",
+			max_uses: 5,
+			path: "/pv/token/r2-image.png",
+		});
+
+		await waitFor(() => {
+			expect(screen.getByRole("img", { name: "r2-image.png" })).toHaveAttribute(
+				"data-preview-path",
+				"/pv/token/r2-image.png",
+			);
+		});
+		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
 	});
 
 	it("keeps image previews fullscreen without a windowed restore control", async () => {
