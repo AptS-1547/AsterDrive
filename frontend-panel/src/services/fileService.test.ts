@@ -61,6 +61,28 @@ describe("fileService", () => {
 		fileService.getFile(8);
 		fileService.getDirectLinkToken(8);
 		fileService.getArchivePreview(8);
+		mockState.post.mockResolvedValueOnce({
+			identity: {
+				cache_key: "/files/8/download",
+				etag: '"etag-8"',
+				scope: "personal",
+			},
+			request: {
+				conditional_headers: "forbidden",
+				credentials: "omit",
+				redirect_policy: "may_cross_origin",
+				url: "https://cdn.example.com/files/8",
+			},
+			delivery: {
+				mime_type: "video/mp4",
+				mode: "direct_url",
+			},
+		});
+		const resolvedResource = await fileService.resolveResourceHandle(8, {
+			delivery_mode: "direct_url",
+			purpose: "preview",
+			representation: "original",
+		});
 		fileService.createWopiSession(8, "custom.onlyoffice");
 		fileService.deleteFile(8);
 		fileService.renameFile(8, "notes.md");
@@ -106,32 +128,59 @@ describe("fileService", () => {
 			"/files/8/archive-preview",
 			undefined,
 		);
-		expect(mockState.post).toHaveBeenNthCalledWith(2, "/files/8/wopi/open", {
+		expect(mockState.post).toHaveBeenNthCalledWith(
+			2,
+			"/files/8/resource-handle",
+			{
+				delivery_mode: "direct_url",
+				purpose: "preview",
+				representation: "original",
+			},
+		);
+		expect(resolvedResource).toEqual({
+			kind: "ready",
+			identity: {
+				cacheKey: "/files/8/download",
+				etag: '"etag-8"',
+				scope: "personal",
+			},
+			request: {
+				conditionalHeaders: "forbidden",
+				credentials: "omit",
+				redirectPolicy: "may_cross_origin",
+				url: "https://cdn.example.com/files/8",
+			},
+			delivery: {
+				mimeType: "video/mp4",
+				mode: "direct_url",
+			},
+		});
+		expect(mockState.post).toHaveBeenNthCalledWith(3, "/files/8/wopi/open", {
 			app_key: "custom.onlyoffice",
 		});
 		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/files/8");
 		expect(mockState.patch).toHaveBeenNthCalledWith(2, "/files/8", {
 			name: "notes.md",
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(3, "/files/8/lock", {
+		expect(mockState.post).toHaveBeenNthCalledWith(4, "/files/8/lock", {
 			locked: true,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(4, "/folders/7/lock", {
+		expect(mockState.post).toHaveBeenNthCalledWith(5, "/folders/7/lock", {
 			locked: false,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(5, "/files/new", {
+		expect(mockState.post).toHaveBeenNthCalledWith(6, "/files/new", {
 			name: "draft.md",
 			folder_id: 7,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(6, "/files/8/copy", {
+		expect(mockState.post).toHaveBeenNthCalledWith(7, "/files/8/copy", {
 			folder_id: null,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(7, "/files/8/extract", {
+		expect(mockState.post).toHaveBeenNthCalledWith(8, "/files/8/extract", {
 			target_folder_id: 7,
 			output_folder_name: "bundle",
 		});
 		expect(mockState.post).toHaveBeenNthCalledWith(
-			8,
+			9,
 			"/tasks/offline-download",
 			{
 				expected_sha256: "abc123",
@@ -140,12 +189,12 @@ describe("fileService", () => {
 				url: "https://example.com/example.bin",
 			},
 		);
-		expect(mockState.post).toHaveBeenNthCalledWith(9, "/folders/7/copy", {
+		expect(mockState.post).toHaveBeenNthCalledWith(10, "/folders/7/copy", {
 			parent_id: 3,
 		});
 		expect(mockState.get).toHaveBeenNthCalledWith(8, "/files/8/versions");
 		expect(mockState.post).toHaveBeenNthCalledWith(
-			10,
+			11,
 			"/files/8/versions/2/restore",
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/files/8/versions/2");
@@ -174,6 +223,28 @@ describe("fileService", () => {
 		teamFileService.getFile(8);
 		teamFileService.getDirectLinkToken(8);
 		teamFileService.getArchivePreview(8);
+		mockState.post.mockResolvedValueOnce({
+			identity: {
+				cache_key: "/teams/9/files/8/download",
+				etag: null,
+				scope: "team",
+			},
+			request: {
+				conditional_headers: "allowed",
+				credentials: "include",
+				redirect_policy: "same_origin_only",
+				url: "/teams/9/files/8/download",
+			},
+			delivery: {
+				mime_type: null,
+				mode: "blob_url",
+			},
+		});
+		await teamFileService.resolveResourceHandle(8, {
+			delivery_mode: "blob_url",
+			purpose: "preview",
+			representation: "original",
+		});
 		teamFileService.createArchiveExtractTask(8);
 		teamFileService.createOfflineDownloadTask({
 			expected_sha256: null,
@@ -191,6 +262,14 @@ describe("fileService", () => {
 		expect(mockState.get).toHaveBeenCalledWith(
 			"/teams/9/files/8/archive-preview",
 			undefined,
+		);
+		expect(mockState.post).toHaveBeenCalledWith(
+			"/teams/9/files/8/resource-handle",
+			{
+				delivery_mode: "blob_url",
+				purpose: "preview",
+				representation: "original",
+			},
 		);
 		expect(mockState.post).toHaveBeenCalledWith("/teams/9/files/8/extract", {});
 		expect(mockState.post).toHaveBeenCalledWith(

@@ -18,6 +18,10 @@ interface CapturedPreviewFactories {
 	archiveManifestLoader?: () => Promise<unknown>;
 	createMediaStreamSession?: () => Promise<unknown>;
 	createExternalPreviewLink?: () => Promise<unknown>;
+	resolve?: (
+		fileId: number,
+		request: Record<string, string>,
+	) => Promise<unknown>;
 }
 
 const mockState = vi.hoisted(() => ({
@@ -356,6 +360,10 @@ vi.mock("@/components/files/FilePreview", () => ({
 				imagePreview?: string;
 				thumbnail?: string;
 			};
+			resolve?: (
+				fileId: number,
+				request: Record<string, string>,
+			) => Promise<unknown>;
 			actions?: {
 				loadArchiveManifest?: () => Promise<unknown>;
 				createMediaStreamSession?: () => Promise<unknown>;
@@ -374,6 +382,7 @@ vi.mock("@/components/files/FilePreview", () => ({
 			archiveManifestLoader: resources?.actions?.loadArchiveManifest,
 			createMediaStreamSession: resources?.actions?.createMediaStreamSession,
 			createExternalPreviewLink: resources?.actions?.createExternalPreviewLink,
+			resolve: resources?.resolve,
 		};
 
 		return open ? (
@@ -1079,6 +1088,42 @@ describe("ShareViewPage", () => {
 			expect(mockState.createStreamSession).toHaveBeenCalledWith("share-token");
 		});
 		expect(mockState.getMediaMetadata).not.toHaveBeenCalled();
+		await expect(
+			mockState.previewFactories?.resolve?.(-1, {
+				delivery_mode: "direct_url",
+				representation: "original",
+			}),
+		).resolves.toMatchObject({
+			identity: {
+				cacheKey: "/s/share-token/download",
+				scope: "share",
+			},
+			request: {
+				url: "/s/share-token/download",
+			},
+			delivery: {
+				mimeType: "application/pdf",
+				mode: "direct_url",
+			},
+		});
+		await expect(
+			mockState.previewFactories?.resolve?.(-1, {
+				delivery_mode: "blob_url",
+				representation: "thumbnail",
+			}),
+		).resolves.toMatchObject({
+			identity: {
+				cacheKey: "/s/share-token/thumbnail",
+				scope: "share",
+			},
+			request: {
+				url: "/s/share-token/thumbnail",
+			},
+			delivery: {
+				mimeType: "image/webp",
+				mode: "blob_url",
+			},
+		});
 
 		fireEvent.click(screen.getByRole("button", { name: /files:download/i }));
 
@@ -1336,6 +1381,24 @@ describe("ShareViewPage", () => {
 			);
 		});
 		expect(mockState.getFolderFileMediaMetadata).not.toHaveBeenCalled();
+		await expect(
+			mockState.previewFactories?.resolve?.(5, {
+				delivery_mode: "blob_url",
+				representation: "auto",
+			}),
+		).resolves.toMatchObject({
+			identity: {
+				cacheKey: "/s/share-token/files/5/download",
+				scope: "share",
+			},
+			request: {
+				url: "/s/share-token/files/5/download",
+			},
+			delivery: {
+				mimeType: "text/plain",
+				mode: "blob_url",
+			},
+		});
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "download:nested.txt" }),
@@ -1355,14 +1418,14 @@ describe("ShareViewPage", () => {
 	it("passes adjacent image navigation to folder share previews and updates folder-specific paths", async () => {
 		mockState.thumbnailSupportStore.config = {
 			audio_thumbnail: { enabled: false, extensions: [] },
-			extensions: ["jpg", "jpeg", "nef", "png", "webp"],
+			extensions: ["heic", "jpg", "jpeg", "png", "webp"],
 			image_preview: {
 				enabled: true,
-				extensions: ["jpg", "jpeg", "nef", "png", "webp"],
+				extensions: ["heic", "jpg", "jpeg", "png", "webp"],
 			},
 			image_thumbnail: {
 				enabled: true,
-				extensions: ["jpg", "jpeg", "nef", "png", "webp"],
+				extensions: ["heic", "jpg", "jpeg", "png", "webp"],
 			},
 			version: 1,
 			video_thumbnail: { enabled: false, extensions: [] },
@@ -1388,8 +1451,8 @@ describe("ShareViewPage", () => {
 				{ id: 12, mime_type: "image/jpeg", name: "second.jpg", size: 12 },
 				{
 					id: 13,
-					mime_type: "application/octet-stream",
-					name: "capture.nef",
+					mime_type: "image/heic",
+					name: "capture.heic",
 					size: 13,
 				},
 			],
@@ -1412,7 +1475,7 @@ describe("ShareViewPage", () => {
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-previous-image",
-			"capture.nef",
+			"capture.heic",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-next-image",
@@ -1434,13 +1497,13 @@ describe("ShareViewPage", () => {
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-next-image",
-			"capture.nef",
+			"capture.heic",
 		);
 
 		fireEvent.click(screen.getByRole("button", { name: "next-image" }));
 		expect(await screen.findByTestId("file-preview")).toHaveAttribute(
 			"data-name",
-			"capture.nef",
+			"capture.heic",
 		);
 		expect(screen.getByTestId("file-preview")).toHaveAttribute(
 			"data-download-path",
@@ -1454,6 +1517,24 @@ describe("ShareViewPage", () => {
 			"data-next-image",
 			"first.png",
 		);
+		await expect(
+			mockState.previewFactories?.resolve?.(13, {
+				delivery_mode: "blob_url",
+				representation: "auto",
+			}),
+		).resolves.toMatchObject({
+			identity: {
+				cacheKey: "/s/share-token/files/13/image-preview",
+				scope: "share",
+			},
+			request: {
+				url: "/s/share-token/files/13/image-preview",
+			},
+			delivery: {
+				mimeType: "image/webp",
+				mode: "blob_url",
+			},
+		});
 
 		fireEvent.click(screen.getByRole("button", { name: "previous-image" }));
 		expect(await screen.findByTestId("file-preview")).toHaveAttribute(

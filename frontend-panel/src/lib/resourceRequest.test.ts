@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+	readyFileResourceFromRequest,
 	resourceCacheKey,
 	resourceCanonicalEtag,
+	resourceConditionalHeaders,
+	resourceCredentials,
 	resourceRedirectPolicy,
 	resourceRequestPath,
 } from "@/lib/resourceRequest";
@@ -68,5 +71,117 @@ describe("resourceRequest", () => {
 				},
 			}),
 		).toBe("may_cross_origin");
+	});
+
+	it("uses request-level credential and conditional-header policy before falling back", () => {
+		const fallback = vi.fn((path: string) => path.startsWith("/api/"));
+
+		expect(resourceCredentials("/api/files/1/download", fallback)).toBe(true);
+		expect(fallback).toHaveBeenCalledWith("/api/files/1/download");
+		expect(
+			resourceCredentials(
+				{
+					credentials: "omit",
+					requestPath: "/api/files/1/download",
+				},
+				fallback,
+			),
+		).toBe(false);
+		expect(
+			resourceCredentials(
+				{
+					credentials: "include",
+					requestPath: "https://cdn.example.com/file",
+				},
+				fallback,
+			),
+		).toBe(true);
+		expect(
+			resourceConditionalHeaders({
+				conditionalHeaders: "forbidden",
+				requestPath: "https://cdn.example.com/file",
+			}),
+		).toBe("forbidden");
+		expect(resourceConditionalHeaders("/files/1/download")).toBe("allowed");
+	});
+
+	it("reads request policy from ready file resource handles", () => {
+		const resource = {
+			kind: "ready" as const,
+			identity: {
+				cacheKey: "/files/1/download",
+				etag: '"etag-1"',
+			},
+			request: {
+				conditionalHeaders: "forbidden" as const,
+				credentials: "omit" as const,
+				redirectPolicy: "may_cross_origin" as const,
+				url: "https://cdn.example.com/file",
+			},
+			delivery: {
+				mode: "direct_url" as const,
+			},
+		};
+
+		expect(resourceRequestPath(resource)).toBe("https://cdn.example.com/file");
+		expect(resourceCacheKey(resource)).toBe("/files/1/download");
+		expect(resourceCanonicalEtag(resource)).toBe('"etag-1"');
+		expect(resourceCredentials(resource, () => true)).toBe(false);
+		expect(resourceConditionalHeaders(resource)).toBe("forbidden");
+		expect(resourceRedirectPolicy(resource)).toBe("may_cross_origin");
+	});
+
+	it("promotes resource requests to ready handles with explicit or default policy", () => {
+		expect(
+			readyFileResourceFromRequest(
+				{
+					cacheKey: "/files/1/download",
+					conditionalHeaders: "forbidden",
+					credentials: "omit",
+					deliveryMode: "media_stream",
+					etag: '"etag-1"',
+					redirectPolicy: "may_cross_origin",
+					requestPath: "https://cdn.example.com/file",
+				},
+				"blob_url",
+			),
+		).toEqual({
+			kind: "ready",
+			identity: {
+				cacheKey: "/files/1/download",
+				etag: '"etag-1"',
+			},
+			request: {
+				conditionalHeaders: "forbidden",
+				credentials: "omit",
+				redirectPolicy: "may_cross_origin",
+				url: "https://cdn.example.com/file",
+			},
+			delivery: {
+				mode: "media_stream",
+			},
+		});
+
+		expect(
+			readyFileResourceFromRequest(
+				{ requestPath: "/files/2/download" },
+				"text",
+			),
+		).toEqual({
+			kind: "ready",
+			identity: {
+				cacheKey: "/files/2/download",
+				etag: null,
+			},
+			request: {
+				conditionalHeaders: "allowed",
+				credentials: "include",
+				redirectPolicy: "same_origin_only",
+				url: "/files/2/download",
+			},
+			delivery: {
+				mode: "text",
+			},
+		});
 	});
 });

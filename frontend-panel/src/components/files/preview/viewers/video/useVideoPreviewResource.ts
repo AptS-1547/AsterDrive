@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { prepareAuthenticatedResource } from "@/lib/authenticatedResource";
 import { logger } from "@/lib/logger";
 import { type ResourcePath, resourceRequestPath } from "@/lib/resourceRequest";
@@ -20,8 +20,6 @@ export function useVideoPreviewResource({
 	fileName,
 	resource,
 }: UseVideoPreviewResourceOptions) {
-	const inputsRef = useRef({ createMediaStreamSession, resource });
-	const [resourceVersion, setResourceVersion] = useState(0);
 	const [retryCount, setRetryCount] = useState(0);
 	const [resolvedResource, setResolvedResource] = useState<{
 		key: string;
@@ -31,21 +29,9 @@ export function useVideoPreviewResource({
 
 	const requestPath = resource ? resourceRequestPath(resource) : null;
 	const resourceMode = createMediaStreamSession ? "stream" : "direct";
-	const resourceKey = `${requestPath}:${resourceMode}:${resourceVersion}:${retryCount}`;
+	const resourceKey = `${requestPath}:${resourceMode}:${retryCount}`;
 	const resolvedPath =
 		resolvedResource?.key === resourceKey ? resolvedResource.path : null;
-
-	useEffect(() => {
-		if (
-			inputsRef.current.resource === resource &&
-			inputsRef.current.createMediaStreamSession === createMediaStreamSession
-		) {
-			return;
-		}
-		inputsRef.current = { createMediaStreamSession, resource };
-		setRetryCount(0);
-		setResourceVersion((version) => version + 1);
-	}, [createMediaStreamSession, resource]);
 
 	useEffect(() => {
 		setError(null);

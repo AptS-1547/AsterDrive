@@ -5,7 +5,9 @@ import CategoryBrowserPage from "@/pages/CategoryBrowserPage";
 import type { FileListItem } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
+	beginLocalStorageDeleteMutation: vi.fn(),
 	clearSelection: vi.fn(),
+	deleteFile: vi.fn(),
 	downloadPath: vi.fn(),
 	getFile: vi.fn(),
 	handleApiError: vi.fn(),
@@ -56,6 +58,16 @@ vi.mock("@/hooks/usePageTitle", () => ({
 vi.mock("@/lib/authenticatedDownload", () => ({
 	startAuthenticatedDownload: vi.fn(),
 }));
+
+vi.mock("@/lib/storageMutationCoordinator", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("@/lib/storageMutationCoordinator")>();
+	return {
+		...actual,
+		beginLocalStorageDeleteMutation: (...args: unknown[]) =>
+			mockState.beginLocalStorageDeleteMutation(...args),
+	};
+});
 
 vi.mock("@/stores/workspaceStore", () => ({
 	useWorkspaceStore: (
@@ -142,7 +154,7 @@ vi.mock("@/services/batchService", () => ({
 
 vi.mock("@/services/fileService", () => ({
 	fileService: {
-		deleteFile: vi.fn(),
+		deleteFile: mockState.deleteFile,
 		downloadPath: mockState.downloadPath,
 		getFile: mockState.getFile,
 		setFileLock: vi.fn(),
@@ -198,6 +210,7 @@ vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
 		fileBrowserContextValue: {
 			files: FileListItem[];
 			onCopy?: unknown;
+			onDelete?: (type: "file" | "folder", id: number) => void;
 			onGoToLocation?: (file: FileListItem) => void;
 			onInfo?: (type: "file" | "folder", id: number) => void;
 			onMove?: unknown;
@@ -234,6 +247,12 @@ vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
 						onClick={() => fileBrowserContextValue.onInfo?.("file", file.id)}
 					>
 						info {file.name}
+					</button>
+					<button
+						type="button"
+						onClick={() => fileBrowserContextValue.onDelete?.("file", file.id)}
+					>
+						delete {file.name}
 					</button>
 				</div>
 			))}
@@ -286,7 +305,13 @@ function fileItem(id: number, name: string): FileListItem {
 
 describe("CategoryBrowserPage", () => {
 	beforeEach(() => {
+		mockState.beginLocalStorageDeleteMutation.mockReset();
+		mockState.beginLocalStorageDeleteMutation.mockReturnValue({
+			rollback: vi.fn(),
+		});
 		mockState.clearSelection.mockReset();
+		mockState.deleteFile.mockReset();
+		mockState.deleteFile.mockResolvedValue(undefined);
 		mockState.downloadPath.mockReset();
 		mockState.downloadPath.mockReturnValue("/files/1/download");
 		mockState.getFile.mockReset();
@@ -395,7 +420,7 @@ describe("CategoryBrowserPage", () => {
 
 		render(<CategoryBrowserPage />);
 
-		fireEvent.click(await screen.findByText("photo.jpg"));
+		fireEvent.click(await screen.findByRole("button", { name: "photo.jpg" }));
 
 		await waitFor(() => {
 			expect(mockState.getFile).toHaveBeenCalledWith(1);
@@ -493,5 +518,40 @@ describe("CategoryBrowserPage", () => {
 		});
 
 		expect(mockState.search).toHaveBeenCalledTimes(1);
+	});
+
+	it("records local delete mutations for category file results", async () => {
+		render(<CategoryBrowserPage />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: "delete photo.jpg" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.deleteFile).toHaveBeenCalledWith(1);
+		});
+		expect(mockState.beginLocalStorageDeleteMutation).toHaveBeenCalledWith({
+			workspace: { kind: "personal" },
+			fileIds: [1],
+		});
+	});
+
+	it("rolls back local delete mutation records when category deletion fails", async () => {
+		const rollback = vi.fn();
+		const failure = new Error("delete failed");
+		mockState.beginLocalStorageDeleteMutation.mockReturnValue({ rollback });
+		mockState.deleteFile.mockRejectedValueOnce(failure);
+
+		render(<CategoryBrowserPage />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: "delete photo.jpg" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.deleteFile).toHaveBeenCalledWith(1);
+		});
+		expect(rollback).toHaveBeenCalledTimes(1);
+		expect(mockState.handleApiError).toHaveBeenCalledWith(failure);
 	});
 });

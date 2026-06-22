@@ -5,7 +5,10 @@ import SearchBrowserPage from "@/pages/SearchBrowserPage";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
+	beginLocalStorageDeleteMutation: vi.fn(),
 	clearSelection: vi.fn(),
+	deleteFile: vi.fn(),
+	deleteFolder: vi.fn(),
 	downloadPath: vi.fn(),
 	getFile: vi.fn(),
 	handleApiError: vi.fn(),
@@ -52,6 +55,16 @@ vi.mock("@/hooks/usePageTitle", () => ({
 vi.mock("@/lib/authenticatedDownload", () => ({
 	startAuthenticatedDownload: vi.fn(),
 }));
+
+vi.mock("@/lib/storageMutationCoordinator", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("@/lib/storageMutationCoordinator")>();
+	return {
+		...actual,
+		beginLocalStorageDeleteMutation: (...args: unknown[]) =>
+			mockState.beginLocalStorageDeleteMutation(...args),
+	};
+});
 
 vi.mock("@/stores/workspaceStore", () => ({
 	useWorkspaceStore: (
@@ -138,8 +151,8 @@ vi.mock("@/services/batchService", () => ({
 
 vi.mock("@/services/fileService", () => ({
 	fileService: {
-		deleteFile: vi.fn(),
-		deleteFolder: vi.fn(),
+		deleteFile: mockState.deleteFile,
+		deleteFolder: mockState.deleteFolder,
 		downloadPath: mockState.downloadPath,
 		getFile: mockState.getFile,
 		setFileLock: vi.fn(),
@@ -186,6 +199,7 @@ vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
 			files: FileListItem[];
 			folders: FolderListItem[];
 			onCopy?: unknown;
+			onDelete?: (type: "file" | "folder", id: number) => void;
 			onFolderOpen: (id: number, name: string) => void;
 			onGoToLocation?: (file: FileListItem) => void;
 			onMove?: unknown;
@@ -201,24 +215,40 @@ vi.mock("@/pages/file-browser/FileBrowserWorkspace", () => ({
 			data-move={String(Boolean(fileBrowserContextValue.onMove))}
 		>
 			{fileBrowserContextValue.files.map((file) => (
-				<button
-					key={file.id}
-					type="button"
-					onClick={() => fileBrowserContextValue.onGoToLocation?.(file)}
-				>
-					{file.name}
-				</button>
+				<div key={file.id}>
+					<button
+						type="button"
+						onClick={() => fileBrowserContextValue.onGoToLocation?.(file)}
+					>
+						{file.name}
+					</button>
+					<button
+						type="button"
+						onClick={() => fileBrowserContextValue.onDelete?.("file", file.id)}
+					>
+						delete {file.name}
+					</button>
+				</div>
 			))}
 			{fileBrowserContextValue.folders.map((folder) => (
-				<button
-					key={folder.id}
-					type="button"
-					onClick={() =>
-						fileBrowserContextValue.onFolderOpen(folder.id, folder.name)
-					}
-				>
-					{folder.name}
-				</button>
+				<div key={folder.id}>
+					<button
+						type="button"
+						onClick={() =>
+							fileBrowserContextValue.onFolderOpen(folder.id, folder.name)
+						}
+					>
+						{folder.name}
+					</button>
+					<button
+						type="button"
+						onClick={() =>
+							fileBrowserContextValue.onDelete?.("folder", folder.id)
+						}
+					>
+						delete {folder.name}
+					</button>
+				</div>
 			))}
 		</div>
 	),
@@ -277,7 +307,15 @@ function folderItem(id: number, name: string): FolderListItem {
 
 describe("SearchBrowserPage", () => {
 	beforeEach(() => {
+		mockState.beginLocalStorageDeleteMutation.mockReset();
+		mockState.beginLocalStorageDeleteMutation.mockReturnValue({
+			rollback: vi.fn(),
+		});
 		mockState.clearSelection.mockReset();
+		mockState.deleteFile.mockReset();
+		mockState.deleteFile.mockResolvedValue(undefined);
+		mockState.deleteFolder.mockReset();
+		mockState.deleteFolder.mockResolvedValue(undefined);
 		mockState.downloadPath.mockReset();
 		mockState.downloadPath.mockReturnValue("/files/1/download");
 		mockState.getFile.mockReset();
@@ -371,7 +409,7 @@ describe("SearchBrowserPage", () => {
 
 		render(<SearchBrowserPage />);
 
-		fireEvent.click(await screen.findByText("report.txt"));
+		fireEvent.click(await screen.findByRole("button", { name: "report.txt" }));
 		await waitFor(() => {
 			expect(mockState.getFile).toHaveBeenCalledWith(1);
 		});
@@ -379,7 +417,7 @@ describe("SearchBrowserPage", () => {
 			viewTransition: false,
 		});
 
-		fireEvent.click(screen.getByText("Reports"));
+		fireEvent.click(screen.getByRole("button", { name: "Reports" }));
 		expect(mockState.navigate).toHaveBeenCalledWith("/folder/2?name=Reports", {
 			viewTransition: false,
 		});
@@ -431,5 +469,46 @@ describe("SearchBrowserPage", () => {
 		});
 
 		expect(mockState.search).toHaveBeenCalledTimes(1);
+	});
+
+	it("records local delete mutations for file search results", async () => {
+		render(<SearchBrowserPage />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: "delete report.txt" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.deleteFile).toHaveBeenCalledWith(1);
+		});
+		expect(mockState.beginLocalStorageDeleteMutation).toHaveBeenCalledWith({
+			workspace: { kind: "personal" },
+			fileIds: [1],
+			folderIds: [],
+		});
+	});
+
+	it("rolls back local delete mutation records when folder deletion fails", async () => {
+		const rollback = vi.fn();
+		const failure = new Error("delete failed");
+		mockState.beginLocalStorageDeleteMutation.mockReturnValue({ rollback });
+		mockState.deleteFolder.mockRejectedValueOnce(failure);
+
+		render(<SearchBrowserPage />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: "delete Reports" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.deleteFolder).toHaveBeenCalledWith(2);
+		});
+		expect(mockState.beginLocalStorageDeleteMutation).toHaveBeenCalledWith({
+			workspace: { kind: "personal" },
+			fileIds: [],
+			folderIds: [2],
+		});
+		expect(rollback).toHaveBeenCalledTimes(1);
+		expect(mockState.handleApiError).toHaveBeenCalledWith(failure);
 	});
 });

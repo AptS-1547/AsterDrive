@@ -142,6 +142,48 @@ describe("VideoPreview", () => {
 		);
 	});
 
+	it("creates one stream session per resource change", async () => {
+		const createMediaStreamSession = vi
+			.fn()
+			.mockResolvedValueOnce({
+				expires_at: "2026-01-01T00:00:00Z",
+				path: "/api/v1/s/share-token/stream/session-token-7/clip.mp4",
+			})
+			.mockResolvedValueOnce({
+				expires_at: "2026-01-01T00:00:00Z",
+				path: "/api/v1/s/share-token/stream/session-token-8/clip.mp4",
+			});
+
+		const { rerender } = render(
+			<VideoPreview
+				file={{ name: "clip-7.mp4", mime_type: "video/mp4" }}
+				resource="/s/share-token/files/7/download"
+				createMediaStreamSession={createMediaStreamSession}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(mockState.artplayerInstances).toHaveLength(1);
+		});
+		expect(createMediaStreamSession).toHaveBeenCalledTimes(1);
+
+		rerender(
+			<VideoPreview
+				file={{ name: "clip-8.mp4", mime_type: "video/mp4" }}
+				resource="/s/share-token/files/8/download"
+				createMediaStreamSession={createMediaStreamSession}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(mockState.artplayerInstances).toHaveLength(2);
+		});
+		expect(createMediaStreamSession).toHaveBeenCalledTimes(2);
+		expect(mockState.artplayerInstances[1].options.url).toBe(
+			"/api/v1/s/share-token/stream/session-token-8/clip.mp4",
+		);
+	});
+
 	it("renders loading while creating a stream session and an error when creation fails", async () => {
 		const streamError = new Error("stream failed");
 		const createMediaStreamSession = vi.fn(async () => {
