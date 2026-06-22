@@ -25,10 +25,36 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build-frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build frontend
+        working-directory: frontend-panel
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: frontend-panel/dist
+          retention-days: 1
+
+  build:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: frontend-panel/dist
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -43,17 +69,8 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
-      - name: Setup bun
-        uses: oven-sh/setup-bun@v2
-
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
-
-      - name: Build frontend
-        working-directory: frontend-panel
-        run: |
-          bun install --frozen-lockfile
-          bun run build
 
       - name: Build
         run: cargo build --verbose
@@ -63,6 +80,9 @@ jobs:
 
       - name: Prepare coverage output directory
         run: mkdir -p coverage/rust
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Run tests with coverage
         run: cargo llvm-cov --workspace --no-fail-fast --verbose --lcov --output-path coverage/rust/lcov.info
@@ -99,6 +119,7 @@ jobs:
 
   integration-backends:
     name: Integration tests (${{ matrix.backend }})
+    needs: build-frontend
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -111,26 +132,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: frontend-panel/dist
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install media processing dependencies
         run: sudo apt-get update && sudo apt-get install -y libvips-tools ffmpeg
 
-      - name: Setup bun
-        uses: oven-sh/setup-bun@v2
-
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          key: integration-${{ matrix.backend }}
           shared-key: integration
-
-      - name: Build frontend
-        working-directory: frontend-panel
-        run: |
-          bun install --frozen-lockfile
-          bun run build
 
       # testcontainers 使用的 Docker 在 ubuntu-latest 上预装
       - name: Verify Docker availability

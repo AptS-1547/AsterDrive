@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.3.0] - 2026-06-23
+
+### Release Highlights
+
+**AsterDrive `0.3.0` 正式发布。** 在 `v0.3.0` beta / RC 线（Azure Blob 与 OneDrive 驱动、统一 `StorageConnector` 抽象、对象存储术语统一与凭据脱敏、内联预览走预签名直链、审计日志无限期保留等）基础上，本版本收口公开分享预览的缓存稳定性与 CI 构建流水线，把 `0.3.0` 系列从 RC 阶段推进到稳定发布。
+
+- **预览资源缓存身份稳定化** — 公开分享预览响应返回 canonical ETag（blob hash），前端按 stable identity 复用 blob / text 缓存，跨过期 preview token 共享同一份资源
+- **条件请求 no longer 触发 CORS 预检** — `If-None-Match` 条件请求留在 same-origin，不再 302 到预签名对象存储 URL
+- **CI 前端构建独立化** — GitHub Actions 把前端构建拆成独立 `build-frontend` job，下游 build / integration-backends 通过 artifact 下载产物，避免重复构建与 Rust cache 污染
+- **依赖升级** — `react-image-crop` 11.0.10 → 11.1.2，`@typescript/native-preview` 升至 `7.0.0-dev.20260622.1`
+
+### Added
+
+- **预览资源 stable identity 类型**
+  - 前端新增 `ResourceRequest` 类型区分 `cacheKey` / `etag` / `requestPath`，新增 `resourceCacheKey` / `resourceRequestPath` / `resourceCanonicalEtag` 辅助函数集中处理
+  - `useBlobUrl` / `useTextContent` 按 stable identity 缓存，提供 canonical ETag 时跳过 `If-None-Match` 条件请求
+  - 各预览组件（`BlobImagePreview` / `PdfPreview` / `CsvTablePreview` / `JsonPreview` / `MarkdownPreview` / `TextCodePreview` / `XmlPreview` / `FilePreviewBody` / `ImagePreviewPanel`）接受 `ResourcePath`（string | `ResourceRequest`）
+  - `PreviewLinkInfo` 新增 canonical etag 字段（blob hash），公开分享预览响应携带稳定身份
+  - 新增 `resourceRequest` / `useBlobUrl` / `useTextContent` 单元测试覆盖 cache key 回落与条件重验证逻辑
+
+### Changed
+
+- **条件请求 same-origin 收敛**
+  - `file_service::download::build` 在 presigned redirect 前拒绝条件请求（`If-None-Match`），避免浏览器跨 origin 携带条件触发 CORS 预检
+  - `preview_link_service` 在响应中携带 canonical ETag，供前端复用缓存
+
+- **CI 前端构建独立 job**
+  - `rust.yml` 新增 `build-frontend` job 单独构建前端并上传 artifact，`build` / `integration-backends` 改为 `needs: build-frontend` 并通过 `download-artifact` 拉取 `frontend-panel/dist`
+  - 移除原先散落在 `build` / `integration-backends` 中的 `Setup bun` 与 `Build frontend` 步骤，避免 Rust cache 被前端产物污染
+
+- **预览组件路径类型统一**
+  - 前端预览组件从内联类型定义改为导入公共 `ResourcePath` 类型，测试中的 mock helper 收敛到 `resourceCacheKey` / `resourceCanonicalEtag` 工具
+
+- **依赖升级**
+  - `react-image-crop` 11.0.10 → 11.1.2
+  - `@typescript/native-preview` 升至 `7.0.0-dev.20260622.1`
+
+### Fixed
+
+- `OverviewRecentEventsSection` 表格列改为固定宽度 + `max-w-0` 截断，修复内容过长时列宽抖动
+
+### Notes
+
+- 本版本为 `0.3.0` 系列正式发布版
+- 从 `v0.3.0-rc.2` 升级到 `v0.3.0` 没有新增数据库 migration
+- 生产配置 schema 未新增必需项
+- Docker 用户建议使用 `v0.3.0`、`stable` 或 `latest` 镜像标签；`edge` 继续保留给后续预发布版本
+- 统计数据：31 files changed, 923 insertions(+), 174 deletions(-)
+- 本次范围共 2 个提交
+
 ## [v0.3.0-rc.2] - 2026-06-22
 
 ### Release Highlights
@@ -5176,7 +5226,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-rc.2...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-rc.2...v0.3.0
 [v0.3.0-rc.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-rc.1...v0.3.0-rc.2
 [v0.3.0-rc.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.2...v0.3.0-rc.1
 [v0.3.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.3.0-beta.1...v0.3.0-beta.2
