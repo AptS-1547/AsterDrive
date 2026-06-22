@@ -6,6 +6,14 @@ const mockState = vi.hoisted(() => ({
 	downloadPath: vi.fn((fileId: number) => `/files/${fileId}/download`),
 	getMediaMetadata: vi.fn(),
 	imagePreviewPath: vi.fn((fileId: number) => `/files/${fileId}/image-preview`),
+	resourcePathCacheKey: (
+		path: string | { cacheKey?: string; requestPath: string } | null,
+	) => (typeof path === "string" ? path : (path?.cacheKey ?? "")),
+	resourcePathEtag: (
+		path: string | { etag?: string | null; requestPath: string } | null,
+	) => (typeof path === "string" ? "" : (path?.etag ?? "")),
+	resourcePathRequestPath: (path: string | { requestPath: string } | null) =>
+		typeof path === "string" ? path : (path?.requestPath ?? ""),
 	thumbnailPath: vi.fn((fileId: number) => `/files/${fileId}/thumbnail`),
 	profile: {
 		category: "markdown",
@@ -225,14 +233,23 @@ vi.mock("@/components/files/preview/BlobImagePreview", () => ({
 		file: { name: string };
 		fallbackPath?: string;
 		fillContainer?: boolean;
-		path: string | null;
+		path:
+			| string
+			| { cacheKey?: string; etag?: string | null; requestPath: string }
+			| null;
 	}) => (
 		<img
 			alt={file.name}
+			data-cache-key={mockState.resourcePathCacheKey(path)}
+			data-preview-etag={mockState.resourcePathEtag(path)}
 			data-fallback-path={fallbackPath ?? ""}
 			data-fill-container={String(Boolean(fillContainer))}
-			data-preview-path={path ?? ""}
-			src={path ? `blob:${path}` : "blob:loading"}
+			data-preview-path={mockState.resourcePathRequestPath(path)}
+			src={
+				path
+					? `blob:${mockState.resourcePathRequestPath(path)}`
+					: "blob:loading"
+			}
 		/>
 	),
 }));
@@ -363,15 +380,27 @@ vi.mock("@/components/files/preview/UnsavedChangesGuard", () => ({
 }));
 
 vi.mock("@/components/files/preview/PdfPreview", () => ({
-	PdfPreview: ({ path, fileName }: { path: string; fileName: string }) => (
-		<div>{`pdf:${fileName}:${path}`}</div>
+	PdfPreview: ({
+		path,
+		fileName,
+	}: {
+		path:
+			| string
+			| { cacheKey?: string; etag?: string | null; requestPath: string };
+		fileName: string;
+	}) => (
+		<div>{`pdf:${fileName}:${mockState.resourcePathRequestPath(path)}`}</div>
 	),
 }));
 
 vi.mock("@/components/files/preview/MarkdownPreview", () => ({
-	MarkdownPreview: ({ path }: { path: string }) => (
-		<div>{`markdown:${path}`}</div>
-	),
+	MarkdownPreview: ({
+		path,
+	}: {
+		path:
+			| string
+			| { cacheKey?: string; etag?: string | null; requestPath: string };
+	}) => <div>{`markdown:${mockState.resourcePathRequestPath(path)}`}</div>,
 }));
 
 vi.mock("@/components/files/preview/CsvTablePreview", () => ({
@@ -379,19 +408,35 @@ vi.mock("@/components/files/preview/CsvTablePreview", () => ({
 		path,
 		delimiter,
 	}: {
-		path: string;
+		path:
+			| string
+			| { cacheKey?: string; etag?: string | null; requestPath: string };
 		delimiter: string;
-	}) => <div>{`table:${delimiter}:${path}`}</div>,
+	}) => (
+		<div>{`table:${delimiter}:${mockState.resourcePathRequestPath(path)}`}</div>
+	),
 }));
 
 vi.mock("@/components/files/preview/JsonPreview", () => ({
-	JsonPreview: ({ path }: { path: string }) => <div>{`json:${path}`}</div>,
+	JsonPreview: ({
+		path,
+	}: {
+		path:
+			| string
+			| { cacheKey?: string; etag?: string | null; requestPath: string };
+	}) => <div>{`json:${mockState.resourcePathRequestPath(path)}`}</div>,
 }));
 
 vi.mock("@/components/files/preview/XmlPreview", () => ({
-	XmlPreview: ({ path, mode }: { path: string; mode: string }) => (
-		<div>{`xml:${mode}:${path}`}</div>
-	),
+	XmlPreview: ({
+		path,
+		mode,
+	}: {
+		path:
+			| string
+			| { cacheKey?: string; etag?: string | null; requestPath: string };
+		mode: string;
+	}) => <div>{`xml:${mode}:${mockState.resourcePathRequestPath(path)}`}</div>,
 }));
 
 vi.mock("@/components/files/preview/TextCodePreview", () => ({
@@ -400,12 +445,14 @@ vi.mock("@/components/files/preview/TextCodePreview", () => ({
 		editable,
 		onDirtyChange,
 	}: {
-		path: string;
+		path:
+			| string
+			| { cacheKey?: string; etag?: string | null; requestPath: string };
 		editable: boolean;
 		onDirtyChange: (dirty: boolean) => void;
 	}) => (
 		<div>
-			<div>{`code:${path}:${String(editable)}`}</div>
+			<div>{`code:${mockState.resourcePathRequestPath(path)}:${String(editable)}`}</div>
 			<button type="button" onClick={() => onDirtyChange(true)}>
 				mark-dirty
 			</button>
@@ -935,6 +982,7 @@ describe("FilePreviewDialog", () => {
 			],
 		};
 		let resolvePreviewLink!: (value: {
+			etag: string;
 			expires_at: string;
 			max_uses: number;
 			path: string;
@@ -942,6 +990,7 @@ describe("FilePreviewDialog", () => {
 		const previewLinkFactory = vi.fn(
 			() =>
 				new Promise<{
+					etag: string;
 					expires_at: string;
 					max_uses: number;
 					path: string;
@@ -969,6 +1018,7 @@ describe("FilePreviewDialog", () => {
 		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
 
 		resolvePreviewLink({
+			etag: '"etag-r2-image"',
 			expires_at: "2026-06-21T22:30:00Z",
 			max_uses: 5,
 			path: "/pv/token/r2-image.png",
@@ -978,6 +1028,14 @@ describe("FilePreviewDialog", () => {
 			expect(screen.getByRole("img", { name: "r2-image.png" })).toHaveAttribute(
 				"data-preview-path",
 				"/pv/token/r2-image.png",
+			);
+			expect(screen.getByRole("img", { name: "r2-image.png" })).toHaveAttribute(
+				"data-cache-key",
+				"/files/7/download",
+			);
+			expect(screen.getByRole("img", { name: "r2-image.png" })).toHaveAttribute(
+				"data-preview-etag",
+				'"etag-r2-image"',
 			);
 		});
 		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
@@ -1117,6 +1175,7 @@ describe("FilePreviewDialog", () => {
 				size: 2048,
 			} as never,
 			previewLinkFactory: vi.fn(async () => ({
+				etag: '"etag-report"',
 				expires_at: "2026-04-08T12:00:00Z",
 				max_uses: 5,
 				path: "/pv/token/report.docx",

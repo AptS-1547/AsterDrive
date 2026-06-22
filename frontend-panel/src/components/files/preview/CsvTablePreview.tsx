@@ -11,6 +11,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { useTextContent } from "@/hooks/useTextContent";
+import type { ResourcePath } from "@/lib/resourceRequest";
 import type { TablePreviewDelimiterValue } from "@/lib/tablePreview";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
@@ -22,7 +23,7 @@ import {
 } from "./PreviewSurface";
 
 interface CsvTablePreviewProps {
-	path: string;
+	path: ResourcePath;
 	delimiter: TablePreviewDelimiterValue;
 }
 

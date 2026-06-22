@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useFileEditorSession } from "@/hooks/useFileEditorSession";
 import { useTextContent } from "@/hooks/useTextContent";
+import { type ResourcePath, resourceRequestPath } from "@/lib/resourceRequest";
 import {
 	CodePreviewEditor,
 	type CodePreviewEditorMountHandler,
@@ -16,7 +17,7 @@ import type { PreviewableFileLike } from "./types";
 interface TextCodePreviewProps {
 	file: PreviewableFileLike & { id: number };
 	modeLabel?: string;
-	path: string;
+	path: ResourcePath;
 	onFileUpdated?: () => void;
 	onDirtyChange?: (dirty: boolean) => void;
 	editable?: boolean;
@@ -52,6 +53,7 @@ export function TextCodePreview({
 	const { t } = useTranslation(["core", "files"]);
 	const isDark = useIsDark();
 	const { content, etag, loading, error, reload } = useTextContent(path);
+	const editorKey = resourceRequestPath(path);
 	const {
 		editing,
 		dirty,
@@ -127,7 +129,7 @@ export function TextCodePreview({
 			/>
 			<PreviewSurfaceContent>
 				<CodePreviewEditor
-					key={path}
+					key={editorKey}
 					language={language}
 					theme={isDark ? "vs-dark" : "vs"}
 					value={editing ? editContent : content}

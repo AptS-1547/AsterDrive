@@ -6608,6 +6608,7 @@ export interface components {
         /** @enum {string} */
         PreviewAppProvider: "builtin" | "url_template" | "wopi";
         PreviewLinkInfo: {
+            etag: string;
             expires_at: string;
             /** Format: int32 */
             max_uses: number;
@@ -17504,6 +17505,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ApiErrorCode"];
                         data?: {
+                            etag: string;
                             expires_at: string;
                             /** Format: int32 */
                             max_uses: number;
@@ -19266,6 +19268,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ApiErrorCode"];
                         data?: {
+                            etag: string;
                             expires_at: string;
                             /** Format: int32 */
                             max_uses: number;
@@ -19629,6 +19632,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ApiErrorCode"];
                         data?: {
+                            etag: string;
                             expires_at: string;
                             /** Format: int32 */
                             max_uses: number;
@@ -23334,6 +23338,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ApiErrorCode"];
                         data?: {
+                            etag: string;
                             expires_at: string;
                             /** Format: int32 */
                             max_uses: number;

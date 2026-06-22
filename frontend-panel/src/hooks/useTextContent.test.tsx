@@ -211,6 +211,93 @@ describe("useTextContent", () => {
 		clearTextContentCache();
 	});
 
+	it("reuses preview-link text by stable cache key and canonical etag", async () => {
+		mockState.get.mockResolvedValue({
+			status: 200,
+			data: "preview",
+			headers: { etag: '"storage-etag"' },
+		});
+		const { clearTextContentCache, useTextContent } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useTextContent({
+				cacheKey: "/files/7/download",
+				etag: '"canonical-etag"',
+				requestPath: "/pv/token-a/file.txt",
+			}),
+		);
+		await waitFor(() => {
+			expect(first.result.current.content).toBe("preview");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useTextContent({
+				cacheKey: "/files/7/download",
+				etag: '"canonical-etag"',
+				requestPath: "/pv/token-b/file.txt",
+			}),
+		);
+		await waitFor(() => {
+			expect(second.result.current.content).toBe("preview");
+		});
+
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+		expect(mockState.get).toHaveBeenCalledWith("/pv/token-a/file.txt", {
+			headers: {},
+			responseType: "text",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+		clearTextContentCache();
+	});
+
+	it("refreshes preview-link text on canonical etag changes without conditional headers", async () => {
+		mockState.get
+			.mockResolvedValueOnce({
+				status: 200,
+				data: "preview-a",
+				headers: { etag: '"storage-etag-a"' },
+			})
+			.mockResolvedValueOnce({
+				status: 200,
+				data: "preview-b",
+				headers: { etag: '"storage-etag-b"' },
+			});
+		const { clearTextContentCache, useTextContent } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useTextContent({
+				cacheKey: "/files/7/download",
+				etag: '"canonical-a"',
+				requestPath: "/pv/token-a/file.txt",
+			}),
+		);
+		await waitFor(() => {
+			expect(first.result.current.content).toBe("preview-a");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useTextContent({
+				cacheKey: "/files/7/download",
+				etag: '"canonical-b"',
+				requestPath: "/pv/token-b/file.txt",
+			}),
+		);
+		await waitFor(() => {
+			expect(second.result.current.content).toBe("preview-b");
+		});
+
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/pv/token-b/file.txt", {
+			headers: {},
+			responseType: "text",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+		clearTextContentCache();
+	});
+
 	it("re-fetches active consumers after invalidation", async () => {
 		mockState.get
 			.mockResolvedValueOnce({

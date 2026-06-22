@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { startAuthenticatedDownload } from "@/lib/authenticatedDownload";
 import { isImeComposingKeyEvent } from "@/lib/keyboard";
+import { type ResourcePath, resourceRequestPath } from "@/lib/resourceRequest";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import { PreviewSurface, PreviewSurfaceContent } from "./PreviewSurface";
@@ -59,7 +60,7 @@ type LoadedPage = Parameters<
 >[0];
 
 interface PdfPreviewProps {
-	path: string;
+	path: ResourcePath;
 	fileName?: string;
 }
 
@@ -72,6 +73,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 		loading: documentLoading,
 		retry: retryDocumentLoad,
 	} = useBlobUrl(path, { lane: "preview" });
+	const downloadPath = resourceRequestPath(path);
 	const documentFile = useMemo(
 		() => documentBlob ?? (documentUrl ? { url: documentUrl } : null),
 		[documentBlob, documentUrl],
@@ -299,14 +301,14 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 
 	const handleDownload = useCallback(() => {
 		if (!documentUrl) {
-			void startAuthenticatedDownload(path);
+			void startAuthenticatedDownload(downloadPath);
 			return;
 		}
 		const link = document.createElement("a");
 		link.href = documentUrl;
 		link.download = fileName ?? "document.pdf";
 		link.click();
-	}, [documentUrl, fileName, path]);
+	}, [documentUrl, downloadPath, fileName]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: documentUrl intentionally resets viewer state when the PDF source changes
 	useEffect(() => {

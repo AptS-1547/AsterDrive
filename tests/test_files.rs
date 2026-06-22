@@ -312,11 +312,22 @@ async fn test_file_preview_link_supports_public_inline_access_and_usage_limit() 
         .to_string();
     assert!(preview_path.starts_with("/pv/"));
     assert_eq!(body["data"]["max_uses"], 5);
+    let preview_etag = body["data"]["etag"]
+        .as_str()
+        .expect("preview link should include canonical ETag")
+        .to_string();
+    assert!(preview_etag.starts_with('"') && preview_etag.ends_with('"'));
 
     for _ in 0..5 {
         let req = test::TestRequest::get().uri(&preview_path).to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers()
+                .get("ETag")
+                .and_then(|value| value.to_str().ok()),
+            Some(preview_etag.as_str())
+        );
         assert_eq!(
             resp.headers().get("Content-Disposition").unwrap(),
             "inline; filename*=UTF-8''report%201.docx"

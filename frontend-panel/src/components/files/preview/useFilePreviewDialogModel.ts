@@ -7,6 +7,7 @@ import {
 	useState,
 } from "react";
 import { supportsAudioMediaData } from "@/lib/mediaDataSupport";
+import type { ResourceRequest } from "@/lib/resourceRequest";
 import { fileService } from "@/services/fileService";
 import { useMediaDataSupportStore } from "@/stores/mediaDataSupportStore";
 import type { MusicPlayerTrack } from "@/stores/musicPlayerStore";
@@ -38,7 +39,7 @@ const MOBILE_PREVIEW_MEDIA_QUERY = "(max-width: 767px)";
 
 type PreviewLinkState = {
 	fileId: number;
-	path: string | null;
+	previewLink: PreviewLinkInfo | null;
 	status: "idle" | "loading" | "ready" | "failed";
 };
 
@@ -244,7 +245,7 @@ function useContentPreviewResourcePath({
 	const [previewLinkState, setPreviewLinkState] = useState<PreviewLinkState>(
 		() => ({
 			fileId,
-			path: null,
+			previewLink: null,
 			status: "idle",
 		}),
 	);
@@ -263,11 +264,11 @@ function useContentPreviewResourcePath({
 			setPreviewLinkState((current) =>
 				current.fileId === fileId &&
 				current.status === "idle" &&
-				current.path === null
+				current.previewLink === null
 					? current
 					: {
 							fileId,
-							path: null,
+							previewLink: null,
 							status: "idle",
 						},
 			);
@@ -290,7 +291,7 @@ function useContentPreviewResourcePath({
 			}
 			return {
 				fileId,
-				path: null,
+				previewLink: null,
 				status: "loading",
 			};
 		});
@@ -309,7 +310,7 @@ function useContentPreviewResourcePath({
 				if (cancelled || previewLinkRequestRef.current !== request) return;
 				setPreviewLinkState({
 					fileId,
-					path: previewLink.path,
+					previewLink,
 					status: "ready",
 				});
 			})
@@ -317,7 +318,7 @@ function useContentPreviewResourcePath({
 				if (cancelled || previewLinkRequestRef.current !== request) return;
 				setPreviewLinkState({
 					fileId,
-					path: null,
+					previewLink: null,
 					status: "failed",
 				});
 			});
@@ -330,7 +331,13 @@ function useContentPreviewResourcePath({
 	if (!open) return null;
 	if (!hasPreviewLinkFactory) return downloadPath;
 	if (previewLinkState.fileId !== fileId) return null;
-	if (previewLinkState.status === "ready") return previewLinkState.path;
+	if (previewLinkState.status === "ready" && previewLinkState.previewLink) {
+		return {
+			cacheKey: downloadPath,
+			etag: previewLinkState.previewLink.etag,
+			requestPath: previewLinkState.previewLink.path,
+		} satisfies ResourceRequest;
+	}
 	if (previewLinkState.status === "failed") return downloadPath;
 	return null;
 }

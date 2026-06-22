@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
+import { type ResourcePath, resourceRequestPath } from "@/lib/resourceRequest";
 import { normalizeTablePreviewDelimiter } from "@/lib/tablePreview";
 import type { MusicPlayerTrack } from "@/stores/musicPlayerStore";
 import type {
@@ -63,7 +64,7 @@ interface FilePreviewBodyProps {
 	activeOption: OpenWithOption | null;
 	profile: PreviewProfile | null;
 	previewAppsLoaded: boolean;
-	contentPreviewPath: string | null;
+	contentPreviewPath: ResourcePath | null;
 	downloadPath: string;
 	imagePreviewPath?: string;
 	thumbnailPath?: string;
@@ -105,6 +106,9 @@ export function FilePreviewBody({
 	isExpanded,
 }: FilePreviewBodyProps) {
 	const { t } = useTranslation(["files"]);
+	const contentPreviewRequestPath = contentPreviewPath
+		? resourceRequestPath(contentPreviewPath)
+		: null;
 	const previewLoadingState = (
 		<PreviewLoadingState
 			text={t("files:loading_preview")}
@@ -144,7 +148,7 @@ export function FilePreviewBody({
 			<MusicPreview
 				file={file}
 				loadBackendMetadata={loadMusicBackendMetadata}
-				path={contentPreviewPath}
+				path={contentPreviewRequestPath}
 				thumbnailPath={thumbnailPath}
 				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>
@@ -155,7 +159,7 @@ export function FilePreviewBody({
 		return (
 			<VideoPreview
 				file={file}
-				path={contentPreviewPath}
+				path={contentPreviewRequestPath}
 				mediaStreamLinkFactory={mediaStreamLinkFactory}
 			/>
 		);

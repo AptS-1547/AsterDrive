@@ -52,12 +52,12 @@ export function OverviewRecentEventsSection({
 					<SkeletonTable columns={4} rows={8} />
 				</div>
 			) : overview?.recent_events.length ? (
-				<Table>
+				<Table className="min-w-[760px] table-fixed">
 					<TableHeader>
 						<TableRow>
-							<TableHead>{t("audit_time")}</TableHead>
-							<TableHead>{t("audit_action")}</TableHead>
-							<TableHead>{t("audit_user")}</TableHead>
+							<TableHead className="w-[180px]">{t("audit_time")}</TableHead>
+							<TableHead className="w-[200px]">{t("audit_action")}</TableHead>
+							<TableHead className="w-[180px]">{t("audit_user")}</TableHead>
 							<TableHead>{t("audit_entity")}</TableHead>
 						</TableRow>
 					</TableHeader>
@@ -73,7 +73,7 @@ export function OverviewRecentEventsSection({
 									>
 										{formatDateAbsolute(event.created_at)}
 									</TableCell>
-									<TableCell>
+									<TableCell className="max-w-0">
 										<Badge
 											variant="outline"
 											className={getAuditActionBadgeClass(event.action)}
@@ -81,10 +81,10 @@ export function OverviewRecentEventsSection({
 											{formatAuditSummary(t, event)}
 										</Badge>
 									</TableCell>
-									<TableCell className="max-w-0">
+									<TableCell>
 										<UserIdentity user={event.user} />
 									</TableCell>
-									<TableCell>
+									<TableCell className="max-w-0">
 										<div className="flex min-w-0 flex-col gap-0.5">
 											<span className="truncate text-sm">
 												{formatAuditTarget(t, event)}

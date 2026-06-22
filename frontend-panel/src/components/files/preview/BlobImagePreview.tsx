@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { canBrowserRenderImage } from "@/lib/browserImageSupport";
+import { type ResourcePath, resourceRequestPath } from "@/lib/resourceRequest";
 import { useFrontendConfigStore } from "@/stores/frontendConfigStore";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
@@ -19,7 +20,7 @@ interface BlobImagePreviewProps {
 	imageStyle?: CSSProperties;
 	onImageLoad?: (source: ImagePreviewSource) => void;
 	onImageRenderError?: (source: ImagePreviewSource) => void;
-	path: string | null;
+	path: ResourcePath | null;
 	source?: ImagePreviewSource;
 	showOriginalButtonPlacement?: "inline" | "none";
 	viewportClassName?: string;
@@ -55,7 +56,8 @@ export function BlobImagePreview({
 	const imagePreviewPreference = useFrontendConfigStore(
 		(state) => state.imagePreviewPreference,
 	);
-	const previewKey = `${file.name}\u0000${file.mime_type}\u0000${path}\u0000${
+	const pathKey = path ? resourceRequestPath(path) : "";
+	const previewKey = `${file.name}\u0000${file.mime_type}\u0000${pathKey}\u0000${
 		fallbackPath ?? ""
 	}\u0000${imagePreviewPreference}`;
 	const [requestedOriginalKey, setRequestedOriginalKey] = useState<
@@ -117,7 +119,7 @@ export function BlobImagePreview({
 			: shouldPromoteReadyOriginal
 				? "original"
 				: baseSource;
-	const displayPath: string | null =
+	const displayPath: ResourcePath | null =
 		path == null
 			? null
 			: displaySource === "backend_preview"

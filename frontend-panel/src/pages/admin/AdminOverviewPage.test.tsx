@@ -264,15 +264,41 @@ vi.mock("@/components/ui/skeleton", () => ({
 }));
 
 vi.mock("@/components/ui/table", () => ({
-	Table: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+	Table: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => (
+		<div data-testid="mock-table" className={className}>
+			{children}
+		</div>
+	),
 	TableBody: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
-	TableCell: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableCell: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => (
+		<div data-testid="mock-table-cell" className={className}>
+			{children}
+		</div>
 	),
-	TableHead: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableHead: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => (
+		<div data-testid="mock-table-head" className={className}>
+			{children}
+		</div>
 	),
 	TableHeader: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
@@ -469,6 +495,14 @@ describe("AdminOverviewPage", () => {
 		expect(
 			screen.getByText("Password true, max downloads 5"),
 		).toBeInTheDocument();
+		expect(screen.getByText("Root")).toBeInTheDocument();
+		expect(screen.getByText("@root")).toBeInTheDocument();
+		expect(screen.getByText("audit_user")).toHaveClass("w-[180px]");
+		expect(
+			screen
+				.getAllByTestId("mock-table")
+				.some((table) => table.className.includes("min-w-[760px] table-fixed")),
+		).toBe(true);
 		expect(screen.getAllByText("File").length).toBeGreaterThan(0);
 		expect(screen.getByText("Trash cleanup")).toBeInTheDocument();
 		expect(

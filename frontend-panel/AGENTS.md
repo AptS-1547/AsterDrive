@@ -49,6 +49,17 @@ import type { UserInfo, ShareInfo, StoragePolicy } from "@/types/api";
 - 401 自动 refresh token（拦截器处理）
 - 所有请求带 `withCredentials: true`（HttpOnly cookie 认证）
 
+### 前端服务层治理
+- 前端 service / resource / store 层按“调用远程服务的后端”标准设计。组件不得直接推断远程资源的认证、缓存、重试、刷新、一致性策略。
+- 组件只负责展示和交互，不在组件里判断 `/api`、`/pv`、外链、presigned URL、credentials、`If-None-Match`、fallback、SSE/上传刷新竞态等底层策略。
+- `src/services/*` 是远程 API adapter，负责封装接口调用和生成类型适配；不要在 service 中混入 UI 状态、toast、组件级 fallback 或跨 store 协调逻辑。
+- 跨 API、跨 store、跨事件源的业务行为必须收口到可测试的 hook / coordinator / resource 模块，例如 preview resource resolver、storage refresh coordinator，而不是散落在页面和组件的 `useEffect` 中。
+- 文件资源访问必须区分稳定资源身份和当前请求 URL。短链 `/pv/...`、presigned URL、media stream session 等都是临时访问凭据，不能直接当成缓存身份；需要缓存或去重时应使用 stable cache key 和 canonical ETag。
+- 资源访问策略应集中表达：`credentials` 是 `include` 还是 `omit`、是否允许发送条件请求头、是否可能跨域 redirect、应以 blob/text/direct media/iframe/session 哪种方式交付给组件。
+- 对象存储 presigned / public-like 资源默认不要带 credentials，也不要让组件自行发送 `If-None-Match` 等自定义条件头；需要条件请求时必须由资源访问层明确允许，避免 R2/COS/MinIO CORS 回归。
+- 上传、本地文件操作、SSE storage events、quota refresh、folder refresh 的协调要通过集中模块处理，包括本地 echo 抑制、upload gate、SSE 关闭 fallback、personal/team scope 区分和重复请求去重。
+- 这类服务层 / 资源层 / 协调层改动必须补单元测试，覆盖认证策略、缓存 key、ETag、fallback、关闭/切换文件时的 stale promise、SSE 与本地刷新竞态等边界。
+
 ### 存储策略能力
 - 存储策略 UI 的连接测试、字段显示、上传工作流、授权入口、远端节点绑定、S3 传输策略、存储原生处理、driver action 可用性等能力判断，必须优先来自后端 storage connector descriptor 的 `capabilities`、`fields`、`upload_workflows`、`actions`、`connection_tests` 等元数据。
 - 不要在前端新增 `driver_type === "s3" || driver_type === "azure_blob" || ...` 这类白名单/矩阵来推断能力。已有临时兜底也只能用于 descriptor 缺失时的保守兼容，不能扩大成新的事实来源。

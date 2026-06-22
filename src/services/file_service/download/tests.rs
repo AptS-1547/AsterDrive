@@ -554,6 +554,43 @@ async fn safe_inline_preview_redirects_to_presigned_url_with_inline_disposition(
 }
 
 #[actix_web::test]
+async fn conditional_miss_inline_preview_streams_instead_of_presigned_redirect() {
+    let payload = b"changed presigned inline".to_vec();
+    let base_driver = CountingStreamDriver::new(payload.clone());
+    let get_stream_calls = base_driver.get_stream_calls.clone();
+    let (state, file, blob, _) = build_download_test_state_with_policy(
+        base_driver.with_presigned(),
+        payload_len_i64(&payload),
+        DriverType::S3,
+        presigned_download_options(),
+        "image/webp",
+    )
+    .await;
+
+    let outcome = build_download_outcome_with_disposition_and_range(
+        &state,
+        &file,
+        &blob,
+        DownloadDisposition::Inline,
+        Some("\"stale-etag\""),
+        None,
+    )
+    .await
+    .expect("conditional miss inline outcome should build");
+
+    let DownloadOutcome::Stream(_) = outcome else {
+        panic!(
+            "conditional miss must stay same-origin instead of redirecting to presigned storage"
+        );
+    };
+    assert_eq!(
+        get_stream_calls.load(Ordering::SeqCst),
+        1,
+        "conditional miss should stream through backend"
+    );
+}
+
+#[actix_web::test]
 async fn sandboxed_inline_preview_does_not_redirect_to_presigned_storage() {
     let payload = b"<script>alert(1)</script>".to_vec();
     let base_driver = CountingStreamDriver::new(payload.clone());

@@ -13,6 +13,7 @@ import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { canBrowserRenderImage } from "@/lib/browserImageSupport";
 import { formatBytes } from "@/lib/format";
 import { shouldIgnoreKeyboardTarget } from "@/lib/keyboard";
+import { type ResourcePath, resourceRequestPath } from "@/lib/resourceRequest";
 import { cn } from "@/lib/utils";
 import { useFrontendConfigStore } from "@/stores/frontendConfigStore";
 import type { FileInfo, FileListItem } from "@/types/api";
@@ -90,7 +91,7 @@ function isImagePreviewInteractiveTarget(target: EventTarget | null) {
 interface ImagePreviewPanelProps {
 	file: FileInfo | FileListItem;
 	allOptionsCount: number;
-	downloadPath: string | null;
+	downloadPath: ResourcePath | null;
 	imagePreviewPath?: string;
 	nextImageFile?: FileInfo | FileListItem;
 	onChooseOpenMethod: () => void;
@@ -163,7 +164,7 @@ export function ImagePreviewPanel({
 	const previewKey = [
 		file.name,
 		file.mime_type,
-		downloadPath,
+		downloadPath ? resourceRequestPath(downloadPath) : "",
 		imagePreviewPath ?? "",
 		imagePreviewPreference,
 	].join(IMAGE_PREVIEW_KEY_SEPARATOR);
@@ -398,7 +399,7 @@ function ImagePreviewTransformLayer({
 	onImageLoad,
 	onImageRenderError,
 }: {
-	downloadPath: string | null;
+	downloadPath: ResourcePath | null;
 	effectiveShowOriginalState: ShowOriginalState;
 	effectiveSource: ImagePreviewSource;
 	file: FileInfo | FileListItem;

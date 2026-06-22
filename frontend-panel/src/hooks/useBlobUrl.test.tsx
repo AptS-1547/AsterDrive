@@ -343,6 +343,97 @@ describe("useBlobUrl", () => {
 		clearBlobUrlCache();
 	});
 
+	it("reuses preview-link blobs by stable cache key and canonical etag", async () => {
+		const imageBlob = new Blob(["preview"]);
+		mockState.get.mockResolvedValue({
+			status: 200,
+			data: imageBlob,
+			headers: { etag: '"storage-etag"' },
+		});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useBlobUrl({
+				cacheKey: "/files/7/download",
+				etag: '"canonical-etag"',
+				requestPath: "/pv/token-a/image.webp",
+			}),
+		);
+		await waitFor(() => {
+			expect(first.result.current.blobUrl).toBe("blob:1");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useBlobUrl({
+				cacheKey: "/files/7/download",
+				etag: '"canonical-etag"',
+				requestPath: "/pv/token-b/image.webp",
+			}),
+		);
+		await waitFor(() => {
+			expect(second.result.current.blobUrl).toBe("blob:1");
+			expect(second.result.current.blob).toBe(imageBlob);
+		});
+
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+		expect(mockState.get).toHaveBeenCalledWith("/pv/token-a/image.webp", {
+			headers: {},
+			responseType: "blob",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+		second.unmount();
+		clearBlobUrlCache();
+	});
+
+	it("refreshes preview-link blobs on canonical etag changes without conditional headers", async () => {
+		mockState.get
+			.mockResolvedValueOnce({
+				status: 200,
+				data: new Blob(["preview-a"]),
+				headers: { etag: '"storage-etag-a"' },
+			})
+			.mockResolvedValueOnce({
+				status: 200,
+				data: new Blob(["preview-b"]),
+				headers: { etag: '"storage-etag-b"' },
+			});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useBlobUrl({
+				cacheKey: "/files/7/download",
+				etag: '"canonical-a"',
+				requestPath: "/pv/token-a/image.webp",
+			}),
+		);
+		await waitFor(() => {
+			expect(first.result.current.blobUrl).toBe("blob:1");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useBlobUrl({
+				cacheKey: "/files/7/download",
+				etag: '"canonical-b"',
+				requestPath: "/pv/token-b/image.webp",
+			}),
+		);
+		await waitFor(() => {
+			expect(second.result.current.blobUrl).toBe("blob:2");
+		});
+
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/pv/token-b/image.webp", {
+			headers: {},
+			responseType: "blob",
+			withCredentials: false,
+			validateStatus: expect.any(Function),
+		});
+		second.unmount();
+		clearBlobUrlCache();
+	});
+
 	it("keeps thumbnail blob urls for the whole session after the first successful fetch", async () => {
 		mockState.get.mockResolvedValue({
 			status: 200,

@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ResourceRequest } from "@/lib/resourceRequest";
 import type { FileListItem, MediaMetadataInfo } from "@/types/api";
 import type { FilePreviewProfile, OpenWithOption } from "./types";
 import { useFilePreviewDialogModel } from "./useFilePreviewDialogModel";
@@ -35,6 +36,18 @@ const wopiOption: OpenWithOption = {
 	labelKey: "open_with_onlyoffice",
 	mode: "wopi",
 };
+
+function previewResource(
+	requestPath: string,
+	cacheKey = "/files/7/download",
+	etag = '"etag-preview"',
+): ResourceRequest {
+	return {
+		cacheKey,
+		etag,
+		requestPath,
+	};
+}
 
 const mockState = vi.hoisted(() => ({
 	backendAudioMetadataToTrackMetadata: vi.fn((metadata: MediaMetadataInfo) => ({
@@ -294,6 +307,7 @@ describe("useFilePreviewDialogModel", () => {
 
 	it("uses preview-link paths for read-only content previews", async () => {
 		const previewLinkFactory = vi.fn(async () => ({
+			etag: '"etag-manual"',
 			expires_at: "2026-06-21T22:30:00Z",
 			max_uses: 5,
 			path: "/pv/token/manual.pdf",
@@ -322,8 +336,12 @@ describe("useFilePreviewDialogModel", () => {
 
 		expect(result.current.resolvedContentPreviewPath).toBeNull();
 		await waitFor(() => {
-			expect(result.current.resolvedContentPreviewPath).toBe(
-				"/pv/token/manual.pdf",
+			expect(result.current.resolvedContentPreviewPath).toEqual(
+				previewResource(
+					"/pv/token/manual.pdf",
+					"/files/7/download",
+					'"etag-manual"',
+				),
 			);
 		});
 		expect(result.current.resolvedDownloadPath).toBe("/files/7/download");
@@ -332,11 +350,13 @@ describe("useFilePreviewDialogModel", () => {
 
 	it("reuses the in-flight preview-link request when parent callbacks change", async () => {
 		let resolvePreviewLink!: (value: {
+			etag: string;
 			expires_at: string;
 			max_uses: number;
 			path: string;
 		}) => void;
 		const previewLinkPromise = new Promise<{
+			etag: string;
 			expires_at: string;
 			max_uses: number;
 			path: string;
@@ -365,14 +385,19 @@ describe("useFilePreviewDialogModel", () => {
 		expect(secondPreviewLinkFactory).not.toHaveBeenCalled();
 
 		resolvePreviewLink({
+			etag: '"etag-notes"',
 			expires_at: "2026-06-21T22:30:00Z",
 			max_uses: 5,
 			path: "/pv/token/notes.md",
 		});
 
 		await waitFor(() => {
-			expect(result.current.resolvedContentPreviewPath).toBe(
-				"/pv/token/notes.md",
+			expect(result.current.resolvedContentPreviewPath).toEqual(
+				previewResource(
+					"/pv/token/notes.md",
+					"/files/7/download",
+					'"etag-notes"',
+				),
 			);
 		});
 		expect(firstPreviewLinkFactory).toHaveBeenCalledTimes(1);
@@ -381,6 +406,7 @@ describe("useFilePreviewDialogModel", () => {
 
 	it("clears content preview paths while the kept-mounted dialog is closing", async () => {
 		const previewLinkFactory = vi.fn(async () => ({
+			etag: '"etag-notes"',
 			expires_at: "2026-06-21T22:30:00Z",
 			max_uses: 5,
 			path: "/pv/token/notes.md",
@@ -391,8 +417,12 @@ describe("useFilePreviewDialogModel", () => {
 		});
 
 		await waitFor(() => {
-			expect(result.current.resolvedContentPreviewPath).toBe(
-				"/pv/token/notes.md",
+			expect(result.current.resolvedContentPreviewPath).toEqual(
+				previewResource(
+					"/pv/token/notes.md",
+					"/files/7/download",
+					'"etag-notes"',
+				),
 			);
 		});
 
@@ -459,6 +489,7 @@ describe("useFilePreviewDialogModel", () => {
 
 	it("does not retry preview-link creation after a ready link while the file stays open", async () => {
 		const previewLinkFactory = vi.fn(async () => ({
+			etag: '"etag-manual"',
 			expires_at: "2026-06-21T22:30:00Z",
 			max_uses: 5,
 			path: "/pv/token/manual.pdf",
@@ -470,8 +501,12 @@ describe("useFilePreviewDialogModel", () => {
 		});
 
 		await waitFor(() => {
-			expect(result.current.resolvedContentPreviewPath).toBe(
-				"/pv/token/manual.pdf",
+			expect(result.current.resolvedContentPreviewPath).toEqual(
+				previewResource(
+					"/pv/token/manual.pdf",
+					"/files/7/download",
+					'"etag-manual"',
+				),
 			);
 		});
 
@@ -484,19 +519,25 @@ describe("useFilePreviewDialogModel", () => {
 			translateFileLabel: (key: string) => `files:${key}`,
 		});
 
-		expect(result.current.resolvedContentPreviewPath).toBe(
-			"/pv/token/manual.pdf",
+		expect(result.current.resolvedContentPreviewPath).toEqual(
+			previewResource(
+				"/pv/token/manual.pdf",
+				"/files/7/download",
+				'"etag-manual"',
+			),
 		);
 		expect(previewLinkFactory).toHaveBeenCalledTimes(1);
 	});
 
 	it("ignores stale preview-link results after file changes", async () => {
 		let resolveFirst!: (value: {
+			etag: string;
 			expires_at: string;
 			max_uses: number;
 			path: string;
 		}) => void;
 		const firstPromise = new Promise<{
+			etag: string;
 			expires_at: string;
 			max_uses: number;
 			path: string;
@@ -507,6 +548,7 @@ describe("useFilePreviewDialogModel", () => {
 			.fn()
 			.mockReturnValueOnce(firstPromise)
 			.mockResolvedValueOnce({
+				etag: '"etag-next"',
 				expires_at: "2026-06-21T22:31:00Z",
 				max_uses: 5,
 				path: "/pv/token-2/next.pdf",
@@ -528,18 +570,27 @@ describe("useFilePreviewDialogModel", () => {
 		});
 
 		resolveFirst({
+			etag: '"etag-manual"',
 			expires_at: "2026-06-21T22:30:00Z",
 			max_uses: 5,
 			path: "/pv/token-1/manual.pdf",
 		});
 
 		await waitFor(() => {
-			expect(result.current.resolvedContentPreviewPath).toBe(
-				"/pv/token-2/next.pdf",
+			expect(result.current.resolvedContentPreviewPath).toEqual(
+				previewResource(
+					"/pv/token-2/next.pdf",
+					"/files/8/download",
+					'"etag-next"',
+				),
 			);
 		});
-		expect(result.current.resolvedContentPreviewPath).not.toBe(
-			"/pv/token-1/manual.pdf",
+		expect(result.current.resolvedContentPreviewPath).not.toEqual(
+			previewResource(
+				"/pv/token-1/manual.pdf",
+				"/files/7/download",
+				'"etag-manual"',
+			),
 		);
 	});
 

@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { config } from "@/config/app";
 import { shouldSendResourceCredentials } from "@/lib/apiUrl";
 import { logger } from "@/lib/logger";
+import {
+	type ResourcePath,
+	resourceCacheKey,
+	resourceCanonicalEtag,
+	resourceRequestPath,
+} from "@/lib/resourceRequest";
 import { api } from "@/services/http";
 
 type BlobFetchLane = "default" | "preview" | "thumbnail";
@@ -29,10 +35,12 @@ interface FetchBlobUrlOptions {
 	logErrors?: boolean;
 	notifyOnChange?: boolean;
 	owner: BlobCacheEntry;
-	path: string;
+	cacheKey: string;
+	canonicalEtag?: string | null;
 	previousBlob?: Blob;
 	previousEtag: string | null;
 	previousObjectUrl?: string;
+	requestPath: string;
 }
 
 interface BlobUrlOptions {
@@ -296,23 +304,25 @@ async function fetchBlobUrlFromNetwork({
 	logErrors = true,
 	notifyOnChange = false,
 	owner,
-	path,
+	cacheKey,
+	canonicalEtag,
 	previousBlob,
 	previousEtag,
 	previousObjectUrl,
+	requestPath,
 }: FetchBlobUrlOptions): Promise<string> {
 	const headers: Record<string, string> = {};
-	if (previousObjectUrl && previousEtag) {
+	if (previousObjectUrl && previousEtag && !canonicalEtag) {
 		headers["If-None-Match"] = previousEtag;
 	}
 	const MAX_RETRIES = 5;
 
 	const fetchWithRetry = async (attempt: number): Promise<string> => {
 		const response = await scheduleBlobFetch(lane, () =>
-			api.client.get(path, {
+			api.client.get(requestPath, {
 				headers,
 				responseType: "blob",
-				withCredentials: shouldSendResourceCredentials(path),
+				withCredentials: shouldSendResourceCredentials(requestPath),
 				validateStatus: (status) =>
 					status === 200 ||
 					status === 304 ||
@@ -325,15 +335,15 @@ async function fetchBlobUrlFromNetwork({
 		if (response.status === 202) {
 			const retryAfter = Number(response.headers["retry-after"]) || 2;
 			if (attempt >= MAX_RETRIES) {
-				const current = blobUrlCache.get(path);
+				const current = blobUrlCache.get(cacheKey);
 				if (current && current === owner && !current.refreshTimer) {
 					current.promise = undefined;
 					current.refreshTimer = setTimeout(() => {
-						const latest = blobUrlCache.get(path);
+						const latest = blobUrlCache.get(cacheKey);
 						if (!latest || latest !== owner) return;
 						latest.refreshTimer = undefined;
 						latest.needsRefresh = true;
-						notifyBlobUrlInvalidation(path);
+						notifyBlobUrlInvalidation(cacheKey);
 					}, retryAfter * 1000);
 				}
 				return previousObjectUrl ?? "";
@@ -342,7 +352,7 @@ async function fetchBlobUrlFromNetwork({
 			return fetchWithRetry(attempt + 1);
 		}
 
-		const current = blobUrlCache.get(path);
+		const current = blobUrlCache.get(cacheKey);
 		if (!current || current !== owner) {
 			return "";
 		}
@@ -357,8 +367,9 @@ async function fetchBlobUrlFromNetwork({
 			if (previousObjectUrl) {
 				URL.revokeObjectURL(previousObjectUrl);
 			}
-			if (shouldPersistBlobOnDisk(lane)) void deletePersistedThumbnail(path);
-			notifyBlobUrlInvalidation(path);
+			if (shouldPersistBlobOnDisk(lane))
+				void deletePersistedThumbnail(cacheKey);
+			notifyBlobUrlInvalidation(cacheKey);
 			return "";
 		}
 
@@ -376,33 +387,33 @@ async function fetchBlobUrlFromNetwork({
 			response.data instanceof Blob
 				? response.data
 				: new Blob([response.data as BlobPart]);
-		if (blobUrlCache.get(path) !== owner) {
+		if (blobUrlCache.get(cacheKey) !== owner) {
 			return "";
 		}
 		const objectUrl = URL.createObjectURL(blob);
-		if (blobUrlCache.get(path) !== owner) {
+		if (blobUrlCache.get(cacheKey) !== owner) {
 			URL.revokeObjectURL(objectUrl);
 			return "";
 		}
 		current.blob = blob;
 		current.objectUrl = objectUrl;
-		current.etag = response.headers.etag ?? null;
+		current.etag = canonicalEtag ?? response.headers.etag ?? null;
 		current.missing = false;
 		current.needsRefresh = false;
 		current.promise = undefined;
 		if (previousObjectUrl && previousObjectUrl !== objectUrl) {
 			URL.revokeObjectURL(previousObjectUrl);
 		}
-		if (shouldPersistBlobOnDisk(lane) && blobUrlCache.get(path) === owner) {
-			await writePersistedThumbnail(path, blob, current.etag ?? null);
+		if (shouldPersistBlobOnDisk(lane) && blobUrlCache.get(cacheKey) === owner) {
+			await writePersistedThumbnail(cacheKey, blob, current.etag ?? null);
 		}
-		if (notifyOnChange) notifyBlobUrlInvalidation(path);
+		if (notifyOnChange) notifyBlobUrlInvalidation(cacheKey);
 		return objectUrl;
 	};
 
 	return fetchWithRetry(0).catch((error: unknown) => {
-		if (logErrors) logger.warn("blob fetch failed", path, error);
-		const current = blobUrlCache.get(path);
+		if (logErrors) logger.warn("blob fetch failed", requestPath, error);
+		const current = blobUrlCache.get(cacheKey);
 		if (current) {
 			current.promise = undefined;
 			current.blob = previousBlob;
@@ -411,7 +422,7 @@ async function fetchBlobUrlFromNetwork({
 			current.missing = false;
 			current.needsRefresh = false;
 			if (!current.objectUrl && current.refCount <= 0) {
-				blobUrlCache.delete(path);
+				blobUrlCache.delete(cacheKey);
 			}
 		}
 		throw error;
@@ -419,10 +430,13 @@ async function fetchBlobUrlFromNetwork({
 }
 
 async function acquireBlobUrl(
-	path: string,
+	resource: ResourcePath,
 	lane: BlobFetchLane,
 ): Promise<string> {
-	const cached = blobUrlCache.get(path);
+	const cacheKey = resourceCacheKey(resource);
+	const requestPath = resourceRequestPath(resource);
+	const canonicalEtag = resourceCanonicalEtag(resource);
+	const cached = blobUrlCache.get(cacheKey);
 	if (cached?.revokeTimer) {
 		clearTimeout(cached.revokeTimer);
 		cached.revokeTimer = undefined;
@@ -430,6 +444,18 @@ async function acquireBlobUrl(
 	if (
 		cached?.objectUrl &&
 		!cached.needsRefresh &&
+		cached.etag &&
+		canonicalEtag &&
+		cached.etag === canonicalEtag
+	) {
+		cached.lane = lane;
+		cached.refCount += 1;
+		return cached.objectUrl;
+	}
+	if (
+		cached?.objectUrl &&
+		!cached.needsRefresh &&
+		!canonicalEtag &&
 		(cached.refCount > 0 ||
 			shouldPersistBlobInSession(cached.lane ?? lane) ||
 			shouldPersistBlobInSession(lane))
@@ -441,6 +467,7 @@ async function acquireBlobUrl(
 	if (
 		cached?.missing &&
 		!cached.needsRefresh &&
+		!canonicalEtag &&
 		(cached.refCount > 0 ||
 			shouldPersistBlobInSession(cached.lane ?? lane) ||
 			shouldPersistBlobInSession(lane))
@@ -469,13 +496,13 @@ async function acquireBlobUrl(
 
 	const promise = (async () => {
 		if (shouldPersistBlobOnDisk(lane) && !previousObjectUrl) {
-			const persisted = await readPersistedThumbnail(path);
-			if (blobUrlCache.get(path) !== entry) {
+			const persisted = await readPersistedThumbnail(cacheKey);
+			if (blobUrlCache.get(cacheKey) !== entry) {
 				return "";
 			}
 			if (persisted) {
 				const objectUrl = URL.createObjectURL(persisted.blob);
-				if (blobUrlCache.get(path) !== entry) {
+				if (blobUrlCache.get(cacheKey) !== entry) {
 					URL.revokeObjectURL(objectUrl);
 					return "";
 				}
@@ -491,10 +518,12 @@ async function acquireBlobUrl(
 					logErrors: false,
 					notifyOnChange: true,
 					owner: entry,
-					path,
+					cacheKey,
+					canonicalEtag,
 					previousBlob: persisted.blob,
 					previousEtag: persisted.etag,
 					previousObjectUrl: objectUrl,
+					requestPath,
 				}).catch(() => {});
 
 				return objectUrl;
@@ -504,14 +533,16 @@ async function acquireBlobUrl(
 		return fetchBlobUrlFromNetwork({
 			lane,
 			owner: entry,
-			path,
+			cacheKey,
+			canonicalEtag,
 			previousBlob,
 			previousEtag,
 			previousObjectUrl,
+			requestPath,
 		});
 	})();
 	entry.promise = promise;
-	blobUrlCache.set(path, entry);
+	blobUrlCache.set(cacheKey, entry);
 	return promise;
 }
 
@@ -556,18 +587,24 @@ export function clearBlobUrlCache() {
 	}
 }
 
-export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
+export function useBlobUrl(
+	resource: ResourcePath | null,
+	options?: BlobUrlOptions,
+) {
 	const [blob, setBlob] = useState<Blob | null>(null);
 	const [blobUrl, setBlobUrl] = useState<string | null>(null);
 	const [error, setError] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [retryCount, setRetryCount] = useState(0);
 	const lane = options?.lane ?? "default";
+	const cacheKey = resource ? resourceCacheKey(resource) : null;
+	const requestPath = resource ? resourceRequestPath(resource) : null;
+	const canonicalEtag = resource ? resourceCanonicalEtag(resource) : null;
 
 	const retry = () => {
 		setError(false);
-		if (path) {
-			invalidateBlobUrl(path);
+		if (cacheKey) {
+			invalidateBlobUrl(cacheKey);
 		}
 	};
 
@@ -576,31 +613,38 @@ export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
 		setBlob(null);
 		setBlobUrl(null);
 		setError(false);
-		if (!path) {
+		if (!cacheKey || !requestPath) {
 			setLoading(false);
 			return;
 		}
+		const effectiveResource: ResourcePath = {
+			cacheKey,
+			etag: canonicalEtag,
+			requestPath: requestPath ?? cacheKey,
+		};
 
-		const unsubscribe = subscribeBlobUrlInvalidation(path, () => {
+		const unsubscribe = subscribeBlobUrlInvalidation(cacheKey, () => {
 			setBlob(null);
 			setBlobUrl(null);
 			setError(false);
 			setRetryCount((n) => n + 1);
 		});
 
-		const cached = blobUrlCache.get(path);
-		if (cached?.objectUrl) {
+		const cached = blobUrlCache.get(cacheKey);
+		const cachedMatchesCanonical =
+			!canonicalEtag || cached?.etag === canonicalEtag;
+		if (cached?.objectUrl && cachedMatchesCanonical) {
 			setBlob(cached.blob ?? null);
 			setBlobUrl(cached.objectUrl);
 			setLoading(false);
 		}
 
 		let cancelled = false;
-		setLoading(cached?.objectUrl === undefined);
-		acquireBlobUrl(path, lane)
+		setLoading(cached?.objectUrl === undefined || !cachedMatchesCanonical);
+		acquireBlobUrl(effectiveResource, lane)
 			.then((nextBlobUrl) => {
 				if (cancelled) return;
-				setBlob(blobUrlCache.get(path)?.blob ?? null);
+				setBlob(blobUrlCache.get(cacheKey)?.blob ?? null);
 				setBlobUrl(nextBlobUrl || null);
 			})
 			.catch(() => {
@@ -616,9 +660,9 @@ export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
 		return () => {
 			cancelled = true;
 			unsubscribe();
-			releaseBlobUrl(path);
+			releaseBlobUrl(cacheKey);
 		};
-	}, [lane, path, retryCount]);
+	}, [cacheKey, canonicalEtag, lane, requestPath, retryCount]);
 
 	return { blob, blobUrl, error, loading, retry };
 }

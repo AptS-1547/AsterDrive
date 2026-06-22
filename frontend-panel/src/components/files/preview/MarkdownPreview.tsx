@@ -4,6 +4,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTextContent } from "@/hooks/useTextContent";
+import type { ResourcePath } from "@/lib/resourceRequest";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import {
@@ -13,7 +14,7 @@ import {
 } from "./PreviewSurface";
 
 interface MarkdownPreviewProps {
-	path: string;
+	path: ResourcePath;
 }
 
 export function MarkdownPreview({ path }: MarkdownPreviewProps) {

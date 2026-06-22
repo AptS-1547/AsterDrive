@@ -88,6 +88,7 @@ const mockState = vi.hoisted(() => ({
 	getFolderFileArchivePreview: vi.fn(() => Promise.resolve({ entries: [] })),
 	createPreviewLink: vi.fn((token: string) =>
 		Promise.resolve({
+			etag: '"etag-share"',
 			expires_at: "2026-01-01T00:00:00Z",
 			max_uses: 1,
 			path: `/pv/${token}`,

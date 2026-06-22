@@ -97,6 +97,7 @@ describe("video browser config", () => {
 
 	it("resolves file preview links when the url template needs file_preview_url", async () => {
 		const createPreviewLink = vi.fn(async () => ({
+			etag: '"etag-report"',
 			expires_at: "2026-04-11T12:00:00Z",
 			max_uses: 1,
 			path: "/pv/token/report.docx",

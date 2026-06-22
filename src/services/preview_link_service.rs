@@ -29,6 +29,7 @@ pub struct PreviewLinkInfo {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub expires_at: DateTime<Utc>,
     pub max_uses: u32,
+    pub etag: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +79,7 @@ pub(crate) async fn create_token_for_file_in_scope_for_origin(
 ) -> Result<PreviewLinkInfo> {
     let file = workspace_storage_service::verify_file_access(state, scope, file_id).await?;
     let payload = build_payload(PreviewSubject::File { file_id: file.id });
-    build_link_for_file(state, &file, &payload, Some(request_origin))
+    build_link_for_file(state, &file, &payload, Some(request_origin)).await
 }
 
 pub async fn create_token_for_shared_file(
@@ -89,7 +90,7 @@ pub async fn create_token_for_shared_file(
     let payload = build_payload(PreviewSubject::ShareFile {
         share_token: share.token.clone(),
     });
-    build_link_for_shared_file(state, &share, &file, &payload, None)
+    build_link_for_shared_file(state, &share, &file, &payload, None).await
 }
 
 pub async fn create_token_for_shared_file_for_origin(
@@ -101,7 +102,7 @@ pub async fn create_token_for_shared_file_for_origin(
     let payload = build_payload(PreviewSubject::ShareFile {
         share_token: share.token.clone(),
     });
-    build_link_for_shared_file(state, &share, &file, &payload, Some(request_origin))
+    build_link_for_shared_file(state, &share, &file, &payload, Some(request_origin)).await
 }
 
 pub async fn create_token_for_shared_folder_file(
@@ -115,7 +116,7 @@ pub async fn create_token_for_shared_folder_file(
         share_token: share.token.clone(),
         file_id: file.id,
     });
-    build_link_for_shared_file(state, &share, &file, &payload, None)
+    build_link_for_shared_file(state, &share, &file, &payload, None).await
 }
 
 pub async fn create_token_for_shared_folder_file_for_origin(
@@ -130,7 +131,7 @@ pub async fn create_token_for_shared_folder_file_for_origin(
         share_token: share.token.clone(),
         file_id: file.id,
     });
-    build_link_for_shared_file(state, &share, &file, &payload, Some(request_origin))
+    build_link_for_shared_file(state, &share, &file, &payload, Some(request_origin)).await
 }
 
 pub(crate) async fn download_file(
@@ -205,21 +206,23 @@ fn build_payload(subject: PreviewSubject) -> PreviewTokenPayload {
     }
 }
 
-fn build_link_for_file(
+async fn build_link_for_file(
     state: &impl SharedRuntimeState,
     file: &file::Model,
     payload: &PreviewTokenPayload,
     request_origin: Option<RequestOrigin<'_>>,
 ) -> Result<PreviewLinkInfo> {
     let token = encode_file_token(file, payload, &state.config().auth.direct_link_secret)?;
+    let etag = canonical_file_etag(state, file).await?;
     Ok(PreviewLinkInfo {
         path: preview_path(state.runtime_config(), &token, &file.name, request_origin),
         expires_at: decode_expiry(payload.exp)?,
         max_uses: payload.max_uses,
+        etag,
     })
 }
 
-fn build_link_for_shared_file(
+async fn build_link_for_shared_file(
     state: &impl SharedRuntimeState,
     share: &share::Model,
     file: &file::Model,
@@ -232,11 +235,21 @@ fn build_link_for_shared_file(
         payload,
         &state.config().auth.direct_link_secret,
     )?;
+    let etag = canonical_file_etag(state, file).await?;
     Ok(PreviewLinkInfo {
         path: preview_path(state.runtime_config(), &token, &file.name, request_origin),
         expires_at: decode_expiry(payload.exp)?,
         max_uses: payload.max_uses,
+        etag,
     })
+}
+
+async fn canonical_file_etag(
+    state: &impl SharedRuntimeState,
+    file: &file::Model,
+) -> Result<String> {
+    let blob = file_repo::find_blob_by_id(state.reader_db(), file.blob_id).await?;
+    Ok(format!("\"{}\"", blob.hash))
 }
 
 fn preview_path(

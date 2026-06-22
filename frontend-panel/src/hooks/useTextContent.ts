@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { shouldSendResourceCredentials } from "@/lib/apiUrl";
+import {
+	type ResourcePath,
+	resourceCacheKey,
+	resourceCanonicalEtag,
+	resourceRequestPath,
+} from "@/lib/resourceRequest";
 import { api } from "@/services/http";
 
 interface TextCacheValue {
@@ -52,23 +58,37 @@ function notifyTextContentInvalidation(path?: string) {
 }
 
 async function fetchTextContent(
-	path: string,
+	resource: ResourcePath,
 	force = false,
 ): Promise<TextCacheValue> {
-	const cached = textContentCache.get(path);
+	const cacheKey = resourceCacheKey(resource);
+	const requestPath = resourceRequestPath(resource);
+	const canonicalEtag = resourceCanonicalEtag(resource);
+	const cached = textContentCache.get(cacheKey);
 	if (!force && cached?.promise) {
 		return cached.promise;
 	}
+	if (
+		!force &&
+		canonicalEtag &&
+		cached?.content !== undefined &&
+		cached.etag === canonicalEtag
+	) {
+		return {
+			content: cached.content,
+			etag: cached.etag,
+		};
+	}
 	const headers: Record<string, string> = {};
-	if (!force && cached?.etag) {
+	if (!force && cached?.etag && !canonicalEtag) {
 		headers["If-None-Match"] = cached.etag;
 	}
 
 	const promise = api.client
-		.get(path, {
+		.get(requestPath, {
 			headers,
 			responseType: "text",
-			withCredentials: shouldSendResourceCredentials(path),
+			withCredentials: shouldSendResourceCredentials(requestPath),
 			validateStatus: (status) => status === 200 || status === 304,
 		})
 		.then((response) => {
@@ -77,29 +97,29 @@ async function fetchTextContent(
 					content: cached.content,
 					etag: cached.etag ?? null,
 				};
-				textContentCache.set(path, next);
+				textContentCache.set(cacheKey, next);
 				return next;
 			}
 			const next = {
 				content: response.data as string,
-				etag: response.headers.etag ?? null,
+				etag: canonicalEtag ?? response.headers.etag ?? null,
 			};
-			textContentCache.set(path, next);
+			textContentCache.set(cacheKey, next);
 			return next;
 		})
 		.catch((error: unknown) => {
 			if (cached?.content !== undefined) {
-				textContentCache.set(path, {
+				textContentCache.set(cacheKey, {
 					content: cached.content,
 					etag: cached.etag ?? null,
 				});
 			} else {
-				textContentCache.delete(path);
+				textContentCache.delete(cacheKey);
 			}
 			throw error;
 		});
 
-	textContentCache.set(path, {
+	textContentCache.set(cacheKey, {
 		content: cached?.content,
 		etag: cached?.etag ?? null,
 		promise,
@@ -122,20 +142,23 @@ export function clearTextContentCache() {
 	textContentCache.clear();
 }
 
-export function useTextContent(path: string | null) {
+export function useTextContent(resource: ResourcePath | null) {
 	const [content, setContentState] = useState<string | null>(null);
 	const [etag, setEtagState] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState(false);
 	const requestIdRef = useRef(0);
+	const cacheKey = resource ? resourceCacheKey(resource) : null;
+	const requestPath = resource ? resourceRequestPath(resource) : null;
+	const canonicalEtag = resource ? resourceCanonicalEtag(resource) : null;
 
 	const setContent = useCallback(
 		(value: string | null | ((prev: string | null) => string | null)) => {
 			setContentState((prev) => {
 				const next = typeof value === "function" ? value(prev) : value;
-				if (path && next !== null) {
-					const cached = textContentCache.get(path);
-					textContentCache.set(path, {
+				if (cacheKey && next !== null) {
+					const cached = textContentCache.get(cacheKey);
+					textContentCache.set(cacheKey, {
 						content: next,
 						etag: cached?.etag ?? null,
 						promise: cached?.promise,
@@ -144,17 +167,17 @@ export function useTextContent(path: string | null) {
 				return next;
 			});
 		},
-		[path],
+		[cacheKey],
 	);
 
 	const setEtag = useCallback(
 		(value: string | null | ((prev: string | null) => string | null)) => {
 			setEtagState((prev) => {
 				const next = typeof value === "function" ? value(prev) : value;
-				if (path) {
-					const cached = textContentCache.get(path);
+				if (cacheKey) {
+					const cached = textContentCache.get(cacheKey);
 					if (cached?.content !== undefined) {
-						textContentCache.set(path, {
+						textContentCache.set(cacheKey, {
 							content: cached.content,
 							etag: next,
 							promise: cached.promise,
@@ -164,33 +187,40 @@ export function useTextContent(path: string | null) {
 				return next;
 			});
 		},
-		[path],
+		[cacheKey],
 	);
 
 	const load = useCallback(
 		async (force = false) => {
 			requestIdRef.current += 1;
 			const requestId = requestIdRef.current;
-			if (!path) {
+			if (!cacheKey || !requestPath) {
 				setContentState(null);
 				setEtagState(null);
 				setLoading(false);
 				setError(false);
 				return;
 			}
+			const effectiveResource: ResourcePath = {
+				cacheKey,
+				etag: canonicalEtag,
+				requestPath,
+			};
 
-			const cached = textContentCache.get(path);
-			if (cached?.content !== undefined) {
+			const cached = textContentCache.get(cacheKey);
+			const cachedMatchesCanonical =
+				!canonicalEtag || cached?.etag === canonicalEtag;
+			if (cached?.content !== undefined && cachedMatchesCanonical) {
 				setContentState(cached.content);
 				setEtagState(cached.etag ?? null);
 				setLoading(false);
 				setError(false);
 			}
 
-			setLoading(cached?.content === undefined);
+			setLoading(cached?.content === undefined || !cachedMatchesCanonical);
 			setError(false);
 			try {
-				const next = await fetchTextContent(path, force);
+				const next = await fetchTextContent(effectiveResource, force);
 				if (requestId !== requestIdRef.current) return;
 				setContentState(next.content);
 				setEtagState(next.etag);
@@ -203,7 +233,7 @@ export function useTextContent(path: string | null) {
 				}
 			}
 		},
-		[path],
+		[cacheKey, canonicalEtag, requestPath],
 	);
 
 	const reload = useCallback(async () => {
@@ -211,12 +241,12 @@ export function useTextContent(path: string | null) {
 	}, [load]);
 
 	useEffect(() => {
-		if (!path) {
+		if (!cacheKey || !requestPath) {
 			void load();
 			return;
 		}
 
-		const unsubscribe = subscribeTextContentInvalidation(path, () => {
+		const unsubscribe = subscribeTextContentInvalidation(cacheKey, () => {
 			void load(true);
 		});
 
@@ -225,7 +255,7 @@ export function useTextContent(path: string | null) {
 		return () => {
 			unsubscribe();
 		};
-	}, [load, path]);
+	}, [cacheKey, load, requestPath]);
 
 	return {
 		content,

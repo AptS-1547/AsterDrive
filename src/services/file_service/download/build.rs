@@ -140,6 +140,21 @@ pub(crate) async fn build_download_outcome_with_disposition_and_range(
         .await;
     }
 
+    // Conditional requests that miss must stay same-origin. Otherwise the
+    // browser can carry If-None-Match through the 302 to presigned object
+    // storage, turning cache revalidation into a CORS preflight dependency.
+    if if_none_match.is_some() {
+        return build_stream_outcome_with_disposition_and_range(
+            state,
+            file,
+            blob,
+            disposition,
+            None,
+            range,
+        )
+        .await;
+    }
+
     let policy = state.policy_snapshot().get_policy_or_err(blob.policy_id)?;
     let requires_sandbox =
         disposition == DownloadDisposition::Inline && requires_inline_sandbox(&file.mime_type);
