@@ -1059,6 +1059,46 @@ describe("MusicPlayerHost", () => {
 		expect(order).toEqual(["prepare", "load", "play"]);
 	});
 
+	it("keeps playback alive when the active queue track is refreshed with the same resource", async () => {
+		setQueue();
+		mockState.state.playRequested = true;
+		mockState.state.playRequestVersion = 1;
+		const { rerender } = render(<MusicPlayerHost />);
+
+		await waitFor(() => {
+			expect(mockState.prepareAuthenticatedResource).toHaveBeenCalledTimes(1);
+			expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+			expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+		});
+
+		const [firstTrack] = mockState.state.queue;
+		if (!firstTrack) {
+			throw new Error("expected first queued track");
+		}
+		mockState.state.queue = [
+			{
+				...firstTrack,
+				metadata: {
+					...(firstTrack.metadata ?? {}),
+					album: "Uploaded while playing",
+				},
+				resource: testTrackResource(firstTrack.path, firstTrack.mimeType),
+			},
+			...mockState.state.queue.slice(1),
+		];
+
+		rerender(<MusicPlayerHost />);
+
+		expect(mockState.prepareAuthenticatedResource).toHaveBeenCalledTimes(1);
+		expect(HTMLMediaElement.prototype.load).toHaveBeenCalledTimes(1);
+		expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
+		const audio = document.querySelector("audio");
+		if (!audio) {
+			throw new Error("audio element not found");
+		}
+		expect(audio).toHaveAttribute("src", "/api/v1/files/7/download");
+	});
+
 	it("uses a resolved presigned resource for playback preparation and source", async () => {
 		const presignedResource = {
 			kind: "ready",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	resourceCacheKey,
 	resourceCanonicalEtag,
+	resourceRedirectPolicy,
 	resourceRequestPath,
 } from "@/lib/resourceRequest";
 
@@ -38,5 +39,34 @@ describe("resourceRequest", () => {
 				requestPath: "/pv/token/file.txt",
 			}),
 		).toBeNull();
+	});
+
+	it("defaults redirect policy to same-origin unless the resource declares otherwise", () => {
+		expect(resourceRedirectPolicy("/files/1/download")).toBe(
+			"same_origin_only",
+		);
+		expect(
+			resourceRedirectPolicy({
+				redirectPolicy: "may_cross_origin",
+				requestPath: "/files/1/download",
+			}),
+		).toBe("may_cross_origin");
+		expect(
+			resourceRedirectPolicy({
+				kind: "ready",
+				identity: {
+					cacheKey: "/files/1/download",
+				},
+				request: {
+					conditionalHeaders: "forbidden",
+					credentials: "include",
+					redirectPolicy: "may_cross_origin",
+					url: "/files/1/download?disposition=inline",
+				},
+				delivery: {
+					mode: "direct_url",
+				},
+			}),
+		).toBe("may_cross_origin");
 	});
 });

@@ -139,6 +139,34 @@ describe("prepareAuthenticatedResource", () => {
 		expect(mockState.fetch).not.toHaveBeenCalled();
 	});
 
+	it("refreshes auth but skips range probes for resources that may redirect cross-origin", async () => {
+		const { prepareAuthenticatedResource } = await import(
+			"@/lib/authenticatedResource"
+		);
+
+		await prepareAuthenticatedResource({
+			kind: "ready",
+			identity: {
+				cacheKey: "/files/7/download",
+				etag: '"hash"',
+				scope: "personal",
+			},
+			request: {
+				url: "/files/7/download?disposition=inline",
+				credentials: "include",
+				conditionalHeaders: "forbidden",
+				redirectPolicy: "may_cross_origin",
+			},
+			delivery: {
+				mode: "direct_url",
+				mimeType: "audio/mpeg",
+			},
+		});
+
+		expect(mockState.ensureFreshSession).toHaveBeenCalledTimes(1);
+		expect(mockState.fetch).not.toHaveBeenCalled();
+	});
+
 	it("refreshes once and retries when the probe sees a missing access token", async () => {
 		const events: string[] = [];
 		mockState.fetch

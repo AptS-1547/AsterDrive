@@ -8,6 +8,7 @@ import {
 	type ResourcePath,
 	resourceCacheKey,
 	resourceCredentials,
+	resourceRedirectPolicy,
 	resourceRequestPath,
 } from "@/lib/resourceRequest";
 import { useAuthStore } from "@/stores/authStore";
@@ -26,6 +27,13 @@ type PrepareAuthenticatedResourceOptions = {
 const probeCache = new Map<string, ProbeCacheEntry>();
 
 function shouldProbeAuthenticatedResource(resource: ResourcePath) {
+	return (
+		resourceCredentials(resource, shouldSendResourceCredentials) &&
+		resourceRedirectPolicy(resource) === "same_origin_only"
+	);
+}
+
+function shouldPrepareAuthenticatedResource(resource: ResourcePath) {
 	return resourceCredentials(resource, shouldSendResourceCredentials);
 }
 
@@ -91,10 +99,12 @@ export async function prepareAuthenticatedResource(
 	resource: ResourcePath,
 	options: PrepareAuthenticatedResourceOptions = {},
 ): Promise<void> {
-	if (!shouldProbeAuthenticatedResource(resource)) return;
+	if (!shouldPrepareAuthenticatedResource(resource)) return;
 
 	await useAuthStore.getState().ensureFreshSession();
 	throwIfAborted(options.signal);
+
+	if (!shouldProbeAuthenticatedResource(resource)) return;
 
 	const requestPath = resourceRequestPath(resource);
 	const cacheKey = probeCacheKey(resource);

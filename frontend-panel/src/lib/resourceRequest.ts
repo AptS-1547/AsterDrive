@@ -104,6 +104,14 @@ export function resourceConditionalHeaders(resource: ResourcePath) {
 	return "allowed";
 }
 
+export function resourceRedirectPolicy(resource: ResourcePath) {
+	if (isReadyFileResource(resource)) return resource.request.redirectPolicy;
+	if (isResourceRequest(resource) && resource.redirectPolicy) {
+		return resource.redirectPolicy;
+	}
+	return "same_origin_only";
+}
+
 export function readyFileResourceFromRequest(
 	resource: ResourceRequest,
 	deliveryMode: FileResourceDeliveryMode,
