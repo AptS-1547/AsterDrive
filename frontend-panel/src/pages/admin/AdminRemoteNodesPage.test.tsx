@@ -65,6 +65,8 @@ vi.mock("@/components/admin/admin-remote-nodes-page/RemoteNodeDialog", () => ({
 	RemoteNodeDialog: ({
 		editingNode,
 		form,
+		managedIngressDriverDescriptors,
+		managedIngressDriverDescriptorsError,
 		managedIngressProfilesEnabled,
 		managedIngressProfilesError,
 		mode,
@@ -82,6 +84,8 @@ vi.mock("@/components/admin/admin-remote-nodes-page/RemoteNodeDialog", () => ({
 	}: {
 		editingNode: { id: number; name: string } | null;
 		form: { base_url: string; is_enabled: boolean; name: string };
+		managedIngressDriverDescriptors: unknown[];
+		managedIngressDriverDescriptorsError: string | null;
 		managedIngressProfilesEnabled: boolean;
 		managedIngressProfilesError: string | null;
 		mode: "create" | "edit";
@@ -115,6 +119,12 @@ vi.mock("@/components/admin/admin-remote-nodes-page/RemoteNodeDialog", () => ({
 				</div>
 				<div data-testid="managed-ingress-error">
 					{managedIngressProfilesError ?? ""}
+				</div>
+				<div data-testid="managed-ingress-driver-count">
+					{managedIngressDriverDescriptors.length}
+				</div>
+				<div data-testid="managed-ingress-driver-error">
+					{managedIngressDriverDescriptorsError ?? ""}
 				</div>
 				<div data-testid="editing-node-name">{editingNode?.name ?? ""}</div>
 				<button
@@ -805,6 +815,50 @@ describe("AdminRemoteNodesPage", () => {
 				"Error: profile failed",
 			);
 		});
+		expect(mockState.handleApiError).toHaveBeenCalledWith(expect.any(Error));
+	});
+
+	it("surfaces managed ingress driver descriptor errors without canceling profile loading", async () => {
+		adminRemoteNodeServiceMocks.listIngressProfileDrivers.mockRejectedValueOnce(
+			new Error("descriptor failed"),
+		);
+		mockState.useApiList.mockReturnValue({
+			items: [
+				{
+					base_url: "https://edge.example.com",
+					enrollment_status: "completed",
+					id: 7,
+					name: "Edge Alpha",
+				},
+			],
+			loading: false,
+			reload: mockState.reload,
+			setItems: mockState.setItems,
+			setTotal: mockState.setTotal,
+			total: 1,
+		});
+
+		renderPage();
+
+		fireEvent.click(screen.getByRole("button", { name: "edit:7" }));
+
+		await waitFor(() => {
+			expect(
+				adminRemoteNodeServiceMocks.listIngressProfiles,
+			).toHaveBeenCalledWith(7);
+			expect(
+				adminRemoteNodeServiceMocks.listIngressProfileDrivers,
+			).toHaveBeenCalledWith(7);
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByTestId("managed-ingress-driver-error"),
+			).toHaveTextContent("Error: descriptor failed");
+		});
+		expect(
+			screen.getByTestId("managed-ingress-driver-count"),
+		).toHaveTextContent("0");
+		expect(screen.getByTestId("managed-ingress-error")).toBeEmptyDOMElement();
 		expect(mockState.handleApiError).toHaveBeenCalledWith(expect.any(Error));
 	});
 

@@ -146,6 +146,7 @@ export function useAdminRemoteNodesPageController() {
 		runWithPending: runWithDeletingRemoteNode,
 	} = usePendingId<number>();
 	const managedIngressRequestIdRef = useRef(0);
+	const managedIngressDriverDescriptorsRequestIdRef = useRef(0);
 	const totalPages = Math.max(1, Math.ceil(total / pageSize));
 	const currentPage = Math.floor(offset / pageSize) + 1;
 	const prevPageDisabled = offset === 0;
@@ -201,6 +202,7 @@ export function useAdminRemoteNodesPageController() {
 
 	const resetManagedIngressState = () => {
 		managedIngressRequestIdRef.current += 1;
+		managedIngressDriverDescriptorsRequestIdRef.current += 1;
 		setManagedIngressProfiles([]);
 		setManagedIngressProfilesLoading(false);
 		setManagedIngressProfilesError(null);
@@ -213,20 +215,21 @@ export function useAdminRemoteNodesPageController() {
 		remoteNodeId: number,
 		{ showErrorToast = true }: { showErrorToast?: boolean } = {},
 	) => {
-		const requestId = managedIngressRequestIdRef.current;
+		const requestId = managedIngressDriverDescriptorsRequestIdRef.current + 1;
+		managedIngressDriverDescriptorsRequestIdRef.current = requestId;
 		setManagedIngressDriverDescriptorsLoading(true);
 		setManagedIngressDriverDescriptorsError(null);
 
 		try {
 			const descriptors =
 				await adminRemoteNodeService.listIngressProfileDrivers(remoteNodeId);
-			if (managedIngressRequestIdRef.current !== requestId) {
+			if (managedIngressDriverDescriptorsRequestIdRef.current !== requestId) {
 				return;
 			}
 			setManagedIngressDriverDescriptors(descriptors);
 			setManagedIngressDriverDescriptorsError(null);
 		} catch (error) {
-			if (managedIngressRequestIdRef.current !== requestId) {
+			if (managedIngressDriverDescriptorsRequestIdRef.current !== requestId) {
 				return;
 			}
 			setManagedIngressDriverDescriptors([]);
@@ -235,7 +238,7 @@ export function useAdminRemoteNodesPageController() {
 				handleApiError(error);
 			}
 		} finally {
-			if (managedIngressRequestIdRef.current === requestId) {
+			if (managedIngressDriverDescriptorsRequestIdRef.current === requestId) {
 				setManagedIngressDriverDescriptorsLoading(false);
 			}
 		}

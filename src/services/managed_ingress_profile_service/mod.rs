@@ -10,7 +10,10 @@ mod remote;
 mod tests;
 
 pub(crate) use driver::registered_managed_ingress_driver_types;
-pub use driver::{ManagedIngressDriverDescriptor, ManagedIngressDriverFieldDescriptor};
+pub use driver::{
+    ManagedIngressDriverDescriptor, ManagedIngressDriverFieldDescriptor,
+    ManagedIngressDriverFieldKind,
+};
 pub use local_profiles::{create, delete, list, resolve_effective_target, update};
 pub use models::ResolvedIngressTarget;
 pub use remote::{
