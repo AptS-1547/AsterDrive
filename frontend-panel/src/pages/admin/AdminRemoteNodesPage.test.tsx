@@ -26,6 +26,7 @@ const adminRemoteNodeServiceMocks = vi.hoisted(() => ({
 	deleteIngressProfile: vi.fn(),
 	get: vi.fn(),
 	list: vi.fn(),
+	listIngressProfileDrivers: vi.fn(),
 	listIngressProfiles: vi.fn(),
 	testConnection: vi.fn(),
 	update: vi.fn(),
@@ -460,6 +461,24 @@ describe("AdminRemoteNodesPage", () => {
 			items: [],
 			total: 0,
 		});
+		adminRemoteNodeServiceMocks.listIngressProfileDrivers.mockResolvedValue([
+			{
+				description_key: "remote_node_ingress_profile_local_scope_hint",
+				driver_type: "local",
+				fields: [
+					{
+						help_key: "remote_node_ingress_profile_local_path_hint",
+						kind: "text",
+						label_key: "base_path",
+						name: "base_path",
+						placeholder: "tenant-a/incoming",
+						required: true,
+						secret: false,
+					},
+				],
+				label_key: "remote_node_ingress_profile_driver_local",
+			},
+		]);
 		adminRemoteNodeServiceMocks.listIngressProfiles.mockResolvedValue([
 			{
 				applied_revision: 1,
@@ -596,6 +615,9 @@ describe("AdminRemoteNodesPage", () => {
 				adminRemoteNodeServiceMocks.listIngressProfiles,
 			).toHaveBeenCalledWith(7);
 		});
+		expect(
+			adminRemoteNodeServiceMocks.listIngressProfileDrivers,
+		).toHaveBeenCalledWith(7);
 		expect(screen.getByTestId("remote-node-dialog")).toHaveTextContent("edit");
 		expect(screen.getByTestId("managed-ingress-enabled")).toHaveTextContent(
 			"true",
@@ -667,6 +689,9 @@ describe("AdminRemoteNodesPage", () => {
 		expect(
 			adminRemoteNodeServiceMocks.listIngressProfiles,
 		).not.toHaveBeenCalled();
+		expect(
+			adminRemoteNodeServiceMocks.listIngressProfileDrivers,
+		).not.toHaveBeenCalled();
 	});
 
 	it("loads managed ingress profiles for reverse tunnel nodes without base_url", async () => {
@@ -701,6 +726,9 @@ describe("AdminRemoteNodesPage", () => {
 				adminRemoteNodeServiceMocks.listIngressProfiles,
 			).toHaveBeenCalledWith(7);
 		});
+		expect(
+			adminRemoteNodeServiceMocks.listIngressProfileDrivers,
+		).toHaveBeenCalledWith(7);
 		expect(screen.getByTestId("managed-ingress-enabled")).toHaveTextContent(
 			"true",
 		);
@@ -739,6 +767,9 @@ describe("AdminRemoteNodesPage", () => {
 				adminRemoteNodeServiceMocks.listIngressProfiles,
 			).toHaveBeenCalledWith(7);
 		});
+		expect(
+			adminRemoteNodeServiceMocks.listIngressProfileDrivers,
+		).toHaveBeenCalledWith(7);
 		expect(screen.getByTestId("managed-ingress-enabled")).toHaveTextContent(
 			"true",
 		);

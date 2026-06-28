@@ -32,6 +32,7 @@ import { adminRemoteNodeService } from "@/services/adminService";
 import { useFrontendConfigStore } from "@/stores/frontendConfigStore";
 import type { AdminRemoteNodeSortBy } from "@/types/adminSort";
 import type {
+	ManagedIngressDriverDescriptor,
 	RemoteCreateIngressProfileRequest,
 	RemoteEnrollmentCommandInfo,
 	RemoteIngressProfileInfo,
@@ -130,6 +131,16 @@ export function useAdminRemoteNodesPageController() {
 		useState(false);
 	const [managedIngressProfilesError, setManagedIngressProfilesError] =
 		useState<string | null>(null);
+	const [managedIngressDriverDescriptors, setManagedIngressDriverDescriptors] =
+		useState<ManagedIngressDriverDescriptor[]>([]);
+	const [
+		managedIngressDriverDescriptorsLoading,
+		setManagedIngressDriverDescriptorsLoading,
+	] = useState(false);
+	const [
+		managedIngressDriverDescriptorsError,
+		setManagedIngressDriverDescriptorsError,
+	] = useState<string | null>(null);
 	const {
 		pendingId: deletingRemoteNodeId,
 		runWithPending: runWithDeletingRemoteNode,
@@ -193,6 +204,41 @@ export function useAdminRemoteNodesPageController() {
 		setManagedIngressProfiles([]);
 		setManagedIngressProfilesLoading(false);
 		setManagedIngressProfilesError(null);
+		setManagedIngressDriverDescriptors([]);
+		setManagedIngressDriverDescriptorsLoading(false);
+		setManagedIngressDriverDescriptorsError(null);
+	};
+
+	const loadManagedIngressDriverDescriptors = async (
+		remoteNodeId: number,
+		{ showErrorToast = true }: { showErrorToast?: boolean } = {},
+	) => {
+		const requestId = managedIngressRequestIdRef.current;
+		setManagedIngressDriverDescriptorsLoading(true);
+		setManagedIngressDriverDescriptorsError(null);
+
+		try {
+			const descriptors =
+				await adminRemoteNodeService.listIngressProfileDrivers(remoteNodeId);
+			if (managedIngressRequestIdRef.current !== requestId) {
+				return;
+			}
+			setManagedIngressDriverDescriptors(descriptors);
+			setManagedIngressDriverDescriptorsError(null);
+		} catch (error) {
+			if (managedIngressRequestIdRef.current !== requestId) {
+				return;
+			}
+			setManagedIngressDriverDescriptors([]);
+			setManagedIngressDriverDescriptorsError(getApiErrorMessage(error));
+			if (showErrorToast) {
+				handleApiError(error);
+			}
+		} finally {
+			if (managedIngressRequestIdRef.current === requestId) {
+				setManagedIngressDriverDescriptorsLoading(false);
+			}
+		}
 	};
 
 	const loadManagedIngressProfiles = async (
@@ -255,8 +301,10 @@ export function useAdminRemoteNodesPageController() {
 			);
 		} else if (hasCompletedRemoteNodeEnrollment(node)) {
 			void loadManagedIngressProfiles(node.id);
+			void loadManagedIngressDriverDescriptors(node.id);
 		} else {
 			setManagedIngressProfilesError(null);
+			setManagedIngressDriverDescriptorsError(null);
 		}
 		setDialogOpen(true);
 	};
@@ -613,6 +661,9 @@ export function useAdminRemoteNodesPageController() {
 		handleVerifyEnrollmentConnection,
 		loading,
 		managedIngressProfiles,
+		managedIngressDriverDescriptors,
+		managedIngressDriverDescriptorsError,
+		managedIngressDriverDescriptorsLoading,
 		managedIngressProfilesError,
 		managedIngressProfilesLoading,
 		nextPageDisabled,
